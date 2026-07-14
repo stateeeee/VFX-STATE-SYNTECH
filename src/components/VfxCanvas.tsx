@@ -35,6 +35,7 @@ interface GraphNode {
   glow: string;
   pulseSpeed: number;
   pulsePhase: number;
+  isPurple?: boolean;
 }
 
 interface GraphEdge {
@@ -317,9 +318,23 @@ export default function VfxCanvas({
           const sy = hy + Math.sin(satAngle) * satDist;
           const satIdx = nodes.length;
 
-          // Color palette containing Obsidian neon gold, warm amber, soft grey, and white sparkles
-          const isGoldSpark = Math.random() > 0.4;
-          const nodeColor = isGoldSpark ? ACCENT : ACCENT_DIM;
+          // Color palette containing Obsidian neon gold, warm amber, soft grey, white sparkles, and purple nodes
+          const rand = Math.random();
+          let nodeColor = ACCENT_DIM;
+          let nodeGlow = ga(0.2);
+          let isPurple = false;
+
+          if (rand < 0.25) {
+            // Purple dot (viola)
+            nodeColor = '#b98ff0';
+            nodeGlow = '#a882ff';
+            isPurple = true;
+          } else if (rand < 0.65) {
+            // Gold spark
+            nodeColor = ACCENT;
+            nodeGlow = ACCENT;
+          }
+
           const sizeVal = 1.8 + Math.random() * 2.2;
 
           nodes.push({
@@ -333,9 +348,10 @@ export default function VfxCanvas({
             size: sizeVal,
             baseSize: sizeVal,
             color: nodeColor,
-            glow: isGoldSpark ? ACCENT : ga(0.2),
+            glow: nodeGlow,
             pulseSpeed: 0.01 + Math.random() * 0.02,
             pulsePhase: Math.random() * Math.PI * 2,
+            isPurple,
           });
 
           // Link satellite to its master hub
@@ -898,16 +914,22 @@ export default function VfxCanvas({
           ctx.fill();
         } else {
           // Satellite subnodes - Continuous smooth alpha-blended transition for energy flash (no branch popping!)
-          const baseColor = isSatelliteOfActive 
-            ? (isDayMode ? 'rgba(180, 150, 60, 0.9)' : 'rgba(235, 214, 125, 0.9)') 
-            : (node.color || (isDayMode ? 'rgba(160, 150, 135, 0.55)' : 'rgba(120, 110, 95, 0.45)'));
+          let baseColor = node.color || (isDayMode ? 'rgba(160, 150, 135, 0.55)' : 'rgba(120, 110, 95, 0.45)');
+          
+          if (node.isPurple) {
+            baseColor = isSatelliteOfActive 
+              ? (isDayMode ? '#9060eb' : '#d1beff') 
+              : '#b98ff0';
+          } else if (isSatelliteOfActive) {
+            baseColor = isDayMode ? 'rgba(180, 150, 60, 0.9)' : 'rgba(235, 214, 125, 0.9)';
+          }
           
           if (flash > 0.005) {
             // 1. Soft outer energy glow aura (grows and fades continuously with flash)
             const glowSize = drawSize + flash * 5.0;
             ctx.beginPath();
             ctx.arc(node.x, node.y, glowSize, 0, Math.PI * 2);
-            ctx.fillStyle = ga(flash * 0.65);
+            ctx.fillStyle = node.isPurple ? `rgba(168, 130, 255, ${flash * 0.65})` : ga(flash * 0.65);
             ctx.fill();
 
             // 2. Draw standard base color dot

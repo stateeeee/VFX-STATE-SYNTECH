@@ -419,7 +419,60 @@ export default function App() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden gap-4">
+        {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
+        <nav className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} z-20 shadow-md`}>
+          <div className="w-11 h-11 border-2 border-gold-500 rotate-45 flex items-center justify-center shrink-0 mb-5 rounded-[10px] bg-gold-500/5 shadow-[0_0_16px_rgba(224,180,81,0.2)]">
+            <span className="text-gold-500 font-bold -rotate-45 text-xs tracking-wide">VS</span>
+          </div>
+
+          <ul className="flex flex-col gap-5 w-full items-center">
+            {navItems.map(({ key, label, Icon, active, onClick, title }) => (
+              <li key={key} className="w-full flex justify-center">
+                <button
+                  type="button"
+                  data-testid={`nav-${key}`}
+                  onClick={onClick}
+                  title={title}
+                  className={`group flex flex-col items-center gap-1.5 w-full cursor-pointer transition-colors ${active ? 'text-gold-500' : isDayMode ? 'text-neutral-500 hover:text-black' : 'text-neutral-500 hover:text-white'}`}
+                >
+                  <span className={`p-2 rounded-xl transition-colors ${active ? 'bg-gold-500/12 shadow-[0_0_12px_rgba(224,180,81,0.12)]' : 'group-hover:bg-white/5'}`}>
+                    <Icon className="w-[18px] h-[18px]" />
+                  </span>
+                  <span className="text-[8.5px] uppercase tracking-[0.12em] font-medium">{label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {/* Divider */}
+          <div className={`w-8 h-px my-5 shrink-0 ${isDayMode ? 'bg-neutral-300' : 'bg-ink-700'}`} />
+
+          <span className={`text-[7px] uppercase tracking-[0.2em] font-bold mb-3 shrink-0 ${isDayMode ? 'text-neutral-400' : 'text-neutral-500'}`}>Gemini AI</span>
+          <ul className="flex flex-col gap-4 w-full items-center">
+            {[
+              { key: 'art_director', label: 'Art Dir', Icon: Lightbulb, onClick: () => setActiveGeminiMode('art_director'), active: activeGeminiMode === 'art_director', title: 'Aesthetic Parameters' },
+              { key: 'agent', label: 'Agent', Icon: Bot, onClick: () => setActiveGeminiMode('agent'), active: activeGeminiMode === 'agent', title: 'Automatic Nodes' },
+              { key: 'optimizer', label: 'Optimizer', Icon: Settings, onClick: () => setActiveGeminiMode('optimizer'), active: activeGeminiMode === 'optimizer', title: 'Better Performance' }
+            ].map(({ key, label, Icon, active, onClick, title }) => (
+              <li key={key} className="w-full flex justify-center">
+                <button
+                  type="button"
+                  data-testid={`nav-gemini-${key}`}
+                  onClick={onClick}
+                  title={title}
+                  className={`group flex flex-col items-center gap-1 w-full cursor-pointer transition-colors ${active ? 'text-gold-500' : isDayMode ? 'text-neutral-500 hover:text-black' : 'text-neutral-500 hover:text-white'}`}
+                >
+                  <span className={`p-1.5 rounded-lg transition-colors ${active ? 'bg-gold-500/12 shadow-[0_0_12px_rgba(224,180,81,0.12)]' : 'group-hover:bg-white/5'}`}>
+                    <Icon className="w-[16px] h-[16px]" />
+                  </span>
+                  <span className="text-[7.5px] uppercase tracking-[0.1em] font-medium">{label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
         {/* ═══════════════ MAIN CONTENT ═══════════════ */}
         <div className="flex-1 flex flex-col gap-4 overflow-hidden relative">
 
@@ -474,93 +527,66 @@ export default function App() {
 
                 {/* TOP: Hero (brain graph / video) OR AI Lab OR Effect */}
                 <Panel defaultSize={62} minSize={20}>
-                  <div className="flex h-full gap-4">
-                    {/* TOP NAVIGATION BOX */}
-                    <nav className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-4 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} z-20`}>
-                      <div className="w-11 h-11 border-2 border-gold-500 rotate-45 flex items-center justify-center shrink-0 mb-4 rounded-[10px] bg-gold-500/5 shadow-[0_0_16px_rgba(224,180,81,0.2)]">
-                        <span className="text-gold-500 font-bold -rotate-45 text-xs tracking-wide">VS</span>
-                      </div>
-                      <ul className="flex flex-col gap-5 w-full items-center mt-auto">
-                        {navItems.map(({ key, label, Icon, active, onClick, title }) => (
-                          <li key={key} className="w-full flex justify-center">
-                            <button
-                              type="button"
-                              data-testid={`nav-${key}`}
-                              onClick={onClick}
-                              title={title}
-                              className={`group flex flex-col items-center gap-1.5 w-full cursor-pointer transition-colors ${active ? 'text-gold-500' : isDayMode ? 'text-neutral-500 hover:text-black' : 'text-neutral-500 hover:text-white'}`}
-                            >
-                              <span className={`p-2 rounded-xl transition-colors ${active ? 'bg-gold-500/12 shadow-[0_0_12px_rgba(224,180,81,0.12)]' : 'group-hover:bg-white/5'}`}>
-                                <Icon className="w-[18px] h-[18px]" />
-                              </span>
-                              <span className="text-[8.5px] uppercase tracking-[0.12em] font-medium">{label}</span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </nav>
+                  <div className={`w-full h-full relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
+                    {chainOpen ? (
+                      <ChainLab
+                        isDayMode={isDayMode}
+                        onBack={() => setChainOpen(false)}
+                        initialChain={graphChain.length > 0 ? graphChain : undefined}
+                        initialPreset={chainPresetToOpen || undefined}
+                        initialSource={compSource}
+                        onSourcePicked={(file) => onSourceFile(file)}
+                      />
+                    ) : openEffectId ? (
+                      <EffectHost
+                        module={modules.find((m) => m.id === openEffectId) || currentModule}
+                        iframeSrc={EFFECTS_REGISTRY[openEffectId]?.iframeSrc || ''}
+                        isDayMode={isDayMode}
+                        onBack={handleEffectClose}
+                      />
+                    ) : (
+                      <>
+                        {/* background: source video if chosen, else the brain graph */}
+                        {compSource ? (
+                          <video
+                            key={compSource.url}
+                            src={compSource.url}
+                            autoPlay
+                            muted
+                            loop
+                            playsInline
+                            data-testid="hero-video"
+                            className="absolute inset-0 w-full h-full object-cover"
+                          />
+                        ) : (
+                          <VfxCanvas
+                            modules={modules}
+                            activeModule={activeModule}
+                            setActiveModule={setActiveModule}
+                            onModuleOpen={handleModuleOpen}
+                            signalSource={signalSource}
+                            isDayMode={isDayMode}
+                            isStreaming={isStreaming}
+                            onChainLink={(from, to) => handleChainLink(from, to)}
+                            onChainOpen={openLab}
+                            onChainClear={clearChain}
+                            chain={graphChain}
+                          />
+                        )}
 
-                    <div className={`flex-1 h-full relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
-                      {chainOpen ? (
-                        <ChainLab
-                          isDayMode={isDayMode}
-                          onBack={() => setChainOpen(false)}
-                          initialChain={graphChain.length > 0 ? graphChain : undefined}
-                          initialPreset={chainPresetToOpen || undefined}
-                          initialSource={compSource}
-                          onSourcePicked={(file) => onSourceFile(file)}
-                        />
-                      ) : openEffectId ? (
-                        <EffectHost
-                          module={modules.find((m) => m.id === openEffectId) || currentModule}
-                          iframeSrc={EFFECTS_REGISTRY[openEffectId]?.iframeSrc || ''}
-                          isDayMode={isDayMode}
-                          onBack={handleEffectClose}
-                        />
-                      ) : (
-                        <>
-                          {/* background: source video if chosen, else the brain graph */}
-                          {compSource ? (
-                            <video
-                              key={compSource.url}
-                              src={compSource.url}
-                              autoPlay
-                              muted
-                              loop
-                              playsInline
-                              data-testid="hero-video"
-                              className="absolute inset-0 w-full h-full object-cover"
-                            />
-                          ) : (
-                            <VfxCanvas
-                              modules={modules}
-                              activeModule={activeModule}
-                              setActiveModule={setActiveModule}
-                              onModuleOpen={handleModuleOpen}
-                              signalSource={signalSource}
-                              isDayMode={isDayMode}
-                              isStreaming={isStreaming}
-                              onChainLink={(from, to) => handleChainLink(from, to)}
-                              onChainOpen={openLab}
-                              onChainClear={clearChain}
-                              chain={graphChain}
-                            />
-                          )}
+                        {/* legibility gradient */}
+                        <div className="absolute inset-0 pointer-events-none bg-gradient-to-br from-black/70 via-black/25 to-transparent" />
 
-                          {/* legibility gradient */}
-                          <div className="absolute inset-0 pointer-events-none bg-gradient-to-br from-black/70 via-black/25 to-transparent" />
-
-                          {/* wordmark + subtitle + actions */}
-                          <div className="absolute top-7 left-8 z-10 max-w-[70%]">
-                            <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tighter text-white leading-[0.92] drop-shadow-2xl">VFX</h1>
-                            <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tighter hero-gradient leading-[0.98] drop-shadow-2xl">SYNTECH</h1>
-                            <p className="mt-3 text-[11px] md:text-[13px] tracking-[0.18em] font-medium text-neutral-200/90 drop-shadow-md">
-                              AI-Powered. Node-Based. Limitless.
-                            </p>
-                          </div>
-                        </>
-                      )}
-                    </div>
+                        {/* wordmark + subtitle + actions */}
+                        <div className="absolute top-7 left-8 z-10 max-w-[70%]">
+                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tighter text-white leading-[0.92] drop-shadow-2xl">VFX</h1>
+                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tighter hero-gradient leading-[0.98] drop-shadow-2xl">SYNTECH</h1>
+                          <p className="mt-3 text-[11px] md:text-[13px] tracking-[0.18em] font-medium text-neutral-200/90 drop-shadow-md">
+                            AI-Powered. Node-Based. Limitless.
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </Panel>
 
@@ -572,45 +598,16 @@ export default function App() {
                 <Panel defaultSize={38} minSize={15}>
                   <PanelGroup direction="horizontal" autoSaveId="syntech-bottom-horiz" className="flex">
                     <Panel defaultSize={55} minSize={20}>
-                      <div className="flex h-full gap-4">
-                        {/* BOTTOM NAVIGATION BOX (GEMINI AI) */}
-                        <nav className={`w-[78px] shrink-0 flex flex-col items-center pt-4 pb-4 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} z-20`}>
-                          <span className={`text-[7px] uppercase tracking-[0.2em] font-bold mb-3 ${isDayMode ? 'text-neutral-400' : 'text-neutral-500'}`}>Gemini AI</span>
-                          <ul className="flex flex-col gap-4 w-full items-center">
-                            {[
-                              { key: 'art_director', label: 'Art Dir', Icon: Lightbulb, onClick: () => setActiveGeminiMode('art_director'), active: activeGeminiMode === 'art_director', title: 'Aesthetic Parameters' },
-                              { key: 'agent', label: 'Agent', Icon: Bot, onClick: () => setActiveGeminiMode('agent'), active: activeGeminiMode === 'agent', title: 'Automatic Nodes' },
-                              { key: 'optimizer', label: 'Optimizer', Icon: Settings, onClick: () => setActiveGeminiMode('optimizer'), active: activeGeminiMode === 'optimizer', title: 'Better Performance' }
-                            ].map(({ key, label, Icon, active, onClick, title }) => (
-                              <li key={key} className="w-full flex justify-center">
-                                <button
-                                  type="button"
-                                  data-testid={`nav-gemini-${key}`}
-                                  onClick={onClick}
-                                  title={title}
-                                  className={`group flex flex-col items-center gap-1 w-full cursor-pointer transition-colors ${active ? 'text-gold-500' : isDayMode ? 'text-neutral-500 hover:text-black' : 'text-neutral-500 hover:text-white'}`}
-                                >
-                                  <span className={`p-1.5 rounded-lg transition-colors ${active ? 'bg-gold-500/12 shadow-[0_0_12px_rgba(224,180,81,0.12)]' : 'group-hover:bg-white/5'}`}>
-                                    <Icon className="w-[16px] h-[16px]" />
-                                  </span>
-                                  <span className="text-[7.5px] uppercase tracking-[0.1em] font-medium">{label}</span>
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        </nav>
-
-                        <NodalComposition
-                          isDayMode={isDayMode}
-                          effects={compEffects}
-                          source={compSource ? { name: compSource.name } : null}
-                          onToggleEffect={toggleCompEffect}
-                          onAddEffect={addCompEffect}
-                          onRemoveEffect={removeCompEffect}
-                          onOpenLab={openLab}
-                          onPickSource={pickSource}
-                        />
-                      </div>
+                      <NodalComposition
+                        isDayMode={isDayMode}
+                        effects={compEffects}
+                        source={compSource ? { name: compSource.name } : null}
+                        onToggleEffect={toggleCompEffect}
+                        onAddEffect={addCompEffect}
+                        onRemoveEffect={removeCompEffect}
+                        onOpenLab={openLab}
+                        onPickSource={pickSource}
+                      />
                     </Panel>
 
                     <PanelResizeHandle className="w-4 flex items-center justify-center cursor-col-resize group shrink-0">
