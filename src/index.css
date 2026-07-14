@@ -1,0 +1,150 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════
+   DESIGN TOKENS (PLAN.md phase 6 / decision #3): the whole UI —
+   Tailwind utilities, glow effects AND the canvas-drawn graph —
+   reads from these variables. The "third aesthetic", once defined,
+   is a swap of this block, not a rewrite.
+
+   THEME: deep-space obsidian navy with warm gold + violet accents,
+   tuned to the VFX Syntech reference dashboard.
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  /* accent family (obsidian gold) */
+  --syn-accent: #e0b451;
+  --syn-accent-rgb: 224, 180, 81; /* for rgba() compositions + canvas glows */
+  --syn-accent-50: #fefcf3;
+  --syn-accent-100: #fbf6d9;
+  --syn-accent-200: #f4e9b0;
+  --syn-accent-300: #ebd67d;
+  --syn-accent-400: #e5c25f;
+  --syn-accent-600: #c89a37;
+  --syn-accent-700: #96742c;
+  --syn-accent-800: #6b5124;
+  --syn-accent-900: #4a381a;
+  --syn-accent-950: #2a1f0e;
+
+  /* violet secondary (AI / gradient tail) */
+  --syn-violet: #a882ff;
+  --syn-violet-rgb: 168, 130, 255;
+
+  /* pure black surfaces */
+  --syn-bg: #000000;         /* app canvas */
+  --syn-ink-950: #000000;    /* sidebar / top bar */
+  --syn-ink-900: #000000;    /* deep panel */
+  --syn-ink-850: #000000;    /* panel */
+  --syn-ink-800: #1a1a1a;    /* elevated / card */
+  --syn-ink-700: #2e2e2e;    /* node fill */
+  --syn-line: rgba(224, 180, 81, 0.10); /* hairline border */
+  --syn-text: #f4f2ee;
+
+  /* font slots */
+  --syn-font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --syn-font-display: "Space Grotesk", sans-serif;
+  --syn-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@theme {
+  --font-sans: var(--syn-font-sans);
+  --font-display: var(--syn-font-display);
+  --font-mono: var(--syn-font-mono);
+
+  --color-gold-50: var(--syn-accent-50);
+  --color-gold-100: var(--syn-accent-100);
+  --color-gold-200: var(--syn-accent-200);
+  --color-gold-300: var(--syn-accent-300);
+  --color-gold-400: var(--syn-accent-400);
+  --color-gold-500: var(--syn-accent);
+  --color-gold-600: var(--syn-accent-600);
+  --color-gold-700: var(--syn-accent-700);
+  --color-gold-800: var(--syn-accent-800);
+  --color-gold-900: var(--syn-accent-900);
+  --color-gold-950: var(--syn-accent-950);
+
+  --color-violet-400: var(--syn-violet);
+
+  --color-ink-950: var(--syn-ink-950);
+  --color-ink-900: var(--syn-ink-900);
+  --color-ink-850: var(--syn-ink-850);
+  --color-ink-800: var(--syn-ink-800);
+  --color-ink-700: var(--syn-ink-700);
+}
+
+body {
+  background-color: var(--syn-bg);
+  color: var(--syn-text);
+  font-family: var(--font-sans);
+}
+
+/* Accent glow effects — follow the accent token */
+@keyframes pulse-glow {
+  0%, 100% {
+    text-shadow: 0 0 4px rgba(var(--syn-accent-rgb), 0.4), 0 0 12px rgba(var(--syn-accent-rgb), 0.2);
+    box-shadow: 0 0 4px rgba(var(--syn-accent-rgb), 0.2);
+  }
+  50% {
+    text-shadow: 0 0 8px rgba(var(--syn-accent-rgb), 0.8), 0 0 20px rgba(var(--syn-accent-rgb), 0.4);
+    box-shadow: 0 0 12px rgba(var(--syn-accent-rgb), 0.5);
+  }
+}
+
+.gold-glow-text {
+  text-shadow: 0 0 8px rgba(var(--syn-accent-rgb), 0.6);
+}
+
+.gold-glow-border {
+  box-shadow: 0 0 12px rgba(var(--syn-accent-rgb), 0.2);
+}
+
+/* Hero title gradient (gold → violet), matches reference wordmark */
+.hero-gradient {
+  background-image: linear-gradient(100deg, #ffe5a1 0%, #e0b451 25%, #b98ff0 50%, #a882ff 75%, #ffe5a1 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-shimmer 6s linear infinite;
+}
+
+@keyframes gradient-shimmer {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: 0% center;
+  }
+}
+
+/* Soft radial vignette used behind panels for the deep-space feel */
+.space-vignette {
+  background: var(--syn-bg);
+}
+
+/* animated equalizer bars (top-bar GPU meter, input-node waveform) */
+@keyframes eq-bounce {
+  0%, 100% { transform: scaleY(0.35); }
+  50%      { transform: scaleY(1); }
+}
+.eq-bar { transform-origin: bottom; animation: eq-bounce 0.9s ease-in-out infinite; }
+
+/* flowing signal along nodal-composition connectors */
+@keyframes node-flow { to { stroke-dashoffset: -22; } }
+.node-flow { stroke-dasharray: 3 8; animation: node-flow 0.9s linear infinite; }
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--syn-accent-950);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--syn-accent-700);
+}
+.custom-scrollbar { scrollbar-width: thin; scrollbar-color: var(--syn-accent-900) transparent; }
