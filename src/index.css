@@ -30,7 +30,7 @@
   --syn-violet-rgb: 168, 130, 255;
 
   /* pure black surfaces */
-  --syn-bg: #000000;         /* app canvas */
+  --syn-bg: #0e0e0e;         /* app canvas / space between sections (matte black) */
   --syn-ink-950: #000000;    /* sidebar / top bar */
   --syn-ink-900: #000000;    /* deep panel */
   --syn-ink-850: #000000;    /* panel */

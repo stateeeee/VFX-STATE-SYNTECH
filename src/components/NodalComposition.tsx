@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { Plus, Maximize2, Crosshair, X, Sparkle } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { ModuleId } from '../types';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -172,9 +172,6 @@ export default function NodalComposition({
           AI Lab Nodes
         </span>
         <div className="flex items-center gap-3 text-[9px] font-mono text-neutral-500 relative">
-          <span className="hidden sm:flex items-center gap-1 opacity-80">100% <span className="text-[7px]">▾</span></span>
-          <Maximize2 className="w-3 h-3 opacity-60 hover:opacity-100 cursor-pointer" onClick={onOpenLab} />
-          <Crosshair className="w-3 h-3 opacity-60 hover:opacity-100 cursor-pointer" onClick={onOpenLab} />
           <button
             type="button"
             data-testid="nodal-add"
@@ -374,19 +371,7 @@ export default function NodalComposition({
           </div>
         )}
 
-        {/* open-lab hint chip */}
-        <button
-          type="button"
-          data-testid="nodal-open-lab"
-          onClick={(e) => { e.stopPropagation(); onOpenLab(); }}
-          className={`absolute bottom-2.5 right-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-md border font-mono text-[9px] uppercase tracking-widest cursor-pointer transition-colors ${
-            isDayMode
-              ? 'bg-white/90 border-gold-500/40 text-gold-700 hover:bg-gold-500/10'
-              : 'bg-ink-950/80 border-gold-500/40 text-gold-500 hover:bg-gold-500/10'
-          }`}
-        >
-          <Sparkle className="w-3 h-3" /> Open AI Lab
-        </button>
+
       </div>
     </div>
   );

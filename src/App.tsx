@@ -660,14 +660,7 @@ export default function App() {
             {/* RIGHT SIDEBAR: Effects Library */}
             <Panel defaultSize={26} minSize={16} maxSize={40}>
               <div className={`w-full h-full rounded-2xl border flex flex-col overflow-hidden shadow-lg ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-ink-700/60 bg-ink-900'}`}>
-                <div className={`p-4 border-b flex items-center justify-between shrink-0 ${isDayMode ? 'border-neutral-200' : 'border-ink-700/50'}`}>
-                  <h2 className="font-mono text-[10px] tracking-[0.22em] text-gold-500 uppercase font-bold flex items-center gap-2">
-                    <Layers className="w-3 h-3" /> Effects Library
-                  </h2>
-                  <span className="text-[9px] font-mono text-neutral-500">5 Systems</span>
-                </div>
-
-                {/* Search box */}
+                {/* Search box (positioned at the top) */}
                 <div className={`px-4 py-3 border-b shrink-0 ${isDayMode ? 'border-neutral-200' : 'border-ink-700/50'}`}>
                   <div className={`w-full border rounded-lg p-2.5 flex items-center gap-2 ${isDayMode ? 'bg-black/5 border-neutral-200' : 'bg-black/40 border-ink-700/70'}`}>
                     <Search className="w-3.5 h-3.5 text-neutral-500" />
@@ -683,11 +676,10 @@ export default function App() {
                       <div
                         key={module.id}
                         data-testid={`effect-card-${module.id}`}
-                        onClick={() => handleModuleOpen(module.id)}
-                        className={`h-20 p-2.5 rounded-lg border cursor-pointer transition-all flex items-center justify-center relative overflow-hidden ${
+                        className={`h-20 p-2.5 rounded-lg border transition-all flex items-center justify-center relative overflow-hidden ${
                           active
                             ? isDayMode ? 'border-gold-500/50 bg-gold-500/5 shadow-sm' : 'border-gold-500/45 bg-gold-500/[0.07] shadow-[0_0_10px_rgba(224,180,81,0.06)]'
-                            : isDayMode ? 'border-neutral-200 bg-white hover:border-gold-500/30' : 'border-ink-700/60 bg-ink-850 hover:border-gold-500/30'
+                            : isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-850'
                         }`}
                       >
                         <span className={`text-sm font-bold z-10 ${isDayMode ? 'text-neutral-900' : 'text-white'}`}>

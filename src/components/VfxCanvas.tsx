@@ -196,7 +196,7 @@ export default function VfxCanvas({
       ACCENT_DIM_RGB = hexToRgbStr(ACCENT_DIM);
       ACCENT_DEEP = g('--syn-accent-900', ACCENT_DEEP);
       ACCENT_NIGHT = g('--syn-accent-950', ACCENT_NIGHT);
-      BG = g('--syn-bg', BG);
+      BG = g('--syn-ink-900', BG);
       return ACCENT !== prev;
     };
     readTokens();
@@ -1013,7 +1013,7 @@ export default function VfxCanvas({
 
   return (
     <div
-      className="relative w-full h-full min-h-[300px] border border-gold-800/40 bg-[var(--syn-bg)] overflow-hidden rounded-md gold-glow-border"
+      className="relative w-full h-full min-h-[300px] border border-gold-800/40 bg-ink-900 overflow-hidden rounded-md gold-glow-border"
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       onMouseDown={handleMouseDown}
