@@ -205,6 +205,7 @@ export default function VfxCanvas({
 
     let width = canvas.width;
     let height = canvas.height;
+    let needsInit = false;
 
     // Handle resizing using ResizeObserver
     const resizeObserver = new ResizeObserver((entries) => {
@@ -215,6 +216,7 @@ export default function VfxCanvas({
         width = canvas.width;
         height = canvas.height;
         ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        needsInit = true;
       }
     });
 
@@ -249,13 +251,14 @@ export default function VfxCanvas({
       const cx = w / 2;
       const cy = h / 2;
 
+      const scale = Math.min(w, h) / 600 * 1.5;
       // Define our 5 main Hubs (representing active modules in the network)
       const hubsConfig: { id: ModuleId; label: string; angle: number; dist: number; color: string; glow: string }[] = [
-        { id: 'blob_tracker', label: 'BLOB TRACKER', angle: -Math.PI / 4 - 0.2, dist: 120, color: '#ffffff', glow: ACCENT },
-        { id: 'analog', label: 'ANALOG', angle: Math.PI / 4 + 0.1, dist: 130, color: '#ffffff', glow: ACCENT },
-        { id: 'blob_reveal', label: 'BLOB REVEAL', angle: Math.PI - 0.5, dist: 140, color: '#ffffff', glow: ACCENT },
-        { id: 'bokeh', label: 'BOKEH', angle: -Math.PI / 2 - 0.3, dist: 125, color: '#ffffff', glow: ACCENT },
-        { id: 'anamorphic_lab', label: 'ANAMORPHIC LAB', angle: Math.PI + 0.4, dist: 110, color: '#ffffff', glow: ACCENT },
+        { id: 'blob_tracker', label: 'BLOB TRACKER', angle: -Math.PI / 4 - 0.2, dist: 120 * scale, color: '#ffffff', glow: ACCENT },
+        { id: 'analog', label: 'ANALOG', angle: Math.PI / 4 + 0.1, dist: 130 * scale, color: '#ffffff', glow: ACCENT },
+        { id: 'blob_reveal', label: 'BLOB REVEAL', angle: Math.PI - 0.5, dist: 140 * scale, color: '#ffffff', glow: ACCENT },
+        { id: 'bokeh', label: 'BOKEH', angle: -Math.PI / 2 - 0.3, dist: 125 * scale, color: '#ffffff', glow: ACCENT },
+        { id: 'anamorphic_lab', label: 'ANAMORPHIC LAB', angle: Math.PI + 0.4, dist: 110 * scale, color: '#ffffff', glow: ACCENT },
       ];
 
       // Add central master core node representing the root index.md / Obsidian Vault main core
@@ -269,8 +272,8 @@ export default function VfxCanvas({
         vy: 0,
         targetX: cx,
         targetY: cy,
-        size: 9,
-        baseSize: 9,
+        size: 9 * scale,
+        baseSize: 9 * scale,
         color: '#ffffff',
         glow: ACCENT,
         pulseSpeed: 0.02,
@@ -293,8 +296,8 @@ export default function VfxCanvas({
           vy: 0,
           targetX: hx,
           targetY: hy,
-          size: 6.5,
-          baseSize: 6.5,
+          size: 6.5 * scale,
+          baseSize: 6.5 * scale,
           color: hub.color,
           glow: hub.glow,
           pulseSpeed: 0.03 + i * 0.005,
@@ -313,7 +316,7 @@ export default function VfxCanvas({
         const numSatellites = 14 + Math.floor(Math.random() * 6); // 14 to 20 subnodes per module
         for (let s = 0; s < numSatellites; s++) {
           const satAngle = hub.angle + (Math.random() - 0.5) * (Math.PI / 1.5);
-          const satDist = 40 + Math.random() * 75;
+          const satDist = (40 + Math.random() * 75) * scale;
           const sx = hx + Math.cos(satAngle) * satDist;
           const sy = hy + Math.sin(satAngle) * satDist;
           const satIdx = nodes.length;
@@ -335,7 +338,7 @@ export default function VfxCanvas({
             nodeGlow = ACCENT;
           }
 
-          const sizeVal = 1.8 + Math.random() * 2.2;
+          const sizeVal = (1.8 + Math.random() * 2.2) * scale;
 
           nodes.push({
             id: `${hub.id}_sat_${s}`,
@@ -387,8 +390,8 @@ export default function VfxCanvas({
           vy: 0,
           targetX: rx,
           targetY: ry,
-          size: 1.2 + Math.random() * 1.5,
-          baseSize: 1.2 + Math.random() * 1.5,
+          size: (1.2 + Math.random() * 1.5) * scale,
+          baseSize: (1.2 + Math.random() * 1.5) * scale,
           color: ACCENT_DEEP,
           glow: ga(0.08),
           pulseSpeed: 0.01,
@@ -409,13 +412,13 @@ export default function VfxCanvas({
       const w = canvas.width / window.devicePixelRatio;
       const h = canvas.height / window.devicePixelRatio;
 
-      // live re-skin: when the accent token changes, rebuild stored node colors
-      if (frameCount % 60 === 0 && readTokens()) {
+      if (needsInit) {
         initializeGraph(w, h);
+        needsInit = false;
       }
 
-      // Recalibrate node targets dynamically if viewport dimensions change dramatically
-      if (nodes.length > 0 && Math.abs(nodes[0].targetX - w / 2) > 5) {
+      // live re-skin: when the accent token changes, rebuild stored node colors
+      if (frameCount % 60 === 0 && readTokens()) {
         initializeGraph(w, h);
       }
 
@@ -964,15 +967,15 @@ export default function VfxCanvas({
             ctx.save();
             
             // Layout placement parameters
-            const labelYOffset = isCore ? -16 : 14;
-            ctx.font = isCore ? 'bold 10px var(--font-mono)' : 'bold 9px var(--font-mono)';
+            const labelYOffset = isCore ? -26 : 22;
+            ctx.font = isCore ? 'bold 15px var(--font-mono)' : 'bold 12px var(--font-mono)';
             ctx.fillStyle = isSelectedActive || isCore ? (isDayMode ? '#000000' : '#ffffff') : ACCENT;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
             const textWidth = ctx.measureText(node.label).width;
-            const padX = 6;
-            const padY = 3.5;
+            const padX = 10;
+            const padY = 6;
 
             // Draw clean background pill container
             ctx.fillStyle = isDayMode ? 'rgba(255, 255, 255, 0.92)' : 'rgba(5, 5, 5, 0.85)';
@@ -980,12 +983,12 @@ export default function VfxCanvas({
             ctx.lineWidth = 0.8;
             
             const rx = node.x - textWidth / 2 - padX;
-            const ry = node.y + labelYOffset - 5 - padY;
+            const ry = node.y + labelYOffset - (isCore ? 7 : 6) - padY;
             const rw = textWidth + padX * 2;
-            const rh = 10 + padY * 2;
+            const rh = (isCore ? 15 : 12) + padY * 2;
 
             ctx.beginPath();
-            ctx.roundRect(rx, ry, rw, rh, 3);
+            ctx.roundRect(rx, ry, rw, rh, 4);
             ctx.fill();
             ctx.stroke();
 

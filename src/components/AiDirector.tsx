@@ -44,7 +44,7 @@ const DEFAULT_SUGGESTIONS: Record<string, string[]> = {
 };
 
 export default function AiDirector({ currentConfig, onApplyPreset, isDayMode, activeGeminiMode, compEffects, compSource, onUpdateCompEffects }: AiDirectorProps) {
-  const mode = activeGeminiMode || 'art_director';
+  const mode = activeGeminiMode;
   const panelInk = isDayMode ? 'bg-[#fbfaf7]' : 'bg-ink-900';
   
   return (
@@ -52,23 +52,30 @@ export default function AiDirector({ currentConfig, onApplyPreset, isDayMode, ac
       {/* Header */}
       <div className={`px-4 py-3 border-b flex items-center justify-between shrink-0 ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/50 bg-ink-950'}`}>
         <div className="flex items-center gap-2.5">
-          <div className="w-6 h-6 border border-gold-500/60 rotate-45 flex items-center justify-center shrink-0 rounded-[6px] bg-gold-500/5">
-            {mode === 'art_director' ? <Lightbulb className="w-3 h-3 text-gold-500 -rotate-45" /> : 
-             mode === 'agent' ? <Bot className="w-3 h-3 text-gold-500 -rotate-45" /> :
-             <Settings className="w-3 h-3 text-gold-500 -rotate-45" />}
+          <div className="flex items-center justify-center shrink-0">
+            {mode === 'art_director' ? <Lightbulb className={`w-4 h-4 ${isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}`} /> : 
+             mode === 'agent' ? <Bot className={`w-4 h-4 ${isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}`} /> :
+             mode === 'optimizer' ? <Settings className={`w-4 h-4 ${isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}`} /> :
+             <Sparkles className={`w-4 h-4 ${isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}`} />}
           </div>
-          <h2 className="text-[11px] tracking-[0.22em] font-mono text-gold-500 uppercase font-bold">
-            {mode === 'art_director' ? 'Aesthetic Params' : mode === 'agent' ? 'Automatic Nodes' : 'Performance Optimizer'}
+          <h2 className={`text-[11px] tracking-[0.22em] font-mono uppercase font-bold ${isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}`}>
+            {mode === 'art_director' ? 'Art Director' : mode === 'agent' ? 'Agent' : mode === 'optimizer' ? 'Optimizer' : 'Gemini Pro'}
           </h2>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`text-[9px] font-mono ${isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}`}>Gemini AI</span>
-          <span className="flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Active
-          </span>
+          {mode ? (
+            <span className="flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Active
+            </span>
+          ) : (
+            <span className={`flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded ${isDayMode ? 'bg-neutral-200/50 text-neutral-500 border border-neutral-300' : 'bg-white/5 text-neutral-500 border border-white/10'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isDayMode ? 'bg-neutral-400' : 'bg-neutral-600'}`} /> Standby
+            </span>
+          )}
         </div>
       </div>
 
+      {!mode && <AiHomeTab isDayMode={isDayMode} />}
       {mode === 'art_director' && (
         <ArtDirectorTab isDayMode={isDayMode} currentConfig={currentConfig} onApplyPreset={onApplyPreset} />
       )}
@@ -78,6 +85,43 @@ export default function AiDirector({ currentConfig, onApplyPreset, isDayMode, ac
       {mode === 'optimizer' && (
         <OptimizerTab isDayMode={isDayMode} compSource={compSource} />
       )}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------
+// PREMIUM HOME TAB
+// -------------------------------------------------------------
+function AiHomeTab({ isDayMode }: { isDayMode?: boolean }) {
+  return (
+    <div className="flex-1 flex flex-col p-5 overflow-y-auto">
+      <h3 className={`${isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'} font-mono text-[10px] uppercase tracking-widest mb-3`}>
+        System Capabilities
+      </h3>
+      <p className={`${isDayMode ? 'text-neutral-600' : 'text-neutral-400'} text-xs mb-6 leading-relaxed`}>
+        I can comprehensively analyze your visual composition, intelligently optimize node routing for peak frame rates, and algorithmically suggest aesthetic parameters to elevate your creative output.
+      </p>
+
+      <h3 className={`${isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'} font-mono text-[10px] uppercase tracking-widest mb-3`}>
+        Examples
+      </h3>
+      <ul className={`${isDayMode ? 'text-neutral-600' : 'text-neutral-400'} text-xs space-y-2 mb-6`}>
+        <li className="flex gap-2">
+          <span className={isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}>•</span> Auto-connect audio reactive nodes
+        </li>
+        <li className="flex gap-2">
+          <span className={isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}>•</span> Generate cinematic color grading
+        </li>
+        <li className="flex gap-2">
+          <span className={isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}>•</span> Optimize graph for 60fps rendering
+        </li>
+      </ul>
+
+      <div className="mt-auto">
+        <button className={`w-full py-2.5 rounded text-[10px] font-mono uppercase tracking-widest transition-colors ${isDayMode ? 'bg-[#7b51b7]/10 text-[#7b51b7] hover:bg-[#7b51b7]/20 border border-[#7b51b7]/20' : 'bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 border border-violet-500/20'}`}>
+          Select A Module
+        </button>
+      </div>
     </div>
   );
 }
@@ -188,12 +232,12 @@ function ArtDirectorTab({ isDayMode, currentConfig, onApplyPreset }: any) {
         {/* Scene Analysis */}
         <div>
           <div className="flex items-center gap-1.5 mb-1.5">
-            <Sparkles className="w-3 h-3 text-gold-500" />
-            <span className="font-mono text-[10px] font-bold tracking-widest uppercase text-gold-500">Scene Analysis</span>
+            <Sparkles className={`w-3 h-3 ${isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}`} />
+            <span className={`font-mono text-[10px] font-bold tracking-widest uppercase ${isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}`}>Scene Analysis</span>
           </div>
           <div className={`markdown-body font-mono text-[11px] leading-relaxed ${isDayMode ? 'text-neutral-700' : 'text-neutral-300'}`}>
             {isLoading ? (
-              <span className="flex items-center gap-2 text-gold-500/80">
+              <span className={`flex items-center gap-2 ${isDayMode ? 'text-[#7b51b7]/80' : 'text-violet-400/80'}`}>
                 <RefreshCw className="w-3 h-3 animate-spin" /> {loadingText}
               </span>
             ) : (
@@ -216,10 +260,10 @@ function ArtDirectorTab({ isDayMode, currentConfig, onApplyPreset }: any) {
                   disabled={isLoading}
                   onClick={() => (presetSuggestions.length ? handleApplyAll() : handleSendMessage(`${s} for the "${currentConfig.activeModule}" module. Generate preset.`))}
                   className={`w-full flex items-start gap-2 text-left font-mono text-[10px] leading-snug px-2 py-1.5 rounded-md border transition-colors cursor-pointer disabled:opacity-40 ${
-                    isDayMode ? 'border-neutral-200 hover:border-gold-500/40 hover:bg-gold-500/5 text-neutral-700' : 'border-ink-700/60 hover:border-gold-500/40 hover:bg-gold-500/[0.06] text-neutral-300'
+                    isDayMode ? 'border-neutral-200 hover:border-[#7b51b7]/40 hover:bg-[#7b51b7]/5 text-neutral-700' : 'border-ink-700/60 hover:border-violet-400/40 hover:bg-violet-400/[0.06] text-neutral-300'
                   }`}
                 >
-                  <ChevronRight className="w-3 h-3 text-gold-500 shrink-0 mt-[1px]" />
+                  <ChevronRight className={`w-3 h-3 shrink-0 mt-[1px] ${isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}`} />
                   <span>{s}</span>
                 </button>
               </li>
@@ -232,7 +276,7 @@ function ArtDirectorTab({ isDayMode, currentConfig, onApplyPreset }: any) {
             <button
               type="button"
               onClick={() => setShowThread((v) => !v)}
-              className={`font-mono text-[9px] uppercase tracking-widest ${subInk} hover:text-gold-500 cursor-pointer`}
+              className={`font-mono text-[9px] uppercase tracking-widest ${subInk} ${isDayMode ? 'hover:text-[#7b51b7]' : 'hover:text-violet-400'} cursor-pointer`}
             >
               {showThread ? '▾ Hide' : '▸ Show'} full transcript ({messages.length})
             </button>
@@ -243,7 +287,7 @@ function ArtDirectorTab({ isDayMode, currentConfig, onApplyPreset }: any) {
                     <div className={`max-w-[88%] p-2.5 rounded-lg border font-mono text-[10px] leading-relaxed ${
                       msg.role === 'model'
                         ? (isDayMode ? 'bg-white border-neutral-200 text-neutral-700' : 'bg-black/40 border-ink-700/60 text-neutral-300')
-                        : (isDayMode ? 'bg-gold-500/10 border-gold-500/30 text-gold-800' : 'bg-gold-500/10 border-gold-500/30 text-gold-200')
+                        : (isDayMode ? 'bg-[#7b51b7]/10 border-[#7b51b7]/30 text-[#7b51b7]' : 'bg-violet-400/10 border-violet-400/30 text-violet-200')
                     }`}>
                       <div className="markdown-body"><Markdown>{msg.text.split('PRESET:')[0]}</Markdown></div>
                     </div>
@@ -261,7 +305,7 @@ function ArtDirectorTab({ isDayMode, currentConfig, onApplyPreset }: any) {
           type="button"
           onClick={handleApplyAll}
           disabled={isLoading}
-          className="w-full px-3 py-2 bg-gold-500 text-black font-extrabold text-[10px] tracking-wider uppercase rounded-md hover:bg-gold-400 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+          className={`w-full px-3 py-2 ${isDayMode ? 'bg-[#7b51b7]/10 text-[#7b51b7] border border-[#7b51b7]/20 hover:bg-[#7b51b7]/20' : 'bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20'} font-extrabold text-[10px] tracking-wider uppercase rounded-md transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40`}
         >
           <Cpu className="w-3.5 h-3.5" /> Apply All Suggestions
         </button>
@@ -276,13 +320,13 @@ function ArtDirectorTab({ isDayMode, currentConfig, onApplyPreset }: any) {
             placeholder="Ask Gemini to optimize active nodes..."
             disabled={isLoading}
             className={`flex-1 min-w-0 px-3 py-2 rounded-md font-mono text-[11px] transition-colors ${
-              isDayMode ? 'bg-white border border-neutral-300 text-neutral-900 focus:outline-none focus:border-gold-500/60 placeholder-neutral-400' : 'bg-black/40 border border-ink-700/70 text-white focus:outline-none focus:border-gold-500/60 placeholder-neutral-600'
+              isDayMode ? 'bg-white border border-neutral-300 text-neutral-900 focus:outline-none focus:border-[#7b51b7]/60 placeholder-neutral-400' : 'bg-black/40 border border-ink-700/70 text-white focus:outline-none focus:border-violet-500/60 placeholder-neutral-600'
             } disabled:opacity-40`}
           />
           <button
             type="submit"
             disabled={!input.trim() || isLoading}
-            className="px-3 bg-gold-500 text-black font-extrabold rounded-md flex items-center justify-center transition-colors hover:bg-gold-400 cursor-pointer disabled:opacity-30"
+            className={`px-3 ${isDayMode ? 'bg-[#7b51b7]' : 'bg-violet-500'} text-white font-extrabold rounded-md flex items-center justify-center transition-colors ${isDayMode ? 'hover:bg-[#7b51b7]/90' : 'hover:bg-violet-400'} cursor-pointer disabled:opacity-30`}
           >
             <Send className="w-4 h-4" />
           </button>
@@ -371,7 +415,7 @@ function AgentTab({ isDayMode, compEffects, onUpdateCompEffects }: any) {
               <div className={`max-w-[88%] p-2.5 rounded-lg border font-mono text-[10px] leading-relaxed ${
                 msg.role === 'model'
                   ? (isDayMode ? 'bg-white border-neutral-200 text-neutral-700' : 'bg-black/40 border-ink-700/60 text-neutral-300')
-                  : (isDayMode ? 'bg-gold-500/10 border-gold-500/30 text-gold-800' : 'bg-gold-500/10 border-gold-500/30 text-gold-200')
+                  : (isDayMode ? 'bg-[#7b51b7]/10 border-[#7b51b7]/30 text-[#7b51b7]' : 'bg-violet-400/10 border-violet-400/30 text-violet-200')
               }`}>
                 <div className="markdown-body"><Markdown>{msg.text}</Markdown></div>
               </div>
@@ -380,7 +424,7 @@ function AgentTab({ isDayMode, compEffects, onUpdateCompEffects }: any) {
           {isLoading && (
             <div className={`flex gap-2 justify-start`}>
               <div className={`max-w-[88%] p-2.5 rounded-lg border font-mono text-[10px] leading-relaxed ${isDayMode ? 'bg-white border-neutral-200 text-neutral-700' : 'bg-black/40 border-ink-700/60 text-neutral-300'}`}>
-                <span className="flex items-center gap-2 text-gold-500/80">
+                <span className={`flex items-center gap-2 ${isDayMode ? 'text-[#7b51b7]/80' : 'text-violet-400/80'}`}>
                   <RefreshCw className="w-3 h-3 animate-spin" /> Thinking (High)...
                 </span>
               </div>
@@ -398,13 +442,13 @@ function AgentTab({ isDayMode, compEffects, onUpdateCompEffects }: any) {
             placeholder="E.g. Add analog glitch and disable tracking..."
             disabled={isLoading}
             className={`flex-1 min-w-0 px-3 py-2 rounded-md font-mono text-[11px] transition-colors ${
-              isDayMode ? 'bg-white border border-neutral-300 text-neutral-900 focus:outline-none focus:border-gold-500/60 placeholder-neutral-400' : 'bg-black/40 border border-ink-700/70 text-white focus:outline-none focus:border-gold-500/60 placeholder-neutral-600'
+              isDayMode ? 'bg-white border border-neutral-300 text-neutral-900 focus:outline-none focus:border-[#7b51b7]/60 placeholder-neutral-400' : 'bg-black/40 border border-ink-700/70 text-white focus:outline-none focus:border-violet-500/60 placeholder-neutral-600'
             } disabled:opacity-40`}
           />
           <button
             type="submit"
             disabled={!input.trim() || isLoading}
-            className="px-3 bg-gold-500 text-black font-extrabold rounded-md flex items-center justify-center transition-colors hover:bg-gold-400 cursor-pointer disabled:opacity-30"
+            className={`px-3 ${isDayMode ? 'bg-[#7b51b7]' : 'bg-violet-500'} text-white font-extrabold rounded-md flex items-center justify-center transition-colors ${isDayMode ? 'hover:bg-[#7b51b7]/90' : 'hover:bg-violet-400'} cursor-pointer disabled:opacity-30`}
           >
             <Send className="w-4 h-4" />
           </button>
@@ -443,7 +487,7 @@ function OptimizerTab({ isDayMode, compSource }: any) {
   return (
     <div className="flex-1 overflow-y-auto px-4 py-3.5 space-y-4 custom-scrollbar">
       <div className={`p-4 border rounded-xl ${isDayMode ? 'bg-white border-neutral-200' : 'bg-black/40 border-ink-700/60'}`}>
-        <h3 className="font-mono text-[11px] font-bold text-gold-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+        <h3 className={`font-mono text-[11px] font-bold uppercase tracking-widest mb-2 flex items-center gap-2 ${isDayMode ? 'text-[#7b51b7]' : 'text-violet-400'}`}>
           <Video className="w-4 h-4" /> Video Context Analyzer
         </h3>
         <p className={`font-mono text-[10px] leading-relaxed mb-4 ${isDayMode ? 'text-neutral-600' : 'text-neutral-400'}`}>
@@ -458,7 +502,7 @@ function OptimizerTab({ isDayMode, compSource }: any) {
         <button
           onClick={analyzeVideo}
           disabled={isLoading}
-          className="w-full px-3 py-2 bg-neutral-800 text-white dark:bg-white dark:text-black font-extrabold text-[10px] tracking-wider uppercase rounded-md transition-opacity hover:opacity-80 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
+          className={`w-full px-3 py-2 ${isDayMode ? 'bg-[#7b51b7]/10 text-[#7b51b7] border border-[#7b51b7]/20 hover:bg-[#7b51b7]/20' : 'bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20'} font-extrabold text-[10px] tracking-wider uppercase rounded-md transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40`}
         >
           {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Cpu className="w-3.5 h-3.5" />}
           {isLoading ? 'Analyzing Content...' : 'Run Video Analysis'}

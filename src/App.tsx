@@ -349,7 +349,7 @@ export default function App() {
 
   // ── left-sidebar navigation (the real commands, re-skinned per reference) ──
   const navItems: Array<{ key: string; label: string; Icon: any; active: boolean; onClick: () => void; title?: string }> = [
-    { key: 'home', label: 'Home', Icon: HomeIcon, active: isHome, onClick: () => { setChainOpen(false); handleEffectClose(); } },
+    { key: 'home', label: 'Home', Icon: HomeIcon, active: isHome, onClick: () => { setChainOpen(false); handleEffectClose(); setActiveGeminiMode(null); } },
     { key: 'save', label: savedFlash ? 'Saved' : 'Save', Icon: SaveIcon, active: savedFlash, onClick: handleSaveSession, title: 'Save the current session (module, theme) to this browser' },
     { key: 'projects', label: 'Projects', Icon: FolderIcon, active: projectsOpen, onClick: () => setProjectsOpen(true), title: 'Saved effect chains' },
     { key: 'ailab', label: 'AI Lab', Icon: AiIcon, active: chainOpen, onClick: openLab },
@@ -448,12 +448,12 @@ export default function App() {
           {/* Divider */}
           <div className={`w-8 h-px my-5 shrink-0 ${isDayMode ? 'bg-neutral-300' : 'bg-ink-700'}`} />
 
-          <span className={`text-[7px] uppercase tracking-[0.2em] font-bold mb-3 shrink-0 ${isDayMode ? 'text-neutral-400' : 'text-neutral-500'}`}>Gemini AI</span>
+          <span className={`text-[7px] uppercase tracking-[0.2em] font-bold mb-3 shrink-0 ${isDayMode ? 'text-neutral-400' : 'text-neutral-500'}`}>GEMINI PRO</span>
           <ul className="flex flex-col gap-4 w-full items-center">
             {[
-              { key: 'art_director', label: 'Art Dir', Icon: Lightbulb, onClick: () => setActiveGeminiMode('art_director'), active: activeGeminiMode === 'art_director', title: 'Aesthetic Parameters' },
-              { key: 'agent', label: 'Agent', Icon: Bot, onClick: () => setActiveGeminiMode('agent'), active: activeGeminiMode === 'agent', title: 'Automatic Nodes' },
-              { key: 'optimizer', label: 'Optimizer', Icon: Settings, onClick: () => setActiveGeminiMode('optimizer'), active: activeGeminiMode === 'optimizer', title: 'Better Performance' }
+              { key: 'art_director', label: 'Art Dir', Icon: Lightbulb, onClick: () => setActiveGeminiMode('art_director'), active: activeGeminiMode === 'art_director', title: 'Art Director' },
+              { key: 'agent', label: 'Agent', Icon: Bot, onClick: () => setActiveGeminiMode('agent'), active: activeGeminiMode === 'agent', title: 'Agent' },
+              { key: 'optimizer', label: 'Optimizer', Icon: Settings, onClick: () => setActiveGeminiMode('optimizer'), active: activeGeminiMode === 'optimizer', title: 'Optimizer' }
             ].map(({ key, label, Icon, active, onClick, title }) => (
               <li key={key} className="w-full flex justify-center">
                 <button
