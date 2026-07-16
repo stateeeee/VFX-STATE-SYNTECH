@@ -1,0 +1,300 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   VFX Syntech — READY-TO-PASTE TOKEN PALETTES
+   ---------------------------------------------------------------------------
+   Each block below is a drop-in replacement for the :root { --syn-* } block in
+   src/index.css (design-audit §3 / directions in ../03-AESTHETIC-DIRECTIONS.md).
+   Pick ONE block, paste it over the current :root, keep the existing @theme
+   mapping — done. The canvas graph (VfxCanvas) re-skins for free because it
+   reads these same vars.
+
+   New tokens added vs. the current file (implement these too, they fix the
+   audit's weaknesses):
+     --syn-ink-950/900/850/800/700  → now a REAL elevation ladder (not all #000)
+     --syn-text-muted / --syn-text-faint → so components stop using ad-hoc neutral-*
+     --syn-glass / --syn-hairline / --syn-glow / --syn-radius → surface language
+     --syn-node-* → tokenizes the 6 node colors (move EFFECT_META to read these)
+
+   Fonts are unchanged unless a direction's comment says otherwise; keep the
+   3 --syn-font-* lines from the original file.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+
+/* ───────────────────────────────────────────────────────────────────────────
+   D1 — OBSIDIAN REFINED   (evolve the current look; lowest risk)
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* accent — disciplined obsidian gold */
+  --syn-accent: #e6b24a;         --syn-accent-rgb: 230, 178, 74;
+  --syn-accent-50:  #fdf8ec;  --syn-accent-100: #f9edcb;  --syn-accent-200: #f2da97;
+  --syn-accent-300: #ecc76b;  --syn-accent-400: #e9bd57;  --syn-accent-600: #c8933a;
+  --syn-accent-700: #9a6f2c;  --syn-accent-800: #6d4e22;  --syn-accent-900: #48341a;
+  --syn-accent-950: #281c0e;
+
+  /* AI secondary — muted violet */
+  --syn-violet: #9a7be0;         --syn-violet-rgb: 154, 123, 224;
+
+  /* surfaces — REAL elevation ladder (was all #000000) */
+  --syn-bg:      #0a0a0b;        /* app canvas / gaps */
+  --syn-ink-950: #0c0c0e;        /* top bar / sidebar */
+  --syn-ink-900: #121214;        /* deep panels */
+  --syn-ink-850: #17171a;        /* panel */
+  --syn-ink-800: #1c1c20;        /* elevated / card */
+  --syn-ink-700: #26262b;        /* node fill / heavy border */
+
+  /* text tiers */
+  --syn-text:       #f4f2ee;
+  --syn-text-muted: #9a978f;
+  --syn-text-faint: #6a6862;
+
+  /* surface language */
+  --syn-line:     rgba(230, 178, 74, 0.12);
+  --syn-hairline: rgba(255, 255, 255, 0.06);
+  --syn-glass:    rgba(28, 28, 32, 0.72);
+  --syn-glow:     rgba(230, 178, 74, 0.22);
+  --syn-radius:   16px;
+
+  /* node "signal" colors — harmonized to warm metals */
+  --syn-node-tracker:    #e6b24a;  /* gold    */
+  --syn-node-reveal:     #c98a5a;  /* copper  */
+  --syn-node-anamorphic: #b8b0a0;  /* platinum*/
+  --syn-node-analog:     #8a94a8;  /* steel   */
+  --syn-node-bokeh:      #a98cc8;  /* amethyst*/
+  --syn-node-input:      #6fae86;  /* patina  */
+  --syn-node-output:     #e6b24a;  /* gold    */
+
+  /* fonts unchanged */
+  --syn-font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --syn-font-display: "Space Grotesk", sans-serif;
+  --syn-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+
+/* ───────────────────────────────────────────────────────────────────────────
+   D2 — LIQUID CHROME / AURORA   (cool, futuristic; leaves gold)
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --syn-accent: #6ee7d6;         --syn-accent-rgb: 110, 231, 214;   /* teal */
+  --syn-accent-50:  #eafbf8;  --syn-accent-100: #c7f5ee;  --syn-accent-200: #97ece0;
+  --syn-accent-300: #6ee7d6;  --syn-accent-400: #43d9c5;  --syn-accent-600: #22b3a1;
+  --syn-accent-700: #1a887b;  --syn-accent-800: #175f57;  --syn-accent-900: #123f3a;
+  --syn-accent-950: #0a2320;
+
+  --syn-violet: #b78cff;         --syn-violet-rgb: 183, 140, 255;
+
+  --syn-bg:      #070a0f;
+  --syn-ink-950: #0a0e15;
+  --syn-ink-900: #0e1420;
+  --syn-ink-850: #121a29;
+  --syn-ink-800: #151d2c;
+  --syn-ink-700: #1e2a3d;
+
+  --syn-text:       #eaf0f7;
+  --syn-text-muted: #8b97a8;
+  --syn-text-faint: #5a6473;
+
+  --syn-line:     rgba(120, 160, 255, 0.14);
+  --syn-hairline: rgba(160, 200, 255, 0.08);
+  --syn-glass:    rgba(21, 29, 44, 0.62);
+  --syn-glow:     rgba(110, 231, 214, 0.28);
+  --syn-radius:   14px;
+
+  --syn-node-tracker:    #6ee7d6;
+  --syn-node-reveal:     #f472b6;
+  --syn-node-anamorphic: #38bdf8;
+  --syn-node-analog:     #818cf8;
+  --syn-node-bokeh:      #c084fc;
+  --syn-node-input:      #34d399;
+  --syn-node-output:     #6ee7d6;
+
+  /* optional cooler display face: swap Space Grotesk → "Sora"/"Geist" */
+  --syn-font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --syn-font-display: "Space Grotesk", sans-serif;
+  --syn-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+
+/* ───────────────────────────────────────────────────────────────────────────
+   D3 — LIQUID OBSIDIAN   (Apple-glass; SINGLE accent; champagne variant)
+   glass surfaces need a faint moving backdrop behind them to bend — add the
+   nebula/vignette layer (see 04-ANALYSIS-motion) or blur has nothing to work on
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --syn-accent: #e8c88a;         --syn-accent-rgb: 232, 200, 138;   /* champagne */
+  --syn-accent-50:  #fbf6ea;  --syn-accent-100: #f6ecd2;  --syn-accent-200: #eedbac;
+  --syn-accent-300: #e8c88a;  --syn-accent-400: #dcb56a;  --syn-accent-600: #bd9550;
+  --syn-accent-700: #8f6f3d;  --syn-accent-800: #634d2c;  --syn-accent-900: #42331e;
+  --syn-accent-950: #241c10;
+
+  /* single-accent system: AI uses a lighter tint of the SAME hue, not a 2nd color */
+  --syn-violet: #f0dcb0;         --syn-violet-rgb: 240, 220, 176;
+
+  --syn-bg:      #08080a;
+  --syn-ink-950: #0d0d10;
+  --syn-ink-900: rgba(24, 24, 28, 0.55);  /* glass */
+  --syn-ink-850: rgba(32, 32, 38, 0.58);  /* glass */
+  --syn-ink-800: rgba(44, 44, 52, 0.60);  /* glass */
+  --syn-ink-700: rgba(60, 60, 70, 0.55);
+
+  --syn-text:       #f5f5f7;
+  --syn-text-muted: #a1a1aa;
+  --syn-text-faint: #6b6b73;
+
+  --syn-line:     rgba(232, 200, 138, 0.14);
+  --syn-hairline: rgba(255, 255, 255, 0.10);   /* top-lit glass edge */
+  --syn-glass:    rgba(40, 40, 48, 0.55);
+  --syn-glow:     rgba(232, 200, 138, 0.20);
+  --syn-radius:   20px;
+
+  /* monochrome nodes that glow the single accent when active (kills the rainbow) */
+  --syn-node-tracker:    #8b8b93;
+  --syn-node-reveal:     #8b8b93;
+  --syn-node-anamorphic: #8b8b93;
+  --syn-node-analog:     #8b8b93;
+  --syn-node-bokeh:      #8b8b93;
+  --syn-node-input:      #9fb3a8;   /* faint patina so IN reads different */
+  --syn-node-output:     #e8c88a;   /* accent */
+
+  --syn-font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --syn-font-display: "Space Grotesk", sans-serif;
+  --syn-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+
+/* ───────────────────────────────────────────────────────────────────────────
+   D4 — MISSION CONTROL / CINEMA GRADE   (pro HUD; amber + cyan; unifies iframes)
+   also set --syn-radius small (sharper) and consider Barlow Condensed display
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --syn-accent: #ffb454;         --syn-accent-rgb: 255, 180, 84;    /* instrument amber */
+  --syn-accent-50:  #fff6e9;  --syn-accent-100: #ffe9c6;  --syn-accent-200: #ffd699;
+  --syn-accent-300: #ffc46d;  --syn-accent-400: #ffb454;  --syn-accent-600: #db8f2f;
+  --syn-accent-700: #a66a22;  --syn-accent-800: #734a1c;  --syn-accent-900: #4c3214;
+  --syn-accent-950: #2a1c0b;
+
+  --syn-violet: #41d0e0;         --syn-violet-rgb: 65, 208, 224;    /* readout cyan (AI) */
+
+  --syn-bg:      #0c0d0f;
+  --syn-ink-950: #101216;
+  --syn-ink-900: #16181c;
+  --syn-ink-850: #1a1d22;
+  --syn-ink-800: #1e2126;
+  --syn-ink-700: #2a2e35;
+
+  --syn-text:       #e8eaed;
+  --syn-text-muted: #9aa0a6;
+  --syn-text-faint: #5f6368;
+
+  --syn-line:     rgba(255, 180, 84, 0.22);
+  --syn-hairline: rgba(255, 255, 255, 0.08);
+  --syn-glass:    rgba(30, 33, 38, 0.80);
+  --syn-glow:     rgba(255, 180, 84, 0.25);
+  --syn-radius:   6px;
+
+  /* intentional, normalized "signal legend" — one S/L band */
+  --syn-node-tracker:    #ff9f45;
+  --syn-node-reveal:     #e05b9c;
+  --syn-node-anamorphic: #41d0e0;
+  --syn-node-analog:     #5a9ff0;
+  --syn-node-bokeh:      #b06ce0;
+  --syn-node-input:      #3ddc84;
+  --syn-node-output:     #ffb454;
+
+  /* to unify with the effect iframes, swap display to Barlow Condensed:
+     --syn-font-display: "Barlow Condensed", sans-serif;  (add to the @import) */
+  --syn-font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --syn-font-display: "Space Grotesk", sans-serif;
+  --syn-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+
+/* ───────────────────────────────────────────────────────────────────────────
+   D5 — NEO-BRUTALIST STUDIO   (bold, graphic; acid gold + hot pop)
+   pair with thicker borders (1.5–2px), hard offset shadows, bigger headlines
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --syn-accent: #ffd23f;         --syn-accent-rgb: 255, 210, 63;    /* acid gold */
+  --syn-accent-50:  #fffbe6;  --syn-accent-100: #fff3ba;  --syn-accent-200: #ffe985;
+  --syn-accent-300: #ffdf52;  --syn-accent-400: #ffd23f;  --syn-accent-600: #d9ab1f;
+  --syn-accent-700: #a37f18;  --syn-accent-800: #6f5613;  --syn-accent-900: #49390f;
+  --syn-accent-950: #291f08;
+  --syn-pop:    #ff5c5c;         --syn-pop-rgb: 255, 92, 92;        /* hot pop (primary CTAs) */
+
+  --syn-violet: #8b5cf6;         --syn-violet-rgb: 139, 92, 246;
+
+  --syn-bg:      #0d0d0d;
+  --syn-ink-950: #101010;
+  --syn-ink-900: #161616;
+  --syn-ink-850: #1c1c1c;
+  --syn-ink-800: #212121;
+  --syn-ink-700: #2c2c2c;
+
+  --syn-text:       #f5f2ea;
+  --syn-text-muted: #a8a49a;
+  --syn-text-faint: #726e64;
+
+  --syn-line:     rgba(255, 210, 63, 0.30);
+  --syn-hairline: rgba(255, 255, 255, 0.12);
+  --syn-glass:    rgba(33, 33, 33, 0.9);
+  --syn-glow:     rgba(255, 210, 63, 0.0);   /* brutalist: shadows, not glows */
+  --syn-radius:   4px;
+
+  /* bold flat blocks — own the saturation */
+  --syn-node-tracker:    #ff9f1c;
+  --syn-node-reveal:     #ff5c8a;
+  --syn-node-anamorphic: #2ec4d6;
+  --syn-node-analog:     #4d7cff;
+  --syn-node-bokeh:      #a06bff;
+  --syn-node-input:      #2ecc71;
+  --syn-node-output:     #ffd23f;
+
+  --syn-font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --syn-font-display: "Space Grotesk", sans-serif;
+  --syn-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+
+/* ───────────────────────────────────────────────────────────────────────────
+   D6 — DEEP SPACE LUXE (Nebula)   (cosmic wonder; gold + cosmic violet)
+   the payoff is the animated nebula/starfield backdrop (see 04-ANALYSIS-motion);
+   glass surfaces sit over it. This finally delivers `space-vignette`.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --syn-accent: #f0c96b;         --syn-accent-rgb: 240, 201, 107;   /* star gold */
+  --syn-accent-50:  #fdf7e7;  --syn-accent-100: #faedc5;  --syn-accent-200: #f5dd95;
+  --syn-accent-300: #f0c96b;  --syn-accent-400: #e6b84f;  --syn-accent-600: #c69736;
+  --syn-accent-700: #96712a;  --syn-accent-800: #684e20;  --syn-accent-900: #453419;
+  --syn-accent-950: #261d0e;
+
+  --syn-violet: #9b6bff;         --syn-violet-rgb: 155, 107, 255;   /* cosmic violet */
+
+  /* base is the darkest point of the nebula; panels are glass over it */
+  --syn-bg:      #070512;
+  --syn-ink-950: #0b0918;
+  --syn-ink-900: rgba(18, 16, 30, 0.60);   /* glass */
+  --syn-ink-850: rgba(24, 20, 40, 0.62);   /* glass */
+  --syn-ink-800: rgba(28, 24, 44, 0.65);   /* glass */
+  --syn-ink-700: rgba(40, 34, 62, 0.55);
+
+  --syn-text:       #f3f0ff;
+  --syn-text-muted: #a49dbd;
+  --syn-text-faint: #6b6588;
+
+  --syn-line:     rgba(240, 201, 107, 0.16);
+  --syn-hairline: rgba(200, 190, 255, 0.10);
+  --syn-glass:    rgba(28, 24, 44, 0.60);
+  --syn-glow:     rgba(240, 201, 107, 0.24);
+  --syn-radius:   18px;
+
+  /* constellation jewels on the violet/gold axis */
+  --syn-node-tracker:    #f0c96b;
+  --syn-node-reveal:     #e07bb8;
+  --syn-node-anamorphic: #6bd6e0;
+  --syn-node-analog:     #7b9bff;
+  --syn-node-bokeh:      #b98cff;
+  --syn-node-input:      #5fe0a8;
+  --syn-node-output:     #f0c96b;
+
+  --syn-font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --syn-font-display: "Space Grotesk", sans-serif;
+  --syn-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
