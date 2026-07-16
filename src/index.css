@@ -11,33 +11,49 @@
    tuned to the VFX Syntech reference dashboard.
    ═══════════════════════════════════════════════════════════════ */
 :root {
-  /* accent family (obsidian gold) */
-  --syn-accent: #e0b451;
-  --syn-accent-rgb: 224, 180, 81; /* for rgba() compositions + canvas glows */
-  --syn-accent-50: #fefcf3;
-  --syn-accent-100: #fbf6d9;
-  --syn-accent-200: #f4e9b0;
-  --syn-accent-300: #ebd67d;
-  --syn-accent-400: #e5c25f;
-  --syn-accent-600: #c89a37;
-  --syn-accent-700: #96742c;
-  --syn-accent-800: #6b5124;
-  --syn-accent-900: #4a381a;
-  --syn-accent-950: #2a1f0e;
+  /* ── DIRECTION: D1 "Obsidian Refined" (design/tokens/PALETTES.css) ── */
+  /* accent family (obsidian gold, disciplined) */
+  --syn-accent: #e6b24a;
+  --syn-accent-rgb: 230, 178, 74; /* for rgba() compositions + canvas glows */
+  --syn-accent-50: #fdf8ec;
+  --syn-accent-100: #f9edcb;
+  --syn-accent-200: #f2da97;
+  --syn-accent-300: #ecc76b;
+  --syn-accent-400: #e9bd57;
+  --syn-accent-600: #c8933a;
+  --syn-accent-700: #9a6f2c;
+  --syn-accent-800: #6d4e22;
+  --syn-accent-900: #48341a;
+  --syn-accent-950: #281c0e;
 
   /* violet secondary (AI / gradient tail) */
-  --syn-violet: #a882ff;
-  --syn-violet-rgb: 168, 130, 255;
+  --syn-violet: #9a7be0;
+  --syn-violet-rgb: 154, 123, 224;
 
-  /* pure black surfaces */
-  --syn-bg: #0e0e0e;         /* app canvas / space between sections (matte black) */
-  --syn-ink-950: #000000;    /* sidebar / top bar */
-  --syn-ink-900: #000000;    /* deep panel */
-  --syn-ink-850: #000000;    /* panel */
-  --syn-ink-800: #1a1a1a;    /* elevated / card */
-  --syn-ink-700: #2e2e2e;    /* node fill */
-  --syn-line: rgba(224, 180, 81, 0.10); /* hairline border */
+  /* surfaces — REAL elevation ladder (was all #000000) */
+  --syn-bg: #0a0a0b;         /* app canvas / space between sections */
+  --syn-ink-950: #0c0c0e;    /* sidebar / top bar */
+  --syn-ink-900: #121214;    /* deep panel (hero, Nodal, AI Director) */
+  --syn-ink-850: #17171a;    /* panel / card surface */
+  --syn-ink-800: #1c1c20;    /* elevated / card */
+  --syn-ink-700: #26262b;    /* node fill / heavy border */
+  --syn-line: rgba(230, 178, 74, 0.12);   /* accent hairline */
+  --syn-hairline: rgba(255, 255, 255, 0.06); /* neutral hairline */
+  --syn-glass: rgba(28, 28, 32, 0.72);
+  --syn-glow: rgba(230, 178, 74, 0.22);
+  --syn-radius: 16px;
   --syn-text: #f4f2ee;
+  --syn-text-muted: #9a978f;
+  --syn-text-faint: #6a6862;
+
+  /* node "signal" colors — harmonized warm metals (tokenized) */
+  --syn-node-tracker: #e6b24a;   /* gold */
+  --syn-node-reveal: #c98a5a;    /* copper */
+  --syn-node-anamorphic: #b8b0a0;/* platinum */
+  --syn-node-analog: #8a94a8;    /* steel */
+  --syn-node-bokeh: #a98cc8;     /* muted amethyst */
+  --syn-node-input: #6fae86;     /* patina */
+  --syn-node-output: #e6b24a;    /* gold */
 
   /* font slots */
   --syn-font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -116,9 +132,11 @@ body {
   }
 }
 
-/* Soft radial vignette used behind panels for the deep-space feel */
+/* Radial vignette + faint accent haze — delivers the deep-space depth */
 .space-vignette {
-  background: var(--syn-bg);
+  background:
+    radial-gradient(115% 80% at 50% 12%, rgba(var(--syn-accent-rgb), 0.05), transparent 55%),
+    radial-gradient(120% 100% at 50% 38%, #101014 0%, var(--syn-bg) 58%, #050506 100%);
 }
 
 /* animated equalizer bars (top-bar GPU meter, input-node waveform) */

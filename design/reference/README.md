@@ -14,6 +14,12 @@ The actual UI today, so we have a truthful baseline to diff the restyle against,
 - `06-home-day.png` — home in **day** mode (the cream theme)
 - `07-ailab-day.png` — AI Lab in day mode
 
+## `after/` — the D1 restyle applied to the REAL app (first pass)
+Screenshots of the actual app after the first token-first restyle to **D1 Obsidian Refined**
+(elevation ladder, harmonized warm-metal nodes, top-bar overlap fixed, sidebar active indicator,
+real `space-vignette`). Compare against `01-home-night.png` (before) to see the tier jump.
+- `after/01-home-night.png` · `after/02-ailab-night.png` · `after/03-home-day.png`
+
 ## Skin Studio — the "after" options (rendered from `../skin-studio.html`)
 The live preview, captured in several directions so you can compare without opening it:
 - `skin-d1-obsidian-night.png` — D1 Obsidian Refined (the safe premium evolve)

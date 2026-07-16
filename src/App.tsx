@@ -372,7 +372,7 @@ export default function App() {
 
       {/* ═══════════════ TOP BAR ═══════════════ */}
       <header className={`h-12 shrink-0 flex items-center justify-between px-4 rounded-2xl border relative z-30 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} shadow-md`}>
-        <div className="flex items-center gap-3 w-56">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
           <div className="flex items-center gap-1.5 font-mono text-[10px] text-neutral-500 uppercase tracking-widest">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             live streaming
@@ -388,13 +388,13 @@ export default function App() {
           </button>
         </div>
 
-        {/* centered wordmark */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
+        {/* centered wordmark — a real 3-zone flex so it can't overlap the side clusters */}
+        <div className="shrink-0 flex flex-col items-center pointer-events-none px-3">
           <span className="font-display text-[15px] font-semibold tracking-tight -mt-0.5">VFX <span className="text-gold-500">Syntech</span></span>
           <span className="font-mono text-[7.5px] uppercase tracking-[0.15em] text-neutral-500/80 mt-0.5">Created by State</span>
         </div>
 
-        <div className="flex items-center gap-2.5 justify-end w-56">
+        <div className="flex items-center gap-2.5 justify-end flex-1 min-w-0">
           <div className="flex items-center gap-2 mr-2 font-mono text-[10px] text-neutral-500">
             <span className="opacity-80 uppercase">SESSION: {formatSessionTime(sessionSeconds)}</span>
             <div className={`p-1 rounded-full ${isDayMode ? 'bg-black/5' : 'bg-white/10'}`}>
@@ -428,7 +428,10 @@ export default function App() {
 
           <ul className="flex flex-col gap-5 w-full items-center">
             {navItems.map(({ key, label, Icon, active, onClick, title }) => (
-              <li key={key} className="w-full flex justify-center">
+              <li key={key} className="w-full flex justify-center relative">
+                {active && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full bg-gold-500 shadow-[0_0_10px_rgba(230,178,74,0.5)]" />
+                )}
                 <button
                   type="button"
                   data-testid={`nav-${key}`}

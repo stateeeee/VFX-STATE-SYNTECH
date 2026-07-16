@@ -27,17 +27,19 @@ export interface EffectMeta {
   color: string; // node accent
 }
 
-// per-effect node accent colours, echoing the reference composition graph
+// per-effect node accent colours — harmonized to the D1 "warm metals" signal
+// palette (design/03-AESTHETIC-DIRECTIONS.md). Kept as constants here; a future
+// pass can read them from the --syn-node-* tokens for a one-block re-skin.
 export const EFFECT_META: Record<ModuleId, EffectMeta> = {
-  blob_tracker: { name: 'BLOB TRACKER', short: 'Vertex displacement', color: '#e0913f' },
-  blob_reveal: { name: 'BLOB REVEAL', short: 'Negative-mask reveal', color: '#c65b9c' },
-  anamorphic_lab: { name: 'ANAMORPHIC LAB', short: 'Lens flare stretch', color: '#5bb0c4' },
-  analog: { name: 'ANALOG', short: 'CRT / sync jitter', color: '#6ea8e0' },
-  bokeh: { name: 'BOKEH', short: 'Depth-of-field disks', color: '#9b6fd0' },
+  blob_tracker: { name: 'BLOB TRACKER', short: 'Vertex displacement', color: '#e6b24a' },
+  blob_reveal: { name: 'BLOB REVEAL', short: 'Negative-mask reveal', color: '#c98a5a' },
+  anamorphic_lab: { name: 'ANAMORPHIC LAB', short: 'Lens flare stretch', color: '#b8b0a0' },
+  analog: { name: 'ANALOG', short: 'CRT / sync jitter', color: '#8a94a8' },
+  bokeh: { name: 'BOKEH', short: 'Depth-of-field disks', color: '#a98cc8' },
 };
 
-const INPUT_COLOR = '#57bf8a';
-const OUTPUT_COLOR = '#e0b451';
+const INPUT_COLOR = '#6fae86';
+const OUTPUT_COLOR = '#e6b24a';
 // keep a stable rack order so nodes don't reshuffle when toggled
 const RACK_ORDER: ModuleId[] = ['blob_tracker', 'blob_reveal', 'anamorphic_lab', 'analog', 'bokeh'];
 
