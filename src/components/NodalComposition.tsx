@@ -169,7 +169,6 @@ export default function NodalComposition({
       {/* header */}
       <div className="flex items-center justify-between px-4 pt-3.5 pb-2 shrink-0 z-10">
         <span className="font-mono text-[10px] tracking-[0.28em] text-gold-500 uppercase font-bold">
-          AI Lab Nodes
         </span>
         <div className="flex items-center gap-3 text-[9px] font-mono text-neutral-500 relative">
           <button
@@ -362,16 +361,6 @@ export default function NodalComposition({
         </svg>
 
         {/* empty state */}
-        {ordered.length === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none px-4 text-center">
-            <span className="font-mono text-[10px] tracking-[0.25em] text-gold-500/80 uppercase font-bold">Empty composition</span>
-            <span className="font-mono text-[9px] text-neutral-500 max-w-[240px] leading-relaxed">
-              Add an effect node — it wires from the source input to the output. This is your shortcut into the AI Lab.
-            </span>
-          </div>
-        )}
-
-
       </div>
     </div>
   );

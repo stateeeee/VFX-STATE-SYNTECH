@@ -29,7 +29,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 
 // explicit session snapshot for the SAVE nav action (decision #9: localStorage)
 const SESSION_KEY = 'syntech.session';
-const COMP_KEY = 'syntech.composition';
+const COMP_KEY = 'syntech.composition.v2';
 interface SavedSession { activeModule?: ModuleId; isDayMode?: boolean; savedAt?: number }
 const readSession = (): SavedSession => {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) ?? '{}') ?? {}; } catch { return {}; }
@@ -88,7 +88,7 @@ export default function App() {
         if (cleaned.length) return cleaned;
       }
     } catch { /* ignore */ }
-    return [{ id: 'blob_tracker', enabled: true }, { id: 'analog', enabled: true }];
+    return [];
   });
   useEffect(() => {
     try { localStorage.setItem(COMP_KEY, JSON.stringify(compEffects)); } catch { /* private mode */ }
