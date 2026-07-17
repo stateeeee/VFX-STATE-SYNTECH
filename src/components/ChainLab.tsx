@@ -735,7 +735,7 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
                     style={{ opacity: 0.15 + signals.beat * 0.85 }}
                   />
                   <span className={`ml-auto ${isDayMode ? 'text-neutral-500' : 'text-neutral-500'}`}>
-                    BPM <b className="text-amber-400">{signals.bpm ?? '--'}</b>
+                    BPM <b className="text-amber-400" data-testid="audio-bpm">{signals.bpm ?? '--'}</b>
                   </span>
                 </div>
               </div>

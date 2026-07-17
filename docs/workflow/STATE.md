@@ -5,26 +5,26 @@
 
 ## Current phase
 
-**Phase 3 — Engine services (reactivity backbone)** (not started)
+**Phase 4 — 1:1 port: analog** (not started)
 
 ## Next step
 
-Run Phase 3 of `05-ROADMAP.md`: replace the four engine stubs —
-`AudioEngine` (mic + file FFT → bass/loud/treble 0..1 smoothed, beat pulse,
-BPM, FileTransport), `VideoAnalyzer` (frame differencing → motion, average
-luma → bright), `ParamBus` (real snapshot/apply,
-`final = clamp(base + signal × amount × paramRange)` per frame,
-serialize/restore), `PersonMask` (shared MediaPipe SelfieSegmentation,
-off/loading/ready, mask canvas via `engine.personMaskSource`). Accept: with
-a music file loaded, meters + BPM move; routing `bass` onto a dummy-node
-param visibly modulates its readout; SEG reaches READY on demand.
+Run Phase 4 of `05-ROADMAP.md` (port template): read
+`public/effects/analog/index.html` end-to-end; extract the full param table
+(id, label, range, default) and the render pipeline; implement the real
+`EngineNode` in `src/engine/nodes/analog.ts` (new folder; swap the factory
+in `nodes.ts`); reactive params via ParamBus default routes; then run the
+binding parity protocol of 06-VERIFICATION §4 (param diff, side-by-side
+sweeps, reactivity, chain sanity, evidence in the log). In the Claude
+sandbox use the npm-mirror route interception from the Phase 0 note for
+any CDN the effect needs.
 
 ## Phase board
 
 - [x] Phase 0 — Baseline & housekeeping
 - [x] Phase 1 — Single-effect mode + settings save (bridge v1)
 - [x] Phase 2 — AI Lab UX (armed mode + drag wiring)
-- [ ] Phase 3 — Engine services (AudioEngine, VideoAnalyzer, ParamBus, PersonMask)
+- [x] Phase 3 — Engine services (AudioEngine, VideoAnalyzer, ParamBus, PersonMask)
 - [ ] Phase 4 — 1:1 port: analog
 - [ ] Phase 5 — 1:1 port: bokeh
 - [ ] Phase 6 — 1:1 port: anamorphic_lab
@@ -62,6 +62,49 @@ param visibly modulates its readout; SEG reaches READY on demand.
 | 7 | Port order locked: analog → bokeh → anamorphic_lab → blob_reveal → blob_tracker | 2026-07-17 |
 
 ## Log
+
+### 2026-07-17 — Phase 3 complete (engine services: the reactivity backbone)
+
+- **AudioEngine** (real): shared AudioContext + AnalyserNode (fft 2048).
+  Mic mode (getUserMedia) and audible file mode (reused `<audio>` element +
+  MediaElementSource). Per-frame `tick(now)` → bass (20–250 Hz), loud
+  (full band), treble (4–12 kHz), all 0..1 with fast-attack/slow-release
+  smoothing; beat = bass-onset pulse (flux over running average, 240 ms
+  refractory, ×0.88 decay); BPM = median of the last ≤16 inter-beat gaps
+  folded into 60–200, null until ≥4 gaps. `FileTransport` now starts null
+  (transport bar appears only in file mode) and mirrors the element
+  (play/pause/seek/loop/duration). mode: off | mic | file.
+- **VideoAnalyzer** (real): 32×18 offscreen sample at ~15 Hz →
+  `bright` = mean luma, `motion` = mean |Δluma| ×6 clamp, both smoothed;
+  decays to 0 with no/stalled source.
+- **ParamBus** (real): snapshot seeds bases from node params (existing
+  entries win); apply runs per frame:
+  `final = clamp(base + signal × amount × (max−min))` pushed via setParam,
+  so `node.getParam` (and the amber mod readout) is the live value;
+  serialize/restore deep-copy + re-snapshot for preset gaps.
+- **PersonMask** (real): lazy CDN load of MediaPipe SelfieSegmentation
+  (same URL family as the effects; Phase 10 vendors it), off → loading →
+  ready, failure → off + 5 s retry cooldown + console.warn; ~15 Hz send,
+  mask drawn to `maskCanvas` for `engine.personMaskSource`.
+  **Fix worth remembering**: dispose() must be reversible — React
+  StrictMode's dev double-mount calls the unmount cleanup on the
+  ref-persistent instance, and a one-way `disposed` latch left the model
+  stuck at LOADING forever. Now dispose bumps a load token and a later
+  enable() reloads cleanly.
+- **DummyNode** upgraded: real param storage + placeholder schema
+  (`intensity`, `mix` — reactive; `segEnabled` on blob_reveal / bokeh /
+  anamorphic_lab). Explicitly NOT the effects' real params — each port
+  phase (4–8) swaps in the exact table from its HTML.
+- Verified per 06-VERIFICATION (headless, `verify-phase3.js`) **14/14
+  PASS**: generated 120 BPM kick-pattern WAV → bass meter swings 54–96,
+  BPM readout = 120; pause freezes / seek jumps the transport; routing
+  BASS onto analog.intensity (base 0, amt 0.6) → mod readout oscillates
+  0.33–0.56; chain video → motion 28–61, bright ~72; SEG hidden while
+  off → READY on demand (mirrored CDN); bus routing survives a preset
+  save→mutate→load round-trip; no page errors. Regression: Phase 2 suite
+  26/26, Phase 1 suite 21/21, lint clean.
+- Closes the Phase 2 open item: ParamBus serialize/restore is real, so
+  chain presets now carry bases + routes across disarm/re-arm.
 
 ### 2026-07-17 — Phase 2 complete (AI Lab armed mode + drag wiring)
 
