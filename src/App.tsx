@@ -21,7 +21,7 @@ import { ModuleConfig, ModuleId, ActiveTab, SignalSource } from './types';
 import { EffectTelemetry, ParamSchema, ShellMessage } from './bridge/types';
 import { EFFECTS_REGISTRY, hasRealEffect } from './effects-registry';
 import VfxCanvas from './components/VfxCanvas';
-import EffectHost from './components/EffectHost';
+import EffectHost, { EffectHostHandle } from './components/EffectHost';
 import ChainLab from './components/ChainLab';
 import AiDirector from './components/AiDirector';
 import NodalComposition, { CompEffect, EFFECT_META } from './components/NodalComposition';
@@ -53,11 +53,21 @@ export default function App() {
   const [savedFlash, setSavedFlash] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [chainPresetToOpen, setChainPresetToOpen] = useState<string | null>(null);
+  const effectHostRef = useRef<EffectHostHandle | null>(null);
+  const flashSaved = () => {
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 1800);
+  };
   const handleSaveSession = () => {
+    // Single-effect mode: Save = persist that effect's settings via the
+    // bridge (03-SPEC-SHELL §4) — no session snapshot, no video export.
+    if (openEffectId) {
+      effectHostRef.current?.requestSave().then((ok) => { if (ok) flashSaved(); });
+      return;
+    }
     try {
       localStorage.setItem(SESSION_KEY, JSON.stringify({ activeModule, isDayMode, savedAt: Date.now() }));
-      setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 1800);
+      flashSaved();
     } catch { /* private mode */ }
   };
   const savedChains = (): Array<{ name: string; savedAt: number; enabled: string[] }> => {
@@ -543,6 +553,7 @@ export default function App() {
                   <div className={`w-full h-full relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
                     {openEffectId ? (
                       <EffectHost
+                        ref={effectHostRef}
                         module={modules.find((m) => m.id === openEffectId) || currentModule}
                         iframeSrc={EFFECTS_REGISTRY[openEffectId]?.iframeSrc || ''}
                         isDayMode={isDayMode}

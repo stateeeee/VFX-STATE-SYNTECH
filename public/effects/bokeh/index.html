@@ -3802,5 +3802,51 @@ function syncSectionTitleGradients(){
 }
 requestAnimationFrame(syncSectionTitleGradients);
 </script>
+<!-- SYNTECH-BRIDGE-START (shell integration; standalone-safe) -->
+<script>
+(function(){
+  'use strict';
+  if(window.parent===window)return; /* opened standalone: stay silent */
+  var MODULE_ID='bokeh';
+
+  function slVals(){var o={};var els=document.querySelectorAll('input[type="range"]');
+    for(var i=0;i<els.length;i++){if(els[i].id)o[els[i].id]=els[i].value;}return o;}
+  function slApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el&&el.type==='range'){el.value=o[id];
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));}}}
+  function ledGet(ids){var o={};for(var i=0;i<ids.length;i++){var el=document.getElementById(ids[i]);
+    if(el)o[ids[i]]=el.classList.contains('on');}return o;}
+  function ledApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el&&el.classList.contains('on')!==!!o[id])el.click();}}
+  var TOGS=['tog-anamLetterbox','tog-anamBreathing','btn-bshape'];
+  function knobGet(){var o={};var ks=document.querySelectorAll('.knob[data-id]');
+    for(var i=0;i<ks.length;i++)o[ks[i].dataset.id]=parseFloat(ks[i].dataset.val);return o;}
+  function knobApply(o){if(!o||typeof setKnob!=='function')return;
+    for(var id in o){var k=document.querySelector('.knob[data-id="'+id+'"]');
+      if(k)setKnob(k,parseFloat(o[id]));}}
+  function styleGet(){var b=document.querySelector('#style-sel .seg-btn.on');
+    var all=document.querySelectorAll('#style-sel .seg-btn');
+    for(var i=0;i<all.length;i++)if(all[i]===b)return i;return -1;}
+  function styleApply(i){if(i==null||i<0)return;var all=document.querySelectorAll('#style-sel .seg-btn');
+    if(all[i]&&!all[i].classList.contains('on'))all[i].click();}
+  function collect(){return {sliders:slVals(),knobs:knobGet(),style:styleGet(),toggles:ledGet(TOGS)};}
+  function apply(s){if(!s)return;slApply(s.sliders);knobApply(s.knobs);styleApply(s.style);ledApply(s.toggles);}
+  window.addEventListener('message',function(ev){
+    var d=ev&&ev.data;
+    if(!d||typeof d!=='object'||typeof d.type!=='string')return;
+    if(d.type==='syn:get-settings'){
+      var p={};try{p=collect()||{};}catch(e){}
+      try{window.parent.postMessage({type:'syn:settings',payload:p},'*');}catch(e){}
+    }else if(d.type==='syn:apply-settings'){
+      try{apply(d.payload||{});}catch(e){}
+    }
+  });
+  function announce(){try{window.parent.postMessage({type:'syn:ready',payload:{id:MODULE_ID}},'*');}catch(e){}}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',announce);
+  else announce();
+})();
+</script>
+<!-- SYNTECH-BRIDGE-END -->
 </body>
 </html>

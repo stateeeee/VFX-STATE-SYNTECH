@@ -2581,5 +2581,54 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 
 </script>
+<!-- SYNTECH-BRIDGE-START (shell integration; standalone-safe) -->
+<script>
+(function(){
+  'use strict';
+  if(window.parent===window)return; /* opened standalone: stay silent */
+  var MODULE_ID='analog';
+
+  function slVals(){var o={};var els=document.querySelectorAll('input[type="range"]');
+    for(var i=0;i<els.length;i++){if(els[i].id)o[els[i].id]=els[i].value;}return o;}
+  function slApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el&&el.type==='range'){el.value=o[id];
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));}}}
+  function ledGet(ids){var o={};for(var i=0;i<ids.length;i++){var el=document.getElementById(ids[i]);
+    if(el)o[ids[i]]=el.classList.contains('on');}return o;}
+  function ledApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el&&el.classList.contains('on')!==!!o[id])el.click();}}
+  var LEDS=['btn-sort','btn-react','btn-mirror'];
+  function knobGet(){var o={};var ks=document.querySelectorAll('.knob[data-id]');
+    for(var i=0;i<ks.length;i++)o[ks[i].dataset.id]=parseFloat(ks[i].dataset.val);return o;}
+  function knobApply(o){if(!o||typeof syncKnob!=='function')return;
+    for(var id in o)syncKnob(id,parseFloat(o[id]));}
+  function dirGet(){var b=document.querySelector('#sort-dir-sel .seg-btn.on');
+    return b?parseInt(b.dataset.dir):0;}
+  function dirApply(d){if(d==null)return;
+    var b=document.querySelector('#sort-dir-sel .seg-btn[data-dir="'+d+'"]');
+    if(b&&!b.classList.contains('on'))b.click();}
+  function xyGet(){return typeof PAD!=='undefined'?[PAD.x,PAD.y]:null;}
+  function xyApply(xy){if(!xy||typeof PAD==='undefined')return;
+    PAD.targetX=xy[0];PAD.targetY=xy[1];PAD.animating=true;}
+  function collect(){return {sliders:slVals(),knobs:knobGet(),leds:ledGet(LEDS),dir:dirGet(),xy:xyGet()};}
+  function apply(s){if(!s)return;slApply(s.sliders);knobApply(s.knobs);
+    ledApply(s.leds);dirApply(s.dir);xyApply(s.xy);}
+  window.addEventListener('message',function(ev){
+    var d=ev&&ev.data;
+    if(!d||typeof d!=='object'||typeof d.type!=='string')return;
+    if(d.type==='syn:get-settings'){
+      var p={};try{p=collect()||{};}catch(e){}
+      try{window.parent.postMessage({type:'syn:settings',payload:p},'*');}catch(e){}
+    }else if(d.type==='syn:apply-settings'){
+      try{apply(d.payload||{});}catch(e){}
+    }
+  });
+  function announce(){try{window.parent.postMessage({type:'syn:ready',payload:{id:MODULE_ID}},'*');}catch(e){}}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',announce);
+  else announce();
+})();
+</script>
+<!-- SYNTECH-BRIDGE-END -->
 </body>
 </html>

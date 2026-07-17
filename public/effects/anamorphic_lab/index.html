@@ -3157,5 +3157,41 @@ document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
 document.querySelector('.chip').classList.add('on');
 
 </script>
+<!-- SYNTECH-BRIDGE-START (shell integration; standalone-safe) -->
+<script>
+(function(){
+  'use strict';
+  if(window.parent===window)return; /* opened standalone: stay silent */
+  var MODULE_ID='anamorphic_lab';
+
+  function slVals(){var o={};var els=document.querySelectorAll('input[type="range"]');
+    for(var i=0;i<els.length;i++){if(els[i].id)o[els[i].id]=els[i].value;}return o;}
+  function slApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el&&el.type==='range'){el.value=o[id];
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));}}}
+  function ledGet(ids){var o={};for(var i=0;i<ids.length;i++){var el=document.getElementById(ids[i]);
+    if(el)o[ids[i]]=el.classList.contains('on');}return o;}
+  function ledApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el&&el.classList.contains('on')!==!!o[id])el.click();}}
+  var TOGS=['tog-letterbox','tog-breathing','tog-flare','tog-flareMaster','tog-compare','tog-desqueeze'];
+  function collect(){return {sliders:slVals(),toggles:ledGet(TOGS)};}
+  function apply(s){if(!s)return;slApply(s.sliders);ledApply(s.toggles);}
+  window.addEventListener('message',function(ev){
+    var d=ev&&ev.data;
+    if(!d||typeof d!=='object'||typeof d.type!=='string')return;
+    if(d.type==='syn:get-settings'){
+      var p={};try{p=collect()||{};}catch(e){}
+      try{window.parent.postMessage({type:'syn:settings',payload:p},'*');}catch(e){}
+    }else if(d.type==='syn:apply-settings'){
+      try{apply(d.payload||{});}catch(e){}
+    }
+  });
+  function announce(){try{window.parent.postMessage({type:'syn:ready',payload:{id:MODULE_ID}},'*');}catch(e){}}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',announce);
+  else announce();
+})();
+</script>
+<!-- SYNTECH-BRIDGE-END -->
 </body>
 </html>

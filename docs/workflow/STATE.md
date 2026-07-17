@@ -5,21 +5,21 @@
 
 ## Current phase
 
-**Phase 1 — Single-effect mode + settings save (bridge v1)** (not started)
+**Phase 2 — AI Lab UX (armed mode + drag wiring)** (not started)
 
 ## Next step
 
-Run Phase 1 of `05-ROADMAP.md`: append the delimited bridge block
-(03-SPEC-SHELL §5) to each of the five effect HTMLs, wire `EffectHost` to
-apply saved settings from `syntech.effectSettings.<id>` on `syn:ready` and
-expose a save trigger, make nav **Save** persist the open effect's settings
-(flash feedback), verify save → Home → reopen restores them for all five,
-and confirm each HTML still runs standalone with zero bridge console errors.
+Run Phase 2 of `05-ROADMAP.md` per 03-SPEC-SHELL §3/§6: make the AI Lab nav
+a persistent violet toggle; upgrade `NodalComposition` ports to drag-wire
+connect/disconnect with side enforcement (INPUT right-only, OUTPUT
+left-only); ghost nodes not connected on both sides (~50% opacity, out of
+chain); Add Node menu strictly alphabetical; chain order derives from
+wiring and stays in sync with the ChainLab rack.
 
 ## Phase board
 
 - [x] Phase 0 — Baseline & housekeeping
-- [ ] Phase 1 — Single-effect mode + settings save (bridge v1)
+- [x] Phase 1 — Single-effect mode + settings save (bridge v1)
 - [ ] Phase 2 — AI Lab UX (armed mode + drag wiring)
 - [ ] Phase 3 — Engine services (AudioEngine, VideoAnalyzer, ParamBus, PersonMask)
 - [ ] Phase 4 — 1:1 port: analog
@@ -59,6 +59,42 @@ and confirm each HTML still runs standalone with zero bridge console errors.
 | 7 | Port order locked: analog → bokeh → anamorphic_lab → blob_reveal → blob_tracker | 2026-07-17 |
 
 ## Log
+
+### 2026-07-17 — Phase 1 complete (bridge v1: settings save/restore)
+
+- Appended the delimited `SYNTECH-BRIDGE` block (03-SPEC-SHELL §5) to all
+  five effect HTMLs — additive only, before `</body>`, silent when the page
+  has no parent (standalone). Contract implemented: `syn:ready` on load,
+  `syn:get-settings` → `syn:settings`, `syn:apply-settings`.
+- Per-effect capture/apply:
+  - **analog / blob_tracker**: their own preset serializers live inside
+    IIFEs (unreachable), so the bridge mirrors them 1:1 through reachable
+    top-level globals — sliders + knobs (`syncKnob`) + LED/seg buttons +
+    XY pad (`PAD` / `setPad`, `padX/padY`); blob_tracker also colors and
+    custom text. Field lists copied from `PRESET_*` in the HTML.
+  - **anamorphic_lab**: all range sliders + the six `tog-*` toggles.
+  - **blob_reveal**: sliders + `btn-seg` / `btn-model` toggles.
+  - **bokeh**: sliders + knobs (`setKnob`) + `#style-sel` group + letterbox/
+    breathing/shape-pad toggles (style applied before `btn-bshape` because
+    the shape pad stashes the prior style as its restore point).
+- Shell: `EffectHost` (forwardRef) applies `syntech.effectSettings.<id>` on
+  `syn:ready` and exposes `requestSave()`; nav **Save** in single-effect
+  mode persists the effect's settings + "Saved" flash (03-SPEC-SHELL §4),
+  session-snapshot behavior unchanged elsewhere. No Home confirmations.
+- **Deliberately not saved** (runtime/device state, not settings):
+  `cam-device-sel` pickers, mic/webcam/record/fullscreen buttons,
+  play/pause/loop transport, bokeh shape-pad x/y position (its on/off IS
+  saved), and the effects' own video-blob session systems.
+- Payload note: `syn:settings` payload is a per-effect structured object
+  (`{sliders:{id:v}, knobs:{...}, ...}`) rather than a flat key map — the
+  shell treats it as opaque; shape documented here for Phases 4–8.
+- Verified per 06-VERIFICATION: lint clean; headless Playwright
+  (`verify-phase1.js`), **21/21 PASS** — per effect: tweak slider (+1
+  toggle where curated) → Save (flash observed, localStorage key written) →
+  Home → reopen → values restored exactly; zero shell page errors; each
+  HTML opened standalone (direct top-level URL) with zero non-font console
+  errors and zero `syn:*` messages (bridge silent). Regression: all five
+  effects still open and boot in single-effect mode.
 
 ### 2026-07-17 — Phase 0 complete (baseline & housekeeping)
 

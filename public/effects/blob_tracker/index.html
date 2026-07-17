@@ -6811,5 +6811,66 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 
 </script>
+<!-- SYNTECH-BRIDGE-START (shell integration; standalone-safe) -->
+<script>
+(function(){
+  'use strict';
+  if(window.parent===window)return; /* opened standalone: stay silent */
+  var MODULE_ID='blob_tracker';
+
+  function slVals(){var o={};var els=document.querySelectorAll('input[type="range"]');
+    for(var i=0;i<els.length;i++){if(els[i].id)o[els[i].id]=els[i].value;}return o;}
+  function slApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el&&el.type==='range'){el.value=o[id];
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));}}}
+  function ledGet(ids){var o={};for(var i=0;i<ids.length;i++){var el=document.getElementById(ids[i]);
+    if(el)o[ids[i]]=el.classList.contains('on');}return o;}
+  function ledApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el&&el.classList.contains('on')!==!!o[id])el.click();}}
+  var LEDS=['fx-blob','fx-conn','fx-data','fx-glitch','fx-invert',
+    'fx-thermal','fx-security','fx-liquid','fx-panels','fx-nums','fx-letters',
+    'fx-tmix','ar-on-btn','vr-on-btn','flow-on-btn','btn-plabels',
+    'btn-pconnlines','btn-ripple','cam-af-btn','cam-awb-btn'];
+  var SEGS=[['mode-tracker','mode-panels'],['drive-manual','drive-auto'],
+    ['bs-square','bs-rect','bs-circle','bs-corner','bs-mix'],
+    ['ls-solid','ls-dashed','ls-dashdot','ls-arrows'],
+    ['mode-freeblob','mode-fixedpts']];
+  var COLORS=['tracker-color-pick','vfx-color-pick','panels-color-pick'];
+  var TEXTS=['pro-custom-text'];
+  function segGet(){var o={};for(var g=0;g<SEGS.length;g++){var grp=SEGS[g];
+    for(var i=0;i<grp.length;i++){var el=document.getElementById(grp[i]);
+      if(el&&el.classList.contains('on')){o[grp[0]]=grp[i];break;}}}return o;}
+  function segApply(o){if(!o)return;for(var k in o){var el=document.getElementById(o[k]);
+    if(el&&!el.classList.contains('on'))el.click();}}
+  function colGet(){var o={};for(var i=0;i<COLORS.length;i++){var el=document.getElementById(COLORS[i]);
+    if(el)o[COLORS[i]]=el.value;}return o;}
+  function colApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el){el.value=o[id];el.dispatchEvent(new Event('input',{bubbles:true}));}}}
+  function txtGet(){var o={};for(var i=0;i<TEXTS.length;i++){var el=document.getElementById(TEXTS[i]);
+    if(el)o[TEXTS[i]]=el.value;}return o;}
+  function txtApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el)el.value=o[id];}}
+  function collect(){return {sliders:slVals(),leds:ledGet(LEDS),segs:segGet(),
+    colors:colGet(),texts:txtGet(),xy:[window.padX||0.5,window.padY||1.0]};}
+  function apply(s){if(!s)return;slApply(s.sliders);ledApply(s.leds);
+    segApply(s.segs);colApply(s.colors);txtApply(s.texts);
+    if(s.xy&&typeof setPad==='function')setPad(s.xy[0],1-s.xy[1]);}
+  window.addEventListener('message',function(ev){
+    var d=ev&&ev.data;
+    if(!d||typeof d!=='object'||typeof d.type!=='string')return;
+    if(d.type==='syn:get-settings'){
+      var p={};try{p=collect()||{};}catch(e){}
+      try{window.parent.postMessage({type:'syn:settings',payload:p},'*');}catch(e){}
+    }else if(d.type==='syn:apply-settings'){
+      try{apply(d.payload||{});}catch(e){}
+    }
+  });
+  function announce(){try{window.parent.postMessage({type:'syn:ready',payload:{id:MODULE_ID}},'*');}catch(e){}}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',announce);
+  else announce();
+})();
+</script>
+<!-- SYNTECH-BRIDGE-END -->
 </body>
 </html>
