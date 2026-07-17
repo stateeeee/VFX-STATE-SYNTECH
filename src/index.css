@@ -12,22 +12,22 @@
    ═══════════════════════════════════════════════════════════════ */
 :root {
   /* accent family (obsidian gold) */
-  --syn-accent: #e0b451;
-  --syn-accent-rgb: 224, 180, 81; /* for rgba() compositions + canvas glows */
-  --syn-accent-50: #fefcf3;
-  --syn-accent-100: #fbf6d9;
-  --syn-accent-200: #f4e9b0;
-  --syn-accent-300: #ebd67d;
-  --syn-accent-400: #e5c25f;
-  --syn-accent-600: #c89a37;
-  --syn-accent-700: #96742c;
-  --syn-accent-800: #6b5124;
-  --syn-accent-900: #4a381a;
-  --syn-accent-950: #2a1f0e;
+  --syn-accent: #8b5cf6;
+  --syn-accent-rgb: 139, 92, 246; /* for rgba() compositions + canvas glows */
+  --syn-accent-50: #f5f3ff;
+  --syn-accent-100: #ede9fe;
+  --syn-accent-200: #ddd6fe;
+  --syn-accent-300: #c4b5fd;
+  --syn-accent-400: #a78bfa;
+  --syn-accent-600: #7c3aed;
+  --syn-accent-700: #6d28d9;
+  --syn-accent-800: #5b21b6;
+  --syn-accent-900: #4c1d95;
+  --syn-accent-950: #2e1065;
 
   /* violet secondary (AI / gradient tail) */
-  --syn-violet: #a882ff;
-  --syn-violet-rgb: 168, 130, 255;
+  --syn-violet: #8b5cf6;
+  --syn-violet-rgb: 139, 92, 246;
 
   /* pure black surfaces */
   --syn-bg: #0e0e0e;         /* app canvas / space between sections (matte black) */
@@ -36,7 +36,7 @@
   --syn-ink-850: #000000;    /* panel */
   --syn-ink-800: #1a1a1a;    /* elevated / card */
   --syn-ink-700: #2e2e2e;    /* node fill */
-  --syn-line: rgba(224, 180, 81, 0.10); /* hairline border */
+  --syn-line: rgba(139, 92, 246, 0.10); /* hairline border */
   --syn-text: #f4f2ee;
 
   /* font slots */
@@ -99,7 +99,7 @@ body {
 
 /* Hero title gradient (gold → violet), matches reference wordmark */
 .hero-gradient {
-  background-image: linear-gradient(100deg, #ffda4d 0%, #ffb31a 25%, #b34dff 50%, #8c33ff 75%, #ffda4d 100%);
+  background-image: linear-gradient(100deg, #8b5cf6 0%, #7c3aed 25%, #ffda4d 50%, #ffb31a 75%, #8b5cf6 100%);
   background-size: 200% auto;
   -webkit-background-clip: text;
   background-clip: text;

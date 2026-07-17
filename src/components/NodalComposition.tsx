@@ -37,7 +37,7 @@ export const EFFECT_META: Record<ModuleId, EffectMeta> = {
 };
 
 const INPUT_COLOR = '#57bf8a';
-const OUTPUT_COLOR = '#e0b451';
+const OUTPUT_COLOR = '#8b5cf6';
 // keep a stable rack order so nodes don't reshuffle when toggled
 const RACK_ORDER: ModuleId[] = ['blob_tracker', 'blob_reveal', 'anamorphic_lab', 'analog', 'bokeh'];
 
@@ -55,6 +55,7 @@ interface NodalCompositionProps {
   onOpenLab: () => void;
   /** click the INPUT node → pick the source video */
   onPickSource: () => void;
+  isStreaming?: boolean;
 }
 
 export default function NodalComposition({
@@ -66,6 +67,7 @@ export default function NodalComposition({
   onRemoveEffect,
   onOpenLab,
   onPickSource,
+  isStreaming,
 }: NodalCompositionProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 640, h: 300 });
@@ -168,26 +170,24 @@ export default function NodalComposition({
     >
       {/* header */}
       <div className="flex items-center justify-between px-4 pt-3.5 pb-2 shrink-0 z-10">
-        <span className="font-mono text-[10px] tracking-[0.28em] text-gold-500 uppercase font-bold">
-        </span>
-        <div className="flex items-center gap-3 text-[9px] font-mono text-neutral-500 relative">
-          <button
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 text-[9px] font-mono text-neutral-500 relative">
+            <button
             type="button"
             data-testid="nodal-add"
             onClick={() => setAddOpen((v) => !v)}
             className={`flex items-center gap-1 px-2 py-1 rounded-md border transition-colors cursor-pointer ${
               isDayMode
-                ? 'border-neutral-300 text-neutral-600 hover:border-gold-500/50 hover:text-gold-600'
-                : 'border-ink-700 text-neutral-400 hover:border-gold-500/50 hover:text-gold-500'
+                ? 'border-neutral-300 text-neutral-600 hover:border-violet-500/50 hover:text-violet-600'
+                : 'border-ink-700 text-neutral-400 hover:border-violet-500/50 hover:text-violet-500'
             }`}
           >
             <Plus className="w-3 h-3" /> Add Node
           </button>
-
           {addOpen && (
             <div
               data-testid="nodal-add-menu"
-              className={`absolute right-0 top-7 z-30 w-52 rounded-lg border p-1.5 shadow-2xl ${
+              className={`absolute left-0 top-7 z-30 w-52 rounded-lg border p-1.5 shadow-2xl ${
                 isDayMode ? 'bg-white border-neutral-200' : 'bg-ink-850 border-ink-700'
               }`}
             >
@@ -212,8 +212,19 @@ export default function NodalComposition({
             </div>
           )}
         </div>
+        </div>
+        <div className="flex items-center">
+          {isStreaming ? (
+            <span className={`flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded ${isDayMode ? 'bg-green-500/10 text-green-700 border border-green-500/30' : 'bg-green-500/10 text-green-400 border border-green-500/40'}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e]" /> Active
+            </span>
+          ) : (
+            <span className={`flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded ${isDayMode ? 'bg-neutral-500/10 text-neutral-600 border border-neutral-500/30' : 'bg-neutral-500/10 text-neutral-400 border border-neutral-500/40'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isDayMode ? 'bg-neutral-500/70' : 'bg-neutral-400/80'}`} /> Standby
+            </span>
+          )}
+        </div>
       </div>
-
       {/* node canvas */}
       <div ref={wrapRef} className="flex-1 min-h-0 relative" onClick={() => setAddOpen(false)}>
         <svg

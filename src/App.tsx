@@ -37,7 +37,7 @@ const readSession = (): SavedSession => {
 
 export default function App() {
   // App initialization & Stream engine active state
-  const [isStreaming, setIsStreaming] = useState(true);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('PARAMETERS');
   const [activeModule, setActiveModule] = useState<ModuleId>(() => {
     const saved = readSession().activeModule;
@@ -73,6 +73,11 @@ export default function App() {
   const [openEffectId, setOpenEffectId] = useState<ModuleId | null>(null);
   // Ai Lab (native SynEngine): effects composed in series, phase 5 MVP
   const [chainOpen, setChainOpen] = useState(false);
+
+  // Synchronize isStreaming with whether the AI Lab is open
+  useEffect(() => {
+    setIsStreaming(chainOpen);
+  }, [chainOpen]);
 
   // ── COMPOSITION STATE (shared by the Nodal Composition + the AI Lab) ──
   // The effects present in the composition, each with its enabled flag.
@@ -149,7 +154,15 @@ export default function App() {
     setEffectTelemetry(null);
   };
 
-  const openLab = () => { handleEffectClose(); setChainOpen(true); };
+  const openLab = () => {
+    handleEffectClose();
+    setChainOpen(true);
+  };
+
+  const toggleLab = () => {
+    handleEffectClose();
+    setChainOpen((prev) => !prev);
+  };
 
   // The effect declared its real ParamSchema: swap the module's placeholder
   // parameters for the real ones so Gemini and the shell operate on truth.
@@ -352,7 +365,7 @@ export default function App() {
     { key: 'home', label: 'Home', Icon: HomeIcon, active: isHome, onClick: () => { setChainOpen(false); handleEffectClose(); setActiveGeminiMode(null); } },
     { key: 'save', label: savedFlash ? 'Saved' : 'Save', Icon: SaveIcon, active: savedFlash, onClick: handleSaveSession, title: 'Save the current session (module, theme) to this browser' },
     { key: 'projects', label: 'Projects', Icon: FolderIcon, active: projectsOpen, onClick: () => setProjectsOpen(true), title: 'Saved effect chains' },
-    { key: 'ailab', label: 'AI Lab', Icon: AiIcon, active: chainOpen, onClick: openLab },
+    { key: 'ailab', label: 'AI Lab', Icon: AiIcon, active: chainOpen, onClick: toggleLab },
   ];
 
   const outputRes = compSource ? '1920x1080' : '1920x1080';
@@ -390,7 +403,7 @@ export default function App() {
 
         {/* centered wordmark */}
         <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
-          <span className="font-display text-[15px] font-semibold tracking-tight -mt-0.5">VFX <span className="text-gold-500">Syntech</span></span>
+          <span className="font-display text-[15px] font-semibold tracking-tight -mt-0.5">VFX <span className="text-violet-500">Syntech</span></span>
           <span className="font-mono text-[7.5px] uppercase tracking-[0.15em] text-neutral-500/80 mt-0.5">Created by State</span>
         </div>
 
@@ -422,8 +435,8 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden gap-4">
         {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
         <nav className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} z-20 shadow-md`}>
-          <div className="w-11 h-11 border-2 border-gold-500 rotate-45 flex items-center justify-center shrink-0 mb-5 rounded-[10px] bg-gold-500/5 shadow-[0_0_16px_rgba(224,180,81,0.2)]">
-            <span className="text-gold-500 font-bold -rotate-45 text-xs tracking-wide">VS</span>
+          <div className="w-11 h-11 border-2 border-violet-500 rotate-45 flex items-center justify-center shrink-0 mb-5 rounded-[10px] bg-violet-500/5 shadow-[0_0_16px_rgba(139,92,246,0.2)]">
+            <span className="text-violet-500 font-bold -rotate-45 text-xs tracking-wide">VS</span>
           </div>
 
           <ul className="flex flex-col gap-5 w-full items-center">
@@ -434,9 +447,9 @@ export default function App() {
                   data-testid={`nav-${key}`}
                   onClick={onClick}
                   title={title}
-                  className={`group flex flex-col items-center gap-1.5 w-full cursor-pointer transition-colors ${active ? 'text-gold-500' : isDayMode ? 'text-neutral-500 hover:text-black' : 'text-neutral-500 hover:text-white'}`}
+                  className={`group flex flex-col items-center gap-1.5 w-full cursor-pointer transition-colors ${active ? 'text-violet-500' : isDayMode ? 'text-neutral-500 hover:text-black' : 'text-neutral-500 hover:text-white'}`}
                 >
-                  <span className={`p-2 rounded-xl transition-colors ${active ? 'bg-gold-500/12 shadow-[0_0_12px_rgba(224,180,81,0.12)]' : 'group-hover:bg-white/5'}`}>
+                  <span className={`p-2 rounded-xl transition-colors ${active ? 'bg-violet-500/12 shadow-[0_0_12px_rgba(139,92,246,0.12)]' : 'group-hover:bg-white/5'}`}>
                     <Icon className="w-[18px] h-[18px]" />
                   </span>
                   <span className="text-[8.5px] uppercase tracking-[0.12em] font-medium">{label}</span>
@@ -451,9 +464,9 @@ export default function App() {
           <span className={`text-[7px] uppercase tracking-[0.2em] font-bold mb-3 shrink-0 ${isDayMode ? 'text-neutral-400' : 'text-neutral-500'}`}>GEMINI PRO</span>
           <ul className="flex flex-col gap-4 w-full items-center">
             {[
-              { key: 'art_director', label: 'Art Dir', Icon: Lightbulb, onClick: () => setActiveGeminiMode('art_director'), active: activeGeminiMode === 'art_director', title: 'Art Director' },
-              { key: 'agent', label: 'Agent', Icon: Bot, onClick: () => setActiveGeminiMode('agent'), active: activeGeminiMode === 'agent', title: 'Agent' },
-              { key: 'optimizer', label: 'Optimizer', Icon: Settings, onClick: () => setActiveGeminiMode('optimizer'), active: activeGeminiMode === 'optimizer', title: 'Optimizer' }
+              { key: 'art_director', label: 'Art Dir', Icon: Lightbulb, onClick: () => setActiveGeminiMode(activeGeminiMode === 'art_director' ? null : 'art_director'), active: activeGeminiMode === 'art_director', title: 'Art Director' },
+              { key: 'agent', label: 'Agent', Icon: Bot, onClick: () => setActiveGeminiMode(activeGeminiMode === 'agent' ? null : 'agent'), active: activeGeminiMode === 'agent', title: 'Agent' },
+              { key: 'optimizer', label: 'Optimizer', Icon: Settings, onClick: () => setActiveGeminiMode(activeGeminiMode === 'optimizer' ? null : 'optimizer'), active: activeGeminiMode === 'optimizer', title: 'Optimizer' }
             ].map(({ key, label, Icon, active, onClick, title }) => (
               <li key={key} className="w-full flex justify-center">
                 <button
@@ -461,9 +474,9 @@ export default function App() {
                   data-testid={`nav-gemini-${key}`}
                   onClick={onClick}
                   title={title}
-                  className={`group flex flex-col items-center gap-1 w-full cursor-pointer transition-colors ${active ? 'text-gold-500' : isDayMode ? 'text-neutral-500 hover:text-black' : 'text-neutral-500 hover:text-white'}`}
+                  className={`group flex flex-col items-center gap-1 w-full cursor-pointer transition-colors ${active ? 'text-violet-500' : isDayMode ? 'text-neutral-500 hover:text-black' : 'text-neutral-500 hover:text-white'}`}
                 >
-                  <span className={`p-1.5 rounded-lg transition-colors ${active ? 'bg-gold-500/12 shadow-[0_0_12px_rgba(224,180,81,0.12)]' : 'group-hover:bg-white/5'}`}>
+                  <span className={`p-1.5 rounded-lg transition-colors ${active ? 'bg-violet-500/12 shadow-[0_0_12px_rgba(139,92,246,0.12)]' : 'group-hover:bg-white/5'}`}>
                     <Icon className="w-[16px] h-[16px]" />
                   </span>
                   <span className="text-[7.5px] uppercase tracking-[0.1em] font-medium">{label}</span>
@@ -484,12 +497,12 @@ export default function App() {
               onClick={() => setProjectsOpen(false)}
             >
               <div
-                className={`w-full max-w-md mx-4 rounded-xl border p-5 space-y-3 shadow-2xl ${isDayMode ? 'bg-[#fcfbf9] border-gold-500/40 text-neutral-900' : 'bg-ink-900 border-gold-500/30 text-white'}`}
+                className={`w-full max-w-md mx-4 rounded-xl border p-5 space-y-3 shadow-2xl ${isDayMode ? 'bg-[#fcfbf9] border-violet-500/40 text-neutral-900' : 'bg-ink-900 border-violet-500/30 text-white'}`}
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[11px] font-extrabold tracking-[0.25em] text-gold-500 uppercase">Projects — Saved chains</span>
-                  <button onClick={() => setProjectsOpen(false)} className="font-mono text-[11px] text-neutral-500 hover:text-gold-500 cursor-pointer">[CLOSE]</button>
+                  <span className="font-mono text-[11px] font-extrabold tracking-[0.25em] text-violet-500 uppercase">Projects — Saved chains</span>
+                  <button onClick={() => setProjectsOpen(false)} className="font-mono text-[11px] text-neutral-500 hover:text-violet-500 cursor-pointer">[CLOSE]</button>
                 </div>
                 {savedChains().length === 0 ? (
                   <p className={`font-mono text-[10px] leading-relaxed ${isDayMode ? 'text-neutral-500' : 'text-neutral-400'}`}>
@@ -501,7 +514,7 @@ export default function App() {
                     {savedChains().map((c) => (
                       <li
                         key={c.savedAt}
-                        className={`flex items-center justify-between p-3 rounded border cursor-pointer group ${isDayMode ? 'border-neutral-200 hover:border-gold-500 hover:bg-gold-500/5' : 'border-ink-700 hover:border-gold-500/50 hover:bg-gold-500/10'}`}
+                        className={`flex items-center justify-between p-3 rounded border cursor-pointer group ${isDayMode ? 'border-neutral-200 hover:border-violet-500 hover:bg-violet-500/5' : 'border-ink-700 hover:border-violet-500/50 hover:bg-violet-500/10'}`}
                         onClick={() => { setChainPresetToOpen(c.name); setChainOpen(true); setProjectsOpen(false); }}
                       >
                         <div className="flex flex-col">
@@ -528,16 +541,7 @@ export default function App() {
                 {/* TOP: Hero (brain graph / video) OR AI Lab OR Effect */}
                 <Panel defaultSize={62} minSize={20}>
                   <div className={`w-full h-full relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
-                    {chainOpen ? (
-                      <ChainLab
-                        isDayMode={isDayMode}
-                        onBack={() => setChainOpen(false)}
-                        initialChain={graphChain.length > 0 ? graphChain : undefined}
-                        initialPreset={chainPresetToOpen || undefined}
-                        initialSource={compSource}
-                        onSourcePicked={(file) => onSourceFile(file)}
-                      />
-                    ) : openEffectId ? (
+                    {openEffectId ? (
                       <EffectHost
                         module={modules.find((m) => m.id === openEffectId) || currentModule}
                         iframeSrc={EFFECTS_REGISTRY[openEffectId]?.iframeSrc || ''}
@@ -566,7 +570,7 @@ export default function App() {
                             onModuleOpen={handleModuleOpen}
                             signalSource={signalSource}
                             isDayMode={isDayMode}
-                            isStreaming={isStreaming}
+                            isStreaming={true}
                             onChainLink={(from, to) => handleChainLink(from, to)}
                             onChainOpen={openLab}
                             onChainClear={clearChain}
@@ -591,7 +595,7 @@ export default function App() {
                 </Panel>
 
                 <PanelResizeHandle className="h-4 flex items-center justify-center cursor-row-resize group relative z-10 shrink-0">
-                  <div className={`w-12 h-[3px] rounded-full transition-colors ${isDayMode ? 'bg-neutral-300 group-hover:bg-gold-500' : 'bg-ink-700 group-hover:bg-gold-500'}`} />
+                  <div className={`w-12 h-[3px] rounded-full transition-colors ${isDayMode ? 'bg-neutral-300 group-hover:bg-violet-500' : 'bg-ink-700 group-hover:bg-violet-500'}`} />
                 </PanelResizeHandle>
 
                 {/* BOTTOM: Nodal Composition + AI Director */}
@@ -607,11 +611,12 @@ export default function App() {
                         onRemoveEffect={removeCompEffect}
                         onOpenLab={openLab}
                         onPickSource={pickSource}
+                        isStreaming={isStreaming}
                       />
                     </Panel>
 
                     <PanelResizeHandle className="w-4 flex items-center justify-center cursor-col-resize group shrink-0">
-                      <div className={`w-[3px] h-12 rounded-full transition-colors ${isDayMode ? 'bg-neutral-300 group-hover:bg-gold-500' : 'bg-ink-700 group-hover:bg-gold-500'}`} />
+                      <div className={`w-[3px] h-12 rounded-full transition-colors ${isDayMode ? 'bg-neutral-300 group-hover:bg-violet-500' : 'bg-ink-700 group-hover:bg-violet-500'}`} />
                     </PanelResizeHandle>
 
                     <Panel defaultSize={45} minSize={20}>
@@ -654,7 +659,7 @@ export default function App() {
             </Panel>
 
             <PanelResizeHandle className="w-4 flex items-center justify-center cursor-col-resize group shrink-0">
-              <div className={`w-[3px] h-12 rounded-full transition-colors ${isDayMode ? 'bg-neutral-300 group-hover:bg-gold-500' : 'bg-ink-700 group-hover:bg-gold-500'}`} />
+              <div className={`w-[3px] h-12 rounded-full transition-colors ${isDayMode ? 'bg-neutral-300 group-hover:bg-violet-500' : 'bg-ink-700 group-hover:bg-violet-500'}`} />
             </PanelResizeHandle>
 
             {/* RIGHT SIDEBAR: Effects Library */}
@@ -678,7 +683,7 @@ export default function App() {
                         data-testid={`effect-card-${module.id}`}
                         className={`h-20 p-2.5 rounded-lg border transition-all flex items-center justify-center relative overflow-hidden ${
                           active
-                            ? isDayMode ? 'border-gold-500/50 bg-gold-500/5 shadow-sm' : 'border-gold-500/45 bg-gold-500/[0.07] shadow-[0_0_10px_rgba(224,180,81,0.06)]'
+                            ? isDayMode ? 'border-violet-500/50 bg-violet-500/5 shadow-sm' : 'border-violet-500/45 bg-violet-500/[0.07] shadow-[0_0_10px_rgba(139,92,246,0.06)]'
                             : isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-850'
                         }`}
                       >

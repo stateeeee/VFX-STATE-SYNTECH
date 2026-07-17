@@ -175,16 +175,16 @@ export default function VfxCanvas({
     // --syn-* just like the DOM, so a re-skin recolors it with no code change
     const hexToRgbStr = (hex: string): string => {
       const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-      if (!m) return '212, 175, 55';
+      if (!m) return '139, 92, 246';
       const n = parseInt(m[1], 16);
       return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
     };
-    let ACCENT = '#D4AF37';
-    let ACCENT_RGB = '212, 175, 55';
-    let ACCENT_DIM = '#8a6e2f';
-    let ACCENT_DIM_RGB = '138, 110, 47';
-    let ACCENT_DEEP = '#513d1e';
-    let ACCENT_NIGHT = '#2c200e';
+    let ACCENT = '#8b5cf6';
+    let ACCENT_RGB = '139, 92, 246';
+    let ACCENT_DIM = '#7c3aed';
+    let ACCENT_DIM_RGB = '124, 58, 237';
+    let ACCENT_DEEP = '#5b21b6';
+    let ACCENT_NIGHT = '#2e1065';
     let BG = '#050505';
     const readTokens = (): boolean => {
       const cs = getComputedStyle(document.documentElement);
@@ -329,8 +329,8 @@ export default function VfxCanvas({
 
           if (rand < 0.25) {
             // Purple dot (viola)
-            nodeColor = '#b98ff0';
-            nodeGlow = '#a882ff';
+            nodeColor = '#8b5cf6';
+            nodeGlow = '#8b5cf6';
             isPurple = true;
           } else if (rand < 0.65) {
             // Gold spark
@@ -453,14 +453,14 @@ export default function VfxCanvas({
         }
 
         ctx.font = '9px var(--font-mono)';
-        ctx.fillStyle = isDayMode ? '#8a6e33' : ACCENT_DEEP;
+        ctx.fillStyle = isDayMode ? '#7c3aed' : ACCENT_DEEP;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('ENGINE STANDBY // CONSTALLATION GRAPH SLEEPING', w / 2, h / 2 - 15);
         ctx.fillText('CLICK "INITIALIZE STREAM" TO ACTIVATE OBSIDIAN CHANNELS', w / 2, h / 2 + 5);
 
         // Standby scoping baseline
-        ctx.strokeStyle = isDayMode ? '#c8baa0' : ACCENT_NIGHT;
+        ctx.strokeStyle = isDayMode ? '#c4b5fd' : ACCENT_NIGHT;
         ctx.lineWidth = 0.8;
         ctx.beginPath();
         ctx.moveTo(30, h / 2);
@@ -697,11 +697,11 @@ export default function VfxCanvas({
 
         if (isActiveFilament) {
           // Glow filaments bright gold on active module selection
-          ctx.strokeStyle = isDayMode ? 'rgba(180, 140, 45, 0.75)' : ga(0.55);
+          ctx.strokeStyle = isDayMode ? 'rgba(139, 92, 246, 0.75)' : ga(0.55);
           ctx.lineWidth = 1.0 + (amplitudeFactor * 0.6);
         } else if (filamentHubId) {
           // Other 4 modules have their connections beautifully visible with standard gold filaments
-          ctx.strokeStyle = isDayMode ? 'rgba(180, 140, 45, 0.28)' : ga(0.18);
+          ctx.strokeStyle = isDayMode ? 'rgba(139, 92, 246, 0.28)' : ga(0.18);
           ctx.lineWidth = 0.65;
         } else {
           // Extremely faint obsidian web structure otherwise
@@ -718,7 +718,7 @@ export default function VfxCanvas({
           const alpha = Math.sin(travelProg * Math.PI); // Smooth organic sine envelope (0 -> 1 -> 0)
           ctx.beginPath();
           ctx.arc(px, py, 1.2, 0, Math.PI * 2);
-          ctx.fillStyle = isDayMode ? `rgba(180, 100, 20, ${alpha * 0.95})` : `rgba(255, 255, 255, ${alpha * 0.95})`;
+          ctx.fillStyle = isDayMode ? `rgba(139, 92, 246, ${alpha * 0.95})` : `rgba(255, 255, 255, ${alpha * 0.95})`;
           ctx.fill();
         } else if (filamentHubId) {
           // Desynchronize the ambient signals using a unique offset for each edge index
@@ -729,7 +729,7 @@ export default function VfxCanvas({
           const alpha = Math.sin(travelProg * Math.PI) * 0.5; // Smooth subtle glow
           ctx.beginPath();
           ctx.arc(px, py, 0.85, 0, Math.PI * 2);
-          ctx.fillStyle = isDayMode ? `rgba(180, 100, 20, ${alpha})` : ga(alpha);
+          ctx.fillStyle = isDayMode ? `rgba(139, 92, 246, ${alpha})` : ga(alpha);
           ctx.fill();
         }
       });
@@ -758,7 +758,7 @@ export default function VfxCanvas({
 
         // Draw outer ring/halo circle
         ctx.strokeStyle = p.type === 'core_to_hub' 
-          ? (isDayMode ? `rgba(180, 100, 20, ${outerAlpha})` : `rgba(255, 255, 255, ${outerAlpha})`)
+          ? (isDayMode ? `rgba(139, 92, 246, ${outerAlpha})` : `rgba(255, 255, 255, ${outerAlpha})`)
           : ga(outerAlpha);
         ctx.lineWidth = p.type === 'core_to_hub' ? 1.0 : 0.75;
         ctx.beginPath();
@@ -766,7 +766,7 @@ export default function VfxCanvas({
         ctx.stroke();
 
         // Draw solid white inner dot
-        ctx.fillStyle = isDayMode ? `rgba(180, 100, 20, ${innerAlpha})` : `rgba(255, 255, 255, ${innerAlpha})`;
+        ctx.fillStyle = isDayMode ? `rgba(139, 92, 246, ${innerAlpha})` : `rgba(255, 255, 255, ${innerAlpha})`;
         ctx.beginPath();
         ctx.arc(px, py, p.type === 'core_to_hub' ? 1.8 : 1.1, 0, Math.PI * 2);
         ctx.fill();
@@ -782,7 +782,7 @@ export default function VfxCanvas({
         const b = nodes.find((n) => n.moduleId === chainIds[ci + 1]);
         if (!a || !b) continue;
         ctx.save();
-        ctx.strokeStyle = isDayMode ? 'rgba(160, 118, 20, 0.9)' : ga(0.9);
+        ctx.strokeStyle = isDayMode ? 'rgba(139, 92, 246, 0.9)' : ga(0.9);
         ctx.lineWidth = 1.8;
         ctx.shadowColor = ACCENT;
         ctx.shadowBlur = 6;
@@ -795,7 +795,7 @@ export default function VfxCanvas({
         const ang = Math.atan2(b.y - a.y, b.x - a.x);
         const axp = a.x + (b.x - a.x) * 0.62;
         const ayp = a.y + (b.y - a.y) * 0.62;
-        ctx.fillStyle = isDayMode ? '#a07614' : ACCENT;
+        ctx.fillStyle = isDayMode ? '#8b5cf6' : ACCENT;
         ctx.beginPath();
         ctx.moveTo(axp + Math.cos(ang) * 6, ayp + Math.sin(ang) * 6);
         ctx.lineTo(axp + Math.cos(ang + 2.5) * 5, ayp + Math.sin(ang + 2.5) * 5);
@@ -817,7 +817,7 @@ export default function VfxCanvas({
         const fromNode = nodes[dragFromRef.current];
         if (fromNode) {
           ctx.save();
-          ctx.strokeStyle = isDayMode ? 'rgba(160, 118, 20, 0.85)' : ga(0.85);
+          ctx.strokeStyle = isDayMode ? 'rgba(139, 92, 246, 0.85)' : ga(0.85);
           ctx.lineWidth = 1.4;
           ctx.setLineDash([6, 5]);
           ctx.beginPath();
@@ -828,7 +828,7 @@ export default function VfxCanvas({
           // snap ring on the hovered target hub
           if (hoveredNodeIdx !== -1 && hoveredNodeIdx !== dragFromRef.current) {
             const tgt = nodes[hoveredNodeIdx];
-            ctx.strokeStyle = isDayMode ? '#7a6538' : '#ffffff';
+            ctx.strokeStyle = isDayMode ? '#7c3aed' : '#ffffff';
             ctx.lineWidth = 1.4;
             ctx.beginPath();
             ctx.arc(tgt.x, tgt.y, tgt.size + 9, 0, Math.PI * 2);
@@ -872,7 +872,7 @@ export default function VfxCanvas({
           ctx.fill();
 
           // Outer reticle halo ring around core (styled like selected module)
-          ctx.strokeStyle = isDayMode ? '#7a6538' : '#ffffff';
+          ctx.strokeStyle = isDayMode ? '#7c3aed' : '#ffffff';
           ctx.lineWidth = 1.0 + (coreSwell * 0.6);
           ctx.beginPath();
           ctx.arc(node.x, node.y, drawSize + 5 + Math.sin(frameCount * 0.08) * 1.5, 0, Math.PI * 2);
@@ -885,9 +885,9 @@ export default function VfxCanvas({
           const glowRad = node.size * (isSelectedActive ? 3.5 : isHovered ? 3.0 : 2.5) + (amplitudeFactor * 6) + (flash * 15);
           const hubGrad = ctx.createRadialGradient(node.x, node.y, 1, node.x, node.y, glowRad);
           hubGrad.addColorStop(0, isSelectedActive 
-            ? (isDayMode ? `rgba(180, 140, 45, ${0.45 + flash * 0.35})` : `rgba(255, 255, 255, ${0.45 + flash * 0.35})`)
+            ? (isDayMode ? `rgba(139, 92, 246, ${0.45 + flash * 0.35})` : `rgba(255, 255, 255, ${0.45 + flash * 0.35})`)
             : isHovered
-            ? (isDayMode ? `rgba(180, 140, 45, 0.35)` : `rgba(255, 255, 255, 0.35)`)
+            ? (isDayMode ? `rgba(139, 92, 246, 0.35)` : `rgba(255, 255, 255, 0.35)`)
             : ga(0.15 + flash * 0.55)
           );
           hubGrad.addColorStop(1, isDayMode ? 'rgba(251, 250, 247, 0)' : 'rgba(5, 5, 5, 0)');
@@ -898,7 +898,7 @@ export default function VfxCanvas({
           ctx.fill();
 
           // Outer reticle halo rings around Hubs (flashes white on pulse arrival or hover)
-          ctx.strokeStyle = (isSelectedActive || isHovered || flash > 0.15) ? (isDayMode ? '#7a6538' : '#ffffff') : ga(0.25);
+          ctx.strokeStyle = (isSelectedActive || isHovered || flash > 0.15) ? (isDayMode ? '#7c3aed' : '#ffffff') : ga(0.25);
           ctx.lineWidth = (isSelectedActive || isHovered) ? 0.9 : 0.45 + (flash * 0.6);
           ctx.beginPath();
           ctx.arc(node.x, node.y, drawSize + 4 + Math.sin(frameCount * 0.05 + i) * 1.5, 0, Math.PI * 2);
@@ -908,12 +908,12 @@ export default function VfxCanvas({
         if (isSystemCore) {
           ctx.beginPath();
           ctx.arc(node.x, node.y, drawSize, 0, Math.PI * 2);
-          ctx.fillStyle = isDayMode ? '#7a6538' : '#ffffff'; // White/dark solid dot
+          ctx.fillStyle = isDayMode ? '#7c3aed' : '#ffffff'; // White/dark solid dot
           ctx.fill();
         } else if (isHub) {
           ctx.beginPath();
           ctx.arc(node.x, node.y, drawSize, 0, Math.PI * 2);
-          ctx.fillStyle = (isSelectedActive || flash > 0.4) ? (isDayMode ? '#5e4e2b' : '#ffffff') : ACCENT;
+          ctx.fillStyle = (isSelectedActive || flash > 0.4) ? (isDayMode ? '#6d28d9' : '#ffffff') : ACCENT;
           ctx.fill();
         } else {
           // Satellite subnodes - Continuous smooth alpha-blended transition for energy flash (no branch popping!)
@@ -921,8 +921,8 @@ export default function VfxCanvas({
           
           if (node.isPurple) {
             baseColor = isSatelliteOfActive 
-              ? (isDayMode ? '#9060eb' : '#d1beff') 
-              : '#b98ff0';
+              ? (isDayMode ? '#7c3aed' : '#c4b5fd') 
+              : '#8b5cf6';
           } else if (isSatelliteOfActive) {
             baseColor = isDayMode ? 'rgba(180, 150, 60, 0.9)' : 'rgba(235, 214, 125, 0.9)';
           }
@@ -932,7 +932,7 @@ export default function VfxCanvas({
             const glowSize = drawSize + flash * 5.0;
             ctx.beginPath();
             ctx.arc(node.x, node.y, glowSize, 0, Math.PI * 2);
-            ctx.fillStyle = node.isPurple ? `rgba(168, 130, 255, ${flash * 0.65})` : ga(flash * 0.65);
+            ctx.fillStyle = node.isPurple ? `rgba(139, 92, 246, ${flash * 0.65})` : ga(flash * 0.65);
             ctx.fill();
 
             // 2. Draw standard base color dot
@@ -993,7 +993,7 @@ export default function VfxCanvas({
             ctx.stroke();
 
             // Text print
-            ctx.fillStyle = isSelectedActive || isCore ? (isDayMode ? '#222222' : '#ffffff') : (isDayMode ? '#7a6538' : ACCENT);
+            ctx.fillStyle = isSelectedActive || isCore ? (isDayMode ? '#222222' : '#ffffff') : (isDayMode ? '#7c3aed' : ACCENT);
             ctx.fillText(node.label, node.x, node.y + labelYOffset);
           }
         }
@@ -1016,7 +1016,7 @@ export default function VfxCanvas({
 
   return (
     <div
-      className="relative w-full h-full min-h-[300px] border border-gold-800/40 bg-ink-900 overflow-hidden rounded-md gold-glow-border"
+      className="relative w-full h-full min-h-[300px] overflow-hidden"
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       onMouseDown={handleMouseDown}
@@ -1029,16 +1029,16 @@ export default function VfxCanvas({
         <div
           data-testid="graph-chain-hud"
           className={`absolute left-1/2 -translate-x-1/2 bottom-3 flex items-center gap-3 px-3 py-2 rounded border font-mono text-[9px] uppercase tracking-widest ${
-            isDayMode ? 'bg-white/90 border-gold-500/50 text-neutral-700' : 'bg-black/85 border-gold-500/40 text-neutral-300'
+            isDayMode ? 'bg-white/90 border-violet-500/50 text-neutral-700' : 'bg-black/85 border-violet-500/40 text-neutral-300'
           }`}
         >
-          <span className="text-gold-500 font-extrabold">CHAIN</span>
+          <span className="text-violet-500 font-extrabold">CHAIN</span>
           <span data-testid="graph-chain-label">{chain.map((id) => id.replace(/_/g, ' ').toUpperCase()).join(' → ')}</span>
           <button
             type="button"
             data-testid="graph-chain-open"
             onClick={onChainOpen}
-            className="px-2 py-1 rounded bg-gold-500 text-black font-bold hover:bg-gold-400 cursor-pointer"
+            className="px-2 py-1 rounded bg-violet-500 text-black font-bold hover:bg-violet-400 cursor-pointer"
           >
             Open Ai Lab
           </button>
@@ -1046,7 +1046,7 @@ export default function VfxCanvas({
             type="button"
             data-testid="graph-chain-clear"
             onClick={onChainClear}
-            className="px-2 py-1 rounded border border-gold-500/40 text-gold-500 hover:bg-gold-500/10 cursor-pointer"
+            className="px-2 py-1 rounded border border-violet-500/40 text-violet-500 hover:bg-violet-500/10 cursor-pointer"
           >
             Clear
           </button>
