@@ -15,7 +15,7 @@ interface EffectHostProps {
 export default function EffectHost({ module, iframeSrc, isDayMode, onBack }: EffectHostProps) {
   return (
     <div className={`w-full h-full flex flex-col ${isDayMode ? 'bg-white' : 'bg-black'}`}>
-      <div className={`flex items-center justify-between p-3 border-b ${isDayMode ? 'border-neutral-200' : 'border-ink-700'}`}>
+      <div className={`flex items-center justify-between p-3 border-b ${isDayMode ? 'border-neutral-200' : 'border-ink-700/50'}`}>
         <button onClick={onBack} className="text-sm font-mono text-gold-500 hover:text-gold-400">
           ← BACK TO GRAPH
         </button>

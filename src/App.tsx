@@ -662,7 +662,7 @@ export default function App() {
               <div className={`w-full h-full rounded-2xl border flex flex-col overflow-hidden shadow-lg ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-ink-700/60 bg-ink-900'}`}>
                 {/* Search box (positioned at the top) */}
                 <div className={`px-4 py-3 border-b shrink-0 ${isDayMode ? 'border-neutral-200' : 'border-ink-700/50'}`}>
-                  <div className={`w-full border rounded-lg p-2.5 flex items-center gap-2 ${isDayMode ? 'bg-black/5 border-neutral-200' : 'bg-black/40 border-ink-700/70'}`}>
+                  <div className={`w-full border rounded-lg p-2.5 flex items-center gap-2 ${isDayMode ? 'bg-[#fcfbf9] border-neutral-200' : 'bg-[#0e0e0e] border-ink-700/70'}`}>
                     <Search className="w-3.5 h-3.5 text-neutral-500" />
                     <span className="text-[10px] font-mono text-neutral-600">Search systems...</span>
                   </div>
