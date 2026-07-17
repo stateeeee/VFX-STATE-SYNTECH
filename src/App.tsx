@@ -681,7 +681,8 @@ export default function App() {
                       <div
                         key={module.id}
                         data-testid={`effect-card-${module.id}`}
-                        className={`h-20 p-2.5 rounded-lg border transition-all flex items-center justify-center relative overflow-hidden ${
+                        onClick={() => handleModuleOpen(module.id)}
+                        className={`h-20 p-2.5 rounded-lg border transition-all flex items-center justify-center relative overflow-hidden cursor-pointer ${
                           active
                             ? isDayMode ? 'border-violet-500/50 bg-violet-500/5 shadow-sm' : 'border-violet-500/45 bg-violet-500/[0.07] shadow-[0_0_10px_rgba(139,92,246,0.06)]'
                             : isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-850'
