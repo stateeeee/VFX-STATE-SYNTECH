@@ -1,0 +1,3161 @@
+<!DOCTYPE html>
+<html lang="it" translate="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Anamorphic Lab v5</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Barlow+Condensed:wght@300;400;500;600;700;900&display=swap');
+
+/* ═══════════════════════════════════════════════════════
+   KEYFRAMES
+   ═══════════════════════════════════════════════════════ */
+@keyframes iri-logo {
+  0%   { background-position:0%   50%; }
+  50%  { background-position:100% 50%; }
+  100% { background-position:0%   50%; }
+}
+@keyframes shimmer-pass {
+  0%   { transform:translateX(-120%) skewX(-20deg); }
+  100% { transform:translateX(320%)  skewX(-20deg); }
+}
+@keyframes iri-glow {
+  0%   { box-shadow:0 0 12px rgba(200,160,0,.4), 0 0 30px rgba(200,160,0,.15); }
+  25%  { box-shadow:0 0 12px rgba(80,160,255,.4),0 0 30px rgba(80,160,255,.15); }
+  50%  { box-shadow:0 0 12px rgba(180,80,255,.4),0 0 30px rgba(180,80,255,.15); }
+  75%  { box-shadow:0 0 12px rgba(255,100,180,.4),0 0 30px rgba(255,100,180,.15); }
+  100% { box-shadow:0 0 12px rgba(200,160,0,.4), 0 0 30px rgba(200,160,0,.15); }
+}
+@keyframes iri-dot-glow {
+  0%   { box-shadow:0 0 12px rgba(200,160,0,.8),0 0 28px rgba(200,160,0,.3); }
+  33%  { box-shadow:0 0 12px rgba(100,180,255,.8),0 0 28px rgba(100,180,255,.3); }
+  66%  { box-shadow:0 0 12px rgba(200,100,255,.8),0 0 28px rgba(200,100,255,.3); }
+  100% { box-shadow:0 0 12px rgba(200,160,0,.8),0 0 28px rgba(200,160,0,.3); }
+}
+@keyframes bracket-pulse {
+  0%,100% { opacity:.55; filter:drop-shadow(0 0 5px rgba(200,160,0,.5)); }
+  33%      { opacity:.7;  filter:drop-shadow(0 0 8px rgba(100,180,255,.6)); }
+  66%      { opacity:.7;  filter:drop-shadow(0 0 8px rgba(180,80,255,.6)); }
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.15} }
+@keyframes topline-shift {
+  0%   { background-position:0%   50%; }
+  100% { background-position:200% 50%; }
+}
+@keyframes smoke-a {
+  0%,100% { transform:translateX(0px)   translateY(0px)    scaleX(1.00) scaleY(1.00); opacity:.55; }
+  30%      { transform:translateX(12px)  translateY(-22px)  scaleX(1.18) scaleY(.85);  opacity:.30; }
+  65%      { transform:translateX(-8px)  translateY(-14px)  scaleX(.88)  scaleY(1.12); opacity:.42; }
+}
+@keyframes smoke-b {
+  0%,100% { transform:translateX(0px)   translateY(0px)    scaleX(1.00) scaleY(1.00); opacity:.42; }
+  40%      { transform:translateX(-14px) translateY(-28px)  scaleX(1.22) scaleY(.80);  opacity:.22; }
+  75%      { transform:translateX(9px)   translateY(-10px)  scaleX(.85)  scaleY(1.15); opacity:.35; }
+}
+@keyframes smoke-c {
+  0%,100% { transform:translateX(0px)   translateY(0px)    scaleX(1.00) scaleY(1.00); opacity:.35; }
+  50%      { transform:translateX(6px)   translateY(-18px)  scaleX(1.12) scaleY(.88);  opacity:.18; }
+}
+@keyframes fluid-shimmer {
+  0%   { opacity:0;   transform:translateX(-100%) rotate(-15deg); }
+  10%  { opacity:.08; }
+  90%  { opacity:.06; }
+  100% { opacity:0;   transform:translateX(200%)  rotate(-15deg); }
+}
+@keyframes gel-breathe {
+  0%,100% { box-shadow:
+    inset 0 3px 18px rgba(255,255,255,.18),
+    inset 0 -3px 12px rgba(0,0,0,.45),
+    inset 3px 0 10px rgba(255,255,255,.06),
+    inset -3px 0 10px rgba(0,0,0,.22),
+    0 1px 0 rgba(255,255,255,.09),
+    0 2px 6px rgba(0,0,0,.5); }
+  50% { box-shadow:
+    inset 0 4px 22px rgba(255,255,255,.22),
+    inset 0 -4px 14px rgba(0,0,0,.5),
+    inset 4px 0 12px rgba(255,255,255,.08),
+    inset -4px 0 12px rgba(0,0,0,.28),
+    0 1px 0 rgba(255,255,255,.12),
+    0 3px 8px rgba(0,0,0,.55); }
+}
+
+/* ═══════════════════════════════════════════════════════
+   DESIGN TOKENS
+   ═══════════════════════════════════════════════════════ */
+:root {
+  --bg:       #04020a;
+  --bg-panel: #06040e;
+  --bg-deep:  #020108;
+  --border:   #20183a;
+  --border-hi:#38286a;
+  --amber:    #e8c000;
+  --amber-lo: #8a6400;
+  --green:    #20e060;
+  --red:      #f03020;
+  --cyan:     #00e0c0;
+  --t4: #f2d458;
+  --t3: #c89030;
+  --t2: #7a5518;
+  --t1: #3e2c0c;
+  --mono: 'JetBrains Mono', monospace;
+  --cond: 'Barlow Condensed', sans-serif;
+}
+
+*,*::before,*::after { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background:var(--bg); color:var(--t4);
+  font-family:var(--mono); font-size:11px;
+  height:100vh; display:flex; flex-direction:column;
+  overflow:hidden; user-select:none; -webkit-font-smoothing:antialiased;
+}
+
+/* ═══════════════════════════════════════════════════════
+   TOPBAR
+   ═══════════════════════════════════════════════════════ */
+#topbar {
+  height:46px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.03) 0%,rgba(255,255,255,.01) 10%,transparent 40%,rgba(0,0,0,.25) 100%),
+    linear-gradient(180deg,#0e0c10 0%,#060408 100%);
+  border-bottom:1px solid rgba(255,255,255,.06);
+  display:flex; align-items:center; padding:0 16px; gap:12px;
+  flex-shrink:0; position:relative; overflow:hidden;
+}
+#topbar::before {
+  content:''; position:absolute; inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.08) 3px,rgba(0,0,0,.08) 4px);
+  pointer-events:none; z-index:0;
+}
+#topbar::after {
+  content:''; position:absolute; bottom:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffcc,#e8c000);
+  background-size:300% 100%; animation:topline-shift 6s linear infinite; pointer-events:none;
+}
+#topbar > * { position:relative; z-index:1; }
+
+.logo {
+  font-family:var(--cond); font-weight:900; font-size:16px;
+  letter-spacing:6px; white-space:nowrap; color:var(--t4);
+  display:flex; align-items:center; gap:8px; position:relative;
+  text-shadow:0 0 14px rgba(232,192,0,.35);
+}
+.logo::before {
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.25) 50%,transparent 60%);
+  animation:shimmer-pass 4s ease-in-out infinite; pointer-events:none;
+}
+.tb-sep { width:1px; height:22px; background:linear-gradient(180deg,transparent,rgba(255,255,255,.15),transparent); flex-shrink:0; }
+
+/* PILL — generic topbar status chip (INPUT / RENDER / REC) */
+.pill {
+  display:flex; align-items:center; gap:6px; padding:4px 11px 4px 9px;
+  background:linear-gradient(180deg,
+    rgba(255,255,255,.22) 0%,rgba(255,255,255,.06) 45%,
+    rgba(255,255,255,.01) 50%,rgba(255,255,255,.06) 100%),
+  linear-gradient(180deg,#1c1a1e 0%,#0c0a0e 50%,#121014 100%);
+  border:1px solid rgba(255,255,255,.12);
+  border-bottom-color:rgba(0,0,0,.5);
+  border-radius:3px;
+  font-size:8px; letter-spacing:1.5px; color:var(--t3); white-space:nowrap;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 2px 5px rgba(0,0,0,.55),0 4px 10px rgba(0,0,0,.25);
+}
+.pill .dot { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.2); flex-shrink:0; }
+.pill.live .dot { background:var(--green); box-shadow:0 0 8px rgba(32,224,96,.6); }
+.pill.live { border-color:rgba(32,224,96,.25); color:rgba(160,255,200,.8); }
+.pill.rec-on .dot { background:var(--red); animation:blink 1s infinite; }
+.pill.rec-on { border-color:rgba(240,48,32,.4); color:var(--red); }
+.pill.engine .dot { background:var(--amber); box-shadow:0 0 8px rgba(232,192,0,.6); }
+.pill.engine { border-color:rgba(232,192,0,.2); color:rgba(232,200,100,.8); }
+.pill-pre { font-size:6px; letter-spacing:1px; color:var(--t2); margin-right:1px; }
+#tb-time { font-size:12px; letter-spacing:3px; color:var(--t3); font-variant-numeric:tabular-nums; margin-left:auto; min-width:100px; text-align:right; }
+#fps-display { font-size:9px; letter-spacing:2px; color:var(--t2); }
+#fps-display b { color:var(--cyan); font-weight:500; text-shadow:0 0 10px rgba(0,224,192,.6); }
+
+/* ═══════════════════════════════════════════════════════
+   MAIN LAYOUT
+   ═══════════════════════════════════════════════════════ */
+.main { display:flex; flex:1; overflow:hidden; min-height:0; }
+
+/* ═══════════════════════════════════════════════════════
+   PREVIEW AREA
+   ═══════════════════════════════════════════════════════ */
+.preview {
+  flex:1; display:flex; align-items:center; justify-content:center;
+  background:#02000a; position:relative; overflow:hidden;
+}
+.preview::after {
+  content:''; position:absolute; inset:0; pointer-events:none; z-index:5;
+  box-shadow:inset 0 0 80px rgba(0,0,0,.7),inset 0 0 160px rgba(0,0,0,.3);
+}
+/* Corner brackets */
+.preview::before {
+  content:''; position:absolute; inset:10px; pointer-events:none; z-index:10;
+  background:
+    linear-gradient(var(--amber),var(--amber)) top    left /28px 1px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) top    left /1px 28px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) top    right/28px 1px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) top    right/1px 28px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) bottom left /28px 1px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) bottom left /1px 28px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) bottom right/28px 1px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) bottom right/1px 28px no-repeat;
+  animation:bracket-pulse 6s linear infinite;
+}
+#drop-hint {
+  display:flex; flex-direction:column; align-items:center; gap:14px;
+  pointer-events:none; position:absolute; transition:opacity .3s;
+}
+#drop-hint.hidden { opacity:0; }
+#drop-hint .drop-title {
+  font-family:var(--cond); font-size:32px; font-weight:700;
+  letter-spacing:9px; text-transform:uppercase;
+  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffd8,#e8c000);
+  background-size:300% 100%;
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  animation:iri-logo 5s linear infinite;
+}
+#drop-hint small { font-size:9px; letter-spacing:3px; color:var(--t2); text-transform:uppercase; }
+#drop-hint svg { color:var(--t2); opacity:.35; }
+.drop-source-btn {
+  margin-top:6px; padding:10px 32px; pointer-events:auto;
+  background:linear-gradient(180deg,
+    rgba(255,255,255,.26) 0%, rgba(255,255,255,.08) 45%,
+    rgba(255,255,255,.01) 50%, rgba(255,255,255,.06) 100%),
+  linear-gradient(180deg,#1e1c20 0%,#0e0c10 50%,#141214 100%);
+  border:1px solid rgba(255,255,255,.14); border-bottom-color:rgba(0,0,0,.5);
+  border-radius:4px;
+  color:var(--t3); font-family:var(--mono); font-size:9px; letter-spacing:3px;
+  cursor:pointer; transition:all .2s; text-transform:uppercase;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 3px 7px rgba(0,0,0,.6),0 6px 14px rgba(0,0,0,.3);
+  position:relative; overflow:hidden;
+}
+.drop-source-btn::after {
+  content:''; position:absolute; top:0; left:-100%; width:40%; height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.1),transparent);
+  animation:shimmer-pass 3s ease-in-out infinite;
+}
+.drop-source-btn:hover {
+  border-color:rgba(232,192,0,.5); color:var(--amber);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.20),0 0 20px rgba(232,192,0,.18),0 4px 10px rgba(0,0,0,.6);
+}
+canvas { max-width:100%; max-height:100%; display:none; }
+canvas.on { display:block; }
+canvas.mirrored { transform:scaleX(-1); }
+#file-input { display:none; }
+/* flare-dot removed — hotspot shown only in flare-status text */
+
+/* ═══════════════════════════════════════════════════════
+   PANEL — BLACK GLOSSY FLUID WITH BUBBLES
+   ═══════════════════════════════════════════════════════ */
+.panel {
+  width:292px;
+  border-left:1px solid rgba(255,255,255,.07);
+  display:flex; flex-direction:column;
+  overflow-y:scroll; scrollbar-gutter:stable;
+  position:relative;
+  background:
+    /* B1 */ radial-gradient(circle at  7%  10%, rgba(255,255,255,.22) 0%, transparent 10%),
+    radial-gradient(ellipse 9% 3.5% at  9%  17%, rgba(0,0,0,.75) 0%, transparent 100%),
+    radial-gradient(circle at  9%  12%, rgba(0,0,0,.55) 0%, rgba(8,8,8,.3) 50%, transparent 57%, rgba(255,255,255,.30) 59%, rgba(255,255,255,.14) 67%, transparent 76%),
+    /* B2 */ radial-gradient(circle at 78%  16%, rgba(255,255,255,.20) 0%, transparent 9%),
+    radial-gradient(ellipse 8% 3%   at 80%  23%, rgba(0,0,0,.7) 0%, transparent 100%),
+    radial-gradient(circle at 80%  18%, rgba(0,0,0,.5) 0%, rgba(8,8,8,.28) 48%, transparent 55%, rgba(255,255,255,.26) 57%, rgba(255,255,255,.12) 65%, transparent 74%),
+    /* B3 */ radial-gradient(circle at 36%  31%, rgba(255,255,255,.25) 0%, transparent 14%),
+    radial-gradient(ellipse 11% 4.5% at 38% 40%, rgba(0,0,0,.8) 0%, transparent 100%),
+    radial-gradient(circle at 38%  33%, rgba(0,0,0,.6) 0%, rgba(6,6,6,.35) 53%, transparent 60%, rgba(255,255,255,.32) 62%, rgba(255,255,255,.16) 70%, transparent 79%),
+    /* B4 */ radial-gradient(circle at 86%  46%, rgba(255,255,255,.18) 0%, transparent 10%),
+    radial-gradient(ellipse 9% 3.5% at 88% 54%, rgba(0,0,0,.68) 0%, transparent 100%),
+    radial-gradient(circle at 88%  48%, rgba(0,0,0,.5) 0%, rgba(8,8,8,.27) 51%, transparent 58%, rgba(255,255,255,.25) 60%, rgba(255,255,255,.11) 68%, transparent 77%),
+    /* B5 */ radial-gradient(circle at 16%  61%, rgba(255,255,255,.22) 0%, transparent 11%),
+    radial-gradient(ellipse 10% 4% at 18% 68%, rgba(0,0,0,.72) 0%, transparent 100%),
+    radial-gradient(circle at 18%  63%, rgba(0,0,0,.52) 0%, rgba(8,8,8,.28) 49%, transparent 56%, rgba(255,255,255,.28) 58%, rgba(255,255,255,.13) 66%, transparent 75%),
+    /* B6 */ radial-gradient(circle at 55%  78%, rgba(255,255,255,.20) 0%, transparent 9%),
+    radial-gradient(ellipse 8% 3.5% at 58% 85%, rgba(0,0,0,.7) 0%, transparent 100%),
+    radial-gradient(circle at 58%  80%, rgba(0,0,0,.48) 0%, rgba(8,8,8,.26) 47%, transparent 54%, rgba(255,255,255,.24) 56%, rgba(255,255,255,.11) 64%, transparent 73%),
+    /* fluid body */
+    radial-gradient(ellipse 130% 80% at -8% -5%, rgba(255,255,255,.04) 0%, rgba(255,255,255,.01) 30%, transparent 55%),
+    radial-gradient(ellipse 130% 80% at 110% 115%, rgba(0,0,0,.9) 0%, rgba(0,0,0,.5) 35%, transparent 65%),
+    linear-gradient(160deg,#0e0c0e 0%,#080608 20%,#050405 45%,#0a080a 70%,#060406 100%);
+}
+.panel::-webkit-scrollbar       { width:2px; }
+.panel::-webkit-scrollbar-track { background:rgba(0,0,0,.9); }
+.panel::-webkit-scrollbar-thumb { background:linear-gradient(180deg,rgba(255,255,255,.4),rgba(255,255,255,.1)); border-radius:1px; }
+/* Fluid shimmer sweep */
+.panel::before {
+  content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:linear-gradient(-15deg,transparent 30%,rgba(255,255,255,.05) 50%,rgba(255,255,255,.08) 52%,rgba(255,255,255,.04) 54%,transparent 70%);
+  width:200%; animation:fluid-shimmer 8s ease-in-out infinite;
+}
+/* Top surface gloss */
+.panel::after {
+  content:''; position:absolute; top:0; left:0; right:0; height:180px;
+  z-index:0; pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.09) 0%,rgba(255,255,255,.04) 20%,transparent 60%);
+}
+.panel > * { position:relative; z-index:1; }
+
+/* ═══════════════════════════════════════════════════════
+   SECTIONS
+   ═══════════════════════════════════════════════════════ */
+.section { position:relative; }
+.section::after {
+  content:''; position:absolute; bottom:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,transparent 0%,rgba(232,192,0,.18) 18%,rgba(128,200,255,.22) 36%,rgba(192,128,255,.20) 54%,rgba(255,144,192,.18) 72%,transparent 100%);
+  background-size:300% 100%; background-position:var(--line-pos,0%) 50%; pointer-events:none;
+}
+
+/* ─── SEC-HEAD — black glossy 3D gel ─── */
+.sec-head {
+  display:flex; align-items:center; height:34px; padding:0 14px; gap:10px;
+  position:relative; overflow:hidden; cursor:pointer;
+  background:
+    radial-gradient(ellipse 100% 60% at 50% -8%, rgba(255,255,255,.42) 0%, rgba(255,255,255,.22) 30%, rgba(255,255,255,.06) 55%, transparent 75%),
+    radial-gradient(ellipse 35% 100% at -4% 50%, rgba(255,255,255,.09) 0%, transparent 55%),
+    radial-gradient(ellipse 120% 65% at 55% 145%, rgba(0,0,0,.9) 0%, rgba(0,0,0,.5) 40%, transparent 68%),
+    radial-gradient(ellipse 65% 65% at 50% 50%, rgba(255,255,255,.025) 0%, transparent 70%),
+    linear-gradient(180deg,#1e1c22 0%,#141214 30%,#0a090b 60%,#0e0c10 85%,#181620 100%);
+  box-shadow:
+    inset 0  3px 16px rgba(255,255,255,.20),
+    inset 0 -3px 12px rgba(0,0,0,.75),
+    inset  3px 0  8px  rgba(255,255,255,.05),
+    inset -3px 0  8px  rgba(0,0,0,.3),
+    0 1px 0 rgba(255,255,255,.10),
+    0 2px 6px rgba(0,0,0,.6);
+  transition:background .15s, box-shadow .15s;
+  animation:gel-breathe 4s ease-in-out infinite;
+}
+/* Gloss crown line */
+.sec-head::before {
+  content:''; position:absolute; top:0; left:8%; right:8%; height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.50),rgba(255,255,255,.65),rgba(255,255,255,.50),transparent);
+  pointer-events:none;
+}
+/* Shimmer on hover */
+.sec-head::after {
+  content:''; position:absolute; top:0; left:-80%; width:40%; height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent);
+  transform:skewX(-20deg); pointer-events:none; opacity:0;
+}
+.sec-head:hover::after { animation:shimmer-pass .6s ease-out forwards; opacity:1; }
+.sec-head:hover {
+  background:
+    radial-gradient(ellipse 100% 60% at 50% -8%, rgba(255,255,255,.50) 0%, rgba(255,255,255,.28) 30%, rgba(255,255,255,.08) 55%, transparent 75%),
+    radial-gradient(ellipse 35% 100% at -4% 50%, rgba(255,255,255,.12) 0%, transparent 55%),
+    radial-gradient(ellipse 120% 65% at 55% 145%, rgba(0,0,0,.85) 0%, transparent 65%),
+    linear-gradient(180deg,#282630 0%,#1c1a22 30%,#121014 60%,#161420 85%,#201e2a 100%);
+  box-shadow:
+    inset 0  4px 20px rgba(255,255,255,.26),
+    inset 0 -3px 12px rgba(0,0,0,.72),
+    inset  3px 0  10px rgba(255,255,255,.07),
+    inset -3px 0  10px rgba(0,0,0,.28),
+    0 1px 0 rgba(255,255,255,.14),
+    0 2px 10px rgba(0,0,0,.65);
+}
+.sec-mark {
+  width:2px; height:18px; flex-shrink:0; border-radius:1px;
+  background:linear-gradient(180deg,#e8c000 0%,#9a5800 100%);
+  filter:hue-rotate(var(--mark-hue,0deg)) saturate(1.3) brightness(1.05);
+  box-shadow:0 0 7px rgba(232,192,0,.4);
+}
+.sec-title {
+  font-family:var(--cond); font-size:11px; font-weight:700;
+  letter-spacing:3.5px; text-transform:uppercase;
+  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffd8,#e8c000);
+  background-size:300% 100%;
+  background-position:var(--title-pos,0%) 50%;
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  filter:saturate(1.7) brightness(1.18) drop-shadow(0 0 5px rgba(255,255,255,.18));
+}
+.sec-chev { margin-left:auto; color:var(--t3); font-size:8px; transition:transform .18s; }
+.sec-head.closed .sec-chev { transform:rotate(-90deg); }
+
+.sec-body {
+  padding:12px 13px; display:flex; flex-direction:column; gap:9px;
+  background:linear-gradient(180deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.35) 100%);
+  backdrop-filter:blur(6px);
+  border-top:1px solid rgba(255,255,255,.05);
+}
+.sec-body.hidden { display:none; }
+
+/* ═══════════════════════════════════════════════════════
+   LED BUTTONS — preset chips
+   ═══════════════════════════════════════════════════════ */
+.lrow { display:flex; gap:3px; flex-wrap:wrap; }
+
+.chip {
+  display:inline-flex; align-items:center; gap:6px; padding:0 10px; height:26px;
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%, rgba(255,255,255,.22) 0%, rgba(255,255,255,.08) 40%, transparent 72%),
+    radial-gradient(ellipse 35% 100% at -5% 50%, rgba(255,255,255,.06) 0%, transparent 55%),
+    linear-gradient(180deg,#1a181c 0%,#0e0c10 35%,#080608 70%,#0c0a0e 100%);
+  border:1px solid rgba(255,255,255,.10); border-bottom-color:rgba(0,0,0,.65);
+  cursor:pointer; transition:all .12s; position:relative; overflow:hidden; border-radius:1px;
+  font-family:var(--mono); font-size:8.5px; letter-spacing:1.5px; color:var(--t3); text-transform:uppercase;
+  box-shadow:
+    inset 0  2px 10px rgba(255,255,255,.15),
+    inset 0 -2px  8px rgba(0,0,0,.65),
+    inset  2px 0  6px rgba(255,255,255,.04),
+    inset -2px 0  6px rgba(0,0,0,.25),
+    0 2px 5px rgba(0,0,0,.65),
+    0 0 0 1px rgba(255,255,255,.04);
+}
+.chip::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:48%;
+  background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.025));
+  pointer-events:none; border-radius:1px 1px 0 0;
+}
+.chip::after {
+  content:''; position:absolute; top:0; left:-100%; width:50%; height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent);
+  transform:skewX(-15deg); pointer-events:none;
+}
+.chip:hover::after { animation:shimmer-pass .5s ease-out forwards; }
+.chip:hover {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%, rgba(255,255,255,.30) 0%, rgba(255,255,255,.12) 40%, transparent 72%),
+    radial-gradient(ellipse 35% 100% at -5% 50%, rgba(255,255,255,.08) 0%, transparent 55%),
+    linear-gradient(180deg,#242228 0%,#161418 35%,#0e0c10 70%,#141218 100%);
+  border-color:rgba(255,255,255,.16); color:var(--t4);
+}
+.chip.on {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%, rgba(255,255,255,.32) 0%, rgba(255,255,255,.14) 40%, transparent 72%),
+    radial-gradient(ellipse 35% 100% at -5% 50%, rgba(255,255,255,.08) 0%, transparent 55%),
+    linear-gradient(180deg,#221e26 0%,#141218 35%,#0c0a0e 70%,#121018 100%);
+  border-color:rgba(232,192,0,.42); border-bottom-color:rgba(0,0,0,.65);
+  color:var(--t4); animation:iri-glow 5s linear infinite;
+  box-shadow:inset 0 3px 14px rgba(255,255,255,.22),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 5px rgba(0,0,0,.65);
+}
+/* LED indicator dot */
+.led {
+  width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.15); flex-shrink:0;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.1);
+}
+.chip.on .led {
+  background:radial-gradient(circle at 35% 30%,#fff8c0,var(--amber));
+  border-color:rgba(255,240,100,.6); animation:iri-dot-glow 4s linear infinite;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 0 8px rgba(232,192,0,.8);
+}
+
+/* ═══════════════════════════════════════════════════════
+   LED-BTN row (Playback / Loop / Webcam / Fullscreen)
+   — libreria visiva identica a Blob State Tracker —
+   ═══════════════════════════════════════════════════════ */
+.row { display:flex; align-items:center; gap:8px; }
+.lbl { width:64px; flex-shrink:0; font-size:8px; letter-spacing:1px; color:var(--t2); text-transform:uppercase; }
+.kbd-badge { margin-left:auto; padding:2px 5px; border:1px solid rgba(255,255,255,.15); font-size:7px; color:var(--t2); background:rgba(0,0,0,.3); border-radius:2px; box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 2px 3px rgba(0,0,0,.4); }
+.led-btn {
+  flex:1; height:26px; display:flex; align-items:center; gap:7px; padding:0 10px;
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%, rgba(255,255,255,.22) 0%, rgba(255,255,255,.08) 40%, transparent 72%),
+    radial-gradient(ellipse 35% 100% at -5% 50%, rgba(255,255,255,.06) 0%, transparent 55%),
+    linear-gradient(180deg,#1a181c 0%,#0e0c10 35%,#080608 70%,#0c0a0e 100%);
+  border:1px solid rgba(255,255,255,.10); border-bottom-color:rgba(0,0,0,.65);
+  cursor:pointer; transition:all .12s; position:relative; overflow:hidden; border-radius:1px;
+  box-shadow:inset 0 2px 10px rgba(255,255,255,.15),inset 0 -2px 8px rgba(0,0,0,.65),inset 2px 0 6px rgba(255,255,255,.04),inset -2px 0 6px rgba(0,0,0,.25),0 2px 5px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04);
+}
+.led-btn::before { content:''; position:absolute; top:0; left:0; right:0; height:48%; background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.025)); pointer-events:none; border-radius:1px 1px 0 0; }
+.led-btn::after  { content:''; position:absolute; top:0; left:-100%; width:50%; height:100%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent); transform:skewX(-15deg); pointer-events:none; }
+.led-btn:hover::after { animation:shimmer-pass .5s ease-out forwards; }
+.led-btn:hover {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%, rgba(255,255,255,.30) 0%, rgba(255,255,255,.12) 40%, transparent 72%),
+    radial-gradient(ellipse 35% 100% at -5% 50%, rgba(255,255,255,.08) 0%, transparent 55%),
+    linear-gradient(180deg,#242228 0%,#161418 35%,#0e0c10 70%,#141218 100%);
+  border-color:rgba(255,255,255,.16);
+  box-shadow:inset 0 3px 14px rgba(255,255,255,.20),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 8px rgba(0,0,0,.7),0 0 12px rgba(255,255,255,.03);
+}
+.led-btn.on {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%, rgba(255,255,255,.32) 0%, rgba(255,255,255,.14) 40%, transparent 72%),
+    radial-gradient(ellipse 35% 100% at -5% 50%, rgba(255,255,255,.08) 0%, transparent 55%),
+    linear-gradient(180deg,#221e26 0%,#141218 35%,#0c0a0e 70%,#121018 100%);
+  border-color:rgba(232,192,0,.42); border-bottom-color:rgba(0,0,0,.65);
+  animation:iri-glow 5s linear infinite;
+  box-shadow:inset 0 3px 14px rgba(255,255,255,.22),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 5px rgba(0,0,0,.65);
+}
+.led-btn .led { width:7px; height:7px; }
+.led-btn.on .led {
+  background:radial-gradient(circle at 35% 30%,#fff8c0,var(--amber));
+  border-color:rgba(255,240,100,.6); animation:iri-dot-glow 4s linear infinite;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 0 8px rgba(232,192,0,.8);
+}
+.led-txt { font-size:8.5px; letter-spacing:1.5px; color:var(--t3); text-transform:uppercase; transition:color .12s; }
+.led-btn.on .led-txt { color:var(--t4); text-shadow:0 0 8px rgba(232,192,0,.3); }
+.led-btn:hover .led-txt { color:var(--t4); }
+
+/* ═══════════════════════════════════════════════════════
+   SLIDERS — chrome metallic (fine-tune, focal length)
+   ═══════════════════════════════════════════════════════ */
+.ctrl-row { display:flex; align-items:center; gap:8px; }
+.ctrl-lbl { width:70px; flex-shrink:0; font-size:8px; letter-spacing:1px; color:var(--t2); text-transform:uppercase; }
+.ctrl-track { flex:1; height:18px; display:flex; align-items:center; }
+.daw-slider {
+  -webkit-appearance:none; width:100%; height:2px;
+  background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.12));
+  outline:none; cursor:ew-resize; border-radius:1px;
+  box-shadow:inset 0 1px 0 rgba(0,0,0,.4),0 1px 0 rgba(255,255,255,.06);
+}
+.daw-slider::-webkit-slider-thumb {
+  -webkit-appearance:none; width:9px; height:22px;
+  background:linear-gradient(180deg,rgba(255,255,255,.5) 0%,#e0d0a0 10%,#c8a830 40%,#a07820 65%,#5a4010 85%,rgba(255,255,255,.2) 100%);
+  border:none; cursor:ew-resize; border-radius:2px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8);
+}
+.daw-slider::-webkit-slider-thumb:hover { box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 0 16px rgba(232,192,0,.7),0 0 32px rgba(180,120,255,.3),0 2px 8px rgba(0,0,0,.8); }
+.daw-slider::-moz-range-thumb { width:9px; height:22px; background:linear-gradient(180deg,#e0d0a0,#c8a830,#a07820,#5a4010); border:none; cursor:ew-resize; border-radius:2px; box-shadow:0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8); }
+.ctrl-val { width:40px; text-align:right; font-size:9.5px; color:var(--t4); font-variant-numeric:tabular-nums; letter-spacing:.5px; text-shadow:0 0 6px rgba(232,192,0,.3); }
+
+/* ═══════════════════════════════════════════════════════
+   SEGMENT BUTTONS — toggles / pills
+   ═══════════════════════════════════════════════════════ */
+.seg-row { display:flex; gap:2px; flex-wrap:wrap; }
+.seg-btn {
+  flex:1; height:27px; min-width:52px;
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%, rgba(255,255,255,.20) 0%, rgba(255,255,255,.07) 40%, transparent 72%),
+    linear-gradient(180deg,#181618 0%,#0c0a0c 35%,#060406 65%,#0a080a 100%);
+  border:1px solid rgba(255,255,255,.09); border-bottom-color:rgba(0,0,0,.65);
+  font-family:var(--mono); font-size:8px; letter-spacing:1.2px; color:var(--t2);
+  cursor:pointer; text-transform:uppercase; transition:all .12s;
+  position:relative; overflow:hidden; border-radius:1px;
+  box-shadow:inset 0 2px 10px rgba(255,255,255,.13),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 4px rgba(0,0,0,.6);
+}
+.seg-btn::before { content:''; position:absolute; top:0; left:0; right:0; height:45%; background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.02)); pointer-events:none; }
+.seg-btn::after  { content:''; position:absolute; top:0; left:-100%; width:50%; height:100%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent); transform:skewX(-15deg); pointer-events:none; }
+.seg-btn:hover::after { animation:shimmer-pass .5s ease-out forwards; }
+.seg-btn:hover {
+  color:var(--t4);
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%, rgba(255,255,255,.28) 0%, rgba(255,255,255,.10) 40%, transparent 72%),
+    linear-gradient(180deg,#222022 0%,#141214 35%,#0c0a0c 65%,#121012 100%);
+  border-color:rgba(255,255,255,.16);
+}
+.seg-btn.on {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%, rgba(255,255,255,.36) 0%, rgba(255,255,255,.16) 40%, transparent 72%),
+    linear-gradient(180deg,#282428 0%,#1a161a 35%,#100e10 65%,#181418 100%);
+  border-color:rgba(232,192,0,.48); border-bottom-color:rgba(0,0,0,.65);
+  color:var(--t4); animation:iri-glow 5s linear infinite;
+  box-shadow:inset 0 3px 14px rgba(255,255,255,.24),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 5px rgba(0,0,0,.65);
+  text-shadow:0 0 8px rgba(255,255,255,.2);
+}
+
+/* ═══════════════════════════════════════════════════════
+   CONTROLS / SLIDERS
+   ═══════════════════════════════════════════════════════ */
+.ctrl { display:flex; flex-direction:column; gap:5px; }
+.ctrl:last-child { margin-bottom:0; }
+.ctrl label {
+  display:flex; align-items:baseline; gap:4px; flex-wrap:wrap;
+  font-size:8.5px; letter-spacing:1px; color:var(--t2); text-transform:uppercase;
+}
+.ctrl label b {
+  color:var(--t4); font-weight:500; font-variant-numeric:tabular-nums;
+  font-size:9.5px; text-shadow:0 0 6px rgba(232,192,0,.3); margin-left:auto;
+}
+.ctrl label small { color:var(--t2); font-size:8px; letter-spacing:.5px; }
+
+input[type=range] {
+  -webkit-appearance:none; width:100%; height:2px;
+  background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.12));
+  outline:none; cursor:ew-resize; border-radius:1px;
+  box-shadow:inset 0 1px 0 rgba(0,0,0,.4),0 1px 0 rgba(255,255,255,.06);
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none; width:9px; height:22px;
+  background:linear-gradient(180deg,rgba(255,255,255,.5) 0%,#e0d0a0 10%,#c8a830 40%,#a07820 65%,#5a4010 85%,rgba(255,255,255,.2) 100%);
+  border:none; cursor:ew-resize; border-radius:2px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6),inset 0 -1px 0 rgba(0,0,0,.4),0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8);
+}
+input[type=range]::-webkit-slider-thumb:hover {
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7),inset 0 -1px 0 rgba(0,0,0,.4),0 0 16px rgba(232,192,0,.7),0 0 32px rgba(180,120,255,.3),0 2px 8px rgba(0,0,0,.8);
+}
+input[type=range]::-moz-range-thumb {
+  width:9px; height:22px;
+  background:linear-gradient(180deg,#e0d0a0,#c8a830,#a07820,#5a4010);
+  border:none; cursor:ew-resize; border-radius:2px;
+  box-shadow:0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8);
+}
+
+/* Temperature labels */
+.temp-labels {
+  display:flex; justify-content:space-between;
+  font-size:8px; color:var(--t2); margin-top:1px; letter-spacing:.5px;
+}
+.temp-labels .cold { color:#5070a8; }
+.temp-labels .warm { color:var(--t3); }
+
+/* Grain visualizer */
+.grain-viz { height:3px; background:linear-gradient(to right,#251e08,#6a5a48); border-radius:1px; position:relative; overflow:hidden; }
+.grain-viz-fill { position:absolute; left:0; top:0; height:100%; background:var(--amber); transition:width .1s; box-shadow:0 0 6px rgba(232,192,0,.5); }
+
+/* AUTO badge */
+.auto-badge {
+  display:inline-flex; align-items:center; padding:2px 7px;
+  background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02),rgba(0,0,0,.1));
+  border:1px solid rgba(255,255,255,.15); border-bottom-color:rgba(0,0,0,.3);
+  font-size:7px; color:var(--t3); cursor:pointer; font-family:var(--mono); letter-spacing:1px;
+  border-radius:1px; text-transform:uppercase; white-space:nowrap; flex-shrink:0;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 2px 3px rgba(0,0,0,.4);
+  transition:all .12s;
+}
+.auto-badge:hover { border-color:rgba(232,192,0,.4); color:var(--amber); box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 0 10px rgba(232,192,0,.2); }
+
+/* ═══════════════════════════════════════════════════════
+   INFO GRID
+   ═══════════════════════════════════════════════════════ */
+.info-grid { display:grid; grid-template-columns:1fr 1fr; gap:2px; background:rgba(0,0,0,.8); border:1px solid rgba(255,255,255,.07); }
+.info-cell {
+  background:linear-gradient(180deg,
+    rgba(255,255,255,.18) 0%, rgba(255,255,255,.05) 45%,
+    rgba(255,255,255,0)   50%, rgba(255,255,255,.04) 100%),
+  linear-gradient(180deg,#141214 0%,#080608 50%,#0e0c0e 100%);
+  padding:10px 11px; position:relative; overflow:hidden; border-radius:1px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12), 0 2px 4px rgba(0,0,0,.5);
+}
+.ic-lbl { font-size:7px; letter-spacing:2px; color:var(--t2); text-transform:uppercase; margin-bottom:6px; }
+.ic-val { font-size:22px; color:var(--t4); font-variant-numeric:tabular-nums; font-weight:300; line-height:1; }
+.ic-val.amber {
+  background:linear-gradient(135deg,#ffe880,#e8c000,#c08000);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  filter:drop-shadow(0 0 6px rgba(232,192,0,.5));
+}
+.ic-val.dim { color:var(--t3); font-size:13px; font-weight:400; }
+.ic-credit {
+  grid-column:1/-1; padding:6px 10px 4px;
+  font-size:7px; letter-spacing:2.5px; color:var(--t2);
+  text-align:center; text-transform:uppercase;
+  border-top:1px solid rgba(255,255,255,.05);
+  background:rgba(0,0,0,.3);
+}
+
+/* ═══════════════════════════════════════════════════════
+   VU METER — motion
+   ═══════════════════════════════════════════════════════ */
+.vu-row { display:flex; align-items:center; gap:7px; }
+.vu-lbl { width:44px; font-size:7.5px; letter-spacing:1px; color:var(--t2); flex-shrink:0; text-transform:uppercase; }
+.vu-track { flex:1; height:5px; background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.08)); border:1px solid rgba(255,255,255,.08); overflow:hidden; border-radius:2px; box-shadow:inset 0 1px 0 rgba(0,0,0,.4); }
+.vu-bar { height:100%; width:0%; transition:width .05s; background:linear-gradient(90deg,#6a4800,var(--amber)); border-radius:0 2px 2px 0; box-shadow:0 0 6px rgba(232,192,0,.5); }
+.vu-val { width:28px; text-align:right; font-size:7.5px; color:var(--t2); font-variant-numeric:tabular-nums; }
+
+/* ═══════════════════════════════════════════════════════
+   CAMERA — device / status / note / settings
+   ═══════════════════════════════════════════════════════ */
+.cam-select {
+  flex:1; background:linear-gradient(180deg,#161418,#0a080c);
+  color:var(--t3); border:1px solid rgba(255,255,255,.12); border-radius:1px;
+  font-size:8px; padding:6px 6px; font-family:var(--mono); letter-spacing:.5px;
+  outline:none; cursor:pointer;
+}
+.cam-status-row {
+  display:flex; align-items:center; gap:6px; font-size:7.5px; letter-spacing:1px;
+  color:var(--t3); border:1px solid rgba(255,255,255,.08); border-radius:2px; padding:5px 7px;
+}
+#cam-stat-dot { font-size:9px; color:var(--t3); transition:color .3s; }
+#cam-stat-res { margin-left:auto; color:var(--amber); font-family:var(--mono); font-size:7px; }
+.cam-note {
+  font-size:6.5px; color:#ff9944; letter-spacing:.8px; line-height:1.8;
+  padding:7px 8px; border:1px solid rgba(255,153,68,.35); border-radius:2px; background:rgba(255,100,0,.07);
+}
+.cam-note b { font-size:7px; letter-spacing:1px; }
+.cam-note span { color:var(--t3); }
+.cam-diag {
+  display:none; font-size:6.5px; color:#ff4444; letter-spacing:.8px;
+  padding:5px 7px; border:1px solid rgba(255,68,68,.25); border-radius:2px; background:rgba(255,0,0,.05);
+  white-space:pre-line;
+}
+.ct-divider {
+  font-size:7px; letter-spacing:2px; color:var(--amber);
+  text-transform:uppercase; margin:8px 0 4px;
+  border-top:1px solid rgba(232,192,0,.15); padding-top:6px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   TOAST — transient notifications over preview
+   ═══════════════════════════════════════════════════════ */
+#toast {
+  position:absolute; bottom:22px; left:50%; transform:translateX(-50%);
+  background:linear-gradient(135deg,rgba(18,12,36,.97),rgba(8,6,20,.97));
+  border:1px solid var(--border-hi); color:var(--amber);
+  font-size:9px; padding:7px 22px; letter-spacing:2px; z-index:40;
+  opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap;
+  backdrop-filter:blur(12px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 24px rgba(232,192,0,.12);
+}
+
+/* ═══════════════════════════════════════════════════════
+   FULLSCREEN — native canvas fullscreen
+   ═══════════════════════════════════════════════════════ */
+.fs-btn {
+  width:100%; height:34px; margin-bottom:6px;
+  display:flex; align-items:center; justify-content:center; gap:9px;
+  background:linear-gradient(180deg,rgba(255,255,255,.26) 0%,rgba(255,255,255,.08) 45%,rgba(255,255,255,.01) 50%,rgba(255,255,255,.06) 100%),
+  linear-gradient(180deg,#1a1820 0%,#0a0810 50%,#121020 100%);
+  border:1px solid rgba(255,255,255,.13); border-bottom-color:rgba(0,0,0,.55);
+  border-radius:4px; color:var(--t3);
+  font-family:var(--mono); font-size:9px; letter-spacing:3px;
+  cursor:pointer; text-transform:uppercase; transition:all .15s;
+  position:relative; overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 3px 8px rgba(0,0,0,.6),0 6px 14px rgba(0,0,0,.25);
+}
+.fs-btn::before { content:''; position:absolute; top:0; left:0; right:0; height:48%; background:linear-gradient(180deg,rgba(255,255,255,.10),transparent); pointer-events:none; }
+.fs-btn:hover { border-color:rgba(200,160,255,.4); color:var(--t4); box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 0 18px rgba(180,120,255,.14),0 4px 10px rgba(0,0,0,.6); }
+
+canvas:fullscreen { width:100vw; height:100vh; object-fit:contain; background:#000; }
+canvas:-webkit-full-screen { width:100vw; height:100vh; object-fit:contain; background:#000; }
+
+/* ═══════════════════════════════════════════════════════
+   RECORD BUTTON
+   ═══════════════════════════════════════════════════════ */
+.rec-btn {
+  width:100%; height:34px; display:flex; align-items:center; justify-content:center; gap:9px;
+  background:linear-gradient(180deg,rgba(255,255,255,.24) 0%,rgba(255,255,255,.07) 45%,rgba(255,255,255,.01) 50%,rgba(255,255,255,.05) 100%),
+  linear-gradient(180deg,#1c1a1e 0%,#0c0a0e 50%,#141214 100%);
+  border:1px solid rgba(255,255,255,.12); border-bottom-color:rgba(0,0,0,.55);
+  border-radius:4px; color:var(--t2);
+  font-family:var(--mono); font-size:9.5px; letter-spacing:3px;
+  cursor:pointer; text-transform:uppercase; transition:all .15s; position:relative; overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 3px 8px rgba(0,0,0,.6),0 6px 14px rgba(0,0,0,.25);
+}
+.rec-btn::before { content:''; position:absolute; top:0; left:0; right:0; height:45%; background:linear-gradient(180deg,rgba(255,255,255,.09),transparent); pointer-events:none; }
+.rec-btn:hover { border-color:rgba(240,48,32,.45); color:var(--red); box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 0 20px rgba(240,48,32,.14),0 4px 10px rgba(0,0,0,.6); }
+.rec-btn.on {
+  background:linear-gradient(180deg,rgba(255,255,255,.12) 0%,rgba(255,255,255,.03) 45%,rgba(0,0,0,0) 50%,rgba(0,0,0,.1) 100%),
+  linear-gradient(180deg,#1e0a0a 0%,#0e0404 50%,#180808 100%);
+  border-color:rgba(240,48,32,.5); color:var(--red);
+  box-shadow:inset 0 2px 8px rgba(0,0,0,.5),0 0 20px rgba(240,48,32,.2),0 3px 8px rgba(0,0,0,.6);
+}
+.rec-dot { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.1); border:1px solid rgba(240,48,32,.3); flex-shrink:0; box-shadow:inset 0 1px 0 rgba(255,255,255,.1); }
+.rec-btn.on .rec-dot { background:radial-gradient(circle at 35% 30%,rgba(255,200,180,.9),var(--red)); border-color:transparent; box-shadow:0 0 10px rgba(240,48,32,.8),inset 0 1px 0 rgba(255,200,200,.5); animation:blink 1s infinite; }
+#rec-time { text-align:center; font-size:13px; letter-spacing:4px; color:var(--t2); font-variant-numeric:tabular-nums; margin-top:4px; }
+#rec-time.on { color:var(--red); text-shadow:0 0 12px rgba(240,48,32,.6); }
+
+/* Small buttons */
+.btn-sm {
+  height:22px; padding:0 9px;
+  background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02),rgba(0,0,0,.12));
+  border:1px solid rgba(255,255,255,.12); border-bottom-color:rgba(0,0,0,.35);
+  color:var(--t3); cursor:pointer; font-family:var(--mono); font-size:7.5px; letter-spacing:1px;
+  text-transform:uppercase; display:inline-flex; align-items:center; justify-content:center;
+  transition:all .12s; border-radius:1px; white-space:nowrap;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 2px 3px rgba(0,0,0,.4);
+}
+.btn-sm:hover { color:var(--amber); border-color:rgba(232,192,0,.4); box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 0 10px rgba(232,192,0,.2); }
+
+.preset-row { display:flex; gap:3px; flex-wrap:wrap; }
+
+/* PRESET section — buttons stretch edge-to-edge and content is centered */
+#sec-preset .lrow .chip,
+#sec-preset .preset-row .btn-sm {
+  flex:1;
+  justify-content:center;
+}
+#sec-preset .lrow .chip { padding:0 6px; white-space:nowrap; }
+#sec-preset .preset-row .btn-sm { padding:0 6px; }
+
+/* Flare status */
+.flare-status { font-size:8px; color:var(--t2); letter-spacing:1px; min-height:12px; }
+.flare-status.hot { color:var(--t3); text-shadow:0 0 8px rgba(232,192,0,.3); }
+
+/* format-row helper */
+.format-row { display:flex; gap:3px; }
+
+/* Status line */
+.status { font-size:8px; color:var(--t2); text-align:center; letter-spacing:1px; min-height:12px; }
+
+/* ═══════════════════════════════════════════════════════
+   SMOKE — bottom of panel
+   ═══════════════════════════════════════════════════════ */
+#panel-smoke {
+  position:sticky; bottom:0; left:0; right:0;
+  height:90px; pointer-events:none; overflow:hidden;
+  flex-shrink:0; z-index:10;
+  background:linear-gradient(180deg,transparent 0%,rgba(0,0,0,.4) 100%);
+}
+.smoke-blob { position:absolute; bottom:-20px; border-radius:50%; filter:blur(26px); }
+.smoke-blob.s1 { width:190px; height:75px; left:5%;  background:radial-gradient(ellipse,rgba(255,255,255,.08),rgba(200,180,255,.06),transparent 70%); animation:smoke-a 7s ease-in-out infinite; }
+.smoke-blob.s2 { width:145px; height:60px; left:38%; background:radial-gradient(ellipse,rgba(255,255,255,.06),rgba(180,160,255,.05),transparent 70%); animation:smoke-b 9.5s ease-in-out infinite 1.8s; }
+.smoke-blob.s3 { width:105px; height:48px; left:64%; background:radial-gradient(ellipse,rgba(255,255,255,.07),rgba(220,200,255,.05),transparent 70%); animation:smoke-c 11s ease-in-out infinite 3.5s; }
+
+video { display:none; }
+</style>
+</head>
+<body>
+
+<!-- ──────────────────────── TOPBAR ──────────────────────── -->
+<div id="topbar">
+  <div class="logo">VFX</div>
+  <div class="tb-sep"></div>
+  <div class="pill" id="pill-src"><div class="dot"></div><span class="pill-pre">INPUT</span><span id="pill-src-lbl">NONE</span></div>
+  <div class="pill engine"><div class="dot"></div><span class="pill-pre">RENDER</span><span id="pill-mode-lbl">WEBGL</span></div>
+  <div class="pill" id="pill-rec" style="display:none"><div class="dot"></div><span>● REC</span></div>
+  <div id="tb-time">--:--</div>
+  <div id="fps-display">FPS&nbsp;<b id="fps-val">--</b></div>
+</div>
+
+<div class="main">
+
+  <!-- ──────────────────────── PREVIEW ──────────────────────── -->
+  <div class="preview" id="preview">
+    <div id="drop-hint">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <div class="drop-title">ANAMORPHIC LAB</div>
+      <small>VIDEO &nbsp;—&nbsp; IMAGE &nbsp;—&nbsp; WEBCAM &nbsp;—&nbsp; CAMERA</small>
+      <button class="drop-source-btn" id="drop-source-btn" onclick="openSourcePanel()">SOURCE</button>
+    </div>
+    <canvas id="cv"></canvas>
+    <input type="file" id="file-input" accept="video/*">
+    <input type="file" id="file-input-img" accept="image/*" style="display:none">
+    <div id="toast"></div>
+  </div>
+
+  <!-- ──────────────────────── PANEL ──────────────────────── -->
+  <div class="panel">
+
+    <!-- SOURCE -->
+    <div class="section" id="sec-source">
+      <div class="sec-head closed" onclick="toggleSection(this)">
+        <div class="sec-mark"></div>
+        <span class="sec-title">Source</span>
+        <span class="sec-chev">▾</span>
+      </div>
+      <div class="sec-body hidden">
+        <div class="seg-row">
+          <button class="seg-btn" id="src-image" onclick="pickImage()">Image</button>
+          <button class="seg-btn" id="src-video" onclick="pickVideo()">Video</button>
+          <button class="seg-btn" id="src-webcam" onclick="toggleWebcam()">Webcam</button>
+          <button class="seg-btn" id="src-camera" onclick="toggleNikonCamera()">Camera</button>
+        </div>
+        <div class="vu-row"><span class="vu-lbl">Motion</span><div class="vu-track"><div class="vu-bar" id="vu-motion"></div></div><span class="vu-val" id="vu-mv">0%</span></div>
+        <div class="info-grid" style="margin-top:2px">
+          <div class="info-cell"><div class="ic-lbl">File</div><div class="ic-val dim" id="info-file">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val amber" id="info-res">--</div></div>
+        </div>
+        <div class="row" style="margin-top:4px"><div class="lbl">Playback</div><div class="led-btn" id="btn-play" onclick="toggleVideoPlayback()"><div class="led"></div><div class="led-txt" id="play-label">Paused</div><div class="kbd-badge">SPC</div></div></div>
+        <div class="row"><div class="lbl">Loop</div><div class="led-btn on" id="btn-loop" onclick="toggleVideoLoop()"><div class="led"></div><div class="led-txt" id="loop-label">Loop On</div></div></div>
+        <div class="row"><div class="lbl">Webcam</div><div class="led-btn" id="btn-webcam" onclick="toggleWebcam()"><div class="led" id="webcam-led"></div><div class="led-txt" id="webcam-label">Webcam Off</div></div></div>
+        <div class="row"><div class="lbl">Fullscreen</div><div class="led-btn" id="btn-fullscreen" onclick="toggleFullscreen()"><div class="led"></div><div class="led-txt">Fullscreen</div><div class="kbd-badge">F</div></div></div>
+      </div>
+    </div>
+
+    <!-- CAMERA -->
+    <div class="section" id="sec-cam-ctrl">
+      <div class="sec-head closed" onclick="toggleSection(this)">
+        <div class="sec-mark"></div>
+        <span class="sec-title">Camera</span>
+        <span class="sec-chev">▾</span>
+      </div>
+      <div class="sec-body hidden">
+        <div style="display:flex;gap:4px;align-items:center">
+          <select id="cam-device-sel" class="cam-select">
+            <option value="">— select camera —</option>
+          </select>
+          <button class="btn-sm" id="cam-refresh-btn" title="Refresh list">↺</button>
+        </div>
+        <div class="cam-status-row" id="cam-status">
+          <span id="cam-stat-dot">●</span>
+          <span id="cam-stat-lbl">DISCONNECTED</span>
+          <span id="cam-stat-res"></span>
+        </div>
+        <div class="cam-note" id="cam-uvc-note">
+          <b>⚠ CAMERA DOES NOT CHARGE — IT STREAMS</b><br>
+          On the Nikon ZR body:<br>
+          <b>MENU → Network/USB → USB Connection → Video (UVC)</b><br>
+          Then <b>unplug and reconnect the USB-C cable</b>.<br>
+          <span>In UVC mode the battery does not charge. Use a power bank on the second port if needed.</span>
+        </div>
+        <div class="cam-diag" id="cam-diag"></div>
+        <div class="lrow">
+          <button class="chip" id="cam-photo-btn"><span class="led"></span>RAW Photo</button>
+          <button class="chip" id="cam-rec-btn"><span class="led"></span>RAW Rec</button>
+        </div>
+        <div id="cam-cap-settings" style="display:none">
+          <div class="ct-divider">Camera Settings</div>
+          <div class="ctrl" id="cam-iso-row" style="display:none">
+            <label>ISO <b id="cam-iso-v">400</b></label>
+            <input type="range" id="cam-iso-sl" min="100" max="25600" value="400" step="100">
+          </div>
+          <div class="ctrl" id="cam-exp-row" style="display:none">
+            <label>Shutter <b id="cam-exp-v">1/120</b></label>
+            <input type="range" id="cam-exp-sl" min="100" max="500000" value="8333" step="100">
+          </div>
+          <div class="ctrl" id="cam-wb-row" style="display:none">
+            <label>Temp K <b id="cam-wb-v">5500K</b></label>
+            <input type="range" id="cam-wb-sl" min="2850" max="7000" value="5500" step="50">
+          </div>
+          <div class="ctrl" id="cam-zoom-row" style="display:none">
+            <label>Zoom <b id="cam-zoom-v">1.0×</b></label>
+            <input type="range" id="cam-zoom-sl" min="1.0" max="10.0" value="1.0" step="0.1">
+          </div>
+          <div class="seg-row" style="margin-top:3px">
+            <button class="seg-btn on" id="cam-af-btn">Auto Focus</button>
+            <button class="seg-btn on" id="cam-awb-btn">Auto WB</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRESET -->
+    <div class="section" id="sec-preset">
+      <div class="sec-head closed" onclick="toggleSection(this)">
+        <div class="sec-mark"></div>
+        <span class="sec-title">Preset</span>
+        <span class="sec-chev">▾</span>
+      </div>
+      <div class="sec-body hidden">
+        <div class="lrow">
+          <button class="chip on" onclick="preset('isco',this)"><span class="led"></span>ISCO</button>
+          <button class="chip" onclick="preset('arriscope',this)"><span class="led"></span>ARRI</button>
+          <button class="chip" onclick="preset('fuji',this)"><span class="led"></span>FUJI</button>
+          <button class="chip" onclick="preset('kodak',this)"><span class="led"></span>KODAK</button>
+        </div>
+        <div class="lrow">
+          <button class="chip" onclick="preset('raw',this)"><span class="led"></span>RAW</button>
+        </div>
+        <div class="preset-row">
+          <button class="btn-sm" onclick="saveUserPreset()">Save preset</button>
+          <button class="btn-sm" onclick="loadUserPreset()">Load last</button>
+          <button class="btn-sm" onclick="clearUserPreset()">Clear saved</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- VISIONE -->
+    <div class="section" id="sec-vision">
+      <div class="sec-head closed" onclick="toggleSection(this)">
+        <div class="sec-mark"></div>
+        <span class="sec-title">Exposure</span>
+        <span class="sec-chev">▾</span>
+      </div>
+      <div class="sec-body hidden">
+        <div class="seg-row">
+          <button class="seg-btn" id="tog-compare" onclick="tog('compare')">Compare A|B</button>
+          <button class="seg-btn" id="tog-desqueeze" onclick="tog('desqueeze')">Desqueeze Preview</button>
+        </div>
+        <div class="ctrl">
+          <label>Stops <b id="v-exposure">0.00</b></label>
+          <input type="range" id="s-exposure" min="-2" max="2" step="0.02" value="0" oninput="set('exposure',+this.value)">
+        </div>
+      </div>
+    </div>
+
+    <!-- TEMPERATURA COLORE -->
+    <div class="section" id="sec-temp">
+      <div class="sec-head closed" onclick="toggleSection(this)">
+        <div class="sec-mark"></div>
+        <span class="sec-title">Color Temperature</span>
+        <span class="sec-chev">▾</span>
+      </div>
+      <div class="sec-body hidden">
+        <div class="ctrl">
+          <label>
+            Cold ←→ Warm
+            <b id="v-temp">+0.55</b>
+            <button class="auto-badge" onclick="autoTemp()" title="Analisi multi-zona + saturazione">AUTO</button>
+          </label>
+          <input type="range" id="s-temp" min="-1" max="1" step="0.01" value="0.55" oninput="set('temp',+this.value)">
+          <div class="temp-labels">
+            <span class="cold">— Ice</span>
+            <span>· Neutro ·</span>
+            <span class="warm">Amber —</span>
+          </div>
+        </div>
+        <div class="ctrl">
+          <label>Black lift <b id="v-lift">0.045</b></label>
+          <input type="range" id="s-lift" min="0" max="0.15" step="0.002" value="0.045" oninput="set('lift',+this.value)">
+        </div>
+        <div class="ctrl">
+          <label>Contrast <b id="v-contrast">0.30</b></label>
+          <input type="range" id="s-contrast" min="0" max="1" step="0.01" value="0.30" oninput="set('contrast',+this.value)">
+        </div>
+        <div class="ctrl">
+          <label>Saturation <b id="v-sat">0.82</b></label>
+          <input type="range" id="s-sat" min="0" max="1.8" step="0.01" value="0.82" oninput="set('sat',+this.value)">
+        </div>
+        <div class="ctrl">
+          <label>Highlight rolloff (film shoulder) <b id="v-rolloff">0.55</b></label>
+          <input type="range" id="s-rolloff" min="0" max="1" step="0.01" value="0.55" oninput="set('rolloff',+this.value)">
+        </div>
+        <div class="ctrl">
+          <label><small>LUT (future feature)</small> <b id="v-lutMix">0.00</b></label>
+          <input type="range" id="s-lutMix" min="0" max="1" step="0.01" value="0" oninput="set('lutMix',+this.value)">
+        </div>
+      </div>
+    </div>
+
+    <!-- TEXTURE / BOKEH -->
+    <div class="section" id="sec-texture">
+      <div class="sec-head closed" onclick="toggleSection(this)">
+        <div class="sec-mark"></div>
+        <span class="sec-title">Texture / Bokeh</span>
+        <span class="sec-chev">▾</span>
+      </div>
+      <div class="sec-body hidden">
+        <div class="ctrl">
+          <label>Grain — Instax / VHS hybrid <b id="v-grain">0.00</b></label>
+          <div class="grain-viz"><div class="grain-viz-fill" id="grain-fill" style="width:0%"></div></div>
+          <input type="range" id="s-grain" min="0" max="1" step="0.01" value="0" oninput="setGrain(+this.value)">
+        </div>
+        <div class="ctrl">
+          <label>Bokeh highlight — horizontal bloom <b id="v-bokeh">0.35</b></label>
+          <input type="range" id="s-bokeh" min="0" max="1" step="0.01" value="0.35" oninput="set('bokeh',+this.value)">
+        </div>
+        <div class="ctrl">
+          <label>Halation <b id="v-halation">0.45</b></label>
+          <input type="range" id="s-halation" min="0" max="1" step="0.01" value="0.45" oninput="set('halation',+this.value)">
+        </div>
+        <div class="ctrl">
+          <label>Chromatic aberration <b id="v-ca">0.25</b></label>
+          <input type="range" id="s-ca" min="0" max="1" step="0.01" value="0.25" oninput="set('ca',+this.value)">
+        </div>
+      </div>
+    </div>
+
+    <!-- OTTICA ANAMORPHIC -->
+    <div class="section" id="sec-optics">
+      <div class="sec-head closed" onclick="toggleSection(this)">
+        <div class="sec-mark"></div>
+        <span class="sec-title">Anamorphic Optics</span>
+        <span class="sec-chev">▾</span>
+      </div>
+      <div class="sec-body hidden">
+        <div class="seg-row">
+          <button class="seg-btn on" id="tog-letterbox" onclick="tog('letterbox')">Letterbox</button>
+          <button class="seg-btn" id="tog-breathing" onclick="tog('breathing')">Breathing</button>
+        </div>
+        <div class="ctrl">
+          <label>Squeeze (pre-effects) <b id="v-squeeze">1.00</b> <small>1=off, ~2=2×</small></label>
+          <input type="range" id="s-squeeze" min="1" max="2.2" step="0.02" value="1" oninput="set('squeeze',+this.value)">
+        </div>
+        <div class="ctrl">
+          <label>Aspect ratio <b id="v-ratio">2.39 : 1</b></label>
+          <input type="range" id="s-ratio" min="1.78" max="2.80" step="0.01" value="2.39" oninput="set('ratio',+this.value)">
+        </div>
+        <div class="ctrl">
+          <label>Barrel <b id="v-barrel">0.22</b></label>
+          <input type="range" id="s-barrel" min="0" max="1" step="0.01" value="0.22" oninput="set('barrel',+this.value)">
+        </div>
+        <div class="ctrl">
+          <label>Vignette <b id="v-vignette">0.40</b></label>
+          <input type="range" id="s-vignette" min="0" max="1" step="0.01" value="0.40" oninput="set('vignette',+this.value)">
+        </div>
+        <div class="ct-divider" style="margin-top:6px">Anamorphic Bokeh</div>
+        <div class="ctrl">
+          <label>Oval fine-tune <b id="v-ovalFineTune">+0.00</b> <small>(auto from squeeze)</small></label>
+          <input type="range" id="s-ovalFineTune" min="-0.30" max="0.50" step="0.01" value="0"
+                 oninput="setOvalFineTune(+this.value)">
+        </div>
+        <div class="flare-status" id="oval-status">Oval ratio: 1.00× (circular)</div>
+      </div>
+    </div>
+
+    <!-- GHOST (drives bokeh background-blur engine via mm) -->
+    <div class="section" id="sec-bokeh">
+      <div class="sec-head closed" onclick="toggleSection(this)">
+        <div class="sec-mark"></div>
+        <span class="sec-title">Ghost</span>
+        <span class="sec-chev">▾</span>
+      </div>
+      <div class="sec-body hidden">
+        <div class="ctrl-row" style="margin-top:6px">
+          <div class="ctrl-lbl">FINE TUNE</div>
+          <div class="ctrl-track"><input type="range" class="daw-slider" id="s-bokehMM" min="0" max="200" step="1" value="0" oninput="focalSliderInput(+this.value)"></div>
+          <div class="ctrl-val"><b id="v-bokehMM">0</b>mm</div>
+        </div>
+        <div class="seg-row" style="margin-top:6px">
+          <button class="seg-btn" id="tog-ghostGlitch" onclick="tog('ghostGlitch')">Ghost FX</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOKEH (ex "Riccardo") — riconoscimento soggetto + sfocatura sfondo (stessa pipeline MediaPipe/WebGL di Ghost). Include qui sotto anche una copia dei comandi di Ghost (chip mm + fine tune), senza una propria tendina, così risultano sempre visibili insieme ai comandi di questa sezione. -->
+    <div class="section" id="sec-riccardo">
+      <div class="sec-head closed" onclick="toggleSection(this)">
+        <div class="sec-mark"></div>
+        <span class="sec-title">Bokeh</span>
+        <span class="sec-chev">▾</span>
+      </div>
+      <div class="sec-body hidden">
+        <div class="seg-row">
+          <button class="seg-btn" id="tog-riccardo" onclick="toggleRiccardo()">Recognize &amp; Blur</button>
+        </div>
+        <div class="ctrl">
+          <label>Background blur <b id="v-riccardoBlur">0</b>%</label>
+          <input type="range" id="s-riccardoBlur" min="0" max="100" step="1" value="0" oninput="setRiccardoBlur(+this.value)">
+        </div>
+        <div class="ctrl">
+          <label>Apertura <b id="v-fStop">4.0</b> f-stop</label>
+          <input type="range" id="s-fStop" min="0.95" max="22" step="0.05" value="4.0"
+                 oninput="setFStop(+this.value)">
+        </div>
+        <div class="flare-status" id="bokeh-status">Subject detection: idle</div>
+        <div class="seg-row mm-chip-set" id="ghost-sel-bokeh" style="flex-wrap:wrap;gap:2px;margin-top:6px">
+          <div class="seg-btn" data-mm="0">0mm</div>
+          <div class="seg-btn" data-mm="35">35mm</div>
+          <div class="seg-btn" data-mm="50">50mm</div>
+          <div class="seg-btn" data-mm="85">85mm</div>
+          <div class="seg-btn" data-mm="100">100mm</div>
+          <div class="seg-btn" data-mm="135">135mm</div>
+          <div class="seg-btn" data-mm="150">150mm</div>
+          <div class="seg-btn" data-mm="200">200mm</div>
+        </div>
+        <div class="ctrl-row" style="margin-top:6px">
+          <div class="ctrl-lbl">FINE TUNE</div>
+          <div class="ctrl-track"><input type="range" class="daw-slider" id="s-bokehMM-bokeh" min="0" max="200" step="1" value="0" oninput="focalSliderInput(+this.value)"></div>
+          <div class="ctrl-val"><b id="v-bokehMM-bokeh">0</b>mm</div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- FLARE -->
+    <div class="section" id="sec-flare">
+      <div class="sec-head closed" onclick="toggleSection(this)">
+        <div class="sec-mark"></div>
+        <span class="sec-title">Flare</span>
+        <span class="sec-chev">▾</span>
+      </div>
+      <div class="sec-body hidden">
+        <div class="seg-row">
+          <button class="seg-btn" id="tog-flareMaster" onclick="tog('flareMaster')">Flare ON</button>
+          <button class="seg-btn" id="tog-flare" onclick="tog('flare')">Auto Detect</button>
+        </div>
+        <div class="ctrl">
+          <label>Flare intensity <b id="v-flareAmt">0.60</b></label>
+          <input type="range" id="s-flareAmt" min="0" max="1" step="0.01" value="0.60" oninput="set('flareAmt',+this.value)">
+        </div>
+        <div class="ctrl">
+          <label>Flare length <b id="v-flareLength">0.50</b></label>
+          <input type="range" id="s-flareLength" min="0" max="1" step="0.01" value="0.50" oninput="set('flareLength',+this.value)">
+        </div>
+        <div class="ctrl">
+          <label>
+            Giallo ←→ Blu
+            <b id="v-flareColor">0.00</b>
+          </label>
+          <input type="range" id="s-flareColor" min="0" max="1" step="0.01" value="0" oninput="set('flareColor',+this.value)">
+          <div class="temp-labels">
+            <span class="warm">— Giallo</span>
+            <span>· Misto ·</span>
+            <span class="cold">Blu —</span>
+          </div>
+        </div>
+        <div class="ctrl">
+          <label>Flare height <b id="v-flareHeight">0.50</b></label>
+          <input type="range" id="s-flareHeight" min="0" max="1" step="0.01" value="0.50" oninput="set('flareHeight',+this.value)">
+        </div>
+        <div class="flare-status" id="flare-status">No light source detected</div>
+      </div>
+    </div>
+
+    <!-- EXPORT -->
+    <div class="section" id="sec-export">
+      <div class="sec-head closed" onclick="toggleSection(this)">
+        <div class="sec-mark"></div>
+        <span class="sec-title">Export</span>
+        <span class="sec-chev">▾</span>
+      </div>
+      <div class="sec-body hidden">
+        <button class="fs-btn" id="btn-fs">⛶&nbsp;&nbsp;FULLSCREEN</button>
+        <button class="rec-btn" id="btn-rec"><div class="rec-dot"></div>REC</button>
+        <div id="rec-time">00:00:00</div>
+      </div>
+    </div>
+
+    <!-- INFO -->
+    <div class="section" id="sec-info">
+      <div class="sec-head" onclick="toggleSection(this)">
+        <div class="sec-mark"></div>
+        <span class="sec-title">Info</span>
+        <span class="sec-chev">▾</span>
+      </div>
+      <div class="sec-body">
+        <div class="info-grid">
+          <div class="info-cell"><div class="ic-lbl">Resolution</div><div class="ic-val amber" id="ic-res">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">FPS</div><div class="ic-val amber" id="ic-fps">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Aspect</div><div class="ic-val dim" id="ic-ratio">2.39:1</div></div>
+          <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val dim" id="ic-source">NONE</div></div>
+          <div class="ic-credit">CREATED BY STATE</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SMOKE BOTTOM -->
+    <div id="panel-smoke">
+      <div class="smoke-blob s1"></div>
+      <div class="smoke-blob s2"></div>
+      <div class="smoke-blob s3"></div>
+    </div>
+
+  </div><!-- /panel -->
+</div><!-- /main -->
+
+<video id="vid" loop playsinline muted></video>
+
+<script>
+/* ─── Section collapse ─── */
+function toggleSection(head){
+  const body=head.nextElementSibling;
+  if(!body||!body.classList.contains('sec-body'))return;
+  const closed=body.classList.toggle('hidden');
+  head.classList.toggle('closed',closed);
+}
+
+/* Apre la sezione Source (se chiusa) e ci scrolla sopra — stesso
+   comportamento del bottone "SOURCE" in Blob State Tracker: non tocca
+   le altre sezioni, si limita ad aprire quella e a renderla visibile. */
+function openSourcePanel(){
+  const head=document.querySelector('#sec-source .sec-head');
+  const body=document.querySelector('#sec-source .sec-body');
+  if(head&&body&&head.classList.contains('closed')){
+    head.classList.remove('closed');
+    body.classList.remove('hidden');
+  }
+  if(head&&typeof head.scrollIntoView==='function')head.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* Sec-mark + sec-title color sync — every section's little vertical bar AND
+   its title text used to run their OWN independent CSS animation each
+   (hue-spin / iri-logo). Even nominally identical, many separate animation
+   instances can drift by a hair in real browsers. Here a single rAF loop
+   is the ONLY thing writing two shared CSS variables (--mark-hue for the
+   bars, --title-pos for the title gradient) — every bar and every title
+   across all 12 sections reads the exact same two numbers every frame, so
+   they're mathematically guaranteed to start/loop/end in lockstep, with
+   zero possible per-element drift. */
+let _markHueT0=null;
+function _tickMarkHue(ts){
+  if(_markHueT0===null)_markHueT0=ts;
+  const dt=ts-_markHueT0;
+  const t=dt%5000;
+  const hue=(t/5000)*360;
+  const pos=t<2500?(t/2500)*100:100-((t-2500)/2500)*100; // triangle wave, matches old iri-logo keyframe (0%→100%→0%)
+  const linePos=((dt%12000)/12000)*200; // matches old topline-shift keyframe (0%→200%, loop)
+  document.documentElement.style.setProperty('--mark-hue',hue+'deg');
+  document.documentElement.style.setProperty('--title-pos',pos+'%');
+  document.documentElement.style.setProperty('--line-pos',linePos+'%');
+  requestAnimationFrame(_tickMarkHue);
+}
+requestAnimationFrame(_tickMarkHue);
+
+/* ═══════════════════════════════════════════════════════
+   ORIGINAL JS — UNCHANGED
+   ═══════════════════════════════════════════════════════ */
+const LS_KEY='anamorphic_lab_v3_preset';
+const cv=document.getElementById('cv');
+const gl=cv.getContext('webgl',{preserveDrawingBuffer:true,antialias:false});
+const vid=document.getElementById('vid');
+/* 'resize' fires on the <video> element whenever its intrinsic width/height
+   become available or change — the only fully reliable signal for live
+   MediaStream sources (webcam / external camera), where videoWidth/Height
+   can be 0 at the exact moment 'loadeddata' fires. This keeps the canvas
+   and the aspect-ratio math in sync regardless of source type.
+   Debounced: se per qualche motivo il browser scatena più 'resize' a
+   raffica (es. rinegoziazione della traccia), evitiamo di riallocare il
+   canvas WebGL più volte in pochi millisecondi — operazione costosa che
+   si traduce in uno scatto visibile sul fotogramma live. */
+let _vidResizeT=null;
+vid.addEventListener('resize',()=>{
+  if(typeof srcMode==='undefined'||srcMode==='none'||srcMode==='image')return;
+  clearTimeout(_vidResizeT);
+  _vidResizeT=setTimeout(resizeCanvasToVideo,80);
+});
+
+/* Play/Pause — stato del bottone sincronizzato sugli eventi nativi
+   dell'elemento <video>, non su una variabile duplicata: qualunque
+   causa metta in play/pausa il video (autoplay, toggleVideoPlayback,
+   stopAllSources che chiama vid.pause()) tiene il bottone coerente
+   senza codice extra nei punti di chiamata. */
+vid.addEventListener('play',()=>{const b=document.getElementById('btn-play');if(b)b.classList.add('on');const l=document.getElementById('play-label');if(l)l.textContent='Playing';});
+vid.addEventListener('pause',()=>{const b=document.getElementById('btn-play');if(b)b.classList.remove('on');const l=document.getElementById('play-label');if(l)l.textContent='Paused';});
+
+const VS=`
+attribute vec2 aPos;
+varying vec2 vUV;
+void main(){
+  vUV=aPos*0.5+0.5;
+  vUV.y=1.0-vUV.y;
+  gl_Position=vec4(aPos,0.,1.);
+}`;
+
+const FS=`
+precision highp float;
+varying vec2 vUV;
+uniform sampler2D uTex;
+uniform sampler2D uLUT;
+uniform float uTime;
+uniform float uTemp;
+uniform float uLift;
+uniform float uContrast;
+uniform float uSat;
+uniform float uRolloff;
+uniform float uRolloffKnee;
+uniform float uExposure;
+uniform float uHalation;
+uniform float uGrain;
+uniform float uBokeh;
+uniform float uCA;
+uniform float uBarrel;
+uniform float uVignette;
+uniform float uLetterbox;
+uniform float uRatio;
+uniform float uVideoAR;
+uniform float uBreathing;
+uniform float uSqueeze;
+uniform float uFlare;
+uniform float uFlareMaster;
+uniform float uFlareAmt;
+uniform float uFlareX;
+uniform float uFlareActive;
+uniform float uFlarePhase;
+uniform float uFlareJitter;
+uniform float uFlareLength;
+uniform float uFlareColor;
+uniform float uFlareHeight;
+uniform float uCompare;
+uniform float uLutMix;
+uniform float uLutSize;
+
+float rng(vec2 c){return fract(sin(dot(c,vec2(12.9898,78.233)))*43758.5453);}
+float hash3(vec3 p){return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453);}
+
+vec2 squeezeUV(vec2 uv,float sq){
+  if(sq<1.001)return uv;
+  float e=0.001;
+  return vec2(clamp(0.5+(uv.x-0.5)*sq,e,1.0-e),uv.y);
+}
+
+vec2 barrel(vec2 uv,float k){
+  vec2 c=uv-0.5;
+  float r2=dot(c,c);
+  c.x+=c.x*r2*(k*0.35);
+  c.y+=c.y*r2*(k*1.20);
+  return c+0.5;
+}
+
+vec3 sampleLUT(sampler2D lut,vec3 c,float mixAmt,float lutSize){
+  if(mixAmt<0.001)return c;
+  vec3 hold=texture2D(lut,vec2(0.5,0.5)).rgb;
+  return mix(c,c,mixAmt)+hold*0.0;
+}
+
+float luminance(vec3 c){return dot(c,vec3(0.299,0.587,0.114));}
+
+vec3 halation(sampler2D tex,vec2 uv,float str){
+  if(str<0.01)return vec3(0.);
+  float r=0.010*str;
+  vec3 s=vec3(0.);
+  s+=texture2D(tex,uv+vec2( r*2.4, 0.0)).rgb;
+  s+=texture2D(tex,uv+vec2(-r*2.4, 0.0)).rgb;
+  s+=texture2D(tex,uv+vec2( r*1.4,  r*0.5)).rgb;
+  s+=texture2D(tex,uv+vec2(-r*1.4,  r*0.5)).rgb;
+  s+=texture2D(tex,uv+vec2( r*1.4, -r*0.5)).rgb;
+  s+=texture2D(tex,uv+vec2(-r*1.4, -r*0.5)).rgb;
+  s+=texture2D(tex,uv+vec2(0.,  r*0.8)).rgb;
+  s+=texture2D(tex,uv+vec2(0., -r*0.8)).rgb;
+  s/=8.0;
+  float lum=luminance(s);
+  float mask=smoothstep(0.52,0.92,lum);
+  s*=vec3(1.60,0.68,0.18);
+  return s*mask*str*0.52;
+}
+
+vec3 anisoBokehBloom(sampler2D tex,vec2 uv,float str){
+  if(str<0.01)return vec3(0.);
+  float w=str*0.018;
+  vec3 acc=vec3(0.);
+  float tw=0.;
+  float t0=0.22,t1=0.18,t2=0.14,t3=0.12;
+  vec2 o;
+  vec3 s;float lum,hi;
+  o=vec2(-3.0*w,0.);s=texture2D(tex,uv+o).rgb;lum=luminance(s);hi=smoothstep(0.62,0.98,lum);acc+=s*hi*t0;tw+=t0*hi;
+  o=vec2(-2.0*w,0.);s=texture2D(tex,uv+o).rgb;lum=luminance(s);hi=smoothstep(0.62,0.98,lum);acc+=s*hi*t1;tw+=t1*hi;
+  o=vec2(-1.0*w,0.);s=texture2D(tex,uv+o).rgb;lum=luminance(s);hi=smoothstep(0.62,0.98,lum);acc+=s*hi*t2;tw+=t2*hi;
+  o=vec2(0.0,0.);s=texture2D(tex,uv+o).rgb;lum=luminance(s);hi=smoothstep(0.62,0.98,lum);acc+=s*hi*t3;tw+=t3*hi;
+  o=vec2(1.0*w,0.);s=texture2D(tex,uv+o).rgb;lum=luminance(s);hi=smoothstep(0.62,0.98,lum);acc+=s*hi*t2;tw+=t2*hi;
+  o=vec2(2.0*w,0.);s=texture2D(tex,uv+o).rgb;lum=luminance(s);hi=smoothstep(0.62,0.98,lum);acc+=s*hi*t1;tw+=t1*hi;
+  o=vec2(3.0*w,0.);s=texture2D(tex,uv+o).rgb;lum=luminance(s);hi=smoothstep(0.62,0.98,lum);acc+=s*hi*t0;tw+=t0*hi;
+  if(tw<0.0001)return vec3(0.);
+  acc/=tw;
+  float baseL=luminance(texture2D(tex,uv).rgb);
+  float gate=smoothstep(0.55,0.95,baseL);
+  return acc*str*0.85*gate;
+}
+
+vec3 chromAb(sampler2D tex,vec2 uv,float str){
+  if(str<0.01)return texture2D(tex,uv).rgb;
+  float dist=length(uv-0.5)*1.4;
+  vec2 shift=(uv-0.5)*str*0.015*dist;
+  float r=texture2D(tex,uv+shift).r;
+  float gv=texture2D(tex,uv).g;
+  float b=texture2D(tex,uv-shift).b;
+  return vec3(r,gv,b);
+}
+
+vec3 instaxVhsGrain(vec2 uv,float t,float str,float lum){
+  if(str<0.004)return vec3(0.);
+  float frame=floor(t*18.0)/18.0;
+  vec2 q=uv*vec2(1.0,1.15);
+  float n1=hash3(vec3(q*vec2(420.0,380.0),frame));
+  float n2=hash3(vec3(q*vec2(90.0,110.0),frame*1.7));
+  float n3=hash3(vec3(q*vec2(18.0,22.0),frame*0.4));
+  float blob=smoothstep(0.35,0.72,n2)*0.9+0.25;
+  float line=sin(uv.y*720.0+t*3.1)*0.5+0.5;
+  line=pow(line,6.0)*0.35;
+  vec3 g=vec3(n1-0.5,n1-0.48,n1-0.52);
+  g.r+=0.08*sin(uv.y*900.0+frame*12.0);
+  g.b+=0.06*cos(uv.x*640.0-frame*9.0);
+  g*=mix(0.65,blob,0.85);
+  g.r*=1.12;g.g*=0.92;g.b*=1.08;
+  float vhsBleed=smoothstep(0.2,0.55,n3)*0.22;
+  g+=vec3(vhsBleed*0.4,vhsBleed*0.15,-vhsBleed*0.1);
+  float scan=line*str*0.45;
+  g+=vec3(scan*0.08,scan*0.05,scan*0.12);
+  float mid=smoothstep(0.05,0.22,lum)*smoothstep(0.92,0.48,lum);
+  float hiSup=1.0-smoothstep(0.78,0.98,lum);
+  return g*mid*hiSup*str*0.22;
+}
+
+float shoulderCh(float x,float rolloff,float kneeShape){
+  float knee=mix(0.88,0.58,rolloff);
+  float a=mix(2.5,8.0,rolloff)*kneeShape;
+  float b=mix(0.2,0.55,rolloff);
+  float t=max(x-knee,0.0);
+  float compressed=knee+t/(1.0+a*t+b*t*t);
+  return mix(x,compressed,smoothstep(knee-0.08,knee+0.02,x));
+}
+vec3 filmicShoulder(vec3 c,float rolloff,float kneeShape){
+  if(rolloff<0.001)return c;
+  return vec3(
+    shoulderCh(c.r,rolloff,kneeShape),
+    shoulderCh(c.g,rolloff,kneeShape),
+    shoulderCh(c.b,rolloff,kneeShape)
+  );
+}
+
+vec3 tempGrade(vec3 c,float temp,float lift,float contrast,float sat,float rolloff,float rolloffK){
+  c=mix(vec3(lift),vec3(1.0-lift*0.12),c);
+  float k=contrast*0.55;
+  c=c*(1.0+k)-k*0.5;
+  c=clamp(c,0.,1.);
+  c=filmicShoulder(c,rolloff,rolloffK);
+  float lum=luminance(c);
+  float absT=abs(temp);
+  vec3 shTint,mdTint,hiTint;
+  if(temp>=0.0){
+    shTint=mix(vec3(1.),vec3(1.08,0.76,0.36),absT);
+    mdTint=mix(vec3(1.),vec3(1.03,0.94,0.70),absT);
+    hiTint=mix(vec3(1.),vec3(1.01,0.98,0.87),absT);
+  }else{
+    shTint=mix(vec3(1.),vec3(0.54,0.78,1.22),absT);
+    mdTint=mix(vec3(1.),vec3(0.78,0.90,1.10),absT);
+    hiTint=mix(vec3(1.),vec3(0.90,0.96,1.07),absT);
+  }
+  vec3 tint=lum<0.5?mix(shTint,mdTint,lum*2.0):mix(mdTint,hiTint,(lum-0.5)*2.0);
+  c=mix(c,c*tint,0.55);
+  float g=luminance(c);
+  c=mix(vec3(g),c,sat);
+  return clamp(c,0.,1.);
+}
+
+vec3 anamFlare(vec2 uv,float amt,float fx,float active,float t,float phase,float jx,float lenP,float colP,float hgtP){
+  if(amt<0.01||active<0.5)return vec3(0.);
+  float n1=hash3(vec3(uv.x*40.0+uv.y*40.0,t*2.7,phase));
+  float n2=hash3(vec3(uv.x*120.0+uv.y*120.0,t*5.1,phase*0.3));
+  float flick=0.88+0.14*sin(t*6.2+phase*12.0)+0.08*(n1-0.5);
+  float micro=0.97+0.06*sin(uv.y*180.0+t*3.0)+0.04*(n2-0.5);
+  float fxw=fx+jx*0.012;
+  float dy=uv.y-0.5;
+  float dx=uv.x-fxw;
+  float wobble=sin(t*1.1+uv.y*25.0)*0.004;
+  dy+=wobble;
+  /* lenP: 0=corto,1=lungo — riduce il decadimento orizzontale del fascio */
+  float decayS1=mix(1.4,0.1,lenP);
+  float decayS2=mix(0.5,0.06,lenP);
+  /* hgtP: 0=sottile,1=spesso — riduce il decadimento verticale del fascio */
+  float vDecayS1=mix(160.0,30.0,hgtP);
+  float vDecayS2=mix(34.0,6.0,hgtP);
+  float s1=exp(-dy*dy*vDecayS1)*exp(-abs(dx)*decayS1);
+  float s2=exp(-dy*dy*vDecayS2)*exp(-abs(dx)*decayS2);
+  float dirt=smoothstep(0.35,0.85,rng(uv*3.7+t*0.2));
+  /* colP: 0=giallo (classico),1=blu — vira l'intera gamma cromatica del flare */
+  vec3 coreCol=mix(vec3(1.0,0.80,0.30),vec3(0.35,0.55,1.0),colP);
+  vec3 haloCol=mix(vec3(0.20,0.40,1.0),vec3(0.10,0.20,0.55),colP);
+  vec3 col=vec3(0.);
+  col+=coreCol*s1*0.95*flick*micro;
+  col+=haloCol*s2*0.28*flick;
+  col*=mix(0.85,1.15,dirt);
+  vec3 ghostA=mix(vec3(1.0,0.5,0.15),vec3(0.35,0.55,1.0),colP);
+  vec3 ghostB=mix(vec3(0.25,0.50,1.0),vec3(0.15,0.30,0.75),colP);
+  for(float i=1.0;i<=5.0;i++){
+    float ox=fxw-(fxw-0.5)*(i*0.22);
+    float oy=0.5+0.02*sin(t*0.9+i*1.7)+0.015*(hash3(vec3(i,t,uv.x))-0.5);
+    vec2 d=vec2((uv.x-ox)*3.0,(uv.y-oy)*6.0);
+    float sp=smoothstep(0.17,0.0,length(d))*0.32;
+    float gn=hash3(vec3(i*7.1,uv.y*50.0,t*4.0));
+    sp*=0.9+0.2*gn;
+    col+=mix(ghostA,ghostB,mod(i,2.0))*sp*flick;
+  }
+  return col*amt;
+}
+
+float anamVig(vec2 uv,float str){
+  vec2 d=(uv-0.5)*vec2(0.82,1.18);
+  return clamp(1.0-dot(d,d)*str*2.8,0.,1.);
+}
+
+vec2 breathe(vec2 uv,float en,float t){
+  if(en<0.5)return uv;
+  float b=1.0+sin(t*0.52)*0.004;
+  return (uv-0.5)*b+0.5;
+}
+
+void main(){
+  vec2 uv=vUV;
+  vec2 uvScr=uv;
+
+  if(uLetterbox>0.5&&uVideoAR>0.1){
+    float cropF=clamp(uVideoAR/uRatio,0.05,1.0);
+    float top=(1.0-cropF)*0.5;
+    float bot=1.0-top;
+    if(uv.y<top||uv.y>bot){
+      gl_FragColor=vec4(0.,0.,0.,1.);
+      return;
+    }
+    uv.y=(uv.y-top)/cropF;
+    uvScr=uv;
+  }
+
+  if(uCompare>0.5&&uvScr.x<0.5){
+    vec2 uvc=vec2(uvScr.x*2.0,uvScr.y);
+    uvc=squeezeUV(uvc,uSqueeze);
+    vec3 raw=texture2D(uTex,uvc).rgb;
+    gl_FragColor=vec4(clamp(raw,0.,1.),1.);
+    return;
+  }
+  if(uCompare>0.5) uvScr.x=(uvScr.x-0.5)*2.0;
+
+  uv=uvScr;
+  uv=breathe(uv,uBreathing,uTime);
+  uv=clamp(uv,0.001,0.999);
+  vec2 uvTex=squeezeUV(uv,uSqueeze);
+  vec2 dUV=barrel(uvTex,uBarrel);
+  dUV=clamp(dUV,0.001,0.999);
+
+  vec3 base=chromAb(uTex,dUV,uCA);
+  float preLum=luminance(base);
+  float expLin=pow(2.0,uExposure);
+  base*=expLin;
+  base=clamp(base,0.,1.);
+
+  vec3 blo=anisoBokehBloom(uTex,dUV,uBokeh);
+  vec3 hal=halation(uTex,dUV,uHalation);
+  vec3 col=base+blo+hal;
+
+  col=tempGrade(col,uTemp,uLift,uContrast,uSat,uRolloff,uRolloffKnee);
+  col=sampleLUT(uLUT,col,uLutMix,uLutSize);
+
+  col+=instaxVhsGrain(uvScr,uTime,uGrain,preLum);
+  col*=anamVig(uvScr,uVignette);
+
+  float flareOn=uFlareMaster*uFlare;
+  col+=anamFlare(vec2(vUV.x,uvScr.y),uFlareAmt*flareOn,uFlareX,uFlareActive,uTime,uFlarePhase,uFlareJitter,uFlareLength,uFlareColor,uFlareHeight);
+
+  if(uCompare>0.5){
+    float div=abs(uvScr.x-0.5);
+    col*=1.0-smoothstep(0.0,0.004,div)*0.35;
+  }
+
+  gl_FragColor=vec4(clamp(col,0.,1.),1.);
+}`;
+
+function mkSh(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(s));return s;}
+function mkProg(vs,fs){const p=gl.createProgram();gl.attachShader(p,vs);gl.attachShader(p,fs);gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))console.error(gl.getProgramInfoLog(p));return p;}
+const prog=mkProg(mkSh(gl.VERTEX_SHADER,VS),mkSh(gl.FRAGMENT_SHADER,FS));
+const buf=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+const aPOS=gl.getAttribLocation(prog,'aPos');
+gl.enableVertexAttribArray(aPOS);
+gl.vertexAttribPointer(aPOS,2,gl.FLOAT,false,0,0);
+gl.useProgram(prog);
+const U={};
+['uTex','uLUT','uTime','uTemp','uLift','uContrast','uSat','uRolloff','uRolloffKnee','uExposure',
+ 'uHalation','uGrain','uBokeh','uCA','uBarrel','uVignette','uLetterbox','uRatio','uVideoAR','uBreathing',
+ 'uSqueeze','uFlare','uFlareMaster','uFlareAmt','uFlareX','uFlareActive','uFlarePhase','uFlareJitter',
+ 'uFlareLength','uFlareColor','uFlareHeight',
+ 'uCompare','uLutMix','uLutSize'].forEach(n=>U[n]=gl.getUniformLocation(prog,n));
+
+let tex=null,lutTex=null;
+function initTex(){
+  tex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+}
+function initLUT(){
+  lutTex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,lutTex);
+  const pix=new Uint8Array([128,128,128,255]);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,pix);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+}
+initLUT();
+
+/* ═══════════════════════════════════════════════════════
+   BOKEH — subject-aware progressive background blur
+   Pipeline (only runs while P.bokehMM > 0):
+     1) MediaPipe SelfieSegmentation finds the subject on every
+        other rendered frame (~30fps even at 60fps render — fast
+        reaction without overloading the main thread).
+     2) The raw mask is temporally smoothed (asymmetric EMA: fast
+        to pick the subject up, slow to let go) then spatially
+        feathered, so edges stay clean and stable instead of
+        flickering frame to frame.
+     3) A background-only bokeh blur (Poisson-disc, highlight
+        boosted) is computed in an offscreen FBO.
+     4) The sharp subject is composited back over the blurred
+        background.
+   The result becomes the texture fed into the existing pipeline
+   below (uTex) — everything from squeeze/letterbox onward is
+   100% unchanged, it just receives an already-bokeh'd frame.
+   When the slider sits at 0mm the whole pipeline is bypassed:
+   zero extra GPU/CPU cost.
+   ═══════════════════════════════════════════════════════ */
+const BK_W=1280, BK_H=720; /* fixed working res, independent of canvas size */
+
+const VS_BK=`
+attribute vec2 aPos;
+varying vec2 v_uv;
+uniform float u_glitch;
+void main(){
+  v_uv=aPos*0.5+0.5;
+  v_uv.y=mix(v_uv.y,1.0-v_uv.y,u_glitch);
+  gl_Position=vec4(aPos,0.,1.);
+}`;
+
+/* Temporal smoothing of the raw per-frame mask: asymmetric EMA —
+   reacts fast when the subject newly covers a pixel (high alpha),
+   relaxes slowly when it leaves, which kills flicker on fast motion
+   or partial occlusion (hair, shoulders) without feeling sluggish. */
+const FS_BK_MASK_TEMPORAL=`
+precision highp float;
+uniform sampler2D u_new;
+uniform sampler2D u_prev;
+uniform float u_alpha;
+varying vec2 v_uv;
+void main(){
+  float n=texture2D(u_new,v_uv).r;
+  float p=texture2D(u_prev,v_uv).r;
+  float a=n>p?u_alpha*1.6:u_alpha;
+  a=clamp(a,0.0,1.0);
+  gl_FragColor=vec4(mix(p,n,a),0.0,0.0,1.0);
+}`;
+
+/* Spatial feather: soft 5×5 weighted blur on the mask only, so the
+   subject/background edge in the composite is smooth, not jagged. */
+const FS_BK_MASK_BLUR=`
+precision highp float;
+uniform sampler2D u_mask;
+uniform vec2 u_px;
+varying vec2 v_uv;
+void main(){
+  float sum=0.0,wsum=0.0;
+  vec2 s=u_px*2.5;
+  float offs[5];
+  offs[0]=-2.0; offs[1]=-1.0; offs[2]=0.0; offs[3]=1.0; offs[4]=2.0;
+  float wts[5];
+  wts[0]=0.06; wts[1]=0.24; wts[2]=0.40; wts[3]=0.24; wts[4]=0.06;
+  for(int i=0;i<5;i++){
+    for(int j=0;j<5;j++){
+      vec2 uvo=clamp(v_uv+vec2(offs[i]*s.x,offs[j]*s.y),0.0,1.0);
+      float m=texture2D(u_mask,uvo).r;
+      float w=wts[i]*wts[j];
+      sum+=m*w; wsum+=w;
+    }
+  }
+  gl_FragColor=vec4(sum/wsum,0.0,0.0,1.0);
+}`;
+
+/* Background-only bokeh blur — physically-correct pillbox disc (48 taps,
+   5 rings), not a Gaussian. Out-of-focus background highlights become
+   flat colored discs with a bright rim, the way a real spherical or
+   anamorphic lens renders a defocused point of light. Subject pixels
+   (mask≈1) are gated out of the kernel so sharp subject color never
+   leaks into the background blur, and the shader bails out immediately
+   when radius is tiny (CoC<0.6px) — zero extra cost while sharp.        */
+const FS_BK_BLUR=`
+precision highp float;
+uniform sampler2D u_tex;
+uniform sampler2D u_mask;
+uniform float u_radius;
+uniform float u_bloom;
+uniform float u_ovalRatio; /* 1.0=circle, >1=tall oval (anamorphic) */
+uniform float u_zoom;
+uniform vec2  u_px;
+uniform float u_time;
+varying vec2  v_uv;
+
+vec3 toLinear(vec3 c){ return c*c; }
+vec3 toSRGB(vec3 c){ return sqrt(max(c,0.0)); }
+float gold(vec2 p,float seed){ return fract(tan(distance(p*vec2(1.61803398874989,1.41421356237),p+seed))*p.x); }
+
+/* Pillbox tap: uniform weight (no position-based decay).
+   Luminance boost only on the outermost ring (edgeBoost flag),
+   which reproduces the bright-rimmed disc of real spherical lenses. */
+void tap(vec2 uv, float mgate, float bloomK, float edgeBoost,
+         inout vec3 acc, inout float wt){
+  uv=clamp(uv,0.0,1.0);
+  float tm=texture2D(u_mask,uv).r;
+  vec3 lin=toLinear(texture2D(u_tex,uv).rgb);
+  float lum=dot(lin,vec3(0.299,0.587,0.114));
+  /* Base weight: uniform disc — all positions inside the CoC contribute
+     equally. The bright-edge ring gets an extra lum-squared boost so
+     a defocused point of light forms a bright-rimmed disc, not a blob. */
+  float edgeK=mix(0.0, bloomK*1.6, edgeBoost);
+  /* Hard subject exclusion: any tap that lands on (or near) the subject
+     must contribute ~zero weight. The previous (1.0-tm*0.88) formula
+     still let a subject tap through at 12% weight — fine for a single
+     tap, but with 48 taps per pixel and a wide kernel (large CoC at
+     open apertures), every background pixel within ~coc px of the
+     subject's silhouette ends up sampling dozens of partially-weighted
+     subject taps. That residual color accumulates into a faint but
+     visible *enlarged duplicate* of the subject's shape (e.g. a second,
+     bigger head) ghosted around the real edge. A steep smoothstep gate
+     collapses to true zero once a tap is solidly on the subject, while
+     still feathering smoothly across the already-blurred mask edge —
+     no more silhouette bleed, no hard/jagged cutoff either. */
+  float subjGate=1.0-smoothstep(0.12,0.45,tm);
+  float w=(1.0 + lum*lum*edgeK)*subjGate*mgate;
+  acc+=lin*w; wt+=w;
+}
+
+void main(){
+  float selfMask=texture2D(u_mask,v_uv).r;
+  float coc=pow(clamp(1.0-selfMask,0.0,1.0),1.35)*u_radius;
+  if(coc<0.6){ gl_FragColor=texture2D(u_tex,v_uv); return; }
+
+  vec2 px=u_px;
+  vec3 acc=vec3(0.0); float wt=0.0;
+  float mgate=1.0-selfMask*0.88;
+  float bloomK=u_bloom;
+
+  /* Background magnification (perspective compression) — unchanged logic.
+     Longer focal length visually PULLS the background toward the subject,
+     as if you had stepped back to keep framing while the far background
+     barely moved. Only samples genuine background (mask-safe). */
+  vec2 zoomCenter=vec2(0.5,0.5);
+  vec2 zUV=clamp(zoomCenter+(v_uv-zoomCenter)/max(u_zoom,1.0),0.001,0.999);
+  float tmAtZoom=texture2D(u_mask,zUV).r;
+  float zoomSafe=1.0-smoothstep(0.03,0.18,tmAtZoom);
+  float bgAmt=pow(clamp(1.0-selfMask,0.0,1.0),1.5)*zoomSafe;
+  vec2 sampleBase=mix(v_uv,zUV,bgAmt);
+
+  /* Centre tap (always weight 1, no edge boost). */
+  tap(sampleBase, mgate, bloomK, 0.0, acc, wt);
+
+  /* Pillbox disc: 5 rings, tap count proportional to ring area.
+     u_ovalRatio controls vertical stretch:
+       - u_ovalRatio = 1.0  → perfect circle
+       - u_ovalRatio = 1.33 → slightly tall (1.33x lens desqueeze)
+       - u_ovalRatio = 2.0  → very tall oval (2x anamorphic)
+     The disc is compressed on X by 1/ovalRatio and expanded on Y by ovalRatio,
+     so the AREA of the disc stays the same regardless of squeeze —
+     total blur coverage is conserved. */
+
+  float ar=16.0/9.0; /* frame aspect, used to keep disc circular in screen-space */
+  float ow=1.0/max(u_ovalRatio,1.0); /* horizontal scale of disc */
+  float oh=u_ovalRatio;              /* vertical scale of disc   */
+
+  float rr; float a; vec2 d; vec2 t; float jitter;
+
+  /* Ring 1 — 6 taps @ r=0.20 coc, no edge boost */
+  rr=coc*0.20;
+  for(int i=0;i<6;i++){
+    jitter=gold(v_uv,float(i)*0.3+u_time*0.01)*0.28;
+    a=float(i)*1.0472+jitter;
+    d=vec2(cos(a)*ow, sin(a)*oh);
+    t=sampleBase+vec2(d.x*rr*px.x, d.y*rr*px.y*ar);
+    tap(t,mgate,bloomK,0.0,acc,wt);
+  }
+
+  /* Ring 2 — 10 taps @ r=0.40 coc */
+  rr=coc*0.40;
+  for(int i=0;i<10;i++){
+    jitter=gold(v_uv,float(i)*0.7+u_time*0.013)*0.22;
+    a=float(i)*0.6283+jitter;
+    d=vec2(cos(a)*ow, sin(a)*oh);
+    t=sampleBase+vec2(d.x*rr*px.x, d.y*rr*px.y*ar);
+    tap(t,mgate,bloomK,0.0,acc,wt);
+  }
+
+  /* Ring 3 — 12 taps @ r=0.60 coc */
+  rr=coc*0.60;
+  for(int i=0;i<12;i++){
+    jitter=gold(v_uv,float(i)*1.1+u_time*0.017)*0.18;
+    a=float(i)*0.5236+jitter;
+    d=vec2(cos(a)*ow, sin(a)*oh);
+    t=sampleBase+vec2(d.x*rr*px.x, d.y*rr*px.y*ar);
+    tap(t,mgate,bloomK,0.0,acc,wt);
+  }
+
+  /* Ring 4 — 12 taps @ r=0.80 coc */
+  rr=coc*0.80;
+  for(int i=0;i<12;i++){
+    jitter=gold(v_uv,float(i)*1.5+u_time*0.021)*0.15;
+    a=float(i)*0.5236+0.26+jitter;
+    d=vec2(cos(a)*ow, sin(a)*oh);
+    t=sampleBase+vec2(d.x*rr*px.x, d.y*rr*px.y*ar);
+    tap(t,mgate,bloomK,0.0,acc,wt);
+  }
+
+  /* Ring 5 — 8 taps @ r=1.00 coc — EDGE RING: bright-rim effect.
+     edgeBoost=1.0 → lum-squared weight: bright points form the
+     luminous outer rim characteristic of a real spherical bokeh disc. */
+  rr=coc*1.00;
+  for(int i=0;i<8;i++){
+    jitter=gold(v_uv,float(i)*2.1+u_time*0.011)*0.12;
+    a=float(i)*0.7854+0.39+jitter;
+    d=vec2(cos(a)*ow, sin(a)*oh);
+    t=sampleBase+vec2(d.x*rr*px.x, d.y*rr*px.y*ar);
+    tap(t,mgate,bloomK,1.0,acc,wt);
+  }
+
+  vec3 result=toSRGB(acc/max(wt,0.001));
+  gl_FragColor=vec4(result,1.0);
+}`;
+
+/* Composite: feathered blend of the sharp subject over the
+   bokeh-blurred background, using the smoothed mask. A small
+   inward erode kills the 1-2px glow halo where a sharp edge
+   would otherwise sit right on top of a blurred one.          */
+const FS_BK_COMPOSITE=`
+precision highp float;
+uniform sampler2D u_sharp;
+uniform sampler2D u_blurred;
+uniform sampler2D u_mask;
+uniform float u_feather;
+varying vec2 v_uv;
+void main(){
+  vec4 sharp=texture2D(u_sharp,v_uv);
+  vec4 blurred=texture2D(u_blurred,v_uv);
+  float m=texture2D(u_mask,v_uv).r;
+  float lo=0.38-u_feather*0.28;
+  float hi=0.62+u_feather*0.28;
+  float blend=smoothstep(lo,hi,m);
+  float edgeLeak=smoothstep(0.60,0.92,m);
+  vec4 out_=mix(blurred,sharp,blend);
+  out_=mix(out_,sharp,edgeLeak*0.35+0.65*step(0.95,m));
+  gl_FragColor=vec4(out_.rgb,1.0);
+}`;
+
+function bkMkFBO(w,h){
+  const fb=gl.createFramebuffer();
+  const t=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return {fb,tex:t,w,h};
+}
+function bkDrawFS(prog,setup,target){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,target.fb);
+  gl.viewport(0,0,target.w,target.h);
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  const loc=gl.getAttribLocation(prog,'aPos');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+  setup();
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+}
+function bkGetU(p,names){const o={};names.forEach(n=>o[n]=gl.getUniformLocation(p,n));return o;}
+
+const progBkMaskTemporal=mkProg(mkSh(gl.VERTEX_SHADER,VS_BK),mkSh(gl.FRAGMENT_SHADER,FS_BK_MASK_TEMPORAL));
+const progBkMaskBlur    =mkProg(mkSh(gl.VERTEX_SHADER,VS_BK),mkSh(gl.FRAGMENT_SHADER,FS_BK_MASK_BLUR));
+const progBkBlur        =mkProg(mkSh(gl.VERTEX_SHADER,VS_BK),mkSh(gl.FRAGMENT_SHADER,FS_BK_BLUR));
+const progBkComposite   =mkProg(mkSh(gl.VERTEX_SHADER,VS_BK),mkSh(gl.FRAGMENT_SHADER,FS_BK_COMPOSITE));
+
+const U_BK_MT=bkGetU(progBkMaskTemporal,['u_new','u_prev','u_alpha','u_glitch']);
+const U_BK_MB=bkGetU(progBkMaskBlur,['u_mask','u_px','u_glitch']);
+const U_BK_BL=bkGetU(progBkBlur,['u_tex','u_mask','u_radius','u_bloom','u_ovalRatio','u_zoom','u_px','u_time','u_glitch']);
+const U_BK_CO=bkGetU(progBkComposite,['u_sharp','u_blurred','u_mask','u_feather','u_glitch']);
+
+/* Raw mask uploaded from MediaPipe each result, at a small CPU-readback
+   res for speed — the GPU's bilinear sampling upsamples it smoothly.   */
+const bkRawMaskTex=gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D,bkRawMaskTex);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,BK_W,BK_H,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+
+const bkMaskTemporalFBO=[bkMkFBO(BK_W,BK_H),bkMkFBO(BK_W,BK_H)];
+const bkMaskBlurFBO=bkMkFBO(BK_W,BK_H);
+const bkBlurFBO=bkMkFBO(BK_W,BK_H);
+const bkCompositeFBO=bkMkFBO(BK_W,BK_H);
+let bkMaskCur=0, bkMaskReady=false;
+
+function bkDrawMaskTemporal(){
+  const prevFBO=bkMaskTemporalFBO[bkMaskCur];
+  const nextFBO=bkMaskTemporalFBO[1-bkMaskCur];
+  bkDrawFS(progBkMaskTemporal,()=>{
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,bkRawMaskTex);gl.uniform1i(U_BK_MT.u_new,0);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,prevFBO.tex);gl.uniform1i(U_BK_MT.u_prev,1);
+    gl.uniform1f(U_BK_MT.u_alpha,0.35);
+    gl.uniform1f(U_BK_MT.u_glitch,P.ghostGlitch?1.0:0.0);
+  },nextFBO);
+  bkMaskCur=1-bkMaskCur;
+}
+function bkDrawMaskBlur(){
+  bkDrawFS(progBkMaskBlur,()=>{
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,bkMaskTemporalFBO[bkMaskCur].tex);gl.uniform1i(U_BK_MB.u_mask,0);
+    gl.uniform2f(U_BK_MB.u_px,1/BK_W,1/BK_H);
+    gl.uniform1f(U_BK_MB.u_glitch,P.ghostGlitch?1.0:0.0);
+  },bkMaskBlurFBO);
+}
+
+/* mm → blur strength. 135mm matches the strongest blur used for a
+   classic telephoto portrait lens; 0mm = perfectly sharp, no cost. */
+function bkRadiusFromMM(mm){ return (mm/135)*28.0; }
+/* f-stop → blur (CoC) radius in px. f-stop = focal/aperture-diameter, so a
+   smaller f-number means a wider open iris and a larger disc of confusion.
+   f/0.95 → ~80px, f/1.4 → ~54px, f/2.8 → ~27px, f/4 → ~19px, f/8 → ~9px,
+   f/22 → ~3.5px. */
+function bkRadiusFromFStop(fStop){ return 76.0 / Math.max(fStop, 0.95); }
+function bkBloomFromMM(mm){ return (mm/135)*1.5; }
+/* mm → background magnification. This is the actual "real lens" feel:
+   longer focal length = the background visibly enlarges toward the
+   subject (true perspective compression), not just a stronger blur in
+   place like a video-call effect. 1.0 = no zoom (0mm/off), 1.6× at 200mm. */
+function bkZoomFromMM(mm){ return 1.0+(mm/200)*0.6; }
+
+/* Apertura (f-stop) → CoC radius smoothing. Driving u_radius straight
+   from the slider made every aperture change pop instantly, frame to
+   frame — and since radius = 76/fStop is steep near the wide-open end,
+   even small drags there produced big, "scattosa" (jumpy) blur jumps.
+   Instead we ease a smoothed radius toward the slider's target value
+   every frame, time-based (not frame-count-based) so the motion feels
+   the same fluid speed regardless of actual fps. ~120ms time-constant:
+   fast enough to feel responsive, slow enough to read as a soft,
+   continuous racking of focus rather than a step change.            */
+let bkRadiusSmoothed=null, bkRadiusSmoothedT=null;
+function bkSmoothedRadius(timeSec){
+  const target=bkRadiusFromFStop(P.fStop);
+  if(bkRadiusSmoothed===null){ bkRadiusSmoothed=target; bkRadiusSmoothedT=timeSec; return target; }
+  let dt=timeSec-bkRadiusSmoothedT; bkRadiusSmoothedT=timeSec;
+  if(!(dt>0)||dt>0.25)dt=1/60; /* clamp first/late frames & tab-switch gaps */
+  const k=1-Math.exp(-dt/0.12);
+  bkRadiusSmoothed+=(target-bkRadiusSmoothed)*k;
+  return bkRadiusSmoothed;
+}
+
+function bkDrawBlur(timeSec){
+  /* u_ovalRatio: 1.0 = perfect circle (spherical bokeh).
+     When the anamorphic squeeze is active (P.squeeze > 1.0), the disc
+     becomes a vertical oval derived automatically from the squeeze
+     value, adjustable with the manual P.ovalFineTune trim. The ratio is
+     height:width of the disc (>1 = taller than wide, matching a real
+     desqueezed anamorphic bokeh ball). */
+  const ovalRatio = Math.max(1.0, P.squeeze + P.ovalFineTune);
+  bkDrawFS(progBkBlur,()=>{
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex);gl.uniform1i(U_BK_BL.u_tex,0);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,bkMaskBlurFBO.tex);gl.uniform1i(U_BK_BL.u_mask,1);
+    gl.uniform1f(U_BK_BL.u_radius, bkSmoothedRadius(timeSec));
+    gl.uniform1f(U_BK_BL.u_bloom,  bkBloomFromMM(P.bokehMM));
+    gl.uniform1f(U_BK_BL.u_ovalRatio, ovalRatio);
+    gl.uniform1f(U_BK_BL.u_zoom,   bkZoomFromMM(P.bokehMM));
+    gl.uniform2f(U_BK_BL.u_px,     1/BK_W,1/BK_H);
+    gl.uniform1f(U_BK_BL.u_time,   timeSec);
+    gl.uniform1f(U_BK_BL.u_glitch, P.ghostGlitch?1.0:0.0);
+  },bkBlurFBO);
+}
+function bkDrawComposite(){
+  bkDrawFS(progBkComposite,()=>{
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex);gl.uniform1i(U_BK_CO.u_sharp,0);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,bkBlurFBO.tex);gl.uniform1i(U_BK_CO.u_blurred,1);
+    gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,bkMaskBlurFBO.tex);gl.uniform1i(U_BK_CO.u_mask,2);
+    gl.uniform1f(U_BK_CO.u_feather,0.45);
+    gl.uniform1f(U_BK_CO.u_glitch,P.ghostGlitch?1.0:0.0);
+  },bkCompositeFBO);
+}
+
+/* ── MediaPipe Selfie Segmentation: fast + precise subject recognition ── */
+let bkSegmenter=null, bkSegmenterReady=false, bkSegmenterLoading=false, bkActiveShown=false;
+function bkSetStatus(msg){
+  const el=document.getElementById('bokeh-status');
+  if(!el)return;
+  el.textContent=msg;
+  el.classList.toggle('hot',/active/i.test(msg));
+}
+function ensureBkSegmenter(){
+  if(bkSegmenter||bkSegmenterLoading)return;
+  if(typeof SelfieSegmentation==='undefined'){
+    bkSetStatus('⚠ Subject detector unavailable (check network/CDN)');
+    return;
+  }
+  bkSegmenterLoading=true;
+  bkSetStatus('Subject detection: loading…');
+  bkSegmenter=new SelfieSegmentation({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`});
+  bkSegmenter.setOptions({modelSelection:1,selfieMode:false}); /* general model: best speed/accuracy balance, also for non-selfie framing */
+  bkSegmenter.onResults(bkOnSegResults);
+  bkSegmenter.initialize().then(()=>{
+    bkSegmenterReady=true; bkSegmenterLoading=false;
+    bkSetStatus('Subject detection: warming up…');
+  }).catch(e=>{
+    bkSegmenterLoading=false;
+    bkSetStatus('⚠ Subject detector init failed');
+    console.error(e);
+  });
+}
+
+const BK_SEG_SW=320,BK_SEG_SH=180;
+let _bkSegTmp=null,_bkSegTmpCtx=null,_bkSegBuf=null;
+function bkOnSegResults(results){
+  if(!results.segmentationMask)return;
+  if(!_bkSegTmp){
+    _bkSegTmp=document.createElement('canvas');
+    _bkSegTmp.width=BK_SEG_SW; _bkSegTmp.height=BK_SEG_SH;
+    _bkSegTmpCtx=_bkSegTmp.getContext('2d',{willReadFrequently:true});
+    _bkSegBuf=new Uint8Array(BK_SEG_SW*BK_SEG_SH*4);
+  }
+  _bkSegTmpCtx.clearRect(0,0,BK_SEG_SW,BK_SEG_SH);
+  _bkSegTmpCtx.drawImage(results.segmentationMask,0,0,BK_SEG_SW,BK_SEG_SH);
+  const id=_bkSegTmpCtx.getImageData(0,0,BK_SEG_SW,BK_SEG_SH);
+  const d=id.data,b=_bkSegBuf;
+  /* MediaPipe packs subject-confidence into alpha — move it into R so a
+     plain RGBA upload carries it straight into the mask shaders.        */
+  for(let i=0,j=0;i<d.length;i+=4,j+=4){ b[j]=d[i+3]; b[j+1]=0; b[j+2]=0; b[j+3]=255; }
+  /* NOTE: by default no Y-flip here — the main video texture (`tex`) is
+     uploaded without flipping (see uploadFrame()), so the mask must use the
+     exact same convention or it ends up vertically mismatched against the
+     frame it's supposed to gate: the real subject area then reads as
+     "background" (and vice-versa), which originally caused the segmentation
+     to appear flipped with a blown-out/white blob over the subject.
+     That exact mismatch is now an intentional, opt-in effect: when
+     P.ghostGlitch is on (toggle lives only in the Ghost section) we
+     deliberately flip this upload again to recreate it on demand.        */
+  gl.bindTexture(gl.TEXTURE_2D,bkRawMaskTex);
+  if(P.ghostGlitch){
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,BK_SEG_SW,BK_SEG_SH,0,gl.RGBA,gl.UNSIGNED_BYTE,b);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  }else{
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,BK_SEG_SW,BK_SEG_SH,0,gl.RGBA,gl.UNSIGNED_BYTE,b);
+  }
+  bkDrawMaskTemporal();
+  bkDrawMaskBlur();
+  bkMaskReady=true;
+  if(!bkActiveShown){ bkSetStatus('Subject detection: active'); bkActiveShown=true; }
+}
+
+function setBokehMM(v){
+  const prevMM=P.bokehMM;
+  P.bokehMM=v;
+  /* Ghost (original section, before Bokeh) */
+  const el=document.getElementById('v-bokehMM');
+  if(el)el.textContent=Math.round(v);
+  const sl=document.getElementById('s-bokehMM');
+  if(sl&&+sl.value!==v)sl.value=v;
+  /* Identical copy living inside the Bokeh section (no header of its own) */
+  const el2=document.getElementById('v-bokehMM-bokeh');
+  if(el2)el2.textContent=Math.round(v);
+  const sl2=document.getElementById('s-bokehMM-bokeh');
+  if(sl2&&+sl2.value!==v)sl2.value=v;
+  /* mm chip highlight — drives BOTH chip rows at once (shared .mm-chip-set class) */
+  document.querySelectorAll('.mm-chip-set .seg-btn').forEach(b=>{
+    b.classList.toggle('on',parseFloat(b.dataset.mm)===v);
+  });
+  /* keep the Bokeh panel's percentage UI in sync, whichever
+     control (Ghost mm slider/chips or Bokeh's own slider) drove the change */
+  const pct=Math.round(Math.min(100,Math.max(0,v/2)));
+  const rVal=document.getElementById('v-riccardoBlur');
+  if(rVal)rVal.textContent=pct;
+  const rSl=document.getElementById('s-riccardoBlur');
+  if(rSl&&+rSl.value!==pct)rSl.value=pct;
+  const rTog=document.getElementById('tog-riccardo');
+  if(rTog)rTog.classList.toggle('on',v>0);
+  /* When the effect is re-enabled after having been off, reset the
+     aperture-smoothing state so the blur starts at the correct radius
+     immediately (no ease-in from a stale value set while off). */
+  if(v>0&&prevMM===0)bkRadiusSmoothed=null;
+  if(v>0)ensureBkSegmenter();
+}
+
+/* ── BOKEH (ex "Riccardo") — friendly controls for the same subject-recognition +
+   background-blur engine driven by Ghost (mm-based). Exposes it as a plain
+   on/off + intensity %, plus the physically-correct aperture (f-stop)
+   control (P.fStop) that drives the pillbox bokeh-disc radius. */
+let _riccardoLastMM=100;
+function setRiccardoBlur(pct){
+  const mm=Math.round(Math.max(0,Math.min(100,pct))*2); // 0-100% → 0-200mm, same scale as Ghost
+  setBokehMM(mm);
+}
+function toggleRiccardo(){
+  if(P.bokehMM>0){
+    _riccardoLastMM=P.bokehMM;
+    setBokehMM(0);
+  }else{
+    const mm=_riccardoLastMM>0?_riccardoLastMM:100;
+    setBokehMM(mm);
+  }
+}
+function setFStop(val){
+  P.fStop=Math.max(0.95,Math.min(22,+val));
+  const el=document.getElementById('v-fStop');
+  if(el)el.textContent=P.fStop<2?P.fStop.toFixed(2):P.fStop.toFixed(1);
+}
+function setOvalFineTune(val){
+  P.ovalFineTune=Math.max(-0.3,Math.min(0.5,+val));
+  const el=document.getElementById('v-ovalFineTune');
+  if(el)el.textContent=(P.ovalFineTune>=0?'+':'')+P.ovalFineTune.toFixed(2);
+  updateOvalStatus();
+}
+function updateOvalStatus(){
+  const ratio=Math.max(1.0,P.squeeze+P.ovalFineTune).toFixed(2);
+  const el=document.getElementById('oval-status');
+  if(el)el.textContent='Oval ratio: '+ratio+'× '+(ratio>1.05?'— oval active':'— circular');
+}
+
+/* GHOST — preset chips + fine-tune slider both drive setBokehMM().
+   .mm-chip-set matches BOTH chip rows: the original one in Ghost and the
+   identical copy living inside Bokeh — clicking either keeps both in sync,
+   since setBokehMM() centrally updates every mirrored control. */
+function focalSliderInput(v){
+  setBokehMM(v);
+}
+document.querySelectorAll('.mm-chip-set .seg-btn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    setBokehMM(parseFloat(b.dataset.mm));
+  });
+});
+
+const P={
+  temp:0.55,lift:0.045,contrast:0.30,sat:0.82,rolloff:0.55,
+  halation:0.45,grain:0.00,bokeh:0.35,ca:0.25,
+  barrel:0.22,vignette:0.40,squeeze:1,
+  ratio:2.39,letterbox:1,breathing:0,desqueeze:0,
+  flare:0,flareMaster:0,flareAmt:0.60,flareLength:0.50,flareColor:0.00,flareHeight:0.50,
+  exposure:0,compare:0,lutMix:0,
+  bokehMM:0,fStop:4.0,ovalFineTune:0.0,ghostGlitch:0
+};
+
+/* ── SOURCE / CAMERA state ── */
+let srcMode='none'; // none|video|image|webcam|camera
+let activeImg=null;
+let webcamStream=null;
+let nikonStream=null, nikonDeviceId=null, camImageCapture=null;
+let camRecMR=null, camRecChunks=[], camRecActive=false;
+
+let _tid;
+function toast(msg,dur=2400){
+  const el=document.getElementById('toast');
+  if(!el)return;
+  el.textContent=msg; el.style.opacity='1';
+  clearTimeout(_tid); _tid=setTimeout(()=>el.style.opacity='0',dur);
+}
+
+function set(k,v){
+  if(k==='bokehMM'){ setBokehMM(v); return; }
+  P[k]=v;
+  const el=document.getElementById('v-'+k);
+  if(k==='ratio'){const icR=document.getElementById('ic-ratio');if(icR)icR.textContent=v.toFixed(2)+':1';}
+  if(!el)return;
+  if(k==='ratio')el.textContent=v.toFixed(2)+' : 1';
+  else if(k==='temp')el.textContent=(v>=0?'+':'')+v.toFixed(2);
+  else if(k==='exposure')el.textContent=v.toFixed(2);
+  else if(k==='lutMix')el.textContent=v.toFixed(2);
+  else if(k==='squeeze')el.textContent=v.toFixed(2);
+  else el.textContent=parseFloat(v).toFixed(3).replace(/\.?0+$/,'');
+  if(k==='desqueeze'||k==='squeeze')resizeCanvasToVideo();
+  if(k==='squeeze')updateOvalStatus();
+}
+
+function setGrain(v){
+  set('grain',v);
+  document.getElementById('grain-fill').style.width=(v*100)+'%';
+}
+
+function tog(k){
+  P[k]=P[k]?0:1;
+  const id=k==='flare'?'tog-flare':k==='flareMaster'?'tog-flareMaster':k==='compare'?'tog-compare':'tog-'+k;
+  const b=document.getElementById(id);
+  if(b)b.classList.toggle('on',!!P[k]);
+  if(k==='desqueeze'||k==='compare')resizeCanvasToVideo();
+}
+
+const PRESETS={
+  isco:{temp:0.58,lift:0.050,contrast:0.32,sat:0.80,rolloff:0.58,halation:0.52,grain:0.08,bokeh:0.42,ca:0.28,barrel:0.26,vignette:0.44,squeeze:1.15,ratio:2.39,letterbox:1,breathing:0,flareAmt:0.65,exposure:0.05},
+  arriscope:{temp:0.40,lift:0.032,contrast:0.40,sat:0.90,rolloff:0.45,halation:0.30,grain:0.02,bokeh:0.28,ca:0.18,barrel:0.16,vignette:0.34,squeeze:1.05,ratio:2.55,letterbox:1,breathing:0,flareAmt:0.50,exposure:0},
+  fuji:{temp:0.28,lift:0.042,contrast:0.26,sat:0.78,rolloff:0.72,halation:0.38,grain:0.55,bokeh:0.30,ca:0.20,barrel:0.18,vignette:0.36,squeeze:1.0,ratio:2.39,letterbox:1,breathing:1,flareAmt:0.45,exposure:-0.02},
+  kodak:{temp:0.65,lift:0.058,contrast:0.28,sat:0.76,rolloff:0.60,halation:0.62,grain:0.42,bokeh:0.38,ca:0.22,barrel:0.20,vignette:0.40,squeeze:1.08,ratio:2.39,letterbox:1,breathing:0,flareAmt:0.55,exposure:0.08},
+  raw:{temp:0.00,lift:0.000,contrast:0.00,sat:1.00,rolloff:0.00,halation:0.00,grain:0.00,bokeh:0.00,ca:0.00,barrel:0.00,vignette:0.00,squeeze:1,ratio:1.78,letterbox:0,breathing:0,flareAmt:0.00,exposure:0,lutMix:0}
+};
+
+function applyPresetObject(pp){
+  Object.entries(pp).forEach(([k,v])=>{
+    if(k in P||['letterbox','breathing','flare','flareMaster','desqueeze','compare'].includes(k)){
+      P[k]=v;
+      const sl=document.getElementById('s-'+k);
+      if(sl)sl.value=v;
+      set(k,v);
+    }
+  });
+  document.getElementById('grain-fill').style.width=(P.grain*100)+'%';
+  ['letterbox','breathing','flare','flareMaster','compare','desqueeze'].forEach(k=>{
+    const b=document.getElementById(k==='flare'?'tog-flare':k==='flareMaster'?'tog-flareMaster':k==='compare'?'tog-compare':k==='desqueeze'?'tog-desqueeze':'tog-'+k);
+    if(b)b.classList.toggle('on',!!P[k]);
+  });
+  resizeCanvasToVideo();
+}
+
+function preset(name,btn){
+  applyPresetObject(PRESETS[name]);
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+  btn.classList.add('on');
+}
+
+function saveUserPreset(){
+  const data=JSON.stringify(P);
+  try{localStorage.setItem(LS_KEY,data);toast('✓ Preset saved',1800);}
+  catch(e){toast('⚠ Save failed',2200);}
+}
+function loadUserPreset(){
+  try{const s=localStorage.getItem(LS_KEY);if(!s)return;const o=JSON.parse(s);applyPresetObject(o);toast('✓ Preset loaded',1800);}
+  catch(e){}
+}
+function clearUserPreset(){
+  localStorage.removeItem(LS_KEY);
+  toast('◯ Preset cleared',1800);
+}
+
+/* ── generic active-source helpers (video file | webcam | nikon camera share <video id=vid>; image uses activeImg) ── */
+function getSrcEl(){ return (srcMode==='image'&&activeImg) ? activeImg : vid; }
+function getSrcW(){ const s=getSrcEl(); return srcMode==='image'?(s.naturalWidth||0):(s.videoWidth||0); }
+function getSrcH(){ const s=getSrcEl(); return srcMode==='image'?(s.naturalHeight||0):(s.videoHeight||0); }
+function srcReady(){ const s=getSrcEl(); return srcMode==='image' ? !!activeImg : (s.readyState>=2); }
+
+let autoCanvas=null,autoCtx=null;
+function autoTemp(){
+  const srcEl=getSrcEl(); const sw=getSrcW(), sh=getSrcH();
+  if(!sw)return;
+  if(!autoCanvas){autoCanvas=document.createElement('canvas');autoCanvas.width=96;autoCanvas.height=54;autoCtx=autoCanvas.getContext('2d',{willReadFrequently:true});}
+  autoCtx.drawImage(srcEl,0,0,96,54);
+  const d=autoCtx.getImageData(0,0,96,54).data;
+  let shR=0,shG=0,shB=0,shN=0,hiR=0,hiG=0,hiB=0,hiN=0;
+  let satSum=0,satN=0;
+  for(let i=0;i<d.length;i+=4){
+    const r=d[i]/255,g=d[i+1]/255,b=d[i+2]/255;
+    const lum=0.299*r+0.587*g+0.114*b;
+    const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
+    const sat=mx<1e-4?0:(mx-mn)/mx;
+    satSum+=sat;satN++;
+    if(lum<0.35){shR+=r;shG+=g;shB+=b;shN++;}
+    if(lum>0.72){hiR+=r;hiG+=g;hiB+=b;hiN++;}
+  }
+  const avgSat=satSum/satN;
+  const shW=shN?1/shN:0,hiW=hiN?1/hiN:0;
+  const shBias=(shR*shW+shG*shW*0.95+shB*shW*0.9);
+  const hiBias=(hiR*hiW+hiG*hiW*1.02+hiB*hiW*1.08);
+  const warmShadow=(shR*shW-shB*shW);
+  const warmHi=(hiR*hiW-hiB*hiW);
+  const naturalWarm=0.55*warmShadow+0.35*warmHi+0.1*((hiBias-shBias));
+  const satCool=(avgSat-0.35)*0.25;
+  const suggested=Math.max(-1,Math.min(1,-naturalWarm*0.65-satCool));
+  P.temp=suggested;
+  document.getElementById('s-temp').value=suggested;
+  set('temp',suggested);
+}
+
+let flareCanvas=null,flareCtx=null;
+let autoFlareX=0.5,autoFlareActive=0,flarePhase=0,targetFlareX=0.5,flareJitter=0,smoothFlareX=0.5;
+let frameN=0;
+
+function detectFlare(){
+  const srcEl=getSrcEl(); const sw=getSrcW();
+  if(!sw)return;
+  if(!flareCanvas){flareCanvas=document.createElement('canvas');flareCanvas.width=80;flareCanvas.height=45;flareCtx=flareCanvas.getContext('2d',{willReadFrequently:true});}
+  try{
+    flareCtx.drawImage(srcEl,0,0,80,45);
+    const d=flareCtx.getImageData(0,0,80,45).data;
+    const th=185;
+    let sumX=0,sumW=0,maxL=0,second=0;
+    for(let y=0;y<45;y++){
+      for(let x=0;x<80;x++){
+        const i=(y*80+x)*4;
+        const l=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+        if(l>maxL){second=maxL;maxL=l;}
+        else if(l>second)second=l;
+        if(l>th){const w=(l-th)/70;sumX+=(x+0.5)*w;sumW+=w;}
+      }
+    }
+    const spread=(maxL-second)/255;
+    const confidence=Math.min(1,sumW/120)*(0.5+0.5*smoothstep(0,0.25,spread));
+    if(sumW>8&&maxL>th){targetFlareX=(sumX/sumW)/80;autoFlareActive=confidence;}
+    else{autoFlareActive=0;}
+    flarePhase+=0.07+autoFlareActive*0.12;
+    smoothFlareX+=(targetFlareX-smoothFlareX)*0.18;
+    autoFlareX=smoothFlareX;
+    flareJitter+=(Math.random()-0.5)*0.08;
+    flareJitter*=0.82;
+    const st=document.getElementById('flare-status');
+    if(st){
+      if(autoFlareActive>0.15&&P.flare&&P.flareMaster){
+        st.textContent='Hotspot x='+autoFlareX.toFixed(2)+' conf='+autoFlareActive.toFixed(2);
+        st.className='flare-status hot';
+      }else{
+        st.textContent='No light source detected';
+        st.className='flare-status';
+      }
+    }
+  }catch(e){}
+}
+function smoothstep(e0,e1,x){const t=Math.max(0,Math.min(1,(x-e0)/(e1-e0)));return t*t*(3-2*t);}
+
+/* ── MOTION VU ── */
+const motionCv=Object.assign(document.createElement('canvas'),{width:64,height:36});
+const motionCtx=motionCv.getContext('2d',{willReadFrequently:true});
+let prevMotionFrame=null,motionEnergy=0,rawEnergy=0;
+function computeMotion(){
+  if(!srcReady())return;
+  const srcEl=getSrcEl();
+  try{
+    motionCtx.drawImage(srcEl,0,0,64,36);
+    const curr=motionCtx.getImageData(0,0,64,36).data;
+    if(prevMotionFrame){
+      let d=0;
+      for(let i=0;i<curr.length;i+=4)d+=Math.abs(curr[i]-prevMotionFrame[i])+Math.abs(curr[i+1]-prevMotionFrame[i+1])+Math.abs(curr[i+2]-prevMotionFrame[i+2]);
+      rawEnergy=Math.min(d/(64*36*255*3*0.15),1);
+    }
+    prevMotionFrame=new Uint8ClampedArray(curr);
+  }catch(e){}
+}
+function updateMotionUI(){
+  motionEnergy+=(rawEnergy-motionEnergy)*(rawEnergy>motionEnergy?0.25:0.04);
+  const pct=Math.round(motionEnergy*100);
+  const bar=document.getElementById('vu-motion'),val=document.getElementById('vu-mv');
+  if(bar)bar.style.width=pct+'%';
+  if(val)val.textContent=pct+'%';
+}
+
+function uploadFrame(){
+  if(!srcReady())return;
+  gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,getSrcEl());
+}
+
+let baseW=0,baseH=0;
+function resizeCanvasToVideo(forceFull=false){
+  const sw=getSrcW(),sh=getSrcH();
+  if(!sw)return;
+  const MAX=forceFull?Number.POSITIVE_INFINITY:1280;
+  const sc=Math.min(1,MAX/sw);
+  baseW=Math.round(sw*sc);
+  baseH=Math.round(sh*sc);
+  const w=P.desqueeze?Math.round(baseW*P.squeeze):baseW;
+  cv.width=w;
+  cv.height=baseH;
+  gl.viewport(0,0,cv.width,cv.height);
+  const icRes=document.getElementById('ic-res');
+  if(icRes)icRes.textContent=sw+'×'+sh;
+}
+
+let t0=Date.now();
+let fc=0,fps=0,lastFpsT=performance.now();
+let lastValidAR=1.778; // cached AR, updated whenever source provides real dimensions
+function updateTbTime(){
+  const tb=document.getElementById('tb-time');
+  if(!tb)return;
+  if(srcMode==='video'&&vid.duration){
+    const fmt=s=>{s=Math.max(0,Math.floor(s));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');};
+    tb.textContent=fmt(vid.currentTime)+' / '+fmt(vid.duration);
+  }else if(srcMode==='webcam'){tb.textContent='◉ LIVE';}
+  else if(srcMode==='camera'){tb.textContent='◉ CAM';}
+  else if(srcMode==='image'){tb.textContent='◉ IMG';}
+  else{tb.textContent='--:--';}
+}
+function render(){
+  if(tex)uploadFrame();
+  const t=(Date.now()-t0)/1000;
+  const sw=getSrcW(),sh=getSrcH();
+  if(sw>0&&sh>0)lastValidAR=sw/sh;
+  const ar=lastValidAR;
+  frameN++;
+  fc++;
+  const nowFps=performance.now();
+  if(nowFps-lastFpsT>700){
+    fps=Math.round(fc/((nowFps-lastFpsT)/1000));fc=0;lastFpsT=nowFps;
+    const fpsTxt=(srcMode==='none')?'--':String(fps);
+    const fv=document.getElementById('fps-val');if(fv)fv.textContent=fpsTxt;
+    const icf=document.getElementById('ic-fps');if(icf)icf.textContent=fpsTxt;
+  }
+  /* detectFlare() e computeMotion() leggono pixel dalla sorgente video via
+     canvas2D getImageData — un'operazione sincrona CPU<->GPU. Farla dentro
+     al loop di render (legato a requestAnimationFrame) blocca il thread
+     principale proprio mentre arriva un nuovo fotogramma live: su un file
+     video l'impatto è meno visibile, ma su una webcam/camera in tempo
+     reale ogni blocco è un fotogramma perso → effetto "a scatti". Per questo
+     sono stati spostati su due setInterval indipendenti, vedi sotto render().*/
+  if(frameN%6===0)updateTbTime();
+
+  /* ── BOKEH pre-pass ──────────────────────────────────────────
+     Runs only while the Bokeh slider is above 0mm. Feeds frames to
+     MediaPipe every other render tick (~30fps even at 60fps render —
+     fast reaction without stealing the main thread), then, once a
+     mask is available, blurs the background and composites the
+     sharp subject back on top. The result replaces `tex` as the
+     input to the existing pipeline below — everything from squeeze/
+     letterbox onward stays untouched. At 0mm this block is fully
+     skipped: zero extra cost.                                      */
+  let mainTex=tex;
+  if(P.bokehMM>0&&srcReady()){
+    if(!bkSegmenter&&!bkSegmenterLoading)ensureBkSegmenter();
+    if(bkSegmenterReady&&frameN%2===0)bkSegmenter.send({image:getSrcEl()}).catch(()=>{});
+    if(bkMaskReady&&tex){
+      bkDrawBlur(t);
+      bkDrawComposite();
+      mainTex=bkCompositeFBO.tex;
+    }
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,cv.width,cv.height);
+
+  gl.useProgram(prog);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,mainTex);gl.uniform1i(U.uTex,0);
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,lutTex);gl.uniform1i(U.uLUT,1);
+  gl.uniform1f(U.uTime,t);
+  gl.uniform1f(U.uTemp,P.temp);gl.uniform1f(U.uLift,P.lift);gl.uniform1f(U.uContrast,P.contrast);
+  gl.uniform1f(U.uSat,P.sat);gl.uniform1f(U.uRolloff,P.rolloff);gl.uniform1f(U.uRolloffKnee,0.85);
+  gl.uniform1f(U.uExposure,P.exposure);gl.uniform1f(U.uHalation,P.halation);gl.uniform1f(U.uGrain,P.grain);
+  gl.uniform1f(U.uBokeh,P.bokeh);gl.uniform1f(U.uCA,P.ca);gl.uniform1f(U.uBarrel,P.barrel);
+  gl.uniform1f(U.uVignette,P.vignette);gl.uniform1f(U.uLetterbox,P.letterbox);gl.uniform1f(U.uRatio,P.ratio);
+  gl.uniform1f(U.uVideoAR,ar);gl.uniform1f(U.uBreathing,P.breathing);gl.uniform1f(U.uSqueeze,P.squeeze);
+  gl.uniform1f(U.uFlare,P.flare);gl.uniform1f(U.uFlareMaster,P.flareMaster);gl.uniform1f(U.uFlareAmt,P.flareAmt);
+  gl.uniform1f(U.uFlareX,autoFlareX);gl.uniform1f(U.uFlareActive,autoFlareActive);
+  gl.uniform1f(U.uFlarePhase,flarePhase);gl.uniform1f(U.uFlareJitter,flareJitter);
+  gl.uniform1f(U.uFlareLength,P.flareLength);gl.uniform1f(U.uFlareColor,P.flareColor);gl.uniform1f(U.uFlareHeight,P.flareHeight);
+  gl.uniform1f(U.uCompare,P.compare);gl.uniform1f(U.uLutMix,P.lutMix);gl.uniform1f(U.uLutSize,16);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  requestAnimationFrame(render);
+}
+render();
+
+/* Motion VU e auto-flare-detect: aggiornati su un timer proprio invece che
+   dentro a render(). Sono effetti smussati (vedi le costanti di easing in
+   updateMotionUI / smoothFlareX) — non hanno bisogno del refresh rate del
+   monitor, e tenerli fuori dal loop di rendering evita che le loro letture
+   pixel sincrone blocchino l'upload/draw del fotogramma corrente. */
+setInterval(()=>{computeMotion();updateMotionUI();},120);
+setInterval(detectFlare,160);
+
+/* ── SOURCE switching ── */
+function updateSourceUI(activeId,label){
+  ['src-video','src-image','src-webcam','src-camera'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.classList.toggle('on',id===activeId);
+  });
+  const lbl=label||({'src-video':'VIDEO','src-image':'IMAGE','src-webcam':'WEBCAM','src-camera':'CAMERA'}[activeId]||'NONE');
+  const pillLbl=document.getElementById('pill-src-lbl');
+  if(pillLbl)pillLbl.textContent=lbl;
+  const pillSrc=document.getElementById('pill-src');
+  if(pillSrc)pillSrc.className='pill'+((activeId==='src-webcam'||activeId==='src-camera')?' live':'');
+  const icSrc=document.getElementById('ic-source');
+  if(icSrc)icSrc.textContent=lbl;
+  /* Chip Webcam nel pannello Source: acceso solo quando la webcam è la
+     sorgente attiva (indipendente dal bottone segmentato WEBCAM sopra). */
+  const wcOn=activeId==='src-webcam';
+  const wcBtn=document.getElementById('btn-webcam');
+  if(wcBtn)wcBtn.classList.toggle('on',wcOn);
+  const wcLed=document.getElementById('webcam-led');
+  if(wcLed)wcLed.style.background=wcOn?'var(--red)':'';
+  const wcLbl=document.getElementById('webcam-label');
+  if(wcLbl)wcLbl.textContent=wcOn?'Webcam On':'Webcam Off';
+  /* Nessuna sorgente attiva → azzera il riquadro File/Input */
+  if(!activeId)updateSrcInfo('--','--');
+}
+/* Aggiorna il riquadro File/Input della sezione Source. Passare null
+   per lasciare invariato uno dei due valori (stesso idioma di Blob State). */
+function updateSrcInfo(file,res){
+  const fi=document.getElementById('info-file'),ri=document.getElementById('info-res');
+  if(file!==null&&fi)fi.textContent=file||'--';
+  if(res!==null&&ri)ri.textContent=res||'--';
+}
+function stopAllSources(){
+  try{vid.pause();}catch(e){}
+  if(vid._objUrl){URL.revokeObjectURL(vid._objUrl);vid._objUrl=null;}
+  vid.removeAttribute('src');
+  vid.srcObject=null;
+  try{vid.load();}catch(e){}
+  if(webcamStream){webcamStream.getTracks().forEach(t=>t.stop());webcamStream=null;}
+  stopNikonCamera();
+  activeImg=null;
+  prevMotionFrame=null;
+  cv.classList.remove('mirrored');
+  lastValidAR=1.778;
+  const lb=document.getElementById('btn-loop');
+  if(lb)lb.classList.toggle('on',vid.loop);
+  const ll=document.getElementById('loop-label');
+  if(ll)ll.textContent=vid.loop?'Loop On':'Loop Off';
+}
+
+function pickVideo(){document.getElementById('file-input').click();}
+function pickImage(){document.getElementById('file-input-img').click();}
+
+/* Play/Pause e Loop riguardano solo il file video caricato (srcMode
+   'video'): su webcam/camera "pausare" un live stream non ha un
+   significato utile e genererebbe solo confusione visiva, quindi
+   restano inerti (con toast) fuori da quel contesto — stesso idioma
+   già usato altrove nel file (es. REC senza sorgente attiva). */
+function toggleVideoPlayback(){
+  if(srcMode!=='video'){toast('◯ Load a video first',2000);return;}
+  if(vid.paused)vid.play().catch(()=>{});
+  else vid.pause();
+}
+function toggleVideoLoop(){
+  vid.loop=!vid.loop;
+  const b=document.getElementById('btn-loop');
+  if(b)b.classList.toggle('on',vid.loop);
+  const l=document.getElementById('loop-label');
+  if(l)l.textContent=vid.loop?'Loop On':'Loop Off';
+}
+/* Scorciatoia SPC (Playback, badge nella sezione Source) — stesso
+   comportamento del keydown globale in Blob State Tracker. */
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'&&e.target.type!=='range')return;
+  if(e.key===' '){e.preventDefault();toggleVideoPlayback();}
+});
+
+function loadFile(file){
+  if(!file||!file.type.startsWith('video/'))return;
+  stopAllSources();
+  srcMode='video';
+  updateSourceUI('src-video');
+  cv.classList.remove('on');
+  document.getElementById('drop-hint').classList.remove('hidden');
+  updateSrcInfo(file.name,'Loading…');
+  vid.onerror=()=>{updateSrcInfo(null,'Error');toast('⚠ Error loading video',3000);};
+  vid.muted=true;vid.playsInline=true;
+  let loaded=false;
+  const onReady=()=>{
+    if(loaded)return;
+    if(!vid.videoWidth||!vid.videoHeight)return;
+    loaded=true;
+    resizeCanvasToVideo();if(!tex)initTex();
+    cv.classList.add('on');
+    document.getElementById('drop-hint').classList.add('hidden');
+    updateSrcInfo(file.name,vid.videoWidth+'×'+vid.videoHeight);
+    const p=vid.play();if(p&&typeof p.catch==='function')p.catch(()=>{});
+  };
+  vid.onloadedmetadata=onReady;vid.onloadeddata=onReady;vid.oncanplay=onReady;vid.oncanplaythrough=onReady;
+  vid._objUrl=URL.createObjectURL(file);
+  vid.src=vid._objUrl;vid.load();
+}
+
+function loadImageFile(file){
+  if(!file||!file.type.startsWith('image/'))return;
+  stopAllSources();
+  const url=URL.createObjectURL(file);
+  const img=new Image();
+  img.onload=()=>{
+    activeImg=img;srcMode='image';
+    updateSourceUI('src-image');
+    resizeCanvasToVideo();if(!tex)initTex();
+    cv.classList.add('on');
+    document.getElementById('drop-hint').classList.add('hidden');
+    updateSrcInfo(file.name,img.naturalWidth+'×'+img.naturalHeight);
+  };
+  img.src=url;
+}
+
+async function toggleWebcam(){
+  if(srcMode==='webcam'){
+    stopAllSources();srcMode='none';
+    updateSourceUI('');
+    cv.classList.remove('on');
+    cv.classList.remove('mirrored');
+    document.getElementById('drop-hint').classList.remove('hidden');
+    toast('◯ Webcam off',1800);
+    return;
+  }
+  if(!_checkSecureCtx())return;
+  try{
+    updateSrcInfo('Webcam','Connecting…');
+    stopAllSources();
+    /* resizeMode:'none' impedisce a Chrome di abbassare dinamicamente la
+       risoluzione della traccia quando il sistema è sotto carico (la causa
+       più comune di "scatti" in tempo reale): ogni cambio di risoluzione
+       fa scattare l'evento 'resize' sul <video>, che rialloca il canvas
+       WebGL — un'operazione costosa che si vede come un fotogramma perso.
+       frameRate ideale 30 evita che la cam negozi un frame rate basso. */
+    const stream=await navigator.mediaDevices.getUserMedia({
+      video:{width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30},resizeMode:'none'},
+      audio:false
+    });
+    webcamStream=stream;srcMode='webcam';
+    vid.muted=true;vid.playsInline=true;vid.srcObject=stream;
+    vid.onloadeddata=()=>{
+      resizeCanvasToVideo();if(!tex)initTex();
+      cv.classList.add('on');
+      document.getElementById('drop-hint').classList.add('hidden');
+      updateSourceUI('src-webcam');
+      cv.classList.add('mirrored');
+      updateSrcInfo('Webcam',vid.videoWidth+'×'+vid.videoHeight);
+    };
+    const p=vid.play();if(p&&typeof p.catch==='function')p.catch(()=>{});
+  }catch(e){
+    updateSrcInfo(null,'Error');
+    toast('⚠ Webcam: '+e.message,4000);
+  }
+}
+
+const prv=document.getElementById('preview');
+prv.addEventListener('dragover',e=>{e.preventDefault();prv.style.outline='1px solid rgba(232,192,0,.5)';});
+prv.addEventListener('dragleave',()=>{prv.style.outline='';});
+prv.addEventListener('drop',e=>{
+  e.preventDefault();prv.style.outline='';
+  const file=e.dataTransfer.files[0];
+  if(!file)return;
+  if(file.type.startsWith('image/'))loadImageFile(file);
+  else loadFile(file);
+});
+document.getElementById('file-input').addEventListener('change',e=>loadFile(e.target.files[0]));
+document.getElementById('file-input-img').addEventListener('change',e=>loadImageFile(e.target.files[0]));
+
+/* ══════════════════════════════════════════════════════════
+   EXPORT — Fullscreen + REC (stile Blob State, MediaRecorder diretto)
+   ══════════════════════════════════════════════════════════ */
+function setStatus(txt){const el=document.getElementById('status');if(el)el.textContent=txt;}
+
+function toggleFullscreen(){
+  if(!document.fullscreenElement){
+    cv.requestFullscreen?cv.requestFullscreen().catch(()=>{}):cv.webkitRequestFullscreen&&cv.webkitRequestFullscreen();
+  }else{
+    document.exitFullscreen?document.exitFullscreen():document.webkitExitFullscreen&&document.webkitExitFullscreen();
+  }
+}
+(function(){
+  const btn=document.getElementById('btn-fs');
+  if(!btn)return;
+  btn.addEventListener('click',toggleFullscreen);
+})();
+
+let mediaRec=null,recChunks=[],recStart=0,recTimerId=null;
+function getBestMime(){
+  const c=['video/mp4;codecs=avc1.640028','video/mp4;codecs=avc1.42E01E','video/mp4','video/webm;codecs=vp9','video/webm'];
+  for(const m of c)if(MediaRecorder.isTypeSupported(m))return m;
+  return'';
+}
+
+/* ── EXPORT FRAMING — modulo isolato, usato SOLO durante il REC ──
+   Il canvas WebGL (`cv`) resta invariato: quando Letterbox è attivo,
+   lo shader disegna bande nere DENTRO al frame (uv.y<top||uv.y>bot),
+   non ritaglia il canvas stesso. `cv.captureStream()` catturerebbe
+   quindi sempre l'intero canvas, bande incluse — motivo per cui,
+   scegliendo un ratio tipo 2.39:1 partendo da una sorgente 16:9, il
+   file esportato risultava un 16:9 con barre nere sopra/sotto invece
+   che un vero 2.39:1.
+   Qui NON si tocca lo shader né il canvas live: si registra invece
+   da un secondo canvas 2D "di export", che ad ogni frame ricopia solo
+   la fascia verticale realmente visibile di `cv` (la stessa finestra
+   [top,bot] calcolata dallo shader, riprodotta qui in JS), scalandola
+   a riempire tutta l'altezza. Risultato: il file esportato ha già
+   l'aspect ratio scelto (es. 2.39:1), senza bande nere. Se Letterbox
+   è spento, o il ratio coincide con quello della sorgente, non c'è
+   alcun ritaglio e si esporta il frame pieno com'è oggi. */
+let _expCanvas=null,_expCtx=null,_expCrop=null,_expRAF=null;
+
+function _expComputeCrop(){
+  const w=cv.width,h=cv.height;
+  if(!w||!h)return null;
+  let cropF=1;
+  if(P.letterbox&&P.ratio>0.01){
+    const ar=lastValidAR||(w/h);
+    cropF=Math.min(1,Math.max(0.05,ar/P.ratio));
+  }
+  let sh=Math.round(h*cropF);
+  const sy=Math.round((h-sh)/2);
+  /* dimensioni pari: richieste dal subsampling 4:2:0 di H.264/VP9,
+     evita che alcuni encoder rifiutino o deformino il frame */
+  const ew=Math.max(2,w-(w%2));
+  const eh=Math.max(2,sh-(sh%2));
+  return{sy,sh,ew,eh};
+}
+
+function _expFrameLoop(){
+  if(!mediaRec){_expRAF=null;return;}
+  if(_expCtx&&_expCrop&&cv.width&&cv.height){
+    _expCtx.drawImage(cv,0,_expCrop.sy,cv.width,_expCrop.sh,0,0,_expCrop.ew,_expCrop.eh);
+  }
+  _expRAF=requestAnimationFrame(_expFrameLoop);
+}
+
+function toggleRec(){
+  const btn=document.getElementById('btn-rec');
+  if(!mediaRec){
+    if(srcMode==='none'){toast('◯ No active source',2000);return;}
+    const crop=_expComputeCrop();
+    if(!crop){toast('◯ No active source',2000);return;}
+    if(!_expCanvas){_expCanvas=document.createElement('canvas');_expCtx=_expCanvas.getContext('2d',{alpha:false});}
+    _expCanvas.width=crop.ew;
+    _expCanvas.height=crop.eh;
+    _expCrop=crop;
+    /* primo frame subito, senza aspettare il prossimo rAF, così lo
+       stream non parte da un frame vuoto/nero */
+    _expCtx.drawImage(cv,0,crop.sy,cv.width,crop.sh,0,0,crop.ew,crop.eh);
+    const stream=_expCanvas.captureStream(30);
+    if(srcMode==='video'&&!vid.muted){
+      try{
+        const ax=new(window.AudioContext||window.webkitAudioContext)();
+        const src=ax.createMediaElementSource(vid);
+        src.connect(ax.destination);
+        const dst=ax.createMediaStreamDestination();
+        src.connect(dst);
+        dst.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
+      }catch(e){}
+    }
+    recChunks=[];
+    const mime=getBestMime();
+    /* Bitrate portato a 80 Mbps (stesso ordine di grandezza già usato
+       per la RAW REC camera) per una qualità "quasi-lossless" alla
+       risoluzione di preview corrente. Un MP4/WebM realmente lossless
+       non è ottenibile via MediaRecorder in browser: questo è il
+       massimo ragionevole senza cambiare pipeline di encoding. */
+    try{mediaRec=new MediaRecorder(stream,{mimeType:mime||undefined,videoBitsPerSecond:80_000_000});}
+    catch(e){try{mediaRec=new MediaRecorder(stream);}catch(e2){toast('REC not supported');return;}}
+    mediaRec.ondataavailable=e=>{if(e.data.size>0)recChunks.push(e.data);};
+    mediaRec.onstop=()=>{
+      if(_expRAF){cancelAnimationFrame(_expRAF);_expRAF=null;}
+      const ext=mediaRec.mimeType&&mediaRec.mimeType.includes('mp4')?'mp4':'webm';
+      const blob=new Blob(recChunks,{type:mediaRec.mimeType||'video/webm'});
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='anamorphic_'+Date.now()+'.'+ext;
+      document.body.appendChild(a);a.click();
+      setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(a.href);},1000);
+      btn.classList.remove('on');
+      const pr=document.getElementById('pill-rec');pr.style.display='none';pr.classList.remove('rec-on');
+      clearInterval(recTimerId);
+      document.getElementById('rec-time').textContent='00:00:00';
+      document.getElementById('rec-time').classList.remove('on');
+      setStatus('Exported '+ext.toUpperCase()+' — '+_expCanvas.width+'×'+_expCanvas.height);
+      toast('⬇ Exported '+ext.toUpperCase()+' — '+_expCanvas.width+'×'+_expCanvas.height,3000);
+      _expCrop=null;
+      mediaRec=null;
+    };
+    mediaRec.start(100);
+    _expRAF=requestAnimationFrame(_expFrameLoop);
+    recStart=Date.now();
+    btn.classList.add('on');
+    {const pr=document.getElementById('pill-rec');pr.style.display='flex';pr.classList.add('rec-on');}
+    document.getElementById('rec-time').classList.add('on');
+    recTimerId=setInterval(()=>{
+      const s=Math.round((Date.now()-recStart)/1000);
+      document.getElementById('rec-time').textContent=String(Math.floor(s/3600)).padStart(2,'0')+':'+String(Math.floor((s%3600)/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+    },1000);
+    setStatus('● Recording — '+_expCanvas.width+'×'+_expCanvas.height);
+    toast('⏺ Recording — '+_expCanvas.width+'×'+_expCanvas.height,2200);
+  }else mediaRec.stop();
+}
+document.getElementById('btn-rec').addEventListener('click',toggleRec);
+
+/* ══════════════════════════════════════════════════════════
+   NIKON ZR / EXTERNAL CAMERA — UVC handshake (tier strategy)
+   ══════════════════════════════════════════════════════════ */
+const _isSecureCtx=(typeof window.isSecureContext!=='undefined')?window.isSecureContext:(location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1');
+function _checkSecureCtx(){
+  if(_isSecureCtx)return true;
+  const msg=[
+    '⛔ INSECURE ORIGIN — getUserMedia blocked.','',
+    'Open the page via a local server or HTTPS:',
+    '  ▸ VS Code Live Server  →  http://localhost:5500',
+    '  ▸ Python               →  python -m http.server 8080',
+    '  ▸ Node / Vite / npm    →  http://localhost:3000',
+    '  ▸ Production           →  https://your-domain.com','',
+    'Opening with file:/// blocks access to camera and microphone.'
+  ].join('\n');
+  const diag=document.getElementById('cam-diag');
+  if(diag){diag.style.display='block';diag.style.whiteSpace='pre';diag.textContent=msg;}
+  toast('⛔ HTTPS or localhost required for camera',5000);
+  return false;
+}
+
+const _BUILTIN_LABELS=/facetime|built.?in|integrated|internal|isight|front\s*camera|laptop|notebook|pc\s*camera/i;
+function _tierLabel(t){return['exact+resizeNone','exact','exact+29.97','ideal','bare'][t]||'?';}
+
+async function _enumCameras(){
+  if(!_checkSecureCtx())return;
+  try{
+    // ── No automatic getUserMedia ───────────────────────
+    // enumerateDevices() requires no permission and shows no popup.
+    // If permission has not been granted yet, labels will be empty
+    // → we use the fallback "Camera #xxxx". Real labels appear
+    // automatically after the first manual activation (the permission
+    // viene poi memorizzato dal browser).
+    const devices=await navigator.mediaDevices.enumerateDevices();
+    const cams=devices.filter(d=>d.kind==='videoinput');
+    const sel=document.getElementById('cam-device-sel');
+    const diag=document.getElementById('cam-diag');
+    if(!sel)return;
+    const prev=sel.value;
+    sel.innerHTML='<option value="">— select camera —</option>';
+    const external=[],builtin=[];
+    cams.forEach(d=>{
+      const lbl=d.label||('Camera #'+d.deviceId.slice(0,8));
+      const isBuiltin=_BUILTIN_LABELS.test(lbl);
+      (isBuiltin?builtin:external).push({id:d.deviceId,label:lbl,isBuiltin});
+    });
+    [...external,...builtin].forEach(d=>{
+      const opt=document.createElement('option');
+      opt.value=d.id;
+      opt.textContent=(d.isBuiltin?'💻 ':'📷 ')+d.label;
+      if(d.id===prev)opt.selected=true;
+      sel.appendChild(opt);
+    });
+    const nikonOpt=[...sel.options].find(o=>/nikon/i.test(o.textContent)&&/\bzr\b/i.test(o.textContent))||[...sel.options].find(o=>/nikon/i.test(o.textContent));
+    if(nikonOpt){sel.value=nikonOpt.value;nikonDeviceId=nikonOpt.value;}
+    if(diag){
+      if(cams.length===0){diag.style.display='block';diag.textContent='⚠ No video device detected. Camera not in UVC mode.';}
+      else if(external.length===0){diag.style.display='block';diag.style.whiteSpace='pre';diag.textContent='⚠ Built-in webcam only: '+builtin.map(b=>b.label).join(', ')+'.\nExternal camera not visible — sul corpo camera:\n  Menu › USB › Connect to PC → Video (UVC)';}
+      else{diag.style.display='none';diag.textContent='';}
+    }
+    const tot=cams.length,ext=external.length;
+    toast(tot+' cam'+(tot!==1?'ere':'era')+' ('+ext+' estern'+(ext!==1?'e':'a')+')',2000);
+  }catch(e){toast('Enum camera: '+e.message,3000);}
+}
+
+function _camSetStatus(connected,res){
+  const dot=document.getElementById('cam-stat-dot');
+  const lbl=document.getElementById('cam-stat-lbl');
+  const res2=document.getElementById('cam-stat-res');
+  if(!dot)return;
+  if(connected){dot.style.color='#00ff88';lbl.textContent='CONNESSA';lbl.style.color='#00ff88';if(res2)res2.textContent=res||'';}
+  else{dot.style.color='var(--t3)';lbl.textContent='DISCONNECTED';lbl.style.color='var(--t3)';if(res2)res2.textContent='';}
+}
+
+async function _camInitImageCapture(stream){
+  if(!('ImageCapture' in window))return;
+  const track=stream.getVideoTracks()[0];
+  if(!track)return;
+  camImageCapture=new ImageCapture(track);
+  const cap=track.getCapabilities?track.getCapabilities():{};
+  const sp=document.getElementById('cam-cap-settings');
+  if(sp)sp.style.display='block';
+  const show=(rowId,slId,min,max,step,val)=>{
+    const row=document.getElementById(rowId),sl=document.getElementById(slId);
+    if(row)row.style.display='flex';
+    if(sl){sl.min=min;sl.max=max;sl.step=step||1;sl.value=val||min;}
+  };
+  if(cap.iso)show('cam-iso-row','cam-iso-sl',cap.iso.min,cap.iso.max,cap.iso.step||100,400);
+  if(cap.exposureTime)show('cam-exp-row','cam-exp-sl',cap.exposureTime.min,cap.exposureTime.max,cap.exposureTime.step||100,8333);
+  if(cap.colorTemperature)show('cam-wb-row','cam-wb-sl',cap.colorTemperature.min,cap.colorTemperature.max,50,5500);
+  if(cap.zoom)show('cam-zoom-row','cam-zoom-sl',cap.zoom.min,cap.zoom.max,cap.zoom.step||0.1,cap.zoom.min);
+}
+function _camHideSettings(){
+  const sp=document.getElementById('cam-cap-settings');
+  if(sp)sp.style.display='none';
+  ['cam-iso-row','cam-exp-row','cam-wb-row','cam-zoom-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+}
+async function _camApply(constraint){
+  if(!nikonStream)return;
+  const track=nikonStream.getVideoTracks()[0];
+  if(!track)return;
+  try{await track.applyConstraints({advanced:[constraint]});}
+  catch(e){console.warn('[cam] constraint ignored:',constraint,e.message);}
+}
+function stopNikonCamera(){
+  if(nikonStream){nikonStream.getTracks().forEach(t=>t.stop());nikonStream=null;}
+  camImageCapture=null;
+  _camSetStatus(false);
+  _camHideSettings();
+}
+async function _camCheckStreamHealth(v){
+  return new Promise(resolve=>{
+    setTimeout(()=>{
+      try{
+        const w=v.videoWidth||320,h=v.videoHeight||180;
+        if(w===0||h===0){resolve(false);return;}
+        const c=document.createElement('canvas');
+        c.width=Math.min(w,160);c.height=Math.min(h,90);
+        c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+        const px=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+        let sum=0;for(let i=0;i<px.length;i+=4)sum+=px[i]+px[i+1]+px[i+2];
+        resolve(sum/(c.width*c.height*3*255)>0.005);
+      }catch(e){resolve(true);}
+    },900);
+  });
+}
+
+async function toggleNikonCamera(){
+  if(srcMode==='camera'){
+    stopAllSources();srcMode='none';
+    updateSourceUI('');
+    cv.classList.remove('on');
+    document.getElementById('drop-hint').classList.remove('hidden');
+    toast('◯ Camera disconnected');
+    return;
+  }
+  if(!_checkSecureCtx())return;
+  const sel=document.getElementById('cam-device-sel');
+  const diag=document.getElementById('cam-diag');
+  nikonDeviceId=sel?sel.value:null;
+  if(!nikonDeviceId){
+    toast('⚠ Select a device in the Camera panel',3500);
+    const secHead=document.querySelector('#sec-cam-ctrl .sec-head');
+    if(secHead&&secHead.classList.contains('closed'))secHead.click();
+    await _enumCameras();
+    return;
+  }
+  if(diag){diag.style.display='none';diag.textContent='';diag.style.whiteSpace='normal';}
+  toast('⟳ Connecting camera…',14000);
+
+  const TIERS=[
+    {width:{exact:1920},height:{exact:1080},frameRate:{exact:30},resizeMode:'none'},
+    {width:{exact:1920},height:{exact:1080},frameRate:{exact:30}},
+    {width:{exact:1920},height:{exact:1080},frameRate:{min:28,max:31}},
+    {width:{ideal:1920,min:1280},height:{ideal:1080,min:720},frameRate:{ideal:30}},
+    {}
+  ];
+  const FATAL=new Set(['NotAllowedError','NotFoundError','SecurityError']);
+  const GUM_TIMEOUT_MS=(t)=>t<=2?8000:13000;
+  const _gum=(constraints,t)=>Promise.race([
+    navigator.mediaDevices.getUserMedia(constraints),
+    new Promise((_,rej)=>setTimeout(()=>{const e=new Error(`Timeout ${GUM_TIMEOUT_MS(t)/1000}s — Tier ${t} [${_tierLabel(t)}]`);e.name='TimeoutError';rej(e);},GUM_TIMEOUT_MS(t)))
+  ]);
+  let stream=null,lastErr=null;
+  for(let t=0;t<TIERS.length;t++){
+    try{
+      if(t>0)toast(`⟳ Tier ${t+1}/${TIERS.length} [${_tierLabel(t)}]…`,12000);
+      stream=await _gum({video:{deviceId:{exact:nikonDeviceId},...TIERS[t]},audio:false},t);
+      break;
+    }catch(e){
+      lastErr=e;
+      if(FATAL.has(e.name)){
+        if(diag){diag.style.display='block';diag.textContent=`⚠ ${e.name}: ${e.message}`;}
+        toast('⚠ '+e.name,5000);
+        return;
+      }
+    }
+  }
+  if(!stream){
+    const n=lastErr&&lastErr.name||'UnknownError';
+    const m=lastErr&&lastErr.message||'unknown error';
+    const lines=[`⚠ HANDSHAKE FAILED: ${n}`,`   ${m}`,''];
+    if(n==='OverconstrainedError'){
+      lines.push('No compatible UVC profile found.\nCheck the settings on the camera body:\n  · Video format → H.264 / 1920×1080 / 30p\n  · Do NOT use 4K, RAW, N-RAW or ProRes: they saturate\n    USB bandwidth and make the MJPEG profile non-negotiable.');
+    }else if(n==='NotReadableError'){
+      lines.push('Device is in use by another process:\n  · Close OBS, Zoom, Meet, Teams, Webcam Utility\n  · Close the system Camera app (Win/macOS)\n  · Unplug and replug the USB-C cable, then retry');
+    }else if(n==='AbortError'){
+      lines.push('Hardware handshake interrupted (AbortError):\n  · "USB Power Supply" → OFF on camera body\n  · Try a powered USB-C hub\n  · Unplug, wait 5s, reconnect');
+    }else if(n==='TimeoutError'){
+      lines.push('Camera not responding in UVC mode:\n  · Camera Menu › USB › Connect to PC → Video (UVC)\n  · Cable may be charge-only (no data)\n  · Another app is using the camera — close it');
+    }
+    if(diag){diag.style.display='block';diag.style.whiteSpace='pre';diag.textContent=lines.join('\n');}
+    toast(`⚠ ${n} — see diagnostics`,6000);
+    return;
+  }
+  const track=stream.getVideoTracks()[0];
+  if(!track||track.readyState==='ended'){
+    stream.getTracks().forEach(t=>t.stop());
+    const msg='⚠ Stream obtained but immediately closed.\nCamera may not be in UVC mode.';
+    if(diag){diag.style.display='block';diag.style.whiteSpace='pre';diag.textContent=msg;}
+    toast('⚠ Camera: stream closed immediately',5000);
+    return;
+  }
+  stopAllSources();
+  nikonStream=stream;srcMode='camera';
+  vid.muted=true;vid.playsInline=true;vid.autoplay=true;vid.srcObject=stream;
+  vid.play().catch(pe=>{setTimeout(()=>vid.play().catch(()=>{}),250);});
+  track.onended=()=>{
+    if(srcMode!=='camera')return;
+    toast('⚠ Camera disconnected',3000);
+    stopAllSources();srcMode='none';
+    updateSourceUI('');
+    if(diag){diag.style.display='block';diag.textContent='⚠ Camera disconnected. Reconnect the cable and retry.';}
+  };
+
+  let activated=false,polls=0;const MAX_POLLS=150;
+  const safeActivate=()=>{
+    if(activated)return;activated=true;
+    navigator.mediaDevices.enumerateDevices().then(allDevices=>{
+      const acquiredId=track.getSettings().deviceId;
+      const acquiredDev=allDevices.find(d=>d.deviceId===acquiredId);
+      const devLabel=(acquiredDev&&acquiredDev.label)||'External Camera';
+      const w=vid.videoWidth,h=vid.videoHeight;
+      toast(`◉ ${devLabel} — ${w}×${h}`);
+      resizeCanvasToVideo();if(!tex)initTex();
+      cv.classList.add('on');
+      document.getElementById('drop-hint').classList.add('hidden');
+      updateSourceUI('src-camera');
+      _camSetStatus(true,w+'×'+h);
+      _camInitImageCapture(stream);
+      if(diag){diag.style.display='none';diag.textContent='';}
+      updateSrcInfo(devLabel,w+'×'+h);
+      _camCheckStreamHealth(vid).then(ok=>{
+        if(!ok&&srcMode==='camera'){
+          const hMsg=['⚠ BLACK FEED — camera is in UVC but not sending frames.','','Common causes:','  · Mode dial not set to Video (check Photo/Playback)','  · Lens cap still on','  · Camera in standby → press Rec button to wake','  · Auto-power-off too aggressive → disable it'].join('\n');
+          if(diag){diag.style.display='block';diag.style.whiteSpace='pre';diag.textContent=hMsg;}
+          toast('⚠ Black feed — see diagnostics',5000);
+        }
+      });
+    });
+  };
+  const poll=()=>{
+    if(activated)return;
+    if(track.readyState==='ended'){safeActivate();return;}
+    if(vid.videoWidth>0&&vid.videoHeight>0){safeActivate();return;}
+    if(++polls>=MAX_POLLS){safeActivate();return;}
+    setTimeout(poll,80);
+  };
+  vid.addEventListener('loadeddata',poll,{once:true});
+  vid.addEventListener('canplay',poll,{once:true});
+  setTimeout(poll,200);
+
+  // ── Silent re-enumeration after permission granted ─────────
+  // Now that getUserMedia has granted permission, enumerateDevices
+  // will return the real labels. We update the selector in the background
+  // without showing any toast or interfering with activation.
+  navigator.mediaDevices.enumerateDevices().then(devs=>{
+    const sel=document.getElementById('cam-device-sel');
+    if(!sel)return;
+    devs.filter(d=>d.kind==='videoinput').forEach(d=>{
+      const opt=[...sel.options].find(o=>o.value===d.deviceId);
+      if(opt&&d.label){
+        const isBuiltin=_BUILTIN_LABELS.test(d.label);
+        opt.textContent=(isBuiltin?'💻 ':'📷 ')+d.label;
+      }
+    });
+  }).catch(()=>{});
+}
+
+/* ── Photo / Rec RAW from external camera (ungraded footage) ── */
+async function camTakePhoto(){
+  if(srcMode!=='camera'||!vid){toast('◯ No active camera',2000);return;}
+  const save=blob=>{
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='camera_raw_'+Date.now()+'.jpg';
+    document.body.appendChild(a);a.click();
+    setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(a.href);},1000);
+    toast('📷 RAW photo saved!',2000);
+  };
+  if(camImageCapture){
+    try{const blob=await camImageCapture.takePhoto();save(blob);return;}
+    catch(e){console.warn('[cam] takePhoto fallback:',e.message);}
+  }
+  const c=document.createElement('canvas');
+  c.width=vid.videoWidth;c.height=vid.videoHeight;
+  c.getContext('2d').drawImage(vid,0,0);
+  c.toBlob(b=>save(b),'image/jpeg',0.97);
+}
+function camToggleRec(){
+  if(!nikonStream){toast('◯ No active camera',2000);return;}
+  const btn=document.getElementById('cam-rec-btn');
+  if(camRecActive){
+    camRecActive=false;
+    if(camRecMR&&camRecMR.state!=='inactive')camRecMR.stop();
+    if(btn)btn.classList.remove('on');
+    toast('■ RAW REC stop — downloading…');
+  }else{
+    camRecChunks=[];
+    const mimes=['video/mp4','video/webm;codecs=h264','video/webm'];
+    const mime=mimes.find(m=>{try{return MediaRecorder.isTypeSupported(m);}catch(e){return false;}})||'';
+    try{camRecMR=mime?new MediaRecorder(nikonStream,{mimeType:mime,videoBitsPerSecond:80_000_000}):new MediaRecorder(nikonStream);}
+    catch(e){toast('REC not supported: '+e.message,3000);return;}
+    camRecMR.ondataavailable=e=>{if(e.data&&e.data.size>0)camRecChunks.push(e.data);};
+    camRecMR.onstop=()=>{
+      const ext=(camRecMR.mimeType||'').includes('mp4')?'mp4':'webm';
+      const blob=new Blob(camRecChunks,{type:camRecMR.mimeType||'video/webm'});
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='camera_raw_'+Date.now()+'.'+ext;
+      document.body.appendChild(a);a.click();
+      setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(a.href);},1000);
+      camRecMR=null;
+      toast('⬇ RAW video saved!',2500);
+    };
+    camRecMR.start(100);
+    camRecActive=true;
+    if(btn)btn.classList.add('on');
+    toast('⏺ RAW REC — recording started');
+  }
+}
+
+(function initCameraSection(){
+  const refreshBtn=document.getElementById('cam-refresh-btn');
+  const sel=document.getElementById('cam-device-sel');
+  const photoBtn=document.getElementById('cam-photo-btn');
+  const recBtn=document.getElementById('cam-rec-btn');
+  const afBtn=document.getElementById('cam-af-btn');
+  const awbBtn=document.getElementById('cam-awb-btn');
+  const isoSl=document.getElementById('cam-iso-sl');
+  const expSl=document.getElementById('cam-exp-sl');
+  const wbSl=document.getElementById('cam-wb-sl');
+  const zoomSl=document.getElementById('cam-zoom-sl');
+
+  if(refreshBtn)refreshBtn.addEventListener('click',_enumCameras);
+  if(sel)sel.addEventListener('change',()=>{nikonDeviceId=sel.value;});
+  if(photoBtn)photoBtn.addEventListener('click',camTakePhoto);
+  if(recBtn)recBtn.addEventListener('click',camToggleRec);
+
+  if(isoSl)isoSl.addEventListener('input',function(){
+    const v=+this.value;
+    const el=document.getElementById('cam-iso-v');if(el)el.textContent=v;
+    _camApply({iso:v,exposureMode:'manual'});
+  });
+  if(expSl)expSl.addEventListener('input',function(){
+    const v=+this.value;
+    const frac=v>0?'1/'+Math.round(1_000_000/v):'0';
+    const el=document.getElementById('cam-exp-v');if(el)el.textContent=frac;
+    _camApply({exposureTime:v,exposureMode:'manual'});
+  });
+  if(wbSl)wbSl.addEventListener('input',function(){
+    const v=+this.value;
+    const el=document.getElementById('cam-wb-v');if(el)el.textContent=v+'K';
+    _camApply({colorTemperature:v,whiteBalanceMode:'manual'});
+    const awb=document.getElementById('cam-awb-btn');
+    if(awb)awb.classList.remove('on');
+  });
+  if(zoomSl)zoomSl.addEventListener('input',function(){
+    const v=parseFloat(this.value).toFixed(1);
+    const el=document.getElementById('cam-zoom-v');if(el)el.textContent=v+'×';
+    _camApply({zoom:+v});
+  });
+  if(afBtn)afBtn.addEventListener('click',function(){
+    const on=!this.classList.contains('on');
+    this.classList.toggle('on',on);
+    _camApply({focusMode:on?'continuous':'manual'});
+    toast(on?'◉ Auto Focus ON':'◯ Manual Focus',1800);
+  });
+  if(awbBtn)awbBtn.addEventListener('click',function(){
+    const on=!this.classList.contains('on');
+    this.classList.toggle('on',on);
+    _camApply({whiteBalanceMode:on?'continuous':'manual'});
+    const wbRow=document.getElementById('cam-wb-row');
+    if(wbRow)wbRow.style.display=on?'none':'flex';
+    toast(on?'◉ Auto WB ON':'◯ Manual WB',1800);
+  });
+
+  if(navigator.mediaDevices&&navigator.mediaDevices.enumerateDevices)setTimeout(_enumCameras,600);
+  if(navigator.mediaDevices.addEventListener)navigator.mediaDevices.addEventListener('devicechange',_enumCameras);
+})();
+
+applyPresetObject(PRESETS.isco);
+document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+document.querySelector('.chip').classList.add('on');
+
+</script>
+</body>
+</html>

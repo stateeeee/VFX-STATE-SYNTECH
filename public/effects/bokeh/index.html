@@ -1,0 +1,3806 @@
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+<meta charset="UTF-8">
+<meta name="google" content="notranslate">
+<title>BOKEH STATE -- Cinematic Depth of Field</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Barlow+Condensed:wght@300;400;500;600;700;900&display=swap');
+
+/* ═══════════════════════════════════════════════════════
+   KEYFRAMES
+   ═══════════════════════════════════════════════════════ */
+@keyframes iri-logo {
+  0%   { background-position:0%   50%; }
+  50%  { background-position:100% 50%; }
+  100% { background-position:0%   50%; }
+}
+@keyframes shimmer-pass {
+  0%   { transform:translateX(-120%) skewX(-20deg); }
+  100% { transform:translateX(320%)  skewX(-20deg); }
+}
+@keyframes iri-border {
+  0%   { border-color:rgba(200,160,0,.5); }
+  25%  { border-color:rgba(100,180,255,.5); }
+  50%  { border-color:rgba(200,100,255,.5); }
+  75%  { border-color:rgba(255,120,200,.5); }
+  100% { border-color:rgba(200,160,0,.5); }
+}
+@keyframes iri-glow {
+  0%   { box-shadow:0 0 12px rgba(200,160,0,.4),0 0 30px rgba(200,160,0,.15); }
+  25%  { box-shadow:0 0 12px rgba(80,160,255,.4),0 0 30px rgba(80,160,255,.15); }
+  50%  { box-shadow:0 0 12px rgba(180,80,255,.4),0 0 30px rgba(180,80,255,.15); }
+  75%  { box-shadow:0 0 12px rgba(255,100,180,.4),0 0 30px rgba(255,100,180,.15); }
+  100% { box-shadow:0 0 12px rgba(200,160,0,.4),0 0 30px rgba(200,160,0,.15); }
+}
+@keyframes hue-spin {
+  from { filter:hue-rotate(0deg)   saturate(1.3) brightness(1.05); }
+  to   { filter:hue-rotate(360deg) saturate(1.3) brightness(1.05); }
+}
+@keyframes iri-dot-glow {
+  0%   { box-shadow:0 0 12px rgba(200,160,0,.8),0 0 28px rgba(200,160,0,.3); }
+  33%  { box-shadow:0 0 12px rgba(100,180,255,.8),0 0 28px rgba(100,180,255,.3); }
+  66%  { box-shadow:0 0 12px rgba(200,100,255,.8),0 0 28px rgba(200,100,255,.3); }
+  100% { box-shadow:0 0 12px rgba(200,160,0,.8),0 0 28px rgba(200,160,0,.3); }
+}
+@keyframes bracket-pulse {
+  0%,100% { opacity:.55; filter:drop-shadow(0 0 5px rgba(200,160,0,.5)); }
+  33%      { opacity:.7;  filter:drop-shadow(0 0 8px rgba(100,180,255,.6)); }
+  66%      { opacity:.7;  filter:drop-shadow(0 0 8px rgba(180,80,255,.6)); }
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.15} }
+@keyframes topline-shift {
+  0%   { background-position:0%   50%; }
+  100% { background-position:200% 50%; }
+}
+@keyframes smoke-a {
+  0%,100% { transform:translateX(0px)   translateY(0px)    scaleX(1.00) scaleY(1.00); opacity:.55; }
+  30%      { transform:translateX(12px)  translateY(-22px)  scaleX(1.18) scaleY(.85);  opacity:.30; }
+  65%      { transform:translateX(-8px)  translateY(-14px)  scaleX(.88)  scaleY(1.12); opacity:.42; }
+}
+@keyframes smoke-b {
+  0%,100% { transform:translateX(0px)   translateY(0px)    scaleX(1.00) scaleY(1.00); opacity:.42; }
+  40%      { transform:translateX(-14px) translateY(-28px)  scaleX(1.22) scaleY(.80);  opacity:.22; }
+  75%      { transform:translateX(9px)   translateY(-10px)  scaleX(.85)  scaleY(1.15); opacity:.35; }
+}
+@keyframes smoke-c {
+  0%,100% { transform:translateX(0px)  translateY(0px)   scaleX(1.00) scaleY(1.00); opacity:.35; }
+  50%      { transform:translateX(6px)  translateY(-18px) scaleX(1.12) scaleY(.88);  opacity:.18; }
+}
+@keyframes fluid-shimmer {
+  0%   { opacity:0;   transform:translateX(-100%) rotate(-15deg); }
+  10%  { opacity:.08; }
+  90%  { opacity:.06; }
+  100% { opacity:0;   transform:translateX(200%)  rotate(-15deg); }
+}
+@keyframes gel-breathe {
+  0%,100% { box-shadow:
+    inset 0 3px 18px rgba(255,255,255,.18),
+    inset 0 -3px 12px rgba(0,0,0,.45),
+    inset 3px 0 10px rgba(255,255,255,.06),
+    inset -3px 0 10px rgba(0,0,0,.22),
+    0 1px 0 rgba(255,255,255,.09),
+    0 2px 6px rgba(0,0,0,.5);
+  }
+  50% { box-shadow:
+    inset 0 4px 22px rgba(255,255,255,.22),
+    inset 0 -4px 14px rgba(0,0,0,.5),
+    inset 4px 0 12px rgba(255,255,255,.08),
+    inset -4px 0 12px rgba(0,0,0,.28),
+    0 1px 0 rgba(255,255,255,.12),
+    0 3px 8px rgba(0,0,0,.55);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   DESIGN TOKENS
+   ═══════════════════════════════════════════════════════ */
+:root {
+  --bg:        #04020a;
+  --bg-panel:  #06040e;
+  --bg-deep:   #020108;
+  --border:    #20183a;
+  --border-hi: #38286a;
+  --amber:     #e8c000;
+  --green:     #20e060;
+  --red:       #f03020;
+  --cyan:      #00e0c0;
+  --t4:#f2d458; --t3:#c89030; --t2:#7a5518; --t1:#3e2c0c;
+  --mono:'JetBrains Mono',monospace;
+  --cond:'Barlow Condensed',sans-serif;
+}
+*,*::before,*::after { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:var(--bg); color:var(--t4);
+  font-family:var(--mono); font-size:11px;
+  height:100vh; display:flex; flex-direction:column;
+  overflow:hidden; user-select:none; -webkit-font-smoothing:antialiased;
+}
+.notranslate { translate:none; }
+
+/* ═══════════════════════════════════════════════════════
+   TOPBAR
+   ═══════════════════════════════════════════════════════ */
+#topbar {
+  height:46px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.03) 0%,rgba(255,255,255,.01) 10%,transparent 40%,rgba(0,0,0,.25) 100%),
+    linear-gradient(180deg,#0e0c10 0%,#060408 100%);
+  border-bottom:1px solid rgba(255,255,255,.06);
+  display:flex; align-items:center; padding:0 16px; gap:12px;
+  flex-shrink:0; position:relative; overflow:hidden;
+}
+#topbar::before {
+  content:''; position:absolute; inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.08) 3px,rgba(0,0,0,.08) 4px);
+  pointer-events:none; z-index:0;
+}
+#topbar::after {
+  content:''; position:absolute; bottom:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffcc,#e8c000);
+  background-size:300% 100%; animation:topline-shift 6s linear infinite; pointer-events:none;
+}
+#topbar > * { position:relative; z-index:1; }
+
+.logo {
+  font-family:var(--cond); font-weight:900; font-size:16px;
+  letter-spacing:6px; white-space:nowrap;
+  color:var(--amber);
+  display:flex; align-items:center; gap:8px; position:relative;
+}
+
+.tb-sep { width:1px; height:22px; background:linear-gradient(180deg,transparent,rgba(255,255,255,.15),transparent); flex-shrink:0; }
+
+.pill {
+  display:flex; align-items:center; gap:6px; padding:4px 11px 4px 9px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.22) 0%,rgba(255,255,255,.06) 45%,rgba(255,255,255,.01) 50%,rgba(255,255,255,.06) 100%),
+    linear-gradient(180deg,#1c1a1e 0%,#0c0a0e 50%,#121014 100%);
+  border:1px solid rgba(255,255,255,.12); border-bottom-color:rgba(0,0,0,.5);
+  border-radius:3px; font-size:8px; letter-spacing:1.5px; color:var(--t3);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 2px 5px rgba(0,0,0,.55),0 4px 10px rgba(0,0,0,.25);
+  white-space:nowrap;
+}
+.pill .dot { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.2); flex-shrink:0; }
+.pill.live .dot { background:var(--green); box-shadow:0 0 8px rgba(32,224,96,.6); }
+.pill.live      { border-color:rgba(32,224,96,.25); color:rgba(160,255,200,.8); }
+.pill.rec-on .dot { background:var(--red); animation:blink 1s infinite; }
+.pill.engine .dot { background:var(--amber); box-shadow:0 0 8px rgba(232,192,0,.6); }
+.pill.engine      { border-color:rgba(232,192,0,.2); color:rgba(232,200,100,.8); }
+.pill-pre { font-size:6px; letter-spacing:1px; color:var(--t2); margin-right:1px; }
+
+#timecode { font-size:12px; letter-spacing:3px; color:var(--t3); font-variant-numeric:tabular-nums; margin-left:auto; min-width:100px; text-align:right; }
+#fps-display { font-size:9px; letter-spacing:2px; color:var(--t2); }
+#fps-display b { color:var(--cyan); font-weight:500; text-shadow:0 0 10px rgba(0,224,192,.6); }
+
+/* ═══════════════════════════════════════════════════════
+   MAIN LAYOUT
+   ═══════════════════════════════════════════════════════ */
+#main { display:flex; flex:1; overflow:hidden; }
+
+/* ═══════════════════════════════════════════════════════
+   CANVAS AREA
+   ═══════════════════════════════════════════════════════ */
+#canvas-area {
+  flex:1; background:#02000a;
+  display:flex; align-items:center; justify-content:center;
+  position:relative; overflow:hidden;
+}
+#canvas-wrap { position:relative; display:flex; align-items:center; justify-content:center; }
+#glcanvas { display:block; }
+#canvas-wrap::after {
+  content:''; position:absolute; inset:-1px;
+  border:1px solid rgba(255,255,255,.08); pointer-events:none; z-index:2;
+}
+#canvas-wrap::before {
+  content:''; position:absolute; inset:-6px;
+  background:
+    linear-gradient(var(--amber),var(--amber)) top left    / 20px 1px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) top left    / 1px 20px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) top right   / 20px 1px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) top right   / 1px 20px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) bottom left / 20px 1px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) bottom left / 1px 20px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) bottom right/ 20px 1px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) bottom right/ 1px 20px no-repeat;
+  pointer-events:none; z-index:3;
+  animation:bracket-pulse 6s linear infinite;
+}
+#res-tag { position:absolute; top:8px; left:8px; font-size:8px; letter-spacing:1px; color:var(--t2); pointer-events:none; z-index:4; opacity:.6; }
+#frame-outline {
+  position:absolute; inset:-9px; pointer-events:none; z-index:29;
+  border:1px solid var(--amber);
+  animation:iri-border 6s linear infinite, iri-glow 6s linear infinite;
+}
+
+/* Drop overlay — identica a blob */
+#drop-overlay {
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:14px;
+  background:radial-gradient(ellipse at 50% 40%,rgba(12,10,14,.99) 0%,rgba(3,2,4,1) 100%);
+  border:1px solid rgba(255,255,255,.07); z-index:25; transition:border-color .15s;
+}
+#drop-overlay.drag-over { animation:iri-border 3s linear infinite; }
+#drop-overlay.hidden    { display:none; }
+
+/* Icona upload — SVG cloud-upload, identica a blob (no cerchio) */
+.drop-ico { width:64px; height:64px; display:flex; align-items:center; justify-content:center; color:var(--amber); opacity:.35; }
+
+/* Titolo iridescente — NO shimmer/riflesso, NO ::after */
+.drop-title {
+  font-family:var(--cond); font-size:32px; font-weight:700;
+  letter-spacing:9px; text-transform:uppercase;
+  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffd8,#e8c000);
+  background-size:300% 100%;
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  animation:iri-logo 5s linear infinite;
+}
+
+/* Sottotitolo */
+.drop-sub { font-size:9px; letter-spacing:3px; color:var(--t2); }
+
+/* Bottone SOURCE — stile esatto di blob .drop-browse */
+.drop-source-btn {
+  margin-top:10px; padding:10px 32px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.26) 0%,rgba(255,255,255,.08) 45%,rgba(255,255,255,.01) 50%,rgba(255,255,255,.06) 100%),
+    linear-gradient(180deg,#1e1c20 0%,#0e0c10 50%,#141214 100%);
+  border:1px solid rgba(255,255,255,.14); border-bottom-color:rgba(0,0,0,.5);
+  border-radius:4px;
+  color:var(--t3); font-family:var(--mono); font-size:9px; letter-spacing:3px;
+  cursor:pointer; transition:all .2s; text-transform:uppercase;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 3px 7px rgba(0,0,0,.6),0 6px 14px rgba(0,0,0,.3);
+  position:relative; overflow:hidden;
+}
+.drop-source-btn::after {
+  content:''; position:absolute; top:0; left:-100%; width:40%; height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.1),transparent);
+  animation:shimmer-pass 3s ease-in-out infinite;
+}
+.drop-source-btn:hover {
+  border-color:rgba(232,192,0,.5); color:var(--amber);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.20),0 0 20px rgba(232,192,0,.18),0 4px 10px rgba(0,0,0,.6);
+}
+#file-input { display:none; }
+
+/* Play overlay */
+#play-overlay { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.5); cursor:pointer; z-index:5; }
+#play-overlay.show { display:flex; }
+.play-ring { width:70px; height:70px; border-radius:50%; border:2px solid var(--amber); display:flex; align-items:center; justify-content:center; color:var(--amber); font-size:28px; transition:transform .15s,background .15s; }
+#play-overlay:hover .play-ring { background:rgba(232,192,0,.1); transform:scale(1.08); }
+
+/* ═══════════════════════════════════════════════════════
+   PANEL — BLACK GLOSSY FLUID WITH BUBBLES
+   ═══════════════════════════════════════════════════════ */
+#panel {
+  width:296px;
+  border-left:1px solid rgba(255,255,255,.07);
+  display:flex; flex-direction:column;
+  overflow-y:auto; flex-shrink:0;
+  position:relative;
+  background:
+    radial-gradient(circle at  7%  10%, rgba(255,255,255,.22) 0%, transparent 10%),
+    radial-gradient(ellipse 9% 3.5% at  9%  17%, rgba(0,0,0,.75) 0%, transparent 100%),
+    radial-gradient(circle at  9%  12%, rgba(0,0,0,.55) 0%, rgba(8,8,8,.3) 50%, transparent 57%,rgba(255,255,255,.30) 59%,rgba(255,255,255,.14) 67%,transparent 76%),
+    radial-gradient(circle at 78%  16%, rgba(255,255,255,.20) 0%, transparent 9%),
+    radial-gradient(ellipse 8% 3%   at 80%  23%, rgba(0,0,0,.7) 0%, transparent 100%),
+    radial-gradient(circle at 80%  18%, rgba(0,0,0,.5) 0%, rgba(8,8,8,.28) 48%, transparent 55%,rgba(255,255,255,.26) 57%,rgba(255,255,255,.12) 65%,transparent 74%),
+    radial-gradient(circle at 36%  31%, rgba(255,255,255,.25) 0%, transparent 14%),
+    radial-gradient(ellipse 11% 4.5% at 38% 40%, rgba(0,0,0,.8) 0%, transparent 100%),
+    radial-gradient(circle at 38%  33%, rgba(0,0,0,.6) 0%, rgba(6,6,6,.35) 53%, transparent 60%,rgba(255,255,255,.32) 62%,rgba(255,255,255,.16) 70%,transparent 79%),
+    radial-gradient(circle at 86%  46%, rgba(255,255,255,.18) 0%, transparent 10%),
+    radial-gradient(ellipse 9% 3.5% at 88% 54%, rgba(0,0,0,.68) 0%, transparent 100%),
+    radial-gradient(circle at 88%  48%, rgba(0,0,0,.5) 0%, rgba(8,8,8,.27) 51%, transparent 58%,rgba(255,255,255,.25) 60%,rgba(255,255,255,.11) 68%,transparent 77%),
+    radial-gradient(circle at 16%  61%, rgba(255,255,255,.21) 0%, transparent 12%),
+    radial-gradient(ellipse 10% 4%  at 18% 69%, rgba(0,0,0,.72) 0%, transparent 100%),
+    radial-gradient(circle at 18%  63%, rgba(0,0,0,.55) 0%, rgba(7,7,7,.32) 52%, transparent 59%,rgba(255,255,255,.28) 61%,rgba(255,255,255,.13) 69%,transparent 78%),
+    radial-gradient(circle at 58%  74%, rgba(255,255,255,.20) 0%, transparent 11%),
+    radial-gradient(ellipse 9% 3.5% at 60% 81%, rgba(0,0,0,.7) 0%, transparent 100%),
+    radial-gradient(circle at 60%  76%, rgba(0,0,0,.5) 0%, rgba(8,8,8,.28) 50%, transparent 57%,rgba(255,255,255,.26) 59%,rgba(255,255,255,.12) 67%,transparent 76%),
+    radial-gradient(circle at 53%   8%, rgba(255,255,255,.16) 0%, transparent 7%),
+    radial-gradient(circle at 55%  10%, rgba(0,0,0,.45) 0%, transparent 43%,rgba(255,255,255,.24) 45%,transparent 57%),
+    radial-gradient(circle at 23%  44%, rgba(255,255,255,.14) 0%, transparent 8%),
+    radial-gradient(circle at 25%  46%, rgba(0,0,0,.42) 0%, transparent 46%,rgba(255,255,255,.22) 48%,transparent 61%),
+    radial-gradient(circle at 70%  54%, rgba(255,255,255,.15) 0%, transparent 6%),
+    radial-gradient(circle at 72%  56%, rgba(0,0,0,.4) 0%, transparent 42%,rgba(255,255,255,.21) 44%,transparent 56%),
+    radial-gradient(ellipse 130% 80% at -8% -5%, rgba(255,255,255,.04) 0%,rgba(255,255,255,.01) 30%,transparent 55%),
+    radial-gradient(ellipse 130% 80% at 110% 115%, rgba(0,0,0,.9) 0%,rgba(0,0,0,.5) 35%,transparent 65%),
+    linear-gradient(160deg,#0e0c0e 0%,#080608 20%,#050405 45%,#0a080a 70%,#060406 100%);
+}
+
+#panel::-webkit-scrollbar { width:2px; }
+#panel::-webkit-scrollbar-track { background:rgba(0,0,0,.9); }
+#panel::-webkit-scrollbar-thumb { background:linear-gradient(180deg,rgba(255,255,255,.4),rgba(255,255,255,.1)); border-radius:1px; }
+
+#panel::before {
+  content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:linear-gradient(-15deg,transparent 30%,rgba(255,255,255,.05) 50%,rgba(255,255,255,.08) 52%,rgba(255,255,255,.04) 54%,transparent 70%);
+  width:200%; animation:fluid-shimmer 8s ease-in-out infinite;
+}
+#panel::after {
+  content:''; position:absolute; top:0; left:0; right:0; height:180px;
+  z-index:0; pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.09) 0%,rgba(255,255,255,.04) 20%,transparent 60%);
+}
+#panel > * { position:relative; z-index:1; }
+
+/* ═══════════════════════════════════════════════════════
+   SECTIONS
+   ═══════════════════════════════════════════════════════ */
+.section { position:relative; border-bottom:none; }
+.section::after {
+  content:''; position:absolute; bottom:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,transparent 0%,rgba(232,192,0,.18) 18%,rgba(128,200,255,.22) 36%,rgba(192,128,255,.20) 54%,rgba(255,144,192,.18) 72%,transparent 100%);
+  background-size:300% 100%;
+  animation:topline-shift 12s linear infinite;
+  pointer-events:none;
+}
+
+/* ═══════════════════════════════════════════════════════
+   SEC-HEAD — BLACK GLOSSY 3D INFLATED
+   ═══════════════════════════════════════════════════════ */
+.sec-head {
+  display:flex; align-items:center; height:34px; padding:0 14px; gap:10px;
+  position:relative; overflow:hidden; cursor:pointer;
+  background:
+    radial-gradient(ellipse 100% 60% at 50% -8%,rgba(255,255,255,.42) 0%,rgba(255,255,255,.22) 30%,rgba(255,255,255,.06) 55%,transparent 75%),
+    radial-gradient(ellipse 35% 100% at -4% 50%,rgba(255,255,255,.09) 0%,transparent 55%),
+    radial-gradient(ellipse 120% 65% at 55% 145%,rgba(0,0,0,.9) 0%,rgba(0,0,0,.5) 40%,transparent 68%),
+    radial-gradient(ellipse 65% 65% at 50% 50%,rgba(255,255,255,.025) 0%,transparent 70%),
+    linear-gradient(180deg,#1e1c22 0%,#141214 30%,#0a090b 60%,#0e0c10 85%,#181620 100%);
+  box-shadow:
+    inset 0  3px 16px rgba(255,255,255,.20),
+    inset 0 -3px 12px rgba(0,0,0,.75),
+    inset  3px 0  8px rgba(255,255,255,.05),
+    inset -3px 0  8px rgba(0,0,0,.3),
+    0 1px 0 rgba(255,255,255,.10),
+    0 2px 6px rgba(0,0,0,.6);
+  transition:background .15s,box-shadow .15s;
+  animation:gel-breathe 4s ease-in-out infinite;
+}
+.sec-head::before {
+  content:''; position:absolute; top:0; left:8%; right:8%; height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.50),rgba(255,255,255,.65),rgba(255,255,255,.50),transparent);
+  pointer-events:none;
+}
+.sec-head::after {
+  content:''; position:absolute; top:0; left:-80%; width:40%; height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent);
+  transform:skewX(-20deg); pointer-events:none; opacity:0;
+}
+.sec-head:hover::after { animation:shimmer-pass .6s ease-out forwards; opacity:1; }
+.sec-head:hover {
+  background:
+    radial-gradient(ellipse 100% 60% at 50% -8%,rgba(255,255,255,.50) 0%,rgba(255,255,255,.28) 30%,rgba(255,255,255,.08) 55%,transparent 75%),
+    radial-gradient(ellipse 35% 100% at -4% 50%,rgba(255,255,255,.12) 0%,transparent 55%),
+    radial-gradient(ellipse 120% 65% at 55% 145%,rgba(0,0,0,.85) 0%,transparent 65%),
+    linear-gradient(180deg,#282630 0%,#1c1a22 30%,#121014 60%,#161420 85%,#201e2a 100%);
+  box-shadow:
+    inset 0  4px 20px rgba(255,255,255,.26),
+    inset 0 -3px 12px rgba(0,0,0,.72),
+    0 1px 0 rgba(255,255,255,.14),
+    0 2px 10px rgba(0,0,0,.65);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   🔒 LOCKED FEATURE — SEC-MARK / SEC-TITLE COLOR SYNC — DO NOT DISABLE 🔒
+   ------------------------------------------------------------------------
+   L'utente ha chiesto esplicitamente che la lineetta (.sec-mark) a fianco
+   del nome di ogni sezione cambi colore ESATTAMENTE in sincro col testo
+   (.sec-title), come se un unico grande LED sottostante cambiasse colore
+   e testo/lineetta fossero dei "buchi" che lo rivelano.
+   Per questo .sec-mark usa lo STESSO gradiente, la STESSA background-size
+   e la STESSA animazione (iri-logo) di .sec-title, e viene incluso nella
+   funzione syncSectionTitleGradients() più sotto, così restano perfettamente
+   allineati nel tempo.
+   REGOLA PERMANENTE: non rimuovere, non "fissare" su un colore statico, e
+   non disaccoppiare questa animazione in future modifiche — anche se non
+   esplicitamente menzionata nel prompt — a meno che l'utente non lo chieda
+   di nuovo, esplicitamente, in un prompt futuro. Questo è un errore
+   sistematico già accaduto in passato: fare attenzione.
+   ══════════════════════════════════════════════════════════════════════ */
+.sec-mark {
+  width:2px; height:18px; flex-shrink:0; border-radius:1px;
+  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffd8,#e8c000);
+  background-size:300% 100%;
+  animation:iri-logo 5s linear infinite;
+  box-shadow:0 0 7px rgba(232,192,0,.4);
+}
+.sec-title {
+  font-family:var(--cond); font-size:11px; font-weight:700; letter-spacing:3.5px; text-transform:uppercase;
+  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffd8,#e8c000);
+  background-size:300% 100%;
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  animation:iri-logo 5s linear infinite;
+}
+.sec-chev { margin-left:auto; color:var(--t3); font-size:8px; transition:transform .18s; }
+.sec-chevron { margin-left:auto; color:var(--t3); font-size:8px; transition:transform .18s; }
+.sec-head.collapsed .sec-chev,
+.sec-head.closed    .sec-chev    { transform:rotate(-90deg); }
+.sec-head.collapsed .sec-chevron,
+.sec-head.closed    .sec-chevron { transform:rotate(-90deg); }
+.ic-credit { grid-column:1/-1; padding:6px 10px 4px; font-size:7px; letter-spacing:2.5px; color:var(--t2); text-align:center; text-transform:uppercase; border-top:1px solid rgba(255,255,255,.05); background:rgba(0,0,0,.3); }
+
+.sec-body {
+  padding:12px 13px; display:flex; flex-direction:column; gap:8px;
+  background:linear-gradient(180deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.35) 100%);
+  backdrop-filter:blur(6px);
+  border-top:1px solid rgba(255,255,255,.05);
+}
+.sec-body.hidden { display:none; }
+
+.row { display:flex; align-items:center; gap:8px; }
+.lbl { width:64px; flex-shrink:0; font-size:8px; letter-spacing:1px; color:var(--t2); text-transform:uppercase; }
+
+/* ═══════════════════════════════════════════════════════
+   LED TOGGLE BUTTONS — 3D glossy metallic
+   ═══════════════════════════════════════════════════════ */
+.led-btn {
+  flex:1; height:26px; display:flex; align-items:center; gap:7px; padding:0 10px;
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.22) 0%,rgba(255,255,255,.08) 40%,transparent 72%),
+    radial-gradient(ellipse 35% 100% at -5% 50%,rgba(255,255,255,.06) 0%,transparent 55%),
+    linear-gradient(180deg,#1a181c 0%,#0e0c10 35%,#080608 70%,#0c0a0e 100%);
+  border:1px solid rgba(255,255,255,.10); border-bottom-color:rgba(0,0,0,.65);
+  cursor:pointer; transition:all .12s; position:relative; overflow:hidden; border-radius:1px;
+  box-shadow:
+    inset 0  2px 10px rgba(255,255,255,.15),
+    inset 0 -2px  8px rgba(0,0,0,.65),
+    inset  2px 0  6px rgba(255,255,255,.04),
+    inset -2px 0  6px rgba(0,0,0,.25),
+    0 2px 5px rgba(0,0,0,.65);
+}
+.led-btn::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:48%;
+  background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.025)); pointer-events:none;
+}
+.led-btn::after {
+  content:''; position:absolute; top:0; left:-100%; width:50%; height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent);
+  transform:skewX(-15deg); pointer-events:none;
+}
+.led-btn:hover::after { animation:shimmer-pass .5s ease-out forwards; }
+.led-btn:hover {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.30) 0%,rgba(255,255,255,.12) 40%,transparent 72%),
+    linear-gradient(180deg,#242228 0%,#161418 35%,#0e0c10 70%,#141218 100%);
+  border-color:rgba(255,255,255,.16);
+}
+.led-btn.on {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.32) 0%,rgba(255,255,255,.14) 40%,transparent 72%),
+    linear-gradient(180deg,#221e26 0%,#141218 35%,#0c0a0e 70%,#121018 100%);
+  border-color:rgba(232,192,0,.42); border-bottom-color:rgba(0,0,0,.65);
+  animation:iri-glow 5s linear infinite;
+}
+.led { width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); flex-shrink:0; box-shadow:inset 0 1px 0 rgba(255,255,255,.1); }
+.led-btn.on .led { background:radial-gradient(circle at 35% 30%,#fff8c0,var(--amber)); border-color:rgba(255,240,100,.6); animation:iri-dot-glow 4s linear infinite; box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 0 8px rgba(232,192,0,.8); }
+.led-txt { font-size:8.5px; letter-spacing:1.5px; color:var(--t3); text-transform:uppercase; transition:color .12s; }
+.led-btn.on .led-txt { color:var(--t4); text-shadow:0 0 8px rgba(232,192,0,.3); }
+.led-btn:hover .led-txt { color:var(--t4); }
+.kbd-badge { margin-left:auto; padding:2px 5px; border:1px solid rgba(255,255,255,.15); font-size:7px; color:var(--t2); background:rgba(0,0,0,.3); border-radius:2px; box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 2px 3px rgba(0,0,0,.4); }
+
+/* Info cells */
+.info-grid { display:grid; grid-template-columns:1fr 1fr; gap:2px; background:rgba(0,0,0,.8); border:1px solid rgba(255,255,255,.07); }
+.info-cell {
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.18) 0%,rgba(255,255,255,.05) 45%,rgba(255,255,255,0) 50%,rgba(255,255,255,.04) 100%),
+    linear-gradient(180deg,#141214 0%,#080608 50%,#0e0c0e 100%);
+  padding:8px 10px; position:relative; overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 2px 4px rgba(0,0,0,.5);
+}
+.ic-lbl { font-size:7px; letter-spacing:2px; color:var(--t2); text-transform:uppercase; margin-bottom:4px; }
+.ic-val { font-size:16px; color:var(--t4); font-variant-numeric:tabular-nums; font-weight:300; line-height:1.2; }
+.ic-val.amber { background:linear-gradient(135deg,#ffe880,#e8c000,#c08000); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; filter:drop-shadow(0 0 6px rgba(232,192,0,.5)); }
+.ic-val.dim { color:var(--t3); font-size:11px; font-weight:400; }
+
+/* ═══════════════════════════════════════════════════════
+   ROTARY KNOB
+   ═══════════════════════════════════════════════════════ */
+.knob-group { display:flex; flex-direction:column; align-items:center; gap:3px; }
+.knob-outer {
+  width:48px; height:48px; border-radius:50%;
+  background:conic-gradient(from 225deg,var(--amber) 0deg,var(--amber) var(--fill,0deg),var(--border-hi) var(--fill,0deg),var(--border-hi) 270deg,transparent 270deg);
+  display:flex; align-items:center; justify-content:center;
+  padding:4px; cursor:ns-resize; transition:filter .1s;
+}
+.knob-outer:hover { filter:brightness(1.2); }
+.knob-outer:active { filter:brightness(1.4); }
+.knob {
+  width:40px; height:40px; border-radius:50%;
+  background:radial-gradient(circle at 38% 32%,#2a2040,#0a0818);
+  border:1px solid rgba(200,180,255,.25);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 2px 8px rgba(0,0,0,.8);
+  position:relative; transform:rotate(var(--rot,-135deg));
+}
+.knob-dot { position:absolute; top:4px; left:calc(50% - 1.5px); width:3px; height:9px; background:var(--amber); border-radius:1.5px; opacity:.9; box-shadow:0 0 6px rgba(232,192,0,.6); }
+.knob-lbl { font-size:7px; letter-spacing:.8px; color:var(--t2); text-transform:uppercase; text-align:center; line-height:1; }
+.knob-val { font-size:8px; color:var(--t4); font-variant-numeric:tabular-nums; text-align:center; line-height:1; text-shadow:0 0 6px rgba(232,192,0,.3); }
+.knob-row { display:flex; justify-content:space-around; align-items:flex-end; padding:4px 0; }
+
+/* ═══════════════════════════════════════════════════════
+   SLIDERS — chrome metallic
+   ═══════════════════════════════════════════════════════ */
+.ctrl-row { display:flex; align-items:center; gap:8px; }
+.ctrl-lbl { width:70px; flex-shrink:0; font-size:8px; letter-spacing:1px; color:var(--t2); text-transform:uppercase; }
+.ctrl-track { flex:1; height:18px; display:flex; align-items:center; }
+.daw-slider {
+  -webkit-appearance:none; width:100%; height:2px;
+  background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.12));
+  outline:none; cursor:ew-resize; border-radius:1px;
+  box-shadow:inset 0 1px 0 rgba(0,0,0,.4),0 1px 0 rgba(255,255,255,.06);
+}
+.daw-slider::-webkit-slider-thumb {
+  -webkit-appearance:none; width:9px; height:22px;
+  background:linear-gradient(180deg,rgba(255,255,255,.5) 0%,#e0d0a0 10%,#c8a830 40%,#a07820 65%,#5a4010 85%,rgba(255,255,255,.2) 100%);
+  border:none; cursor:ew-resize; border-radius:2px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8);
+}
+.daw-slider::-webkit-slider-thumb:hover { box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 0 16px rgba(232,192,0,.7),0 0 32px rgba(180,120,255,.3),0 2px 8px rgba(0,0,0,.8); }
+.daw-slider::-moz-range-thumb { width:9px; height:22px; background:linear-gradient(180deg,#e0d0a0,#c8a830,#a07820,#5a4010); border:none; cursor:ew-resize; border-radius:2px; box-shadow:0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8); }
+.ctrl-val { width:40px; text-align:right; font-size:9.5px; color:var(--t4); font-variant-numeric:tabular-nums; letter-spacing:.5px; text-shadow:0 0 6px rgba(232,192,0,.3); }
+
+/* ═══════════════════════════════════════════════════════
+   SEGMENT BUTTONS
+   ═══════════════════════════════════════════════════════ */
+.seg-row { display:flex; gap:2px; }
+.seg-btn {
+  flex:1; height:27px;
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.20) 0%,rgba(255,255,255,.07) 40%,transparent 72%),
+    linear-gradient(180deg,#181618 0%,#0c0a0c 35%,#060406 65%,#0a080a 100%);
+  border:1px solid rgba(255,255,255,.09); border-bottom-color:rgba(0,0,0,.65);
+  font-family:var(--mono); font-size:8.5px; letter-spacing:1.5px; color:var(--t2);
+  cursor:pointer; text-transform:uppercase; transition:all .12s;
+  position:relative; overflow:hidden; border-radius:1px;
+  box-shadow:inset 0 2px 10px rgba(255,255,255,.13),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 4px rgba(0,0,0,.6);
+}
+.seg-btn::before { content:''; position:absolute; top:0; left:0; right:0; height:45%; background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.02)); pointer-events:none; }
+.seg-btn::after { content:''; position:absolute; top:0; left:-100%; width:50%; height:100%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent); transform:skewX(-15deg); pointer-events:none; }
+.seg-btn:hover::after { animation:shimmer-pass .5s ease-out forwards; }
+.seg-btn:hover {
+  color:var(--t4);
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.28) 0%,rgba(255,255,255,.10) 40%,transparent 72%),
+    linear-gradient(180deg,#222022 0%,#141214 35%,#0c0a0c 65%,#121012 100%);
+  border-color:rgba(255,255,255,.16);
+}
+.seg-btn.on {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.36) 0%,rgba(255,255,255,.16) 40%,transparent 72%),
+    linear-gradient(180deg,#282428 0%,#1a161a 35%,#100e10 65%,#181418 100%);
+  border-color:rgba(232,192,0,.48); border-bottom-color:rgba(0,0,0,.65);
+  color:var(--t4);
+  animation:iri-glow 5s linear infinite;
+  box-shadow:inset 0 3px 14px rgba(255,255,255,.24),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 5px rgba(0,0,0,.65);
+  text-shadow:0 0 8px rgba(255,255,255,.2);
+}
+
+/* ═══════════════════════════════════════════════════════
+   XY KAOSS PAD — holographic
+   ═══════════════════════════════════════════════════════ */
+#xy-pad-wrap { border-bottom:none; }
+#xy-pad {
+  width:100%; aspect-ratio:1/0.65; position:relative;
+  background:
+    radial-gradient(ellipse at 25% 20%,rgba(180,100,255,.08) 0%,transparent 50%),
+    radial-gradient(ellipse at 75% 80%,rgba(0,120,255,.08) 0%,transparent 50%),
+    radial-gradient(ellipse at 50% 50%,rgba(232,192,0,.04) 0%,transparent 60%),
+    rgba(4,2,12,.7);
+  border:1px solid rgba(255,255,255,.1); cursor:crosshair; overflow:hidden; touch-action:none;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 2px 8px rgba(0,0,0,.4);
+}
+#xy-pad::before {
+  content:''; position:absolute; inset:0;
+  background-image:
+    linear-gradient(rgba(140,100,255,.2) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(140,100,255,.2) 1px,transparent 1px),
+    linear-gradient(rgba(80,60,180,.1) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(80,60,180,.1) 1px,transparent 1px);
+  background-size:50px 50px,50px 50px,10px 10px,10px 10px;
+  opacity:.5; pointer-events:none; z-index:1;
+}
+#xy-h-line { position:absolute; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(200,160,255,.3),transparent); pointer-events:none; top:50%; }
+#xy-v-line { position:absolute; top:0; bottom:0; width:1px; background:linear-gradient(180deg,transparent,rgba(200,160,255,.3),transparent); pointer-events:none; left:50%; }
+#xy-cursor {
+  position:absolute; width:16px; height:16px; border-radius:50%;
+  background:radial-gradient(circle at 32% 28%,rgba(255,255,255,.95) 0%,#ffe880 20%,#e8c000 50%,#c08000 100%);
+  box-shadow:0 0 10px rgba(232,192,0,.8),0 0 24px rgba(232,192,0,.4),0 3px 8px rgba(0,0,0,.8);
+  transform:translate(-50%,-50%); left:50%; top:50%; pointer-events:none;
+}
+#xy-cursor::before { content:''; position:absolute; top:3px; left:4px; width:5px; height:3px; border-radius:50%; background:rgba(255,255,255,.65); transform:rotate(-20deg); }
+.xy-axis-labels { display:flex; justify-content:space-between; margin-top:5px; }
+.xy-axis-labels span { font-size:7.5px; letter-spacing:2px; color:rgba(200,180,255,.4); text-transform:uppercase; }
+.xy-axis-labels span b { color:var(--t4); font-weight:500; }
+
+/* ═══════════════════════════════════════════════════════
+   BOKEH SHAPE PAD
+   ═══════════════════════════════════════════════════════ */
+#bshape-wrap {
+  position:relative; margin-top:8px; width:100%; aspect-ratio:1/1;
+  background:
+    radial-gradient(ellipse at 25% 20%,rgba(180,100,255,.06) 0%,transparent 50%),
+    rgba(4,2,12,.8);
+  border:1px solid rgba(255,255,255,.1);
+  cursor:crosshair; overflow:hidden; touch-action:none; user-select:none;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 2px 8px rgba(0,0,0,.4);
+}
+#bshape-wrap.off { opacity:.35; pointer-events:none; filter:grayscale(.9); }
+#bshape-wrap::before {
+  content:''; position:absolute; inset:0;
+  background-image:
+    linear-gradient(rgba(140,100,255,.15) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(140,100,255,.15) 1px,transparent 1px);
+  background-size:25% 25%;
+  opacity:.6; pointer-events:none;
+}
+#bshape-wrap::after {
+  content:''; position:absolute; inset:0;
+  background-image:
+    linear-gradient(45deg,transparent 48%,rgba(200,160,255,.04) 50%,transparent 52%),
+    linear-gradient(135deg,transparent 48%,rgba(200,160,255,.04) 50%,transparent 52%);
+  pointer-events:none;
+}
+.bshape-corner { position:absolute; font-size:7px; letter-spacing:1px; color:var(--t2); text-transform:uppercase; pointer-events:none; display:flex; flex-direction:column; align-items:center; gap:3px; transition:color .2s; }
+.bshape-corner svg { opacity:.3; transition:opacity .2s; }
+.bshape-corner.active { color:var(--t4); }
+.bshape-corner.active svg { opacity:1; filter:drop-shadow(0 0 4px rgba(232,192,0,.5)); }
+#bc-tl { top:7px; left:8px; align-items:flex-start; }
+#bc-tr { top:7px; right:8px; align-items:flex-end; }
+#bc-bl { bottom:7px; left:8px; align-items:flex-start; }
+#bc-br { bottom:7px; right:8px; align-items:flex-end; }
+.bshape-center-lbl { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:7px; letter-spacing:1px; color:var(--t2); text-transform:uppercase; pointer-events:none; opacity:.5; transition:opacity .2s; }
+#bshape-cursor {
+  position:absolute; width:14px; height:14px; border:2px solid var(--amber);
+  background:rgba(232,192,0,.2); box-shadow:0 0 10px rgba(232,192,0,.8),0 0 20px rgba(232,192,0,.3);
+  transform:translate(-50%,-50%); left:50%; top:50%; pointer-events:none;
+  transition:border-radius .25s,transform .07s,width .25s,height .25s;
+}
+#bshape-cursor.is-oval  { border-radius:50%/25%; }
+#bshape-cursor.is-catx  { border-radius:30%; transform:translate(-50%,-50%) rotate(45deg); }
+#bshape-cursor.is-square{ border-radius:2px; }
+#bshape-cursor.is-star  { border-radius:4px; transform:translate(-50%,-50%) rotate(22.5deg); }
+#bshape-cursor.is-circle{ border-radius:50%; }
+#bsh-h-line { position:absolute; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(200,160,255,.25),transparent); pointer-events:none; top:50%; }
+#bsh-v-line { position:absolute; top:0; bottom:0; width:1px; background:linear-gradient(180deg,transparent,rgba(200,160,255,.25),transparent); pointer-events:none; left:50%; }
+
+/* ═══════════════════════════════════════════════════════
+   PRESET GRID
+   ═══════════════════════════════════════════════════════ */
+.preset-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2px; margin-top:8px; background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.07); }
+.preset-btn {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.15) 0%,rgba(255,255,255,.05) 40%,transparent 72%),
+    linear-gradient(180deg,#161416 0%,#0a080a 50%,#0c0a0c 100%);
+  padding:7px 4px; text-align:center; font-family:var(--cond);
+  font-size:11px; font-weight:600; letter-spacing:2px; color:var(--t2);
+  cursor:pointer; text-transform:uppercase; transition:all .12s; position:relative;
+  border:1px solid transparent;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+}
+.preset-btn:hover { background:linear-gradient(180deg,#222020 0%,#141214 50%,#161416 100%); color:var(--t4); }
+.preset-btn.on {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.28) 0%,rgba(255,255,255,.10) 40%,transparent 72%),
+    linear-gradient(180deg,#221e22 0%,#161214 50%,#181618 100%);
+  color:var(--t4); border-color:rgba(232,192,0,.35);
+  animation:iri-glow 5s linear infinite;
+}
+.preset-btn.on::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--amber),transparent); }
+.preset-num { font-family:var(--mono); font-size:7px; color:var(--t2); display:block; margin-bottom:1px; }
+.preset-btn.on .preset-num { color:var(--t3); }
+
+/* ═══════════════════════════════════════════════════════
+   VU METERS
+   ═══════════════════════════════════════════════════════ */
+.vu-row { display:flex; align-items:center; gap:7px; }
+.vu-lbl { width:44px; font-size:7.5px; letter-spacing:1px; color:var(--t2); flex-shrink:0; text-transform:uppercase; }
+.vu-track { flex:1; height:5px; background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.08)); border:1px solid rgba(255,255,255,.08); overflow:hidden; border-radius:2px; box-shadow:inset 0 1px 0 rgba(0,0,0,.4); }
+.vu-bar { height:100%; width:0%; transition:width .05s; background:linear-gradient(90deg,#6a4800,var(--amber)); border-radius:0 2px 2px 0; box-shadow:0 0 6px rgba(232,192,0,.5); }
+.vu-bar.mid { background:linear-gradient(90deg,#2a4800,#20a040); box-shadow:0 0 6px rgba(32,160,64,.4); }
+.vu-val { width:28px; text-align:right; font-size:7.5px; color:var(--t2); font-variant-numeric:tabular-nums; }
+
+/* ═══════════════════════════════════════════════════════
+   REC + FULLSCREEN BUTTONS
+   ═══════════════════════════════════════════════════════ */
+.rec-btn {
+  width:100%; height:34px; display:flex; align-items:center; justify-content:center; gap:9px;
+  background:linear-gradient(180deg,rgba(255,255,255,.24) 0%,rgba(255,255,255,.07) 45%,rgba(255,255,255,.01) 50%,rgba(255,255,255,.05) 100%),linear-gradient(180deg,#1c1a1e 0%,#0c0a0e 50%,#141214 100%);
+  border:1px solid rgba(255,255,255,.12); border-bottom-color:rgba(0,0,0,.55);
+  border-radius:4px; color:var(--t2); font-family:var(--mono); font-size:9.5px; letter-spacing:3px;
+  cursor:pointer; text-transform:uppercase; transition:all .15s; position:relative; overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 3px 8px rgba(0,0,0,.6),0 6px 14px rgba(0,0,0,.25);
+}
+.rec-btn::before { content:''; position:absolute; top:0; left:0; right:0; height:45%; background:linear-gradient(180deg,rgba(255,255,255,.09),transparent); pointer-events:none; }
+.rec-btn:hover { border-color:rgba(240,48,32,.45); color:var(--red); box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 0 20px rgba(240,48,32,.14),0 4px 10px rgba(0,0,0,.6); }
+.rec-btn.on { background:linear-gradient(180deg,rgba(255,255,255,.12) 0%,rgba(255,255,255,.03) 45%,rgba(0,0,0,0) 50%,rgba(0,0,0,.1) 100%),linear-gradient(180deg,#1e0a0a 0%,#0e0404 50%,#180808 100%); border-color:rgba(240,48,32,.5); color:var(--red); box-shadow:inset 0 2px 8px rgba(0,0,0,.5),0 0 20px rgba(240,48,32,.2),0 3px 8px rgba(0,0,0,.6); }
+.rec-dot { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.1); border:1px solid rgba(240,48,32,.3); flex-shrink:0; box-shadow:inset 0 1px 0 rgba(255,255,255,.1); }
+.rec-btn.on .rec-dot { background:radial-gradient(circle at 35% 30%,rgba(255,200,180,.9),var(--red)); border-color:transparent; box-shadow:0 0 10px rgba(240,48,32,.8),inset 0 1px 0 rgba(255,200,200,.5); animation:blink 1s infinite; }
+#rec-time { text-align:center; font-size:13px; letter-spacing:4px; color:var(--t2); font-variant-numeric:tabular-nums; margin-top:4px; }
+#rec-time.on { color:var(--red); text-shadow:0 0 12px rgba(240,48,32,.6); }
+#rec-anam-time { text-align:center; font-size:13px; letter-spacing:4px; color:var(--t2); font-variant-numeric:tabular-nums; margin-top:4px; }
+#rec-anam-time.on { color:var(--red); text-shadow:0 0 12px rgba(240,48,32,.6); }
+#rec-anam-hint { font-size:7px; letter-spacing:.6px; color:var(--t2); text-transform:uppercase; text-align:center; line-height:1.5; margin-top:2px; opacity:.7; }
+#rec-anam-hint span { color:var(--amber); opacity:1; }
+
+.fs-btn {
+  width:100%; height:34px; margin-bottom:6px;
+  display:flex; align-items:center; justify-content:center; gap:9px;
+  background:linear-gradient(180deg,rgba(255,255,255,.26) 0%,rgba(255,255,255,.08) 45%,rgba(255,255,255,.01) 50%,rgba(255,255,255,.06) 100%),linear-gradient(180deg,#1a1820 0%,#0a0810 50%,#121020 100%);
+  border:1px solid rgba(255,255,255,.13); border-bottom-color:rgba(0,0,0,.55);
+  border-radius:4px; color:var(--t2); font-family:var(--mono); font-size:9px; letter-spacing:3px;
+  cursor:pointer; text-transform:uppercase; transition:all .15s; position:relative; overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 3px 8px rgba(0,0,0,.6),0 6px 14px rgba(0,0,0,.25);
+}
+.fs-btn::before { content:''; position:absolute; top:0; left:0; right:0; height:48%; background:linear-gradient(180deg,rgba(255,255,255,.10),transparent); pointer-events:none; }
+.fs-btn:hover { border-color:rgba(200,160,255,.4); color:var(--t4); box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 0 18px rgba(180,120,255,.14),0 4px 10px rgba(0,0,0,.6); }
+
+/* ═══════════════════════════════════════════════════════
+   FULLSCREEN OVERLAY
+   ═══════════════════════════════════════════════════════ */
+#fs-ov { display:none; position:fixed; inset:0; z-index:9998; background:#000; }
+#fs-ov.active { display:block; }
+/* La fullscreen preview non copia più il canvas su un secondo canvas 2D ogni
+   frame (quel readback GPU→CPU era un collo di bottiglia reale): il canvas
+   WebGL VERO viene semplicemente riposizionato via CSS a schermo intero.
+   Stesso identico stretch-to-fill di prima, zero costo per frame.          */
+#glcanvas.fs-active { position:fixed !important; inset:0 !important; width:100vw !important; height:100vh !important; z-index:9999 !important; background:#000; }
+#fs-close { display:none; position:fixed; top:18px; right:24px; z-index:10000; background:rgba(8,6,20,.9); border:1px solid var(--border-hi); color:var(--t3); font-family:var(--mono); font-size:13px; padding:6px 14px; cursor:pointer; letter-spacing:2px; transition:color .15s,border-color .15s; }
+#fs-close.active { display:block; }
+#fs-close:hover { color:var(--amber); border-color:var(--amber); }
+
+/* ═══════════════════════════════════════════════════════
+   SHORTCUTS
+   ═══════════════════════════════════════════════════════ */
+.sc-row { display:flex; align-items:center; gap:10px; padding:2px 0; }
+.sc-key { padding:3px 9px; background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03),rgba(0,0,0,.1)); border:1px solid rgba(255,255,255,.15); border-bottom-color:rgba(0,0,0,.3); font-size:8px; color:var(--t3); min-width:26px; text-align:center; border-radius:2px; box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 2px 3px rgba(0,0,0,.4); }
+.sc-desc { font-size:8.5px; color:var(--t2); }
+
+/* ═══════════════════════════════════════════════════════
+   SMOKE BLOBS — bottom of panel
+   ═══════════════════════════════════════════════════════ */
+#panel-smoke {
+  position:sticky; bottom:0; left:0; right:0;
+  height:80px; pointer-events:none; overflow:hidden; flex-shrink:0; z-index:10;
+  background:linear-gradient(180deg,transparent 0%,rgba(0,0,0,.5) 100%);
+}
+.smoke-blob { position:absolute; bottom:-20px; border-radius:50%; filter:blur(24px); }
+.smoke-blob.s1 { width:180px; height:70px; left:5%; background:radial-gradient(ellipse,rgba(255,255,255,.07),rgba(200,180,255,.05),transparent 70%); animation:smoke-a 7s ease-in-out infinite; }
+.smoke-blob.s2 { width:140px; height:60px; left:38%; background:radial-gradient(ellipse,rgba(255,255,255,.05),rgba(180,160,255,.04),transparent 70%); animation:smoke-b 9.5s ease-in-out infinite 1.8s; }
+.smoke-blob.s3 { width:100px; height:45px; left:64%; background:radial-gradient(ellipse,rgba(255,255,255,.06),rgba(220,200,255,.04),transparent 70%); animation:smoke-c 11s ease-in-out infinite 3.5s; }
+
+/* ═══════════════════════════════════════════════════════
+   BOTTOM BAR + DIVIDER
+   ═══════════════════════════════════════════════════════ */
+.pdiv { height:1px; background:linear-gradient(90deg,transparent,rgba(200,160,255,.15),transparent); margin:2px 0; }
+#bottombar { display:none; }
+#bottombar span { font-size:8px; letter-spacing:1px; color:var(--t2); }
+#bottombar span.hi { color:var(--t3); }
+#bottombar .bb-right { margin-left:auto; }
+
+/* ── Pill rec on ── */
+#pill-rec { display:none; }
+#pill-rec .dot { background:var(--red); animation:blink 1s infinite; }
+</style>
+</head>
+<body translate="no" class="notranslate">
+
+<!-- FULLSCREEN OVERLAY: backdrop + close button. Il canvas WebGL reale
+     (#glcanvas) diventa fullscreen via la classe .fs-active, niente copie. -->
+<div id="fs-ov"></div>
+<button id="fs-close">✕ CLOSE</button>
+
+<!-- TOPBAR -->
+<div id="topbar">
+  <div class="logo notranslate">VFX SYNTECH</div>
+  <div class="tb-sep"></div>
+  <div class="pill" id="pill-status"><div class="dot"></div><span class="pill-pre">INPUT</span><span id="pill-label">NONE</span></div>
+  <div class="pill engine" id="pill-engine"><div class="dot"></div><span class="pill-pre">ENGINE</span><span id="pill-engine-lbl">READY</span></div>
+  <div class="pill" id="pill-rec" style="display:none"><div class="dot"></div><span>● REC</span></div>
+  <div id="timecode">00:00:00:00</div>
+  <div id="fps-display">FPS <b id="fps-val">0</b></div>
+</div>
+
+<div id="main">
+
+  <!-- CANVAS -->
+  <div id="canvas-area">
+    <div id="canvas-wrap">
+      <div id="frame-outline"></div>
+      <canvas id="glcanvas"></canvas>
+      <div id="res-tag">1920 × 1080 · BOKEH STATE</div>
+      <div id="drop-overlay">
+        <div class="drop-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <div class="drop-title">BOKEH</div>
+        <div class="drop-sub">IMAGE — VIDEO — WEBCAM</div>
+        <button class="drop-source-btn" id="source-center-btn">SOURCE</button>
+      </div>
+      <input type="file" id="file-input" accept="video/*,image/*">
+      <div id="play-overlay"><div class="play-ring">▶</div></div>
+    </div>
+  </div>
+
+  <!-- PANEL -->
+  <div id="panel">
+
+    <!-- SOURCE — copied from blob_state, starts OPEN, controlled by center button -->
+    <div class="section" id="sec-source-wrap">
+      <div class="sec-head closed" data-sec="src">
+        <div class="sec-mark" id="src-mark"></div>
+        <span class="sec-title">Source</span>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sb-src" style="gap:8px">
+        <div class="seg-row">
+          <button class="seg-btn" id="src-image"   onclick="srcSelect('image')">IMAGE</button>
+          <button class="seg-btn" id="src-video" onclick="srcSelect('video')">VIDEO</button>
+          <button class="seg-btn" id="src-webcam"  onclick="srcSelect('webcam')">WEBCAM</button>
+        </div>
+        <div class="vu-row">
+          <span class="vu-lbl">MOTION</span>
+          <div class="vu-track"><div class="vu-bar mid" id="vu-motion" style="width:0%"></div></div>
+          <span class="vu-val" id="vu-mv">0%</span>
+        </div>
+        <div class="info-grid" style="margin-top:2px">
+          <div class="info-cell"><div class="ic-lbl">File</div><div class="ic-val dim" id="info-file">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val amber" id="info-res">--</div></div>
+        </div>
+        <div class="row"><div class="lbl">Playback</div><div class="led-btn on" id="btn-play" onclick="togglePlay()"><div class="led"></div><div class="led-txt" id="play-label">PLAYING</div><div class="kbd-badge">SPC</div></div></div>
+        <div class="row"><div class="lbl">Loop</div><div class="led-btn on" id="btn-loop" onclick="toggleLoop()"><div class="led"></div><div class="led-txt" id="loop-label">LOOP ON</div></div></div>
+        <div class="row"><div class="lbl">Webcam</div><div class="led-btn" id="btn-webcam" onclick="toggleWebcam()"><div class="led" id="webcam-led"></div><div class="led-txt" id="webcam-label">WEBCAM OFF</div></div></div>
+        <div class="row"><div class="lbl">Fullscreen</div><div class="led-btn" onclick="goFullscreen()"><div class="led"></div><div class="led-txt">FULLSCREEN</div><div class="kbd-badge">F</div></div></div>
+      </div>
+    </div>
+    <!-- FOCAL LENGTH -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="focal">
+        <div class="sec-mark" id="focal-mark"></div>
+        <div class="sec-title">Focal Length</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-focal">
+        <div id="focal-sel">
+          <div class="seg-row" style="gap:2px;margin-bottom:2px">
+            <div class="seg-btn" data-mm="0"   data-r="2">0mm</div>
+            <div class="seg-btn" data-mm="35"  data-r="8">35mm</div>
+            <div class="seg-btn" data-mm="50"  data-r="13">50mm</div>
+            <div class="seg-btn on" data-mm="85"  data-r="18">85mm</div>
+          </div>
+          <div class="seg-row" style="gap:2px">
+            <div class="seg-btn" data-mm="100" data-r="22">100mm</div>
+            <div class="seg-btn" data-mm="135" data-r="28">135mm</div>
+            <div class="seg-btn" data-mm="150" data-r="33">150mm</div>
+            <div class="seg-btn" data-mm="200" data-r="40">200mm</div>
+          </div>
+        </div>
+        <div class="ctrl-row" style="margin-top:6px">
+          <div class="ctrl-lbl">FINE TUNE</div>
+          <div class="ctrl-track"><input type="range" class="daw-slider" id="sl-bokehRadius" min="2" max="50" step="0.5" value="18"></div>
+          <div class="ctrl-val" id="sv-bokehRadius">18.0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOKEH SHAPE PAD -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="bshapepad">
+        <div class="sec-mark" id="bshapepad-mark"></div>
+        <div class="sec-title">Bokeh Shape</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-bshapepad">
+        <div class="row" style="margin-bottom:4px">
+          <div class="lbl">Active</div>
+          <div class="led-btn" id="btn-bshape" onclick="toggleBshape()">
+            <div class="led" id="bshape-led"></div>
+            <div class="led-txt" id="bshape-label">OFF</div>
+          </div>
+        </div>
+        <div id="bshape-wrap" class="off">
+          <div class="bshape-corner" id="bc-tl">
+            <svg width="22" height="22" viewBox="-1 -1 22 22"><ellipse cx="10" cy="10" rx="5" ry="9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            <span>OVAL</span>
+          </div>
+          <div class="bshape-corner" id="bc-tr">
+            <svg width="22" height="22" viewBox="-1 -1 22 22">
+              <ellipse cx="10" cy="10" rx="9" ry="4" fill="none" stroke="currentColor" stroke-width="1.4" transform="rotate(45 10 10)"/>
+              <ellipse cx="10" cy="10" rx="9" ry="4" fill="none" stroke="currentColor" stroke-width="1.4" transform="rotate(-45 10 10)"/>
+            </svg>
+            <span>CAT-X</span>
+          </div>
+          <div class="bshape-corner" id="bc-bl">
+            <svg width="22" height="22" viewBox="-1 -1 22 22"><polygon points="10,1 11.8,7.2 18,7.2 13,11.2 15,17.5 10,13.5 5,17.5 7,11.2 2,7.2 8.2,7.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+            <span>STAR ✦</span>
+          </div>
+          <div class="bshape-corner" id="bc-br">
+            <svg width="22" height="22" viewBox="-1 -1 22 22"><rect x="2" y="2" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" rx="1"/></svg>
+            <span>SQUARE</span>
+          </div>
+          <div class="bshape-center-lbl" id="bshape-center-lbl">● CIRCLE</div>
+          <div id="bsh-h-line" style="position:absolute;left:0;right:0;height:1px;background:rgba(200,160,0,.15);pointer-events:none;top:50%"></div>
+          <div id="bsh-v-line" style="position:absolute;top:0;bottom:0;width:1px;background:rgba(200,160,0,.15);pointer-events:none;left:50%"></div>
+          <div id="bshape-cursor" class="is-circle"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;margin-top:5px">
+          <span style="font-size:7px;letter-spacing:1px;color:var(--t2)">SHAPE →</span>
+          <span id="bshape-name-lbl" style="color:var(--amber);font-size:8px;letter-spacing:1px">CIRCLE</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOKEH STYLE -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="bstyle">
+        <div class="sec-mark" id="bstyle-mark"></div>
+        <div class="sec-title">Bokeh Style</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-bstyle">
+        <div class="seg-row" id="style-sel">
+          <div class="seg-btn on" data-style="0">NORMAL</div>
+          <div class="seg-btn"    data-style="1">SWIRLY</div>
+          <div class="seg-btn"    data-style="2">EXPLOSIVE</div>
+          <div class="seg-btn"    data-style="3">ANAMORPHIC<br><span style="font-size:8px;opacity:.7">1.5×</span></div>
+        </div>
+        <div style="font-size:7px;letter-spacing:1px;color:var(--t2);margin-top:6px;line-height:1.7" id="style-desc">Hex disc — creamy round, fast-lens character</div>
+
+        <!-- DISTORT CONTROLS — shown when style > 0 -->
+        <div id="distort-ctrls" style="display:none;margin-top:8px;flex-direction:column;gap:6px">
+          <!-- Swirl controls (mode 1) -->
+          <div id="dc-swirl">
+            <div class="ctrl-row">
+              <div class="ctrl-lbl">SWIRL FORCE</div>
+              <div class="ctrl-track"><input type="range" class="daw-slider" id="sl-distortSwirl" min="0.1" max="3.14" step="0.01" value="1.8"></div>
+              <div class="ctrl-val" id="sv-distortSwirl">1.80</div>
+            </div>
+            <div class="ctrl-row" style="margin-top:4px">
+              <div class="ctrl-lbl">FALLOFF</div>
+              <div class="ctrl-track"><input type="range" class="daw-slider" id="sl-distortFalloff" min="0.5" max="10.0" step="0.1" value="2.5"></div>
+              <div class="ctrl-val" id="sv-distortFalloff">2.50</div>
+            </div>
+          </div>
+          <!-- Explosive controls (mode 2) -->
+          <div id="dc-explosive" style="display:none">
+            <div class="ctrl-row">
+              <div class="ctrl-lbl">FORCE</div>
+              <div class="ctrl-track"><input type="range" class="daw-slider" id="sl-distortExplosive" min="0" max="1" step="0.01" value="0.4"></div>
+              <div class="ctrl-val" id="sv-distortExplosive">0.40</div>
+            </div>
+          </div>
+          <!-- Anamorphic controls (mode 3) -->
+          <div id="dc-squeeze" style="display:none">
+            <div class="ctrl-row">
+              <div class="ctrl-lbl">SQUEEZE</div>
+              <div class="ctrl-track"><input type="range" class="daw-slider" id="sl-distortSqueeze" min="1.0" max="2.0" step="0.05" value="1.5"></div>
+              <div class="ctrl-val" id="sv-distortSqueeze">1.50</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OPTICS -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="optics">
+        <div class="sec-mark" id="optics-mark"></div>
+        <div class="sec-title">Optics</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-optics">
+        <div class="knob-row">
+          <div class="knob-group">
+            <div class="knob-outer"><div class="knob" data-id="bokehBloom" data-min="0" data-max="3" data-val="1.2" data-dec="2"><div class="knob-dot"></div></div></div>
+            <div class="knob-lbl">BLOOM</div><div class="knob-val" id="kv-bokehBloom">1.20</div>
+          </div>
+          <div class="knob-group">
+            <div class="knob-outer"><div class="knob" data-id="bokehFeather" data-min="0" data-max="1" data-val="0.42" data-dec="2"><div class="knob-dot"></div></div></div>
+            <div class="knob-lbl">FEATHER</div><div class="knob-val" id="kv-bokehFeather">0.42</div>
+          </div>
+          <div class="knob-group">
+            <div class="knob-outer"><div class="knob" data-id="bokehVignette" data-min="0" data-max="1" data-val="0.35" data-dec="2"><div class="knob-dot"></div></div></div>
+            <div class="knob-lbl">VIGNETTE</div><div class="knob-val" id="kv-bokehVignette">0.35</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ANAMORPHIC -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="anamorphic">
+        <div class="sec-mark" id="anamorphic-mark"></div>
+        <div class="sec-title">Anamorphic</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-anamorphic">
+        <div class="seg-row">
+          <div class="seg-btn on" id="tog-anamLetterbox">LETTERBOX</div>
+          <div class="seg-btn" id="tog-anamBreathing">BREATHING</div>
+        </div>
+        <div class="ctrl-row" style="margin-top:8px">
+          <div class="ctrl-lbl">SQUEEZE</div>
+          <div class="ctrl-track"><input type="range" class="daw-slider" id="sl-anamSqueeze" min="1" max="2.2" step="0.02" value="1"></div>
+          <div class="ctrl-val" id="sv-anamSqueeze">1.00</div>
+        </div>
+        <div class="ctrl-row" style="margin-top:4px">
+          <div class="ctrl-lbl">ASPECT RATIO</div>
+          <div class="ctrl-track"><input type="range" class="daw-slider" id="sl-anamRatio" min="1.78" max="2.80" step="0.01" value="2.39"></div>
+          <div class="ctrl-val" id="sv-anamRatio">2.39</div>
+        </div>
+        <div class="ctrl-row" style="margin-top:4px">
+          <div class="ctrl-lbl">BARREL</div>
+          <div class="ctrl-track"><input type="range" class="daw-slider" id="sl-anamBarrel" min="0" max="1" step="0.01" value="0.22"></div>
+          <div class="ctrl-val" id="sv-anamBarrel">0.22</div>
+        </div>
+        <div class="ctrl-row" style="margin-top:4px">
+          <div class="ctrl-lbl">VIGNETTE</div>
+          <div class="ctrl-track"><input type="range" class="daw-slider" id="sl-anamVignette" min="0" max="1" step="0.01" value="0.40"></div>
+          <div class="ctrl-val" id="sv-anamVignette">0.40</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PERFORMANCE PAD -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="padxy">
+        <div class="sec-mark" id="padxy-mark"></div>
+        <div class="sec-title">Performance Pad</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-padxy">
+        <div id="xy-pad-wrap">
+          <div id="xy-pad">
+            <div id="xy-h-line"></div>
+            <div id="xy-v-line"></div>
+            <div id="xy-cursor"></div>
+          </div>
+          <div class="xy-axis-labels">
+            <span>X &#x2192; <b>RADIUS</b></span>
+            <span>Y &#x2192; <b>BLOOM</b></span>
+          </div>
+          <div class="preset-grid" id="preset-grid">
+            <div class="preset-btn" data-preset="0"><span class="preset-num">P1</span>35mm</div>
+            <div class="preset-btn on" data-preset="1"><span class="preset-num">P2</span>85mm</div>
+            <div class="preset-btn" data-preset="2"><span class="preset-num">P3</span>135mm</div>
+            <div class="preset-btn" data-preset="3"><span class="preset-num">P4</span>SWIRL</div>
+            <div class="preset-btn" data-preset="4"><span class="preset-num">P5</span>EXPLO</div>
+            <div class="preset-btn" data-preset="5"><span class="preset-num">P6</span>ANAM</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BG EFFECTS -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="bgfx">
+        <div class="sec-mark" id="bgfx-mark"></div>
+        <div class="sec-title">BG Effects</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-bgfx">
+
+        <!-- Style selector -->
+        <div class="seg-row" id="bgfx-sel" style="flex-wrap:wrap;gap:2px">
+          <div class="seg-btn on" data-bgfx="0">OFF</div>
+          <div class="seg-btn"    data-bgfx="1">DATAMOSH</div>
+          <div class="seg-btn"    data-bgfx="2">PIXEL SORT</div>
+          <div class="seg-btn"    data-bgfx="3">LIQUID</div>
+          <div class="seg-btn"    data-bgfx="4">MORPH</div>
+          <div class="seg-btn"    data-bgfx="5">LAVA</div>
+        </div>
+        <div style="font-size:7px;letter-spacing:1px;color:var(--t2);margin-top:6px;line-height:1.7;min-height:14px" id="bgfx-desc">Background FX disabled</div>
+
+        <!-- DATAMOSH params -->
+        <div id="bgfx-p-datamosh" style="display:none">
+          <div class="knob-row" style="margin-top:8px">
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="dmDrift" data-min="0" data-max="5" data-val="1.8" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">DRIFT</div><div class="knob-val" id="kv-dmDrift">1.80</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="dmDecay" data-min="0.7" data-max="0.99" data-val="0.88" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">DECAY</div><div class="knob-val" id="kv-dmDecay">0.88</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="dmBlock" data-min="2" data-max="48" data-val="8" data-dec="0"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">BLOCK</div><div class="knob-val" id="kv-dmBlock">8</div>
+            </div>
+          </div>
+          <div class="knob-row">
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="dmGlitch" data-min="0" data-max="1" data-val="0.35" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">GLITCH</div><div class="knob-val" id="kv-dmGlitch">0.35</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="dmColor" data-min="0" data-max="1" data-val="0.5" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">COLOR</div><div class="knob-val" id="kv-dmColor">0.50</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="dmIframe" data-min="0.01" data-max="2" data-val="0.05" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">I-FREQ</div><div class="knob-val" id="kv-dmIframe">0.05</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PIXEL SORT params -->
+        <div id="bgfx-p-sort" style="display:none">
+          <div class="knob-row" style="margin-top:8px">
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="psThresh" data-min="0" data-max="1" data-val="0.4" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">THRESH</div><div class="knob-val" id="kv-psThresh">0.40</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="psBlend" data-min="0" data-max="1" data-val="1.0" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">BLEND</div><div class="knob-val" id="kv-psBlend">1.00</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="psAngle" data-min="0" data-max="3" data-val="0" data-dec="0"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">DIR</div><div class="knob-val" id="kv-psAngle">H</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LIQUID params -->
+        <div id="bgfx-p-liquid" style="display:none">
+          <div class="knob-row" style="margin-top:8px">
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="lqAmount" data-min="0" data-max="0.08" data-val="0.025" data-dec="3"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">WARP</div><div class="knob-val" id="kv-lqAmount">0.025</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="lqSpeed" data-min="0" data-max="2" data-val="0.4" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">SPEED</div><div class="knob-val" id="kv-lqSpeed">0.40</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="lqScale" data-min="0.5" data-max="8" data-val="2.5" data-dec="1"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">SCALE</div><div class="knob-val" id="kv-lqScale">2.5</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MORPH params -->
+        <div id="bgfx-p-morph" style="display:none">
+          <div class="knob-row" style="margin-top:8px">
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="mrAmount" data-min="0" data-max="1" data-val="0.5" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">AMOUNT</div><div class="knob-val" id="kv-mrAmount">0.50</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="mrFreq" data-min="0.5" data-max="8" data-val="2.0" data-dec="1"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">FREQ</div><div class="knob-val" id="kv-mrFreq">2.0</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="mrDecay" data-min="0.7" data-max="0.99" data-val="0.88" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">DECAY</div><div class="knob-val" id="kv-mrDecay">0.88</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LAVA params -->
+        <div id="bgfx-p-lava" style="display:none">
+          <div class="knob-row" style="margin-top:8px">
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="lvHeat" data-min="0" data-max="1" data-val="0.7" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">HEAT</div><div class="knob-val" id="kv-lvHeat">0.70</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="lvSpeed" data-min="0" data-max="2" data-val="0.5" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">DRIP</div><div class="knob-val" id="kv-lvSpeed">0.50</div>
+            </div>
+            <div class="knob-group">
+              <div class="knob-outer"><div class="knob" data-id="lvViscosity" data-min="0" data-max="1" data-val="0.35" data-dec="2"><div class="knob-dot"></div></div></div>
+              <div class="knob-lbl">VISCOSITY</div><div class="knob-val" id="kv-lvViscosity">0.35</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- EXPORT -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="record">
+        <div class="sec-mark" id="rec-mark"></div>
+        <div class="sec-title">Export</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-record">
+        <button class="fs-btn" id="btn-fs">⛶&nbsp;&nbsp;FULLSCREEN</button>
+        <button class="rec-btn" id="btn-rec"><div class="rec-dot"></div>REC</button>
+        <div id="rec-time">00:00:00</div>
+        <button class="rec-btn" id="btn-rec-anam"><div class="rec-dot"></div>ANAMORPHIC EXPORT</button>
+        <div id="rec-anam-time">00:00:00</div>
+        <div id="rec-anam-hint">Exports at the true widescreen frame (no canvas bars) — current ratio <span id="rec-anam-ratio">2.39</span> : 1</div>
+      </div>
+    </div>
+
+    <!-- SHORTCUTS -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="keys"><div class="sec-mark"></div><div class="sec-title">Shortcuts</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-body hidden" id="sec-keys">
+        <div class="sc-row"><div class="sc-key">SPC</div><div class="sc-desc">Play / Pause</div></div>
+        <div class="sc-row"><div class="sc-key">F</div><div class="sc-desc">Fullscreen</div></div>
+        <div class="sc-row"><div class="sc-key">L</div><div class="sc-desc">Loop toggle</div></div>
+        <div class="sc-row"><div class="sc-key">R</div><div class="sc-desc">Record from start</div></div>
+        <div class="sc-row"><div class="sc-key">1–6</div><div class="sc-desc">Load preset</div></div>
+      </div>
+    </div>
+
+    <!-- INFO — always open on load -->
+    <div class="section">
+      <div class="sec-head" data-sec="info">
+        <div class="sec-mark" id="info-mark"></div>
+        <span class="sec-title">Info</span>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body" id="sb-info">
+        <div class="info-grid">
+          <div class="info-cell"><div class="ic-lbl">FPS</div><div class="ic-val amber" id="ic-fps">0</div></div>
+          <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val dim" id="ic-source">NONE</div></div>
+          <div class="info-cell"><div class="ic-lbl">Resolution</div><div class="ic-val dim" id="ic-res">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Bokeh</div><div class="ic-val amber" id="ic-bokeh">--</div></div>
+          <div class="ic-credit" style="grid-column:1/-1;padding:6px 10px 4px;font-size:7px;letter-spacing:2.5px;color:var(--t2);text-align:center;text-transform:uppercase;border-top:1px solid rgba(255,255,255,.05);background:rgba(0,0,0,.3)">BOKEH — by STATE</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SMOKE BLOBS -->
+    <div id="panel-smoke">
+      <div class="smoke-blob s1"></div>
+      <div class="smoke-blob s2"></div>
+      <div class="smoke-blob s3"></div>
+    </div>
+
+  </div><!-- /panel -->
+</div><!-- /main -->
+
+<div id="bottombar"></div>
+
+<!-- ================================================================
+     JAVASCRIPT
+     ================================================================ -->
+<script>
+'use strict';
+
+/* =========================================
+   SECTION TOGGLE — runs FIRST, before any WebGL/canvas code,
+   so the accordion UI always works even if something later in
+   this script throws (e.g. WebGL not available).
+   Single source of truth: .hidden on the body. sec-head's
+   closed/collapsed classes are pure visual mirrors, recomputed
+   every time, never toggled independently.
+   ========================================= */
+try {
+  window.getSecBody = function(secKey){
+    return document.getElementById('sec-'+secKey) || document.getElementById('sb-'+secKey);
+  };
+  window.setSectionState = function(head, body, isClosed){
+    body.classList.toggle('hidden', isClosed);
+    head.classList.toggle('closed', isClosed);
+    head.classList.toggle('collapsed', isClosed);
+    head.setAttribute('aria-expanded', String(!isClosed));
+  };
+  window.openSection = function(secKey){
+    const head = document.querySelector(`.sec-head[data-sec="${secKey}"]`);
+    const b = getSecBody(secKey);
+    if(!head || !b) return;
+    setSectionState(head, b, false);
+    b.scrollIntoView({behavior:'smooth',block:'nearest'});
+  };
+
+  document.querySelectorAll('.sec-head').forEach(h=>{
+    const b = getSecBody(h.dataset.sec);
+    if(!b) return;
+    h.addEventListener('click',()=>{
+      const willBeClosed = !b.classList.contains('hidden'); // currently open -> closing
+      setSectionState(h, b, willBeClosed);
+      if(!willBeClosed) b.scrollIntoView({behavior:'smooth', block:'nearest'});
+    });
+  });
+
+  /* Stato iniziale esplicito e deterministico per OGNI sezione, indipendente
+     dalle classi presenti nel markup HTML. true = chiusa all'avvio. */
+  const SECTION_INITIAL_CLOSED = {
+    src: true,
+    focal: true,
+    bshapepad: true,
+    bstyle: true,
+    optics: true,
+    anamorphic: true,
+    padxy: true,
+    bgfx: true,
+    record: true,
+    keys: true,
+    info: false
+  };
+  Object.entries(SECTION_INITIAL_CLOSED).forEach(([key, closed])=>{
+    const head = document.querySelector(`.sec-head[data-sec="${key}"]`);
+    const body = getSecBody(key);
+    if(head && body) setSectionState(head, body, closed);
+  });
+} catch(e) {
+  console.error('Section accordion init failed:', e);
+}
+
+
+/* =========================================
+   CONFIG & STATE
+   ========================================= */
+const CONFIG = { W: 1920, H: 1080, FPS: 60 };
+
+const STATE = {
+  hasVideo: false, isPlaying: false, isLooping: true,
+  isRecording: false, frameCount: 0, startTime: 0,
+  recStartTime: 0,
+};
+
+/* Parameter object */
+const P = {
+  bokehRadius:  18.0,
+  bokehStyle:   0,
+  bokehBloom:   1.2,
+  bokehFeather: 0.42,
+  bokehVignette:0.35,
+  /* ANAMORPHIC OPTICS */
+  anamSqueeze:   1.0,   /* pre-effects horizontal squeeze, 1.0=off, ~2=2× */
+  anamRatio:     2.39,  /* target widescreen aspect ratio, 1.78–2.80      */
+  anamBarrel:    0.22,  /* lens barrel distortion, 0=off                  */
+  anamVignette:  0.40,  /* elliptical anamorphic lens vignette, 0=off     */
+  anamLetterbox: 1,     /* 1=crop to anamRatio toward centre, 0=off       */
+  anamBreathing: 0,     /* 1=subtle lens-breathing zoom oscillation       */
+  /* DISTORT POST-BLUR */
+  distortMode:      0,    /* 0=off 1=swirl 2=explosive 3=anamorphic */
+  distortSwirl:     1.8,  /* max swirl angle in radians */
+  distortFalloff:   2.5,  /* gaussian falloff coefficient */
+  distortExplosive: 0.4,  /* push-out strength */
+  distortSqueeze:   1.5,  /* anamorphic horizontal squeeze */
+  /* BG FX */
+  bgfxStyle:  0,
+  dmDrift:    1.8, dmDecay: 0.88, dmBlock: 8, dmGlitch: 0.35, dmColor: 0.5, dmIframe: 0.05,
+  psThresh:   0.4, psPasses: 6, psAngle: 0, psBlend: 1.0,
+  lqAmount:   0.5,  lqSpeed: 0.4, lqScale: 2.5,
+  mrAmount:   0.5,  mrFreq:  2.0, mrDecay: 0.88,
+  lvHeat:     0.7,  lvSpeed: 0.5, lvViscosity: 0.35,
+};
+
+const PARAM_RANGES = {
+  bokehRadius:[2,50], bokehBloom:[0,3], bokehFeather:[0,1], bokehVignette:[0,1],
+  anamSqueeze:[1,2.2], anamRatio:[1.78,2.80], anamBarrel:[0,1], anamVignette:[0,1],
+  distortSwirl:[0.1,3.14], distortFalloff:[0.5,10.0], distortExplosive:[0.0,1.0], distortSqueeze:[1.0,2.0],
+};
+
+const PAD = { x: 0.35, y: 0.35, xParam: 'bokehRadius', yParam: 'bokehBloom',
+              animating: false, targetX: 0.35, targetY: 0.35 };
+
+/* =========================================
+   PRESETS
+   ========================================= */
+const PRESETS = [
+  { name:'35mm',  xy:[0.14,0.35], p:{ bokehRadius:8,   bokehStyle:0, bokehBloom:0.8,  bokehFeather:0.38, bokehVignette:0.20, distortMode:0 } },
+  { name:'85mm',  xy:[0.35,0.38], p:{ bokehRadius:18,  bokehStyle:0, bokehBloom:1.2,  bokehFeather:0.42, bokehVignette:0.35, distortMode:0 } },
+  { name:'135mm', xy:[0.55,0.42], p:{ bokehRadius:28,  bokehStyle:0, bokehBloom:1.5,  bokehFeather:0.48, bokehVignette:0.45, distortMode:0 } },
+  { name:'SWIRL', xy:[0.35,0.55], p:{ bokehRadius:20,  bokehStyle:1, bokehBloom:1.4,  bokehFeather:0.50, bokehVignette:0.40, distortMode:1, distortSwirl:1.8, distortFalloff:2.5 } },
+  { name:'EXPLO', xy:[0.55,0.65], p:{ bokehRadius:25,  bokehStyle:2, bokehBloom:2.2,  bokehFeather:0.35, bokehVignette:0.30, distortMode:2, distortExplosive:0.4 } },
+  { name:'ANAM',  xy:[0.50,0.40], p:{ bokehRadius:22,  bokehStyle:3, bokehBloom:1.8,  bokehFeather:0.44, bokehVignette:0.50, distortMode:3, distortSqueeze:1.5 } },
+];
+
+/* =========================================
+   WEBGL INIT
+   ========================================= */
+const canvas=document.getElementById('glcanvas');
+canvas.width=CONFIG.W; canvas.height=CONFIG.H;
+const gl=canvas.getContext('webgl',{alpha:false,antialias:false,preserveDrawingBuffer:true,powerPreference:'high-performance'})
+        ||canvas.getContext('experimental-webgl',{preserveDrawingBuffer:true});
+if(!gl){const el=document.getElementById('bb-warn'); if(el) el.textContent='! WebGL NOT SUPPORTED'; throw new Error('no webgl');}
+// document.getElementById('bb-gl').textContent=gl.getParameter(gl.RENDERER)||'WebGL'; // REMOVED: bottombar elements don't exist
+
+/* =========================================
+   SHADERS
+   ========================================= */
+const VS=`
+attribute vec2 a_pos; attribute vec2 a_uv; varying vec2 v_uv;
+void main(){ gl_Position=vec4(a_pos,0.,1.); v_uv=a_uv; }`;
+
+/* =========================================
+   BG FX SHADERS
+   ========================================= */
+
+/* Shared noise function used by liquid + morph */
+const GLSL_NOISE=`
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){
+  vec2 i=floor(p),f=fract(p),u=f*f*(3.0-2.0*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),u.x),
+             mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x),u.y);
+}
+float fbm(vec2 p){
+  float v=0.0,a=0.5;
+  for(int i=0;i<4;i++){v+=a*noise(p);p*=2.1;a*=0.5;}
+  return v;
+}`;
+
+/* -- DATAMOSH: frame-differencing motion vectors + pixel recycling --
+   Algorithm ported from reference:
+   1. Block-quantised motion estimation via YCbCr frame differencing
+   2. Pixel recycling: sample prev output displaced by motion vector
+   3. I-frame injection: snap back to clean video periodically
+   4. Glitch: scanline shifts, stuck macroblocks, RGB split, digital snow
+   Applied only to background (mask-gated).                              */
+const FS_DATAMOSH=`
+precision highp float;
+uniform sampler2D u_cur;      /* current bokeh frame                  */
+uniform sampler2D u_prev;     /* keyframe snapshot (last I-frame)      */
+uniform sampler2D u_feedback; /* previous datamosh output (recycling)  */
+uniform sampler2D u_mask;
+uniform vec2  u_res;
+uniform float u_time;
+uniform float u_drift;    /* motion vector scale */
+uniform float u_isiframe; /* 1=I-frame (clean snap), 0=P-frame (mosh) */
+uniform float u_block;
+uniform float u_glitch;
+uniform float u_decay;
+uniform float u_color;    /* 0=original colors, 1=full chromatic mosh */
+varying vec2 v_uv;
+
+float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+
+vec2 blockUV(vec2 uv, float bs){
+  return (floor(uv*u_res/bs)*bs+bs*0.5)/u_res;
+}
+
+/* YCbCr-based motion vector: frame difference decomposed into chroma channels */
+vec2 motionVec(vec2 uv){
+  float bs  = max(1.0, u_block);
+  vec2  bUV = blockUV(uv, bs);
+  vec3  cN  = texture2D(u_cur,  bUV).rgb;
+  vec3  cP  = texture2D(u_prev, bUV).rgb;
+  vec3  d   = cN - cP;
+  float luma= dot(d, vec3(0.299,0.587,0.114));
+  float Cb  = d.b - luma;
+  float Cr  = d.r - luma;
+  return vec2(Cr - Cb*0.3, Cb - Cr*0.15) * u_drift;
+}
+
+void main(){
+  float m   = texture2D(u_mask, v_uv).r;
+  vec4  cur = texture2D(u_cur,  v_uv);
+
+  /* Subject fully sharp — no datamosh */
+  if(m > 0.75){ gl_FragColor = cur; return; }
+  float bgW = 1.0 - smoothstep(0.4, 0.75, m);
+
+  vec2  motion      = motionVec(v_uv);
+  vec2  dispUV      = fract(v_uv + motion);
+  vec4  feedback    = texture2D(u_feedback, dispUV);
+  feedback.rgb     *= u_decay;
+
+  /* I-frame blend: snap to clean video */
+  vec4 result = mix(feedback, cur, u_isiframe);
+
+  /* Glitch layer */
+  if(u_glitch > 0.001){
+    float fSlot    = floor(u_time * 20.0);
+    float motionMag= length(motion);
+
+    /* 1. Horizontal scanline shift */
+    float lineY = floor(v_uv.y * 60.0);
+    float lh    = hash(vec2(lineY, fSlot));
+    if(lh > 1.0 - u_glitch*0.16){
+      float shift = (hash(vec2(lineY+3.7,fSlot))-0.5)*u_glitch*0.22;
+      result = texture2D(u_feedback, vec2(fract(v_uv.x+shift), v_uv.y));
+      result.rgb *= u_decay;
+    }
+
+    /* 2. Stuck macroblocks */
+    float mbs = max(4.0, u_block*5.0);
+    float mbx = floor(v_uv.x*u_res.x/mbs);
+    float mby = floor(v_uv.y*u_res.y/mbs);
+    float mbh = hash(vec2(mbx*0.031,mby*0.027)+floor(u_time*4.0)*0.09);
+    if(mbh > 1.0 - u_glitch*0.055){
+      vec2 frozenUV = vec2(hash(vec2(mbx+0.3,mby+0.1)), hash(vec2(mbx+0.7,mby+0.4)))*0.8+0.1;
+      result.rgb = texture2D(u_feedback, frozenUV).rgb;
+    }
+
+    /* 3. RGB channel split on motion edges */
+    float split = motionMag*u_glitch*0.055;
+    if(split > 0.0008){
+      result.r = texture2D(u_feedback, fract(dispUV+vec2( split,0.0))).r;
+      result.b = texture2D(u_feedback, fract(dispUV+vec2(-split,0.0))).b;
+      result.g = texture2D(u_feedback, fract(dispUV+vec2(0.0,split*0.4))).g;
+    }
+
+    /* 4. Digital snow on high-motion areas */
+    float snowP = motionMag*u_glitch*0.18;
+    if(hash(v_uv*7.3+fSlot*0.007) < snowP){
+      result.rgb = mix(result.rgb, vec3(hash(v_uv*19.0+fSlot)), 0.65);
+    }
+
+    /* 5. Full-row color corruption */
+    float rowH = hash(vec2(floor(v_uv.y*200.0), fSlot*0.3));
+    if(rowH > 1.0 - u_glitch*0.012){
+      result.rgb = vec3(hash(vec2(v_uv.x*0.7,fSlot)), 0.0,
+                        hash(vec2(v_uv.x+0.5,fSlot)))*1.4;
+    }
+  }
+
+  /* Color blend: 0=keep original hue, 1=full chromatic datamosh */
+  vec3  origRgb  = cur.rgb;
+  float moshLuma = dot(result.rgb, vec3(0.299,0.587,0.114));
+  float origLuma = dot(origRgb,    vec3(0.299,0.587,0.114));
+  vec3  recolored= origRgb * (moshLuma / max(origLuma,0.001));
+  result.rgb = mix(recolored, result.rgb, u_color);
+
+  /* Blend with clean source at edges */
+  result.rgb = mix(cur.rgb, clamp(result.rgb,0.0,3.5), bgW);
+  gl_FragColor = vec4(result.rgb, 1.0);
+}`;
+
+/* -- PIXEL SORT: CPU canvas-based, ported from reference --
+   Uploads result as texture each frame. GPU shader just composites
+   with mask — the actual sort happens in JS sortPixels().           */
+const FS_PIXSORT=`
+precision highp float;
+uniform sampler2D u_sorted; /* CPU-sorted texture */
+uniform sampler2D u_orig;   /* original bokeh frame */
+uniform sampler2D u_mask;
+uniform float u_blend;
+varying vec2 v_uv;
+void main(){
+  float m   = texture2D(u_mask, v_uv).r;
+  vec4 orig = texture2D(u_orig,   v_uv);
+  if(m > 0.75){ gl_FragColor = orig; return; }
+  float bgW = 1.0 - smoothstep(0.3, 0.75, m);
+  vec4 sorted = texture2D(u_sorted, v_uv);
+  gl_FragColor = mix(orig, sorted, bgW * u_blend);
+}`;
+
+/* -- LIQUID: wave wipe — reveals second source progressively ──
+   A travelling sine wave front sweeps across the frame, behind it
+   the background is replaced by a warped/blended second image.
+   With only one source it creates a ripple-reveal of the video. */
+const FS_LIQUID=`
+precision highp float;
+uniform sampler2D u_tex;
+uniform sampler2D u_mask;
+uniform float u_amount;  /* wave progress 0→1 */
+uniform float u_speed;
+uniform float u_scale;   /* wave frequency */
+uniform float u_time;
+varying vec2 v_uv;
+${GLSL_NOISE}
+void main(){
+  float m=texture2D(u_mask,v_uv).r;
+  vec4 src=texture2D(u_tex,v_uv);
+  if(m>0.75){gl_FragColor=src;return;}
+  float bgW=1.0-smoothstep(0.4,0.75,m);
+
+  /* Wave front: horizontal progress + sinusoidal edge */
+  float t=u_time*u_speed*0.25;
+  float wave=sin(v_uv.y*u_scale*6.2832+t*3.0)*0.06
+            +sin(v_uv.y*u_scale*12.56 +t*5.1)*0.02;
+  float front=v_uv.x+wave; /* wave front position */
+  float prog=u_amount*1.1-0.05; /* 0→1 across screen */
+  float wipe=smoothstep(prog-0.04,prog+0.04,front);
+
+  /* Behind the wave: fbm warp of source gives organic liquid feel */
+  float nx=fbm(v_uv*u_scale+vec2(t*0.4,0.0))-0.5;
+  float ny=fbm(v_uv*u_scale+vec2(0.0,t*0.5+2.7))-0.5;
+  vec2 wUV=clamp(v_uv+vec2(nx,ny)*0.06*bgW*(1.0-wipe),0.0,1.0);
+  vec4 warped=texture2D(u_tex,wUV);
+
+  /* Invert the reveal: wipe clears from left to right */
+  vec4 result=mix(warped,src,wipe);
+  gl_FragColor=mix(src,result,bgW);
+}`;
+
+/* -- LAVA: gravity melt — background dissolves downward ──
+   Bright areas melt first (like hot glass), dripping down to
+   reveal the blurred video underneath. Full lava flow feeling. */
+const FS_LAVA=`
+precision highp float;
+uniform sampler2D u_tex;
+uniform sampler2D u_feedback;
+uniform sampler2D u_mask;
+uniform float u_heat;    /* melt intensity */
+uniform float u_speed;   /* drip speed */
+uniform float u_viscosity; /* 0=runny, 1=thick */
+uniform float u_time;
+uniform vec2  u_px;
+varying vec2 v_uv;
+${GLSL_NOISE}
+void main(){
+  float m=texture2D(u_mask,v_uv).r;
+  vec4 cur=texture2D(u_tex,v_uv);
+  if(m>0.75){gl_FragColor=cur;return;}
+  float bgW=1.0-smoothstep(0.35,0.75,m);
+
+  /* Luma-based melt: bright pixels melt faster */
+  float luma=dot(cur.rgb,vec3(0.299,0.587,0.114));
+  float meltability=pow(luma,1.0-u_heat*0.6+0.1)*bgW;
+
+  /* Drip vector: gravity + lateral noise wobble */
+  float dripNoise=fbm(v_uv*3.0+vec2(0.0,u_time*u_speed*0.15))-0.5;
+  float dripX=dripNoise*(1.0-u_viscosity)*0.04;
+  float dripY=u_speed*u_px.y*18.0*meltability; /* downward */
+  vec2 srcUV=clamp(v_uv+vec2(dripX,-dripY),0.0,1.0);
+
+  /* Sample previous melt output displaced upward — accumulates the drip */
+  vec4 prev=texture2D(u_feedback,srcUV);
+
+  /* Heat glow: lava orange tint on melting pixels */
+  float heatGlow=meltability*u_heat;
+  vec3 lavaColor=vec3(1.0,0.38+heatGlow*0.2,0.05)*heatGlow;
+
+  /* Viscosity: thick lava blends more with original */
+  float blendAmt=clamp(meltability*(1.0-u_viscosity*0.5),0.0,1.0);
+  vec3 result=mix(cur.rgb, prev.rgb, blendAmt*u_heat);
+  result+=lavaColor*blendAmt*0.45;
+
+  gl_FragColor=mix(cur,vec4(clamp(result,0.0,1.8),1.0),bgW);
+}`;
+
+/* -- MORPH: cross-dissolve warp between frames on background -- */
+const FS_MORPH=`
+precision highp float;
+uniform sampler2D u_cur;
+uniform sampler2D u_prev;
+uniform sampler2D u_mask;
+uniform float u_amount;
+uniform float u_freq;
+uniform float u_decay;
+uniform float u_time;
+varying vec2 v_uv;
+${GLSL_NOISE}
+void main(){
+  float m=texture2D(u_mask,v_uv).r;
+  vec4 cur=texture2D(u_cur,v_uv);
+  if(m>0.75){gl_FragColor=cur;return;}
+  float bgW=1.0-smoothstep(0.4,0.75,m);
+
+  float t=u_time*0.3;
+  vec2 sc=v_uv*u_freq;
+  float wx=fbm(sc+vec2(t,0.0))-0.5;
+  float wy=fbm(sc+vec2(0.0,t+2.1))-0.5;
+  vec2 warp=vec2(wx,wy)*u_amount*0.06*bgW;
+
+  vec4 prev=texture2D(u_prev,clamp(v_uv+warp,0.0,1.0));
+  prev.rgb*=u_decay;
+  gl_FragColor=mix(cur,mix(cur,prev,u_amount*bgW),bgW);
+}`;
+
+const FS_PASS=`
+precision highp float; uniform sampler2D u_tex; varying vec2 v_uv;
+void main(){ gl_FragColor=texture2D(u_tex,v_uv); }`;
+
+/* -- MASK TEMPORAL + SPATIAL SMOOTH --
+   Pass 1: EMA blend new mask with previous smoothed mask (temporal stability)
+   Pass 2: 9-tap bilateral-ish spatial blur (edge-preserving feather)        */
+const FS_MASK_TEMPORAL=`
+precision highp float;
+uniform sampler2D u_new;    /* raw mask this frame (subject confidence in ALPHA — uploaded straight from the MediaPipe canvas, no CPU readback) */
+uniform sampler2D u_prev;   /* smoothed mask prev frame         */
+uniform float u_alpha;      /* EMA coefficient — higher = faster response */
+varying vec2 v_uv;
+void main(){
+  float n = texture2D(u_new,  v_uv).a;
+  float p = texture2D(u_prev, v_uv).r;
+  /* Asymmetric EMA: track subject entry fast, exit slow — avoids flicker on
+     partial occlusion (hair, shoulders) while still catching fast motion    */
+  float a = n > p ? u_alpha * 1.6 : u_alpha;
+  a = clamp(a, 0.0, 1.0);
+  gl_FragColor = vec4(mix(p, n, a), 0.0, 0.0, 1.0);
+}`;
+
+const FS_MASK_BLUR=`
+precision highp float;
+uniform sampler2D u_mask;
+uniform vec2 u_px;
+varying vec2 v_uv;
+void main(){
+  /* 13-tap separable-equivalent radial blur on mask only.
+     We sample at half-pixel offsets to leverage bilinear for free extra taps.
+     Result: smooth, wide feather zone with no aliased edge.                 */
+  float sum = 0.0;
+  float wsum = 0.0;
+  /* Weights for a soft Gaussian-like envelope, radius ~2.5 px in mask space */
+  /* Using screen-space px here — mask is full-res so 1px = 1 mask px        */
+  vec2 s = u_px * 2.5;
+  /* 3×3 + 4 diagonal — 13 samples total including center                    */
+  float offsets[5];
+  offsets[0] = -2.0; offsets[1] = -1.0; offsets[2] = 0.0;
+  offsets[3] =  1.0; offsets[4] =  2.0;
+  float weights[5];
+  weights[0] = 0.06; weights[1] = 0.24; weights[2] = 0.40;
+  weights[3] = 0.24; weights[4] = 0.06;
+  for(int i=0;i<5;i++){
+    for(int j=0;j<5;j++){
+      vec2 uvo = clamp(v_uv + vec2(offsets[i]*s.x, offsets[j]*s.y), 0.0, 1.0);
+      float m = texture2D(u_mask, uvo).r;
+      float w = weights[i] * weights[j];
+      sum  += m * w;
+      wsum += w;
+    }
+  }
+  float blurred = sum / wsum;
+  gl_FragColor = vec4(blurred, 0.0, 0.0, 1.0);
+}`;
+
+const FS_BOKEH=`
+precision highp float;
+uniform sampler2D u_tex;
+uniform sampler2D u_mask;
+uniform float u_radius;
+uniform float u_bloom;
+uniform int   u_style;   /* 0=normal 1=swirly 2=explosive 3=anamorphic 4=shapepad */
+uniform vec2  u_bshapeXY; /* shape pad XY in [-1,1] × [-1,1]; top=+1 */
+uniform vec2  u_px;
+uniform float u_time;    /* for jitter seed variation */
+varying vec2  v_uv;
+
+vec3 toLinear(vec3 c){ return c*c; }
+vec3 toSRGB(vec3 c)  { return sqrt(max(c,0.0)); }
+
+/* Gold-noise: spatially varying, temporally jittered */
+float gold(vec2 p, float seed){
+  return fract(tan(distance(p*vec2(1.61803398874989,1.41421356237),p+seed))*p.x);
+}
+
+/* Sample one tap: linear light, highlight boost, mask gate */
+void tap(vec2 uv, float mgate, float bloomK, inout vec3 acc, inout float wt){
+  uv = clamp(uv, 0.0, 1.0);
+  float tm = texture2D(u_mask, uv).r;
+  vec3  lin = toLinear(texture2D(u_tex, uv).rgb);
+  float lum = dot(lin, vec3(0.299,0.587,0.114));
+  float w   = (1.0 + lum*lum*bloomK) * (1.0 - tm*0.88) * mgate;
+  acc += lin * w; wt += w;
+}
+
+void main(){
+  float selfMask = texture2D(u_mask, v_uv).r;
+  float coc = pow(clamp(1.0 - selfMask, 0.0, 1.0), 1.35) * u_radius;
+  if(coc < 0.6){ gl_FragColor = texture2D(u_tex, v_uv); return; }
+
+  /* Pixel aspect: 1px UV step, corrected for 16:9 */
+  vec2 px = vec2(u_px.x, u_px.y);
+
+  vec3 acc = vec3(0.0); float wt = 0.0;
+  float mgate = 1.0 - selfMask * 0.88;
+  float bloomK = u_bloom;
+
+  /* ── CENTER tap ─────────────────────────────────── */
+  tap(v_uv, mgate, bloomK, acc, wt);
+
+  /* ── STYLE 0: NORMAL — Poisson disc, watercolor softness ──
+     37-tap Poisson disc in 5 rings, jitter offsets per-pixel
+     → creamy disc with no ring artifacts, smooth color blending */
+  if(u_style==0){
+    /* 5 rings: radii 0.2, 0.4, 0.6, 0.8, 1.0 × coc, 6/8/8/8/7 taps */
+    float rr; float a; vec2 t;
+    /* Ring 1 – r=0.20, 6 taps */
+    rr=coc*0.20;
+    for(int i=0;i<6;i++){
+      a=float(i)*1.0472+gold(v_uv,float(i)*0.3+u_time*0.01)*0.25;
+      t=v_uv+vec2(cos(a)*rr*px.x, sin(a)*rr*px.y*(16.0/9.0));
+      tap(t,mgate,bloomK,acc,wt);
+    }
+    /* Ring 2 – r=0.40, 8 taps */
+    rr=coc*0.40;
+    for(int i=0;i<8;i++){
+      a=float(i)*0.7854+gold(v_uv,float(i)*0.7+u_time*0.013)*0.2;
+      t=v_uv+vec2(cos(a)*rr*px.x, sin(a)*rr*px.y*(16.0/9.0));
+      tap(t,mgate,bloomK,acc,wt);
+    }
+    /* Ring 3 – r=0.60, 8 taps */
+    rr=coc*0.60;
+    for(int i=0;i<8;i++){
+      a=float(i)*0.7854+0.39+gold(v_uv,float(i)*1.1+u_time*0.017)*0.18;
+      t=v_uv+vec2(cos(a)*rr*px.x, sin(a)*rr*px.y*(16.0/9.0));
+      tap(t,mgate,bloomK,acc,wt);
+    }
+    /* Ring 4 – r=0.80, 8 taps */
+    rr=coc*0.80;
+    for(int i=0;i<8;i++){
+      a=float(i)*0.7854+0.19+gold(v_uv,float(i)*1.5+u_time*0.021)*0.15;
+      t=v_uv+vec2(cos(a)*rr*px.x, sin(a)*rr*px.y*(16.0/9.0));
+      tap(t,mgate,bloomK,acc,wt);
+    }
+    /* Ring 5 – r=1.00, 7 taps */
+    rr=coc*1.00;
+    for(int i=0;i<7;i++){
+      a=float(i)*0.8976+0.44+gold(v_uv,float(i)*2.1+u_time*0.011)*0.12;
+      t=v_uv+vec2(cos(a)*rr*px.x, sin(a)*rr*px.y*(16.0/9.0));
+      tap(t,mgate,bloomK*1.3,acc,wt); /* outer ring gets stronger highlight boost */
+    }
+  }
+
+  /* ── STYLE 1: SWIRLY — rotating spiral kernel ──
+     Tap angle increases with radius → spiral swirl.
+     Classic old-lens (Helios 44) bokeh character.    */
+  else if(u_style==1){
+    float swirlK = 1.8; /* how tight the spiral is */
+    for(int i=0;i<30;i++){
+      float fi   = float(i)/30.0;
+      float r    = (0.2+fi*0.8)*coc;
+      float base = fi*6.2832*2.5; /* ~4 full turns */
+      float jit  = gold(v_uv, fi*3.7+u_time*0.009)*0.3;
+      float a    = base + jit + r*swirlK;
+      vec2 t = v_uv + vec2(cos(a)*r*px.x, sin(a)*r*px.y*(16.0/9.0));
+      tap(t,mgate,bloomK,acc,wt);
+    }
+  }
+
+  /* ── STYLE 2: EXPLOSIVE — catseye + burst ──
+     Central tight disc + explosive outer rays.
+     Simulates coma/astigmatism wide-open lens.  */
+  else if(u_style==2){
+    /* Inner dense disc — 12 taps tight */
+    for(int i=0;i<12;i++){
+      float a=float(i)*0.5236;
+      float r=coc*(0.3+gold(v_uv,float(i)*1.3+u_time*0.008)*0.25);
+      tap(v_uv+vec2(cos(a)*r*px.x,sin(a)*r*px.y*(16.0/9.0)),mgate,bloomK,acc,wt);
+    }
+    /* Explosive outer ring — 8 taps, stretched radially */
+    for(int i=0;i<8;i++){
+      float a   = float(i)*0.7854+gold(v_uv,float(i)*2.2+u_time*0.013)*0.1;
+      float rIn = coc*0.9;
+      float rOut= coc*2.0;
+      /* Streak: 4 sub-taps along the ray */
+      for(int k=0;k<4;k++){
+        float r = mix(rIn,rOut,float(k)/3.0);
+        tap(v_uv+vec2(cos(a)*r*px.x,sin(a)*r*px.y*(16.0/9.0)),mgate,bloomK*(1.0+float(k)*0.4),acc,wt);
+      }
+    }
+  }
+
+  /* ── STYLE 3: ANAMORPHIC 2.39:1 ──
+     True elliptical disc with ratio 2.39 horizontal : 1 vertical.
+     Horizontal streak lines for bright specular highlights.
+     Oval cat-eye shape visible on background lights.              */
+  else if(u_style==3){
+    float aX = 2.39; /* anamorphic horizontal squeeze factor */
+    float aY = 1.0;
+    /* 4 ellipse rings */
+    float eRadii[4]; eRadii[0]=0.25;eRadii[1]=0.50;eRadii[2]=0.75;eRadii[3]=1.00;
+    for(int ri=0;ri<4;ri++){
+      float er=eRadii[ri]*coc;
+      int nTaps = ri==0?6:(ri==1?8:(ri==2?10:12));
+      for(int i=0;i<12;i++){
+        if(i>=nTaps) break;
+        float a=float(i)*6.2832/float(nTaps)+gold(v_uv,float(ri*12+i)*1.7+u_time*0.008)*0.15;
+        /* Ellipse: scale x by aX, y by aY — produces true oval */
+        vec2 t=v_uv+vec2(cos(a)*er*aX*px.x, sin(a)*er*aY*px.y*(16.0/9.0));
+        tap(t,mgate,bloomK,acc,wt);
+      }
+    }
+    /* Anamorphic lens flare streaks — horizontal only, 8 taps each side */
+    for(int i=1;i<=8;i++){
+      float xOff = float(i)*coc*0.45*px.x*aX;
+      float lum1 = dot(toLinear(texture2D(u_tex,clamp(v_uv+vec2(xOff,0.0),0.0,1.0)).rgb),vec3(0.299,0.587,0.114));
+      float lum2 = dot(toLinear(texture2D(u_tex,clamp(v_uv-vec2(xOff,0.0),0.0,1.0)).rgb),vec3(0.299,0.587,0.114));
+      float fw = lum1*lum1*bloomK*0.6*(1.0-float(i)/9.0);
+      float fw2= lum2*lum2*bloomK*0.6*(1.0-float(i)/9.0);
+      tap(v_uv+vec2( xOff,0.0),mgate*fw, bloomK,acc,wt);
+      tap(v_uv+vec2(-xOff,0.0),mgate*fw2,bloomK,acc,wt);
+    }
+  }
+
+  /* ── STYLE 4: SHAPE PAD — XY-blended kernel ──
+     TL=tall oval, TR=catseye-X, BR=square, BL=8-star, C=circle.
+     Flat loop of 40 taps (WebGL1-safe, no dynamic array indexing). */
+  else if(u_style==4){
+    float bx=clamp(u_bshapeXY.x,-1.0,1.0);
+    float by=clamp(u_bshapeXY.y,-1.0,1.0);
+    float wTL=max(0.0,-bx)*max(0.0, by);
+    float wTR=max(0.0, bx)*max(0.0, by);
+    float wBR=max(0.0, bx)*max(0.0,-by);
+    float wBL=max(0.0,-bx)*max(0.0,-by);
+    float wC =max(0.0, 1.0-abs(bx)-abs(by));
+    float wS =wTL+wTR+wBR+wBL+wC+0.0001;
+    wTL/=wS; wTR/=wS; wBR/=wS; wBL/=wS; wC/=wS;
+    float asp=16.0/9.0;
+    /* 40-tap flat loop: rings at r=0.20(6), 0.40(8), 0.60(8), 0.80(9), 1.00(9) */
+    for(int i=0;i<40;i++){
+      float fi=float(i);
+      float rr=0.0, a=0.0, bk2=bloomK;
+      if(i<6){
+        rr=coc*0.20; a=fi/6.0*6.2832; bk2=bloomK;
+      } else if(i<14){
+        rr=coc*0.40; a=(fi-6.0)/8.0*6.2832; bk2=bloomK;
+      } else if(i<22){
+        rr=coc*0.60; a=(fi-14.0)/8.0*6.2832; bk2=bloomK;
+      } else if(i<31){
+        rr=coc*0.80; a=(fi-22.0)/9.0*6.2832; bk2=bloomK;
+      } else {
+        rr=coc*1.00; a=(fi-31.0)/9.0*6.2832; bk2=bloomK*1.3;
+      }
+      a += gold(v_uv, fi*1.7+u_time*0.011)*0.18;
+      float ca=cos(a), sa=sin(a);
+
+      /* CIRCLE */
+      vec2 dC=vec2(ca*rr*px.x, sa*rr*px.y*asp);
+
+      /* OVAL TL: narrow horizontal, full vertical */
+      vec2 dOval=vec2(ca*rr*0.42*px.x, sa*rr*px.y*asp);
+
+      /* CAT-X TR: alternate ±45° rotated narrow ellipses */
+      float rotP=a+0.7854; float rotN=a-0.7854;
+      float catSel=step(1.0,mod(fi,2.0));
+      vec2 dCatP=vec2(cos(rotP)*rr*1.5*px.x, sin(rotP)*rr*0.42*px.y*asp);
+      vec2 dCatN=vec2(cos(rotN)*rr*1.5*px.x, sin(rotN)*rr*0.42*px.y*asp);
+      vec2 dCat=mix(dCatP, dCatN, catSel);
+
+      /* SQUARE BR: project angle onto square boundary */
+      float eps=0.0001;
+      float sqF=rr/max(max(abs(ca),abs(sa)),eps);
+      vec2 dSq=vec2(ca*sqF*px.x, sa*sqF*px.y*asp);
+
+      /* STAR 8 BL: outer boundary of union of two squares */
+      float ar=a+0.7854;
+      float f1=rr/max(max(abs(ca),abs(sa)),eps);
+      float f2=rr/max(max(abs(cos(ar)),abs(sin(ar))),eps);
+      vec2 dStar=vec2(ca*max(f1,f2)*0.78*px.x, sa*max(f1,f2)*0.78*px.y*asp);
+
+      vec2 d=dC*wC+dOval*wTL+dCat*wTR+dSq*wBR+dStar*wBL;
+      tap(v_uv+d, mgate, bk2, acc, wt);
+    }
+  }
+
+  vec3 result = toSRGB(acc / max(wt, 0.001));
+  gl_FragColor = vec4(result, 1.0);
+}`;
+
+/* -- COMPOSITE: feathered blend of sharp subject over blurred bg --
+   Uses the spatially-blurred mask so edges are soft and organic.
+   A narrow erode on the subject side prevents the 1-2px "glow halo"
+   that appears when sharp subject pixels sit at a blurred edge.
+   ANAMORPHIC OPTICS (ported from Anamorphic Lab): letterbox crops the
+   frame toward centre to reveal the target ratio with no black bars,
+   breathing adds a subtle live lens-zoom oscillation, squeeze samples
+   a wider horizontal slice pre-effects (real anamorphic-glass capture
+   character), barrel applies classic oval-lens radial distortion, and
+   an elliptical lens vignette layers on top of the Optics vignette.   */
+const FS_COMPOSITE=`
+precision highp float;
+uniform sampler2D u_sharp;
+uniform sampler2D u_blurred;
+uniform sampler2D u_mask;
+uniform float u_feather;      /* 0=hard edge, 1=wide softening               */
+uniform float u_vignette;     /* 0=off, 1=strong lens falloff (Optics knob)  */
+uniform float u_squeeze;      /* anamorphic pre-fx horizontal squeeze, 1=off */
+uniform float u_barrel;       /* anamorphic lens barrel distortion, 0=off    */
+uniform float u_letterbox;    /* 1=crop to u_ratio toward centre, 0=off      */
+uniform float u_ratio;        /* target widescreen aspect ratio              */
+uniform float u_videoAR;      /* native working-canvas aspect ratio          */
+uniform float u_breathing;    /* 1=enable subtle lens-breathing zoom         */
+uniform float u_anamVignette; /* elliptical anamorphic lens vignette, 0=off  */
+uniform float u_time;
+varying vec2 v_uv;
+
+/* Anamorphic squeeze: samples a wider horizontal slice of the frame and
+   maps it across the same width, so the image appears horizontally
+   compressed/widened while every other effect (bokeh CoC, feather,
+   vignette) is computed on the already-squeezed result — exactly like
+   a real anamorphic lens captured then desqueezed in post. */
+vec2 squeezeUV(vec2 uv, float sq){
+  if(sq <= 1.001) return uv;
+  float e = 0.001;
+  return vec2(clamp(0.5 + (uv.x-0.5)*sq, e, 1.0-e), uv.y);
+}
+
+/* Anamorphic barrel: classic oval-lens radial distortion, stronger on
+   the vertical axis to mimic real anamorphic field curvature.        */
+vec2 barrel(vec2 uv, float k){
+  vec2 c = uv-0.5;
+  float r2 = dot(c,c);
+  c.x += c.x*r2*(k*0.35);
+  c.y += c.y*r2*(k*1.20);
+  return c+0.5;
+}
+
+/* Elliptical anamorphic lens vignette (distinct from the radial Optics
+   vignette above — narrower falloff on X to read as a true scope mask). */
+float anamVig(vec2 uv, float str){
+  vec2 d = (uv-0.5)*vec2(0.82,1.18);
+  return clamp(1.0 - dot(d,d)*str*2.8, 0., 1.);
+}
+
+/* Subtle lens-breathing: a slow, tiny oscillating zoom around centre. */
+vec2 breathe(vec2 uv, float en, float t){
+  if(en<0.5) return uv;
+  float b = 1.0+sin(t*0.52)*0.004;
+  return (uv-0.5)*b+0.5;
+}
+
+void main(){
+  vec2 uv = v_uv;
+  vec2 uvScr = uv;
+
+  /* Letterbox: crop top/bottom toward centre to reveal u_ratio — no
+     black bars added, every visible pixel stays image content.       */
+  if(u_letterbox>0.5 && u_videoAR>0.1){
+    float cropF = clamp(u_videoAR/u_ratio, 0.05, 1.0);
+    float top = (1.0-cropF)*0.5;
+    float bot = 1.0-top;
+    if(uv.y<top || uv.y>bot){
+      gl_FragColor = vec4(0.,0.,0.,1.);
+      return;
+    }
+    uv.y = (uv.y-top)/cropF;
+    uvScr = uv;
+  }
+
+  uv = breathe(uv, u_breathing, u_time);
+  uv = clamp(uv, 0.001, 0.999);
+  vec2 uvTex = squeezeUV(uv, u_squeeze);
+  uvTex = barrel(uvTex, u_barrel);
+  uvTex = clamp(uvTex, 0.001, 0.999);
+
+  vec4 sharp   = texture2D(u_sharp,   uvTex);
+  vec4 blurred = texture2D(u_blurred, uvTex);
+  float m = texture2D(u_mask, uvTex).r;
+
+  /* Feather: map [0,1] feather param to smoothstep width.
+     Low feather = tight boundary. High feather = wide organic roll-off.  */
+  float lo = 0.38 - u_feather*0.28;
+  float hi = 0.62 + u_feather*0.28;
+  float blend = smoothstep(lo, hi, m);
+
+  /* Inward erode: shifts midpoint slightly inside subject to kill halo   */
+  float edgeLeak = smoothstep(0.60, 0.92, m);
+  vec4 out_ = mix(blurred, sharp, blend);
+  out_ = mix(out_, sharp, edgeLeak*0.35 + 0.65*step(0.95, m));
+
+  /* Lens vignette on final composite (Optics knob) */
+  if(u_vignette > 0.001){
+    vec2 vc = uvTex*2.0-1.0;
+    float vr = dot(vc,vc);
+    float vig = 1.0 - vr*vr*u_vignette*0.7;
+    out_.rgb *= max(vig, 0.0);
+  }
+
+  /* Anamorphic elliptical lens vignette, layered on top of the above */
+  if(u_anamVignette > 0.001){
+    out_.rgb *= anamVig(uvScr, u_anamVignette);
+  }
+
+  gl_FragColor = vec4(out_.rgb, 1.0);
+}`;
+
+
+
+/* -- DISTORT: post-blur UV distortion pass -- swirl / explosive / anamorphic --
+   Reads the bokeh-blurred background, applies UV warping masked to background only.
+   Mode 1=swirl (Helios-style gaussian rotation), 2=explosive (coma push-out),
+   3=anamorphic (horizontal squeeze). Subject is protected via bgW mask weight. */
+const FS_DISTORT=`
+precision highp float;
+uniform sampler2D u_tex;       /* bokehFBO.tex — blurred background */
+uniform sampler2D u_mask;      /* maskBlurFBO.tex                   */
+uniform int   u_dmode;         /* 0=off 1=swirl 2=explosive 3=anam  */
+uniform float u_swirl;         /* max swirl angle radians            */
+uniform float u_falloff;       /* gaussian falloff coefficient       */
+uniform float u_explosive;     /* radial push strength               */
+uniform float u_squeeze;       /* anamorphic horizontal factor       */
+uniform vec2  u_center;        /* UV centre (0.5, 0.5)              */
+uniform float u_time;
+varying vec2  v_uv;
+
+void main(){
+  float m   = texture2D(u_mask, v_uv).r;
+  float bgW = 1.0 - smoothstep(0.35, 0.75, m); /* 1=bg, 0=subject */
+
+  vec2 sampleUV = v_uv;
+  vec2 delta = v_uv - u_center;
+  float asp  = 16.0 / 9.0;
+  float r    = length(vec2(delta.x * asp, delta.y));
+
+  /* SWIRL — gaussian angular rotation replicating Helios 44 field curvature */
+  if(u_dmode == 1){
+    float angle = u_swirl * exp(-r * r * u_falloff);
+    float s = sin(angle); float c = cos(angle);
+    sampleUV = u_center + vec2(delta.x*c - delta.y*s, delta.x*s + delta.y*c);
+  }
+  /* EXPLOSIVE — radial push-out, simulates coma aberration */
+  else if(u_dmode == 2){
+    vec2 dir   = delta / max(r, 0.001);
+    float push = u_explosive * r * 0.5;
+    sampleUV   = v_uv + dir * push;
+  }
+  /* ANAMORPHIC — horizontal squeeze shows wider background squeezed */
+  else if(u_dmode == 3){
+    sampleUV.x = u_center.x + delta.x * u_squeeze;
+  }
+
+  vec2 finalUV = mix(v_uv, sampleUV, bgW);
+  finalUV = clamp(finalUV, 0.001, 0.999);
+  gl_FragColor = texture2D(u_tex, finalUV);
+}`;
+
+
+function compile(type,src){
+  const s=gl.createShader(type);
+  gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){console.error(gl.getShaderInfoLog(s));return null;}
+  return s;
+}
+function build(fs){
+  const vs=compile(gl.VERTEX_SHADER,VS);
+  const f=compile(gl.FRAGMENT_SHADER,fs);
+  if(!vs||!f)return null;
+  const p=gl.createProgram();
+  gl.attachShader(p,vs); gl.attachShader(p,f);
+  gl.bindAttribLocation(p,0,'a_pos'); gl.bindAttribLocation(p,1,'a_uv');
+  gl.linkProgram(p); gl.deleteShader(vs); gl.deleteShader(f);
+  return p;
+}
+function uniforms(p,names){const u={};names.forEach(n=>{u[n]=gl.getUniformLocation(p,n);});return u;}
+
+const PP=build(FS_PASS);
+const PMT=build(FS_MASK_TEMPORAL);
+const PMB=build(FS_MASK_BLUR);
+const PB=build(FS_BOKEH);
+const PCO=build(FS_COMPOSITE);
+const PDM=build(FS_DATAMOSH);
+const PPS=build(FS_PIXSORT);
+const PLQ=build(FS_LIQUID);
+const PMR=build(FS_MORPH);
+const PLV=build(FS_LAVA);
+const PD=build(FS_DISTORT);
+
+const UP=uniforms(PP,['u_tex']);
+const UMT=uniforms(PMT,['u_new','u_prev','u_alpha']);
+const UMB=uniforms(PMB,['u_mask','u_px']);
+const UB=uniforms(PB,['u_tex','u_mask','u_radius','u_bloom','u_style','u_bshapeXY','u_px','u_time']);
+const UCO=uniforms(PCO,['u_sharp','u_blurred','u_mask','u_feather','u_vignette','u_squeeze','u_barrel','u_letterbox','u_ratio','u_videoAR','u_breathing','u_anamVignette','u_time']);
+const UDM=uniforms(PDM,['u_cur','u_prev','u_feedback','u_mask','u_res','u_time','u_drift','u_isiframe','u_block','u_glitch','u_decay','u_color']);
+const UPS=uniforms(PPS,['u_sorted','u_orig','u_mask','u_blend']);
+const ULQ=uniforms(PLQ,['u_tex','u_mask','u_amount','u_speed','u_scale','u_time']);
+const UMR=uniforms(PMR,['u_cur','u_prev','u_mask','u_amount','u_freq','u_decay','u_time']);
+const ULV=uniforms(PLV,['u_tex','u_feedback','u_mask','u_heat','u_speed','u_viscosity','u_time','u_px']);
+const UD=uniforms(PD,['u_tex','u_mask','u_dmode','u_swirl','u_falloff','u_explosive','u_squeeze','u_center','u_time']);
+
+/* =========================================
+   QUAD VBO
+   ========================================= */
+const vbo=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,0,0,1,-1,1,0,-1,1,0,1,1,1,1,1]),gl.STATIC_DRAW);
+function bindQ(){
+  gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+  gl.enableVertexAttribArray(0);gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(0,2,gl.FLOAT,false,16,0);
+  gl.vertexAttribPointer(1,2,gl.FLOAT,false,16,8);
+}
+
+/* =========================================
+   FBOs
+   ========================================= */
+function initTex(t){
+  gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+}
+function mkFBO(w,h){
+  const t=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  initTex(t);
+  const f=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return {fb:f,tex:t};
+}
+function clearFBO(fbo){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fbo.fb);
+  gl.viewport(0,0,CONFIG.W,CONFIG.H);
+  gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+
+// Bokeh + composite FBOs
+const bokehFBO=mkFBO(CONFIG.W,CONFIG.H);
+const distortFBO=mkFBO(CONFIG.W,CONFIG.H);
+const compFBO=mkFBO(CONFIG.W,CONFIG.H);
+
+/* BG FX ping-pong (datamosh + morph need previous frame) */
+const bgfxFBO=[mkFBO(CONFIG.W,CONFIG.H),mkFBO(CONFIG.W,CONFIG.H)];
+const keyframeFBO=mkFBO(CONFIG.W,CONFIG.H); /* datamosh I-frame snapshot */
+let bgfxR=0,bgfxW=1;
+/* Datamosh I-frame engine state */
+const DM={timer:0, isIframe:1.0};
+function clearBgFx(){clearMaskFBO(bgfxFBO[0]);clearMaskFBO(bgfxFBO[1]);DM.timer=0;DM.isIframe=1.0;}
+clearBgFx();
+
+/* Mask pipeline: temporal EMA ping-pong + spatial blur output */
+const maskTemporalFBO=[mkFBO(CONFIG.W,CONFIG.H),mkFBO(CONFIG.W,CONFIG.H)];
+const maskBlurFBO=mkFBO(CONFIG.W,CONFIG.H);
+let maskTR=0,maskTW=1; /* temporal read/write indices */
+
+/* Init temporal FBOs to all-black (everything background until first mask) */
+function clearMaskFBO(fbo){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fbo.fb);
+  gl.viewport(0,0,CONFIG.W,CONFIG.H);
+  gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+clearMaskFBO(maskTemporalFBO[0]);
+clearMaskFBO(maskTemporalFBO[1]);
+
+/* Video texture */
+const videoTex=gl.createTexture();
+initTex(videoTex);
+
+let maskReady=false;
+
+/* =========================================
+   RENDER HELPERS
+   ========================================= */
+function blit(targetFBO,srcTex){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,targetFBO?targetFBO.fb:null);
+  gl.viewport(0,0,CONFIG.W,CONFIG.H);
+  gl.useProgram(PP);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,srcTex);
+  gl.uniform1i(UP.u_tex,0);
+  bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+}
+
+function drawMaskTemporal(rawTex){
+  /* EMA blend raw mask with previous smoothed mask into write buffer */
+  gl.bindFramebuffer(gl.FRAMEBUFFER,maskTemporalFBO[maskTW].fb);
+  gl.viewport(0,0,CONFIG.W,CONFIG.H);
+  gl.useProgram(PMT);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,rawTex);                    gl.uniform1i(UMT.u_new,0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,maskTemporalFBO[maskTR].tex); gl.uniform1i(UMT.u_prev,1);
+  gl.uniform1f(UMT.u_alpha, 0.28); /* ~0.28 = smooth but responsive at 30fps mask rate */
+  bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  maskTR^=1; maskTW^=1;
+}
+
+function drawMaskBlur(){
+  /* Spatial Gaussian blur on the temporally-stabilised mask */
+  gl.bindFramebuffer(gl.FRAMEBUFFER,maskBlurFBO.fb);
+  gl.viewport(0,0,CONFIG.W,CONFIG.H);
+  gl.useProgram(PMB);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,maskTemporalFBO[maskTR].tex); gl.uniform1i(UMB.u_mask,0);
+  gl.uniform2f(UMB.u_px, 1.0/CONFIG.W, 1.0/CONFIG.H);
+  bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+}
+
+function drawBokeh(srcTex){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,bokehFBO.fb);
+  gl.viewport(0,0,CONFIG.W,CONFIG.H);
+  gl.useProgram(PB);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,srcTex);          gl.uniform1i(UB.u_tex,0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,maskBlurFBO.tex); gl.uniform1i(UB.u_mask,1);
+  gl.uniform1f(UB.u_radius, P.bokehRadius);
+  gl.uniform1f(UB.u_bloom,  P.bokehBloom);
+  gl.uniform1i(UB.u_style,  P.bokehStyle);
+  gl.uniform2f(UB.u_bshapeXY, BSHAPE.x, BSHAPE.y);
+  gl.uniform2f(UB.u_px, 1.0/CONFIG.W, 1.0/CONFIG.H);
+  gl.uniform1f(UB.u_time, (performance.now()*0.001)%1000.0);
+  bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+}
+
+function drawDistort(t){
+  /* Bypass: if distortMode is 0, return bokehFBO.tex directly — zero overhead */
+  if(P.distortMode === 0) return bokehFBO.tex;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, distortFBO.fb);
+  gl.viewport(0,0,CONFIG.W,CONFIG.H);
+  gl.useProgram(PD);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, bokehFBO.tex);    gl.uniform1i(UD.u_tex,  0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, maskBlurFBO.tex); gl.uniform1i(UD.u_mask, 1);
+  gl.uniform1i(UD.u_dmode,     P.distortMode);
+  gl.uniform1f(UD.u_swirl,     P.distortSwirl);
+  gl.uniform1f(UD.u_falloff,   P.distortFalloff);
+  gl.uniform1f(UD.u_explosive, P.distortExplosive);
+  gl.uniform1f(UD.u_squeeze,   P.distortSqueeze);
+  gl.uniform2f(UD.u_center,    0.5, 0.5);
+  gl.uniform1f(UD.u_time,      t);
+  bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  return distortFBO.tex;
+}
+
+function drawBgFx(t, srcTex){
+  /* srcTex = distortFBO.tex (or bokehFBO.tex when distort is off) */
+  if(P.bgfxStyle===0) return srcTex; /* no effect */
+
+  const read=bgfxFBO[bgfxR], write=bgfxFBO[bgfxW];
+  gl.bindFramebuffer(gl.FRAMEBUFFER,write.fb);
+  gl.viewport(0,0,CONFIG.W,CONFIG.H);
+
+  if(P.bgfxStyle===1){
+    /* DATAMOSH — real algorithm */
+    /* Advance I-frame timer */
+    DM.timer += 1.0/60.0;
+    DM.isIframe = 0.0;
+    if(DM.timer >= 1.0/Math.max(P.dmIframe,0.01)){
+      DM.timer=0; DM.isIframe=1.0;
+      /* Snapshot current bokeh frame as new keyframe */
+      gl.bindFramebuffer(gl.FRAMEBUFFER,keyframeFBO.fb);
+      gl.viewport(0,0,CONFIG.W,CONFIG.H);
+      gl.useProgram(PP);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,srcTex); gl.uniform1i(UP.u_tex,0);
+      bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER,write.fb);
+    gl.viewport(0,0,CONFIG.W,CONFIG.H);
+    gl.useProgram(PDM);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,srcTex);           gl.uniform1i(UDM.u_cur,0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,keyframeFBO.tex); gl.uniform1i(UDM.u_prev,1);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,read.tex);        gl.uniform1i(UDM.u_feedback,2);
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D,maskBlurFBO.tex); gl.uniform1i(UDM.u_mask,3);
+    gl.uniform2f(UDM.u_res,    CONFIG.W, CONFIG.H);
+    gl.uniform1f(UDM.u_time,   t);
+    gl.uniform1f(UDM.u_drift,  P.dmDrift);
+    gl.uniform1f(UDM.u_isiframe, DM.isIframe);
+    gl.uniform1f(UDM.u_block,  P.dmBlock);
+    gl.uniform1f(UDM.u_glitch, P.dmGlitch);
+    gl.uniform1f(UDM.u_decay,  P.dmDecay);
+    gl.uniform1f(UDM.u_color,  P.dmColor);
+
+  } else if(P.bgfxStyle===2){
+    /* PIXEL SORT — composite CPU-sorted tex with mask */
+    gl.bindFramebuffer(gl.FRAMEBUFFER,write.fb);
+    gl.viewport(0,0,CONFIG.W,CONFIG.H);
+    gl.useProgram(PPS);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,sortedTex);      gl.uniform1i(UPS.u_sorted,0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,srcTex);         gl.uniform1i(UPS.u_orig,1);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,maskBlurFBO.tex);gl.uniform1i(UPS.u_mask,2);
+    gl.uniform1f(UPS.u_blend, P.psBlend);
+    bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    bgfxR^=1; bgfxW^=1;
+    return bgfxFBO[bgfxR].tex;
+
+  } else if(P.bgfxStyle===3){
+    /* LIQUID */
+    gl.useProgram(PLQ);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,srcTex);          gl.uniform1i(ULQ.u_tex,0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,maskBlurFBO.tex); gl.uniform1i(ULQ.u_mask,1);
+    gl.uniform1f(ULQ.u_amount, P.lqAmount);
+    gl.uniform1f(ULQ.u_speed,  P.lqSpeed);
+    gl.uniform1f(ULQ.u_scale,  P.lqScale);
+    gl.uniform1f(ULQ.u_time,   t);
+
+  } else if(P.bgfxStyle===4){
+    /* MORPH */
+    gl.useProgram(PMR);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,srcTex);        gl.uniform1i(UMR.u_cur,0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,read.tex);     gl.uniform1i(UMR.u_prev,1);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,maskBlurFBO.tex); gl.uniform1i(UMR.u_mask,2);
+    gl.uniform1f(UMR.u_amount, P.mrAmount);
+    gl.uniform1f(UMR.u_freq,   P.mrFreq);
+    gl.uniform1f(UMR.u_decay,  P.mrDecay);
+    gl.uniform1f(UMR.u_time,   t);
+
+  } else if(P.bgfxStyle===5){
+    /* LAVA */
+    gl.useProgram(PLV);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,srcTex);          gl.uniform1i(ULV.u_tex,0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,read.tex);        gl.uniform1i(ULV.u_feedback,1);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,maskBlurFBO.tex); gl.uniform1i(ULV.u_mask,2);
+    gl.uniform1f(ULV.u_heat,       P.lvHeat);
+    gl.uniform1f(ULV.u_speed,      P.lvSpeed);
+    gl.uniform1f(ULV.u_viscosity,  P.lvViscosity);
+    gl.uniform1f(ULV.u_time,       t);
+    gl.uniform2f(ULV.u_px, 1.0/CONFIG.W, 1.0/CONFIG.H);
+  }
+
+  bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  bgfxR^=1; bgfxW^=1;
+  return bgfxFBO[bgfxR].tex;
+}
+
+function drawComposite(srcTex, bgTex, t){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,CONFIG.W,CONFIG.H);
+  gl.useProgram(PCO);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,srcTex);          gl.uniform1i(UCO.u_sharp,0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,bgTex);           gl.uniform1i(UCO.u_blurred,1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,maskBlurFBO.tex); gl.uniform1i(UCO.u_mask,2);
+  gl.uniform1f(UCO.u_feather,  P.bokehFeather);
+  gl.uniform1f(UCO.u_vignette, P.bokehVignette);
+  /* Anamorphic Optics: pre-fx squeeze + barrel feed the final texture
+     sample, letterbox/ratio crop the visible frame toward centre (no
+     black bars), breathing adds a subtle live lens-zoom oscillation,
+     and the elliptical anam vignette layers on top of the Optics one. */
+  const nativeAR = CONFIG.W/CONFIG.H;
+  gl.uniform1f(UCO.u_squeeze,      P.anamSqueeze);
+  gl.uniform1f(UCO.u_barrel,       P.anamBarrel);
+  gl.uniform1f(UCO.u_letterbox,    P.anamLetterbox);
+  gl.uniform1f(UCO.u_ratio,        P.anamRatio || nativeAR);
+  gl.uniform1f(UCO.u_videoAR,      nativeAR);
+  gl.uniform1f(UCO.u_breathing,    P.anamBreathing);
+  gl.uniform1f(UCO.u_anamVignette, P.anamVignette);
+  gl.uniform1f(UCO.u_time,         t||0);
+  bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+}
+
+/* =========================================
+   VIDEO ELEMENT
+   ========================================= */
+const video=document.createElement('video');
+video.loop=true; video.muted=false; video.playsInline=true; video.crossOrigin='anonymous';
+let currentURL=null;
+
+/* ── WEBCAM MIRROR ─────────────────────────────────
+   Webcams should feel like a mirror (you raise your right hand,
+   it appears on the screen's right side, like looking in a mirror).
+   We flip the frame horizontally onto an offscreen canvas BEFORE it
+   reaches both the WebGL texture upload and the segmenter, so the
+   person-mask stays perfectly aligned with the mirrored image.
+   Loaded video files are passed through untouched (no mirroring). */
+const mirrorCv=document.createElement('canvas');
+const mirrorCtx=mirrorCv.getContext('2d',{willReadFrequently:true});
+let _mirrorFrameTag=-1; /* STATE.frameCount value the mirror was last drawn for */
+function getFrameSource(){
+  if(!STATE.webcamActive) return video;
+  const w=video.videoWidth, h=video.videoHeight;
+  if(!w||!h) return video;
+  /* render() can call this twice in the same tick (once for the video
+     texture upload, once for the segmenter send) — both want the exact
+     same mirrored frame, so only redraw it once per render tick.        */
+  if(_mirrorFrameTag===STATE.frameCount) return mirrorCv;
+  if(mirrorCv.width!==w)  mirrorCv.width=w;
+  if(mirrorCv.height!==h) mirrorCv.height=h;
+  mirrorCtx.save();
+  mirrorCtx.translate(w,0);
+  mirrorCtx.scale(-1,1);
+  mirrorCtx.drawImage(video,0,0,w,h);
+  mirrorCtx.restore();
+  _mirrorFrameTag=STATE.frameCount;
+  return mirrorCv;
+}
+
+video.addEventListener('playing',()=>{STATE.isPlaying=true;document.getElementById('play-overlay').classList.remove('show');updatePlayUI();});
+
+/* Dedicated, downscaled source for the MediaPipe segmenter only. The
+   segmentation model has a small, fixed internal input resolution no
+   matter what we feed it — handing it the full webcam/video frame
+   (often 720p–1080p) just forces MediaPipe's own preprocessing resize
+   to crunch far more pixels than it needs. We pre-shrink to a size
+   comfortably above what the model actually requires (so mask quality
+   is unaffected) — this also makes our own canvas2D draw cheaper. The
+   real render texture (getFrameSource(), full resolution) is completely
+   untouched: this only changes what the segmenter itself receives.      */
+const SEG_INPUT_MAX=512;
+const segInputCv=document.createElement('canvas');
+const segInputCtx=segInputCv.getContext('2d');
+let _segInputFrameTag=-1;
+function getSegmenterInput(){
+  const w=video.videoWidth, h=video.videoHeight;
+  if(!w||!h) return getFrameSource();
+  if(_segInputFrameTag===STATE.frameCount) return segInputCv;
+  const scale=Math.min(1, SEG_INPUT_MAX/Math.max(w,h));
+  const sw=Math.max(2,Math.round(w*scale)), sh=Math.max(2,Math.round(h*scale));
+  if(segInputCv.width!==sw)  segInputCv.width=sw;
+  if(segInputCv.height!==sh) segInputCv.height=sh;
+  if(STATE.webcamActive){
+    segInputCtx.save();
+    segInputCtx.translate(sw,0);
+    segInputCtx.scale(-1,1);
+    segInputCtx.drawImage(video,0,0,sw,sh);
+    segInputCtx.restore();
+  } else {
+    segInputCtx.drawImage(video,0,0,sw,sh);
+  }
+  _segInputFrameTag=STATE.frameCount;
+  return segInputCv;
+}
+video.addEventListener('pause',()=>{STATE.isPlaying=false;updatePlayUI();});
+video.addEventListener('ended',()=>{if(!STATE.isLooping)STATE.isPlaying=false;updatePlayUI();});
+video.addEventListener('loadedmetadata',()=>{
+  document.getElementById('info-res').textContent=video.videoWidth+'x'+video.videoHeight;
+  document.getElementById('info-file').textContent=(video.src||'').split('/').pop().slice(-18)||'--';
+  const icSrc=document.getElementById('ic-source'); if(icSrc) icSrc.textContent='VIDEO';
+  const icRes=document.getElementById('ic-res'); if(icRes) icRes.textContent=video.videoWidth+'×'+video.videoHeight;
+  setPillLive(true);
+  video.play().then(()=>{STATE.isPlaying=true;}).catch(()=>document.getElementById('play-overlay').classList.add('show'));
+  updatePlayUI();
+});
+// video.addEventListener('error',()=>{document.getElementById('bb-warn').textContent='! VIDEO ERROR';}); // REMOVED: bottombar elements don't exist
+
+function loadVideoFile(file){
+  if(!file)return;
+  /* Stop webcam if active */
+  if(STATE.webcamActive) stopWebcam();
+  if(currentURL)URL.revokeObjectURL(currentURL);
+  currentURL=URL.createObjectURL(file);
+  video.src=currentURL; video.load();
+  STATE.hasVideo=true;
+  document.getElementById('drop-overlay').style.display='none';
+  document.getElementById('info-file').textContent=file.name.length>18?file.name.slice(0,16)+'...':file.name;
+//   document.getElementById('bb-warn').textContent=''; // REMOVED: bottombar elements don't exist
+}
+
+/* =========================================
+   WEBCAM
+   ========================================= */
+STATE.webcamActive=false;
+let webcamStream=null;
+
+async function toggleWebcam(){
+  STATE.webcamActive ? stopWebcam() : await startWebcam();
+}
+
+async function startWebcam(){
+  try{
+    webcamStream=await navigator.mediaDevices.getUserMedia({
+      video:{width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},
+      audio:false
+    });
+    video.srcObject=webcamStream;
+    video.loop=false;
+    await video.play();
+    STATE.hasVideo=true;
+    STATE.webcamActive=true;
+    document.getElementById('webcam-led').style.background='var(--red)';
+    document.getElementById('webcam-label').textContent='WEBCAM ON';
+    document.getElementById('btn-webcam').classList.add('on');
+    document.getElementById('info-file').textContent='WEBCAM';
+    document.getElementById('drop-overlay').style.display='none';
+    /* Webcam active — REC still works for live capture */
+//     document.getElementById('bb-warn').textContent=''; // REMOVED: bottombar elements don't exist
+  }catch(e){
+//     document.getElementById('bb-warn').textContent='! Webcam: '+e.message; // REMOVED: bottombar elements don't exist
+  }
+}
+
+function stopWebcam(){
+  if(webcamStream){
+    webcamStream.getTracks().forEach(t=>t.stop());
+    webcamStream=null;
+  }
+  video.srcObject=null;
+  STATE.webcamActive=false;
+  STATE.hasVideo=false;
+  document.getElementById('webcam-led').style.background='';
+  document.getElementById('webcam-label').textContent='WEBCAM OFF';
+  document.getElementById('btn-webcam').classList.remove('on');
+  document.getElementById('info-file').textContent='--';
+  document.getElementById('drop-overlay').style.display='flex';
+}
+
+/* =========================================
+   MEDIAPIPE SELFIE SEGMENTATION
+   ========================================= */
+let segmenter=null;
+let segCanvas=null,segCtx=null;
+
+function initSegmenter(){
+  if(typeof SelfieSegmentation==='undefined'){
+//     document.getElementById('bb-warn').textContent='! MediaPipe not loaded'; // REMOVED: bottombar elements don't exist
+    return;
+  }
+
+  segmenter=new SelfieSegmentation({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`});
+  segmenter.setOptions({
+    modelSelection:1,   /* landscape model — better for full-body non-selfie */
+    selfieMode:false,
+  });
+  segmenter.onResults(onSegResults);
+  segmenter.initialize().then(()=>{
+//     document.getElementById('bb-stage').textContent='STAGE: SEGMENT → TEMPORAL → BLUR → BOKEH → COMPOSITE'; // REMOVED: bottombar elements don't exist
+  }).catch(e=>{
+//     document.getElementById('bb-warn').textContent='! Segmenter init failed'; // REMOVED: bottombar elements don't exist
+    console.error(e);
+  });
+}
+
+/* Raw mask texture uploaded from MediaPipe result each frame */
+const rawMaskTex=gl.createTexture();
+initTex(rawMaskTex);
+gl.bindTexture(gl.TEXTURE_2D,rawMaskTex);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,CONFIG.W,CONFIG.H,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+
+/* ── PIXEL SORT: CPU sort → GL texture ─────────── */
+const SORT_W=480, SORT_H=270; /* 1/4 res for performance */
+const sortSmCanvas=document.createElement('canvas');
+sortSmCanvas.width=SORT_W; sortSmCanvas.height=SORT_H;
+const sortSmCtx=sortSmCanvas.getContext('2d',{willReadFrequently:true});
+const sortedTex=gl.createTexture(); initTex(sortedTex);
+gl.bindTexture(gl.TEXTURE_2D,sortedTex);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255]));
+
+function _luma(r,g,b){return 0.299*r+0.587*g+0.114*b;}
+
+/* Reusable scratch buffers for _sortSeg. A run can be at most SORT_W
+   (a full row) or SORT_H (a full column) pixels long. Allocating these
+   once — instead of a {r,g,b,i} object per pixel plus a brand-new array
+   for every single below-threshold pixel, as before — removes the main
+   source of garbage-collector pressure when the Pixel Sort background
+   effect is active. The sorted result is bit-for-bit identical.          */
+const _SORT_MAXRUN=Math.max(SORT_W,SORT_H);
+const _sortLuma =new Float64Array(_SORT_MAXRUN);
+const _sortOrder=new Int32Array(_SORT_MAXRUN);
+const _sortTmpR =new Uint8ClampedArray(_SORT_MAXRUN);
+const _sortTmpG =new Uint8ClampedArray(_SORT_MAXRUN);
+const _sortTmpB =new Uint8ClampedArray(_SORT_MAXRUN);
+const _hRunIdx  =new Int32Array(SORT_W);
+const _vRunIdx  =new Int32Array(SORT_H);
+
+function _sortSeg(d,idxs,len){
+  for(let k=0;k<len;k++){
+    const i=idxs[k];
+    const r=d[i], g=d[i+1], b=d[i+2];
+    _sortTmpR[k]=r; _sortTmpG[k]=g; _sortTmpB[k]=b;
+    _sortLuma[k]=0.299*r+0.587*g+0.114*b;
+    _sortOrder[k]=k;
+  }
+  _sortOrder.subarray(0,len).sort((a,b)=>_sortLuma[a]-_sortLuma[b]);
+  for(let k=0;k<len;k++){
+    const srcPos=_sortOrder[k];
+    const i=idxs[k];
+    d[i]=_sortTmpR[srcPos]; d[i+1]=_sortTmpG[srcPos]; d[i+2]=_sortTmpB[srcPos];
+  }
+}
+
+let _sortTick=0;
+function runPixelSort(){
+  if(P.bgfxStyle!==2||video.readyState<2)return;
+  _sortTick++; if(_sortTick%2!==0)return;
+  sortSmCtx.drawImage(canvas,0,0,SORT_W,SORT_H);
+  const id=sortSmCtx.getImageData(0,0,SORT_W,SORT_H);
+  const d=id.data;
+  const thr=Math.round(P.psThresh*255);
+  const dir=Math.round(P.psAngle);
+  if(dir===0||dir===2||dir===3){
+    /* Horizontal runs */
+    for(let y=0;y<SORT_H;y++){
+      let runLen=0;
+      for(let x=0;x<SORT_W;x++){
+        const xi=dir===3?SORT_W-1-x:x;
+        const i=(y*SORT_W+xi)*4;
+        if(_luma(d[i],d[i+1],d[i+2])>=thr){ _hRunIdx[runLen++]=i; }
+        else{ if(runLen>1)_sortSeg(d,_hRunIdx,runLen); runLen=0; }
+      }
+      if(runLen>1) _sortSeg(d,_hRunIdx,runLen);
+    }
+  }
+  if(dir===1||dir===2){
+    /* Vertical runs */
+    for(let x=0;x<SORT_W;x++){
+      let runLen=0;
+      for(let y=0;y<SORT_H;y++){
+        const i=(y*SORT_W+x)*4;
+        if(_luma(d[i],d[i+1],d[i+2])>=thr){ _vRunIdx[runLen++]=i; }
+        else{ if(runLen>1)_sortSeg(d,_vRunIdx,runLen); runLen=0; }
+      }
+      if(runLen>1) _sortSeg(d,_vRunIdx,runLen);
+    }
+  }
+  sortSmCtx.putImageData(id,0,0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D,sortedTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,sortSmCanvas);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+}
+
+function onSegResults(results){
+  if(!results.segmentationMask) return;
+  /* MediaPipe segmentationMask: alpha channel = subject confidence (1=subject, 0=bg).
+     We downsample it with a plain canvas2D drawImage (cheap, GPU-composited)
+     and upload that small canvas STRAIGHT to a texture with gl.texImage2D —
+     no getImageData/putImageData round-trip, no per-pixel CPU loop, no typed
+     array allocation. The shader (FS_MASK_TEMPORAL) reads the confidence
+     directly out of the alpha channel. Numerically identical to the old
+     CPU-swizzled path, just without ~30 CPU readbacks + JS loops per second. */
+  const SW=480, SH=270; /* quarter-ish res — keeps the upload tiny and the GPU blur cheap */
+  if(!onSegResults._sw){
+    onSegResults._sw=SW; onSegResults._sh=SH;
+    onSegResults._tmp=document.createElement('canvas');
+    onSegResults._tmp.width=SW; onSegResults._tmp.height=SH;
+    onSegResults._tmpCtx=onSegResults._tmp.getContext('2d');
+  }
+  const tc=onSegResults._tmpCtx;
+  tc.clearRect(0,0,SW,SH);
+  tc.drawImage(results.segmentationMask,0,0,SW,SH);
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D,rawMaskTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,onSegResults._tmp);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+
+  /* Run temporal EMA pass immediately on mask arrival */
+  drawMaskTemporal(rawMaskTex);
+  /* Spatial blur of temporally-stabilised mask */
+  drawMaskBlur();
+  maskReady=true;
+}
+
+/* Send a video frame to the segmenter every N render frames */
+let _segFrame=0;
+let _segBusy=false; /* true while a send() is in flight */
+function maybeSendToSegmenter(){
+  if(!segmenter||video.readyState<2)return;
+  _segFrame++;
+  if(_segFrame%2!==0)return; /* run at ~30fps even if render is 60fps */
+  if(_segBusy)return; /* a previous send() hasn't resolved yet — DROP this
+    frame rather than queue it. MediaPipe processes send() calls in order;
+    queueing instead of dropping means that the moment inference ever takes
+    longer than the throttle window (heavier effects active, slower device,
+    a momentary hiccup), every subsequent frame waits behind the backlog and
+    the mask falls further and further behind the live camera feed — a
+    delay that keeps growing instead of staying constant. Dropping keeps the
+    mask locked to "freshest frame available", which is what real-time
+    actually requires.                                                      */
+  _segBusy=true;
+  segmenter.send({image:getSegmenterInput()})
+    .catch(()=>{})
+    .finally(()=>{ _segBusy=false; });
+}
+
+initSegmenter();
+
+/* =========================================
+   DRAG & DROP
+   ========================================= */
+const CA=document.getElementById('canvas-area');
+const DO=document.getElementById('drop-overlay');
+window.addEventListener('dragover',e=>e.preventDefault());
+window.addEventListener('drop',e=>e.preventDefault());
+CA.addEventListener('dragenter',e=>{e.preventDefault();DO.style.display='flex';DO.classList.add('drag-over');});
+CA.addEventListener('dragleave',()=>{DO.classList.remove('drag-over');if(STATE.hasVideo)DO.style.display='none';});
+CA.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';});
+CA.addEventListener('drop',e=>{e.preventDefault();DO.classList.remove('drag-over');const f=e.dataTransfer.files?.[0];if(f)loadVideoFile(f);else if(STATE.hasVideo)DO.style.display='none';});
+(function(){ const b=document.getElementById('browse-btn'); if(b) b.addEventListener('click',()=>document.getElementById('file-input').click()); })();
+(function(){const _el=document.getElementById('file-input');if(_el)_el.addEventListener('change',function(){if(this.files?.[0])loadVideoFile(this.files[0]);});})();
+(function(){const _el=document.getElementById('play-overlay');if(_el)_el.addEventListener('click',()=>{video.play().then(()=>{STATE.isPlaying=true;document.getElementById('play-overlay').classList.remove('show');updatePlayUI();}).catch(console.error);});})();
+
+/* =========================================
+   MAIN RENDER LOOP
+   ========================================= */
+let lastFPS=0,fpsF=0,lastNow=0;
+
+function render(now){
+  requestAnimationFrame(render);
+  STATE.frameCount++;
+  if(STATE.startTime===0)STATE.startTime=now;
+  const dt=Math.min((now-(lastNow||now))/1000,0.1);
+  lastNow=now;
+
+  fpsF++;
+  if(now-lastFPS>=500){
+    const fpsNum = STATE.hasVideo ? Math.round(fpsF*1000/(now-lastFPS)) : 0;
+    document.getElementById('fps-val').textContent = fpsNum;
+    const icFps = document.getElementById('ic-fps');
+    if(icFps) icFps.textContent = fpsNum;
+    const icBok = document.getElementById('ic-bokeh');
+    if(icBok) icBok.textContent = 'r'+Math.round(P.bokehRadius)+'px / '+['NORM','SWIRL','EXPLO','ANAM','PAD'][P.bokehStyle]||P.bokehStyle;
+    fpsF=0;lastFPS=now;
+  }
+  if(STATE.hasVideo&&video.readyState>=2)
+    document.getElementById('timecode').textContent=fmtTC(video.currentTime);
+
+  /* Animate XY pad to preset */
+  if(PAD.animating){
+    PAD.x+=(PAD.targetX-PAD.x)*0.12;
+    PAD.y+=(PAD.targetY-PAD.y)*0.12;
+    if(Math.abs(PAD.x-PAD.targetX)<0.005&&Math.abs(PAD.y-PAD.targetY)<0.005){
+      PAD.x=PAD.targetX; PAD.y=PAD.targetY; PAD.animating=false;
+    }
+    applyPadToParams();
+    updatePadCursor();
+  }
+
+  if(!STATE.hasVideo||video.readyState<video.HAVE_CURRENT_DATA){
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    gl.viewport(0,0,CONFIG.W,CONFIG.H);
+    gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+    return;
+  }
+
+  /* Upload video texture (FLIP Y to correct orientation; webcam frames
+     are additionally mirrored horizontally via getFrameSource()) */
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D,videoTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,getFrameSource());
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+
+  /* Feed current frame to segmenter (async — onSegResults fires separately) */
+  maybeSendToSegmenter();
+  /* CPU pixel sort — runs async at ~30fps when bgfxStyle===2 */
+  runPixelSort();
+
+  if(!maskReady){
+    blit(null,videoTex);
+    return;
+  }
+
+  const t=(performance.now()-STATE.startTime)/1000;
+
+  /* STAGE 1: BOKEH BLUR guided by spatially-smoothed mask */
+  drawBokeh(videoTex);
+
+  /* STAGE 1.5: POST-BLUR DISTORTION (swirl / explosive / anamorphic) */
+  const distTex = drawDistort(t);
+
+  /* STAGE 2: BG FX on top of distorted bokeh (masked to background) */
+  const bgTex=drawBgFx(t, distTex);
+
+  /* STAGE 3: COMPOSITE sharp subject over processed background */
+  drawComposite(videoTex, bgTex, t);
+}
+requestAnimationFrame(render);
+
+/* =========================================
+   KNOB SYSTEM
+   ========================================= */
+let activeKnob=null,knobStartY=0,knobStartVal=0;
+
+/* ── KNOB: MOUSE drag ─────────────────────────── */
+document.addEventListener('mousedown',e=>{
+  const k=e.target.closest('.knob');
+  if(!k)return;
+  activeKnob=k; knobStartY=e.clientY;
+  knobStartVal=parseFloat(k.dataset.val);
+  k.style.cursor='ns-resize';
+  e.preventDefault();
+});
+document.addEventListener('mousemove',e=>{
+  if(!activeKnob)return;
+  const dy=knobStartY-e.clientY;
+  const min=parseFloat(activeKnob.dataset.min);
+  const max=parseFloat(activeKnob.dataset.max);
+  const delta=(dy/140)*(max-min);
+  setKnob(activeKnob,Math.max(min,Math.min(max,knobStartVal+delta)));
+});
+document.addEventListener('mouseup',()=>{
+  if(activeKnob)activeKnob.style.cursor='';
+  activeKnob=null;
+});
+
+/* ── KNOB: TOUCH drag ─────────────────────────── */
+document.addEventListener('touchstart',e=>{
+  const k=e.target.closest('.knob');
+  if(!k)return;
+  activeKnob=k; knobStartY=e.touches[0].clientY;
+  knobStartVal=parseFloat(k.dataset.val);
+  e.preventDefault();
+},{passive:false});
+document.addEventListener('touchmove',e=>{
+  if(!activeKnob)return;
+  const dy=knobStartY-e.touches[0].clientY;
+  const min=parseFloat(activeKnob.dataset.min);
+  const max=parseFloat(activeKnob.dataset.max);
+  const delta=(dy/120)*(max-min);
+  setKnob(activeKnob,Math.max(min,Math.min(max,knobStartVal+delta)));
+  e.preventDefault();
+},{passive:false});
+document.addEventListener('touchend',()=>{activeKnob=null;});
+
+/* ── KNOB: SCROLL WHEEL fine-tune ─────────────── */
+document.addEventListener('wheel',e=>{
+  const k=e.target.closest('.knob');
+  if(!k)return;
+  e.preventDefault();
+  const min=parseFloat(k.dataset.min),max=parseFloat(k.dataset.max);
+  const step=(max-min)*(e.shiftKey?0.001:0.005);
+  const cur=parseFloat(k.dataset.val);
+  setKnob(k,Math.max(min,Math.min(max,cur-Math.sign(e.deltaY)*step)));
+},{passive:false});
+
+/* ── KNOB: DOUBLE-CLICK / DOUBLE-TAP → precise value popup ── */
+(function(){
+  const overlay=document.createElement('div');
+  overlay.id='knob-popup-overlay';
+  overlay.style.cssText='display:none;position:fixed;inset:0;z-index:9000;';
+  document.body.appendChild(overlay);
+
+  const popup=document.createElement('div');
+  popup.id='knob-popup';
+  popup.innerHTML=`
+    <div id="knob-popup-lbl"></div>
+    <div id="knob-popup-range"></div>
+    <input id="knob-popup-input" type="number" autocomplete="off" spellcheck="false">
+    <div id="knob-popup-btns">
+      <button id="knob-popup-reset">RESET</button>
+      <button id="knob-popup-ok">SET ↵</button>
+    </div>`;
+  popup.style.cssText=`
+    position:fixed;z-index:9001;
+    background:linear-gradient(135deg,rgba(18,12,36,.97),rgba(8,6,20,.97));
+    border:1px solid var(--border-hi);padding:12px 14px 10px;
+    display:none;flex-direction:column;gap:6px;
+    font-family:var(--mono);min-width:160px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 4px 32px rgba(0,0,0,.8),0 0 24px rgba(232,192,0,.08);
+    backdrop-filter:blur(12px);`;
+  document.body.appendChild(popup);
+
+  const st=document.createElement('style');
+  st.textContent=`
+    #knob-popup-lbl{font-size:9px;letter-spacing:2px;color:var(--amber);text-transform:uppercase;}
+    #knob-popup-range{font-size:7px;letter-spacing:1px;color:var(--t2);margin-bottom:2px;}
+    #knob-popup-input{background:var(--bg-deep);border:1px solid var(--border-hi);
+      color:var(--t4);font-family:var(--mono);font-size:15px;padding:5px 8px;
+      width:100%;box-sizing:border-box;outline:none;text-align:center;letter-spacing:1px;}
+    #knob-popup-input:focus{border-color:var(--amber);box-shadow:0 0 0 1px rgba(232,192,0,.3);}
+    #knob-popup-btns{display:flex;gap:4px;margin-top:2px;}
+    #knob-popup-btns button{flex:1;padding:5px 4px;font-family:var(--mono);font-size:8px;
+      letter-spacing:1px;background:var(--bg-deep);border:1px solid var(--border);
+      color:var(--t2);cursor:pointer;text-transform:uppercase;transition:all .1s;}
+    #knob-popup-btns button:hover{border-color:var(--border-hi);color:var(--t3);}
+    #knob-popup-ok{background:rgba(232,192,0,.12)!important;color:var(--amber)!important;
+      border-color:rgba(200,160,0,.4)!important;}`;
+  document.head.appendChild(st);
+
+  let targetKnob=null;
+
+  function openPopup(k,anchor){
+    targetKnob=k;
+    const min=parseFloat(k.dataset.min),max=parseFloat(k.dataset.max);
+    const dec=parseInt(k.dataset.dec||'2');
+    const cur=parseFloat(k.dataset.val);
+    const def=k.dataset.default!==undefined?parseFloat(k.dataset.default):cur;
+    const lbl=(k.dataset.id||'VALUE').replace(/([A-Z])/g,' $1').toUpperCase().trim();
+    document.getElementById('knob-popup-lbl').textContent=lbl;
+    document.getElementById('knob-popup-range').textContent=
+      `min ${min.toFixed(dec)}   ·   max ${max.toFixed(dec)}`;
+    const inp=document.getElementById('knob-popup-input');
+    inp.min=min; inp.max=max; inp.step=Math.pow(10,-dec);
+    inp.value=cur.toFixed(dec);
+    /* Position near knob */
+    const r=(anchor||k).getBoundingClientRect();
+    const pw=170,ph=130;
+    let left=r.left+r.width/2-pw/2;
+    let top=r.bottom+8;
+    if(left<8)left=8;
+    if(left+pw>window.innerWidth-8)left=window.innerWidth-pw-8;
+    if(top+ph>window.innerHeight-8)top=r.top-ph-8;
+    popup.style.left=left+'px'; popup.style.top=top+'px';
+    overlay.style.display='block';
+    popup.style.display='flex';
+    inp.focus(); inp.select();
+    document.getElementById('knob-popup-reset')._def=def;
+    document.getElementById('knob-popup-reset')._dec=dec;
+  }
+
+  function closePopup(){overlay.style.display='none';popup.style.display='none';targetKnob=null;}
+
+  function applyPopup(){
+    if(!targetKnob)return closePopup();
+    const v=parseFloat(document.getElementById('knob-popup-input').value);
+    if(!isNaN(v))setKnob(targetKnob,v);
+    closePopup();
+  }
+
+  overlay.addEventListener('click',closePopup);
+  (function(){const _el=document.getElementById('knob-popup-ok');if(_el)_el.addEventListener('click',applyPopup);})();
+  (function(){const _el=document.getElementById('knob-popup-reset');if(_el)_el.addEventListener('click',function(){
+    if(targetKnob){
+      const dec=this._dec;
+      document.getElementById('knob-popup-input').value=this._def.toFixed(dec);
+    }
+  });})();
+  (function(){const _el=document.getElementById('knob-popup-input');if(_el)_el.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();applyPopup();}
+    if(e.key==='Escape')closePopup();
+  });})();
+
+  document.addEventListener('dblclick',e=>{
+    const k=e.target.closest('.knob');
+    if(!k){return;}
+    e.preventDefault();
+    openPopup(k,k.closest('.knob-outer')||k);
+  });
+
+  let lastTap=0;
+  document.addEventListener('touchend',e=>{
+    const k=e.target.closest('.knob');
+    if(!k)return;
+    const now=Date.now();
+    if(now-lastTap<350){openPopup(k,k.closest('.knob-outer')||k);e.preventDefault();}
+    lastTap=now;
+  });
+})();
+
+function setKnob(knob,val,skipParam){
+  const min=parseFloat(knob.dataset.min);
+  const max=parseFloat(knob.dataset.max);
+  val=Math.max(min,Math.min(max,val));
+  knob.dataset.val=val;
+  const pct=(val-min)/(max-min);
+  const rot=-135+pct*270;
+  knob.style.setProperty('--rot',rot+'deg');
+  const outer=knob.closest('.knob-outer');
+  if(outer)outer.style.setProperty('--fill',(pct*270)+'deg');
+  const dec=parseInt(knob.dataset.dec||'2');
+  const vEl=document.getElementById('kv-'+knob.dataset.id);
+  if(vEl)vEl.textContent=val.toFixed(dec);
+  if(!skipParam)updateParam(knob.dataset.id,val);
+}
+
+function initKnobs(){
+  document.querySelectorAll('.knob[data-id]').forEach(k=>{
+    const val=parseFloat(k.dataset.val);
+    setKnob(k,val,true);
+    /* Sync P from data-val */
+    updateParam(k.dataset.id,val);
+  });
+}
+initKnobs();
+
+/* =========================================
+   PARAM UPDATE (knob -> P)
+   ========================================= */
+function updateParam(id,val){
+  if(id in P) P[id]=val;
+  /* psAngle: show direction label instead of number */
+  if(id==='psAngle'){
+    const el=document.getElementById('kv-psAngle');
+    if(el) el.textContent=['H','V','D+','D-'][Math.round(val)]||'H';
+  }
+}
+
+/* Sync a knob visually from P (used by presets + XY pad) */
+function syncKnob(id,val){
+  const k=document.querySelector(`.knob[data-id="${id}"]`);
+  if(k)setKnob(k,val,true);
+  P[id]=val;
+}
+
+/* =========================================
+   SLIDER BINDINGS
+   ========================================= */
+function bindSlider(id,obj,key,dec){
+  const sl=document.getElementById('sl-'+id),sv=document.getElementById('sv-'+id);
+  if(!sl||!sv)return;
+  sl.value=obj[key]; sv.textContent=parseFloat(obj[key]).toFixed(dec);
+  sl.addEventListener('input',()=>{obj[key]=parseFloat(sl.value);sv.textContent=obj[key].toFixed(dec);});
+}
+bindSlider('bokehRadius',P,'bokehRadius',1);
+
+/* =========================================
+   FOCAL LENGTH SELECTOR
+   ========================================= */
+const STYLE_DESCS = [
+  'Hex disc — creamy round, fast-lens character',
+  'Rotated rings — swirling old-glass personality',
+  'Blown outer ring — dramatic out-of-focus expansion',
+  'Oval squeeze + streaks — anamorphic 2x character',
+];
+document.querySelectorAll('#focal-sel .seg-btn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('#focal-sel .seg-btn').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    const r=parseFloat(b.dataset.r);
+    P.bokehRadius=r;
+    const sl=document.getElementById('sl-bokehRadius');
+    const sv=document.getElementById('sv-bokehRadius');
+    if(sl){sl.value=r; sv.textContent=r.toFixed(1);}
+    syncKnob('bokehRadius',r);
+  });
+});
+/* Keep fine-tune slider in sync with focal selector highlight */
+(function(){const _el=document.getElementById('sl-bokehRadius');if(_el)_el.addEventListener('input',function(){
+  const v=parseFloat(this.value);
+  document.getElementById('sv-bokehRadius').textContent=v.toFixed(1);
+  P.bokehRadius=v;
+  /* Deselect focal btn if manually tuned away */
+  document.querySelectorAll('#focal-sel .seg-btn').forEach(b=>{
+    b.classList.toggle('on', parseFloat(b.dataset.r)===v);
+  });
+});})();
+
+/* =========================================
+   BOKEH STYLE SELECTOR
+   ========================================= */
+function updateDistortUI(mode){
+  const dc = document.getElementById('distort-ctrls');
+  if(!dc) return;
+  dc.style.display = (mode > 0) ? 'flex' : 'none';
+  document.getElementById('dc-swirl').style.display     = (mode === 1) ? 'block' : 'none';
+  document.getElementById('dc-explosive').style.display = (mode === 2) ? 'block' : 'none';
+  document.getElementById('dc-squeeze').style.display   = (mode === 3) ? 'block' : 'none';
+}
+
+function syncDistortSlider(id, val, dec){
+  const sl=document.getElementById('sl-'+id);
+  const sv=document.getElementById('sv-'+id);
+  if(sl) sl.value = val;
+  if(sv) sv.textContent = val.toFixed(dec);
+  P[id] = val;
+}
+
+/* Bind distort sliders */
+(function(){
+  const binds = [
+    {id:'distortSwirl',    key:'distortSwirl',    dec:2},
+    {id:'distortFalloff',  key:'distortFalloff',  dec:2},
+    {id:'distortExplosive',key:'distortExplosive',dec:2},
+    {id:'distortSqueeze',  key:'distortSqueeze',  dec:2},
+  ];
+  binds.forEach(({id,key,dec})=>{
+    const sl=document.getElementById('sl-'+id);
+    const sv=document.getElementById('sv-'+id);
+    if(!sl||!sv) return;
+    sl.addEventListener('input',()=>{ P[key]=parseFloat(sl.value); sv.textContent=P[key].toFixed(dec); });
+  });
+})();
+
+/* Bind Anamorphic Optics controls */
+(function(){
+  const sliders=[
+    {id:'anamSqueeze',  key:'anamSqueeze',  dec:2},
+    {id:'anamRatio',    key:'anamRatio',    dec:2},
+    {id:'anamBarrel',   key:'anamBarrel',   dec:2},
+    {id:'anamVignette', key:'anamVignette', dec:2},
+  ];
+  sliders.forEach(({id,key,dec})=>{
+    const sl=document.getElementById('sl-'+id);
+    const sv=document.getElementById('sv-'+id);
+    if(!sl||!sv) return;
+    sl.addEventListener('input',()=>{ P[key]=parseFloat(sl.value); sv.textContent=P[key].toFixed(dec); });
+  });
+
+  const toggles=[
+    {id:'tog-anamLetterbox', key:'anamLetterbox'},
+    {id:'tog-anamBreathing', key:'anamBreathing'},
+  ];
+  toggles.forEach(({id,key})=>{
+    const b=document.getElementById(id);
+    if(!b) return;
+    b.addEventListener('click',()=>{
+      P[key]=P[key]?0:1;
+      b.classList.toggle('on', !!P[key]);
+    });
+  });
+})();
+
+document.querySelectorAll('#style-sel .seg-btn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('#style-sel .seg-btn').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    P.bokehStyle=parseInt(b.dataset.style);
+    document.getElementById('style-desc').textContent=STYLE_DESCS[P.bokehStyle]||'';
+    P.distortMode = P.bokehStyle; /* style maps 1:1 to distortMode */
+    updateDistortUI(P.distortMode);
+  });
+});
+
+/* =========================================
+   XY PAD
+   ========================================= */
+const pad=document.getElementById('xy-pad');
+const cursor=document.getElementById('xy-cursor');
+const hLine=document.getElementById('xy-h-line');
+const vLine=document.getElementById('xy-v-line');
+
+function applyPadToParams(){
+  /* X → bokehRadius, Y → bokehBloom (inverted: top=max) */
+  const rRange=PARAM_RANGES.bokehRadius;
+  const bRange=PARAM_RANGES.bokehBloom;
+  const r=rRange[0]+PAD.x*(rRange[1]-rRange[0]);
+  const b=bRange[0]+(1-PAD.y)*(bRange[1]-bRange[0]);
+  syncKnob('bokehRadius',r);
+  syncKnob('bokehBloom',b);
+  /* Keep fine-tune slider in sync */
+  const sl=document.getElementById('sl-bokehRadius');
+  const sv=document.getElementById('sv-bokehRadius');
+  if(sl){sl.value=r; sv.textContent=r.toFixed(1);}
+}
+function updatePadCursor(){
+  const rect=pad.getBoundingClientRect();
+  const cx=PAD.x*rect.width, cy=PAD.y*rect.height;
+  cursor.style.left=cx+'px'; cursor.style.top=cy+'px';
+  hLine.style.top=cy+'px'; vLine.style.left=cx+'px';
+}
+
+function padFromEvent(e){
+  const rect=pad.getBoundingClientRect();
+  const cx=e.clientX!==undefined?e.clientX:e.touches[0].clientX;
+  const cy=e.clientY!==undefined?e.clientY:e.touches[0].clientY;
+  PAD.x=Math.max(0,Math.min(1,(cx-rect.left)/rect.width));
+  PAD.y=Math.max(0,Math.min(1,(cy-rect.top)/rect.height));
+  applyPadToParams();
+  updatePadCursor();
+}
+
+let padActive=false;
+pad.addEventListener('mousedown',e=>{padActive=true;padFromEvent(e);e.preventDefault();});
+document.addEventListener('mousemove',e=>{if(padActive)padFromEvent(e);});
+document.addEventListener('mouseup',()=>{padActive=false;});
+pad.addEventListener('touchstart',e=>{padActive=true;padFromEvent(e);e.preventDefault();},{passive:false});
+pad.addEventListener('touchmove',e=>{if(padActive)padFromEvent(e);e.preventDefault();},{passive:false});
+pad.addEventListener('touchend',()=>{padActive=false;});
+
+/* =========================================
+   BG FX SELECTOR
+   ========================================= */
+const BGFX_DESCS=[
+  'Background FX disabled',
+  'Frame bleed + motion vector drift — real datamosh algorithm',
+  'Luminance threshold sort — crystalline streak patterns',
+  'Wave wipe with liquid warping — organic reveal',
+  'Cross-frame dissolve warp — dream morph',
+  'Gravity melt — background drips down with heat glow',
+];
+const BGFX_PANELS=['','bgfx-p-datamosh','bgfx-p-sort','bgfx-p-liquid','bgfx-p-morph','bgfx-p-lava'];
+
+document.querySelectorAll('#bgfx-sel .seg-btn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('#bgfx-sel .seg-btn').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    const s=parseInt(b.dataset.bgfx);
+    P.bgfxStyle=s;
+    document.getElementById('bgfx-desc').textContent=BGFX_DESCS[s];
+    document.getElementById('bgfx-mark').classList.toggle('on',s>0);
+    BGFX_PANELS.forEach((id,i)=>{ if(id) document.getElementById(id).style.display=(i===s)?'block':'none'; });
+    if(s===1||s===4||s===5) clearBgFx();
+  });
+});
+
+/* =========================================
+   PRESETS
+   ========================================= */
+function loadPreset(idx){
+  const pr=PRESETS[idx];
+  if(!pr)return;
+  Object.entries(pr.p).forEach(([k,v])=>{
+    if(k==='bokehStyle'){ P.bokehStyle=v; return; }
+    if(k.startsWith('distort')){ P[k]=v; return; }
+    syncKnob(k,v);
+    if(k in P) P[k]=v;
+  });
+  P.bokehStyle=pr.p.bokehStyle||0;
+  P.distortMode = pr.p.distortMode !== undefined ? pr.p.distortMode : 0;
+  /* Sync distort sliders from preset */
+  if(pr.p.distortSwirl    !== undefined) syncDistortSlider('distortSwirl',    pr.p.distortSwirl,    2);
+  if(pr.p.distortFalloff  !== undefined) syncDistortSlider('distortFalloff',  pr.p.distortFalloff,  2);
+  if(pr.p.distortExplosive!== undefined) syncDistortSlider('distortExplosive',pr.p.distortExplosive,2);
+  if(pr.p.distortSqueeze  !== undefined) syncDistortSlider('distortSqueeze',  pr.p.distortSqueeze,  2);
+  updateDistortUI(P.distortMode);
+  /* Sync focal btn */
+  document.querySelectorAll('#focal-sel .seg-btn').forEach(b=>{
+    b.classList.toggle('on', parseFloat(b.dataset.r)===pr.p.bokehRadius);
+  });
+  /* Sync style btn + desc */
+  document.querySelectorAll('#style-sel .seg-btn').forEach(b=>{
+    b.classList.toggle('on', parseInt(b.dataset.style)===P.bokehStyle);
+  });
+  document.getElementById('style-desc').textContent=STYLE_DESCS[P.bokehStyle]||'';
+  /* Sync fine-tune slider */
+  const sl=document.getElementById('sl-bokehRadius');
+  const sv=document.getElementById('sv-bokehRadius');
+  if(sl){sl.value=pr.p.bokehRadius; sv.textContent=pr.p.bokehRadius.toFixed(1);}
+  /* Animate pad to preset position */
+  PAD.targetX=pr.xy[0]; PAD.targetY=pr.xy[1]; PAD.animating=true;
+  document.querySelectorAll('.preset-btn').forEach((b,i)=>b.classList.toggle('on',i===idx));
+}
+
+document.querySelectorAll('.preset-btn').forEach(b=>{
+  b.addEventListener('click',()=>loadPreset(parseInt(b.dataset.preset)));
+});
+
+/* =========================================
+   CONTROLS
+   ========================================= */
+function togglePlay(){if(!STATE.hasVideo)return;video.paused?video.play().catch(console.error):video.pause();}
+function toggleLoop(){
+  STATE.isLooping=!STATE.isLooping; video.loop=STATE.isLooping;
+  document.getElementById('btn-loop').classList.toggle('on',STATE.isLooping);
+  document.getElementById('loop-label').textContent=STATE.isLooping?'LOOP ON':'LOOP OFF';
+}
+function goFullscreen(){
+  const el=document.getElementById('canvas-area');
+  if(!document.fullscreenElement)(el.requestFullscreen||el.webkitRequestFullscreen||el.mozRequestFullScreen).call(el);
+  else(document.exitFullscreen||document.webkitExitFullscreen)?.call(document);
+}
+function updatePlayUI(){
+  const p=!video.paused&&!video.ended;
+  document.getElementById('btn-play').classList.toggle('on',p);
+  document.getElementById('play-label').textContent=p?'PLAYING':'PAUSED';
+}
+
+/* =========================================
+   EXPORT — Blob-state style (MediaRecorder + blob download)
+   ========================================= */
+let mediaRec=null, recChunks=[], recStart=null, recTimerId=null, _recOnEnded=null;
+
+function getBestMime(){
+  const c=['video/mp4;codecs=avc1.640028','video/mp4;codecs=avc1.42E01E','video/mp4','video/webm;codecs=vp9','video/webm'];
+  for(const m of c)if(MediaRecorder.isTypeSupported(m))return m;
+  return '';
+}
+
+function toggleRec(){
+  const btn=document.getElementById('btn-rec');
+  if(!mediaRec){
+    if(anamMediaRec){const el=document.getElementById('bb-warn'); if(el) el.textContent='! Stop Anamorphic Export first'; return;}
+    if(!STATE.hasVideo){const el=document.getElementById('bb-warn'); if(el) el.textContent='! Load video first'; return;}
+    /* Cattura il canvas WebGL DIRETTAMENTE via captureStream(): è un 1:1,
+       nessun crop/scala richiesto, quindi non serve nessun canvas 2D
+       intermedio né un drawImage(canvas,...) ad ogni frame — quel readback
+       GPU→CPU continuo era l'unico vero sovraccarico della registrazione
+       standard. Stesso identico video in uscita, zero costo per frame.    */
+    const stream=canvas.captureStream(30);
+    recChunks=[];
+    const mime=getBestMime();
+    try{ mediaRec=new MediaRecorder(stream,{mimeType:mime||undefined,videoBitsPerSecond:20000000}); }catch(e){ mediaRec=new MediaRecorder(stream); }
+    mediaRec.ondataavailable=e=>{if(e.data.size>0)recChunks.push(e.data);};
+    mediaRec.onstop=()=>{
+      const ext=mediaRec.mimeType?.includes('mp4')?'mp4':'webm';
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob(recChunks,{type:mediaRec.mimeType||'video/webm'}));
+      a.download='bokeh_'+Date.now()+'.'+ext;
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(a.href); },1000);
+      btn.classList.remove('on');
+      document.getElementById('pill-rec').style.display='none';
+      document.getElementById('pill-rec').classList.remove('rec');
+      document.getElementById('rec-mark').classList.remove('on');
+      clearInterval(recTimerId);
+      document.getElementById('rec-time').textContent='00:00:00';
+      document.getElementById('rec-time').classList.remove('on');
+//       document.getElementById('bb-warn').textContent='✓ Download avviato'; // REMOVED: bottombar elements don't exist
+//       setTimeout(()=>{ document.getElementById('bb-warn').textContent=''; },4000); // REMOVED: bottombar elements don't exist
+      mediaRec=null;
+      /* Re-enable loop if it was active before */
+      if(STATE.isLooping){ video.loop=true; }
+    };
+
+    /* Auto-stop when video ends */
+    video.addEventListener('ended', _recOnEnded={
+      handleEvent(){ if(mediaRec) mediaRec.stop(); }
+    },{once:true});
+
+    /* Disable loop so 'ended' fires, seek to start, then play */
+    video.loop=false;
+    const _startRec=()=>{
+      video.removeEventListener('seeked',_startRec);
+      mediaRec.start(100);
+      recStart=Date.now();
+      btn.classList.add('on');
+      document.getElementById('rec-mark').classList.add('on');
+      const pr=document.getElementById('pill-rec');
+      pr.style.display='flex'; pr.classList.add('rec');
+      document.getElementById('rec-time').classList.add('on');
+//       document.getElementById('bb-warn').textContent='⏺ REC — dal frame 0'; // REMOVED: bottombar elements don't exist
+      video.play().catch(console.error);
+      recTimerId=setInterval(()=>{
+        const s=Math.round((Date.now()-recStart)/1000);
+        document.getElementById('rec-time').textContent=
+          String(Math.floor(s/3600)).padStart(2,'0')+':'+
+          String(Math.floor((s%3600)/60)).padStart(2,'0')+':'+
+          String(s%60).padStart(2,'0');
+      },1000);
+    };
+    video.addEventListener('seeked',_startRec);
+    video.currentTime=0;
+
+  } else {
+    video.removeEventListener('ended',_recOnEnded);
+    mediaRec.stop();
+  }
+}
+
+(function(){const _el=document.getElementById('btn-rec');if(_el)_el.addEventListener('click',toggleRec);})();
+
+/* Keep old toggleRecord/toggleExport aliases for keyboard shortcut R */
+function toggleRecord(){ toggleRec(); }
+function toggleExport(){ toggleRec(); }
+
+/* =========================================
+   ANAMORPHIC EXPORT — exports the true widescreen
+   frame (e.g. 1920×804 for 2.39:1) instead of the
+   16:9 working canvas. No black bars: the frame is
+   a vertical crop of the live (already-squeezed)
+   render, so every exported pixel is image content.
+   Fully independent state from the normal REC button.
+   ========================================= */
+let anamMediaRec=null, anamRecChunks=[], anamRecStart=null, anamRecTimerId=null, _anamRecOnEnded=null;
+const anamCv=document.createElement('canvas'), anamCtx=anamCv.getContext('2d');
+
+function anamCapLoop(){
+  if(!anamCv._active)return;
+  requestAnimationFrame(anamCapLoop);
+  try{
+    /* Vertical crop of the main canvas: keeps full native width,
+       drops only the top/bottom margin so the result frame matches
+       the chosen aspect ratio exactly — no bars, no distortion added.
+       If live Letterbox is already on, the canvas itself already shows
+       the cropped/zoomed widescreen frame filling the full height, so
+       we capture it as-is (no second crop, which would double-zoom). */
+    const nativeAR = CONFIG.W/CONFIG.H;
+    const targetAR = P.anamRatio || nativeAR;
+    let srcY=0, srcH=canvas.height;
+    if(!P.anamLetterbox){
+      const cropF = Math.min(1, Math.max(0.05, nativeAR/targetAR));
+      srcH = Math.round(canvas.height*cropF);
+      srcY = Math.round((canvas.height-srcH)/2);
+    }
+    anamCtx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, anamCv.width, anamCv.height);
+  }catch(e){}
+}
+
+function toggleAnamRec(){
+  const btn=document.getElementById('btn-rec-anam');
+  if(!anamMediaRec){
+    if(mediaRec){const el=document.getElementById('bb-warn'); if(el) el.textContent='! Stop normal REC first'; return;}
+    if(!STATE.hasVideo){const el=document.getElementById('bb-warn'); if(el) el.textContent='! Load video first'; return;}
+
+    /* Size the export canvas to the true anamorphic frame */
+    const nativeAR = CONFIG.W/CONFIG.H;
+    const targetAR = P.anamRatio || nativeAR;
+    anamCv.width  = canvas.width;
+    anamCv.height = Math.max(2, Math.round(canvas.width / targetAR / 2) * 2);
+    /* even height: most H.264/VP9 encoders require even dimensions */
+
+    const stream=anamCv.captureStream(30);
+    anamRecChunks=[];
+    const mime=getBestMime();
+    try{ anamMediaRec=new MediaRecorder(stream,{mimeType:mime||undefined,videoBitsPerSecond:20000000}); }
+    catch(e){ anamMediaRec=new MediaRecorder(stream); }
+    anamMediaRec.ondataavailable=e=>{if(e.data.size>0)anamRecChunks.push(e.data);};
+    anamMediaRec.onstop=()=>{
+      const ext=anamMediaRec.mimeType?.includes('mp4')?'mp4':'webm';
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob(anamRecChunks,{type:anamMediaRec.mimeType||'video/webm'}));
+      a.download='bokeh_anamorphic_'+anamCv.width+'x'+anamCv.height+'_'+Date.now()+'.'+ext;
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(a.href); },1000);
+      anamCv._active=false;
+      btn.classList.remove('on');
+      document.getElementById('pill-rec').style.display='none';
+      document.getElementById('pill-rec').classList.remove('rec');
+      document.getElementById('rec-mark').classList.remove('on');
+      clearInterval(anamRecTimerId);
+      document.getElementById('rec-anam-time').textContent='00:00:00';
+      document.getElementById('rec-anam-time').classList.remove('on');
+      anamMediaRec=null;
+      if(STATE.isLooping){ video.loop=true; }
+    };
+
+    video.addEventListener('ended', _anamRecOnEnded={
+      handleEvent(){ if(anamMediaRec) anamMediaRec.stop(); }
+    },{once:true});
+
+    video.loop=false;
+    const _startAnamRec=()=>{
+      video.removeEventListener('seeked',_startAnamRec);
+      anamCv._active=true;
+      anamCapLoop();
+      anamMediaRec.start(100);
+      anamRecStart=Date.now();
+      btn.classList.add('on');
+      document.getElementById('rec-mark').classList.add('on');
+      const pr=document.getElementById('pill-rec');
+      pr.style.display='flex'; pr.classList.add('rec');
+      document.getElementById('rec-anam-time').classList.add('on');
+      video.play().catch(console.error);
+      anamRecTimerId=setInterval(()=>{
+        const s=Math.round((Date.now()-anamRecStart)/1000);
+        document.getElementById('rec-anam-time').textContent=
+          String(Math.floor(s/3600)).padStart(2,'0')+':'+
+          String(Math.floor((s%3600)/60)).padStart(2,'0')+':'+
+          String(s%60).padStart(2,'0');
+      },1000);
+    };
+    video.addEventListener('seeked',_startAnamRec);
+    video.currentTime=0;
+
+  } else {
+    video.removeEventListener('ended',_anamRecOnEnded);
+    anamMediaRec.stop();
+  }
+}
+(function(){const _el=document.getElementById('btn-rec-anam');if(_el)_el.addEventListener('click',toggleAnamRec);})();
+
+/* Keep the ratio hint in the Export panel synced to the Anamorphic slider */
+(function(){
+  const tag=document.getElementById('rec-anam-ratio');
+  const sl=document.getElementById('sl-anamRatio');
+  if(!tag||!sl) return;
+  const sync=()=>{ tag.textContent=parseFloat(sl.value).toFixed(2); };
+  sl.addEventListener('input',sync);
+  sync();
+})();
+
+/* =========================================
+   FULLSCREEN PREVIEW — il canvas WebGL reale va fullscreen via CSS
+   (nessuna copia per-frame, nessun readback GPU→CPU: zero costo a runtime)
+   ========================================= */
+(function(){
+  const ov  = document.getElementById('fs-ov');
+  const btn = document.getElementById('btn-fs');
+  const cls = document.getElementById('fs-close');
+
+  function openFS(){
+    ov.classList.add('active');
+    canvas.classList.add('fs-active');
+    cls.classList.add('active');
+  }
+  function closeFS(){
+    ov.classList.remove('active');
+    canvas.classList.remove('fs-active');
+    cls.classList.remove('active');
+  }
+
+  btn.addEventListener('click', openFS);
+  cls.addEventListener('click', closeFS);
+  document.addEventListener('keydown', e=>{
+    if(e.key==='Escape' && ov.classList.contains('active')) closeFS();
+  });
+})();
+
+/* =========================================
+   KEYBOARD
+   ========================================= */
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  switch(e.code){
+    case 'Space': e.preventDefault(); togglePlay(); break;
+    case 'KeyF':  goFullscreen(); break;
+    case 'KeyL':  toggleLoop(); break;
+    case 'KeyR':  toggleRecord(); break;
+    case 'Digit1': case 'Digit2': case 'Digit3':
+    case 'Digit4': case 'Digit5': case 'Digit6':
+      loadPreset(parseInt(e.key)-1); break;
+  }
+});
+
+/* =========================================
+   COLLAPSIBLE SECTIONS
+   ========================================= */
+/* ── BOKEH SHAPE PAD ─────────────────────────────── */
+const BSHAPE = { on: false, x: 0.0, y: 0.0, prevStyle: 0 };
+
+function toggleBshape(){
+  BSHAPE.on = !BSHAPE.on;
+  const btn  = document.getElementById('btn-bshape');
+  const led  = document.getElementById('bshape-led');
+  const lbl  = document.getElementById('bshape-label');
+  const wrap = document.getElementById('bshape-wrap');
+  const mark = document.getElementById('bshapepad-mark');
+  if(BSHAPE.on){
+    BSHAPE.prevStyle = P.bokehStyle;
+    P.bokehStyle = 4;
+    btn.classList.add('on'); led.classList.add('on');
+    lbl.textContent = 'ACTIVE';
+    wrap.classList.remove('off');
+    if(mark) mark.classList.add('on');
+    updateBshapeUI(BSHAPE.x, BSHAPE.y);
+  } else {
+    P.bokehStyle = BSHAPE.prevStyle;
+    btn.classList.remove('on'); led.classList.remove('on');
+    lbl.textContent = 'OFF';
+    wrap.classList.add('off');
+    if(mark) mark.classList.remove('on');
+    // Sync style-sel buttons back
+    document.querySelectorAll('#style-sel .seg-btn').forEach(b=>{
+      b.classList.toggle('on', parseInt(b.dataset.style)===P.bokehStyle);
+    });
+  }
+}
+
+/* Corner name + shape class for the cursor */
+function bshapeCorner(nx, ny){
+  // nx,ny in [0,1] (pad fraction)
+  const x = nx*2-1, y = -(ny*2-1); // to [-1,1], y+ = top
+  const THRESH = 0.35;
+  if(Math.abs(x)<THRESH && Math.abs(y)<THRESH) return { name:'CIRCLE',  cls:'is-circle' };
+  // which quadrant dominates?
+  const tl = Math.max(0,-x)*Math.max(0, y);
+  const tr = Math.max(0, x)*Math.max(0, y);
+  const br = Math.max(0, x)*Math.max(0,-y);
+  const bl = Math.max(0,-x)*Math.max(0,-y);
+  const max4 = Math.max(tl,tr,br,bl);
+  if(max4===tl) return { name:'OVAL',   cls:'is-oval'   };
+  if(max4===tr) return { name:'CAT-X',  cls:'is-catx'   };
+  if(max4===br) return { name:'SQUARE', cls:'is-square' };
+                return { name:'STAR ✦', cls:'is-star'   };
+}
+
+function updateBshapeUI(nx, ny){
+  const cursor = document.getElementById('bshape-cursor');
+  const wrap   = document.getElementById('bshape-wrap');
+  const nlbl   = document.getElementById('bshape-name-lbl');
+  if(!cursor || !wrap) return;
+
+  // Position cursor
+  cursor.style.left = (nx * 100) + '%';
+  cursor.style.top  = (ny * 100) + '%';
+
+  // Crosshairs
+  const hLine = document.getElementById('bsh-h-line');
+  const vLine = document.getElementById('bsh-v-line');
+  if(hLine) hLine.style.top  = (ny*100)+'%';
+  if(vLine) vLine.style.left = (nx*100)+'%';
+
+  // Shape class on cursor
+  const info = bshapeCorner(nx, ny);
+  cursor.className = info.cls;
+  if(nlbl) nlbl.textContent = info.name;
+
+  // Highlight active corner label
+  const active = { 'OVAL':'bc-tl','CAT-X':'bc-tr','SQUARE':'bc-br','STAR ✦':'bc-bl' };
+  ['bc-tl','bc-tr','bc-bl','bc-br'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.classList.toggle('active', active[info.name]===id);
+  });
+  const clbl = document.getElementById('bshape-center-lbl');
+  if(clbl) clbl.style.opacity = info.name==='CIRCLE' ? '1' : '0.35';
+
+  // Convert to shader coords [-1,1]
+  BSHAPE.x = nx*2-1;
+  BSHAPE.y = -(ny*2-1); // invert: top of pad = +y in shader
+}
+
+(function initBshapePad(){
+  const wrap = document.getElementById('bshape-wrap');
+  if(!wrap) return;
+
+  function onMove(e){
+    if(!BSHAPE.on) return;
+    e.preventDefault();
+    const r = wrap.getBoundingClientRect();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    const nx = Math.max(0, Math.min(1, (cx-r.left)/r.width));
+    const ny = Math.max(0, Math.min(1, (cy-r.top)/r.height));
+    updateBshapeUI(nx, ny);
+  }
+
+  let dragging = false;
+  wrap.addEventListener('mousedown', e=>{ dragging=true; onMove(e); });
+  window.addEventListener('mousemove', e=>{ if(dragging) onMove(e); });
+  window.addEventListener('mouseup',   ()=>{ dragging=false; });
+  wrap.addEventListener('touchstart', e=>{ onMove(e); }, { passive:false });
+  wrap.addEventListener('touchmove',  e=>{ onMove(e); }, { passive:false });
+
+  // Init cursor at center
+  updateBshapeUI(0.5, 0.5);
+})();
+
+/* ── SOURCE SELECTOR ─────────────────────────────── */
+function srcSelect(mode){
+  document.querySelectorAll('#src-sel .seg-btn, #src-image, #src-video, #src-webcam, #src-camera').forEach(b=>b.classList.remove('on'));
+  if(mode==='image'){
+    const el=document.getElementById('src-image'); if(el) el.classList.add('on');
+    if(STATE.webcamOn) toggleWebcam();
+    const inp=document.getElementById('file-input');
+    if(inp){ inp.accept='image/*'; inp.click(); }
+  } else if(mode==='video'){
+    const el=document.getElementById('src-video'); if(el) el.classList.add('on');
+    if(STATE.webcamOn) toggleWebcam();
+    const inp=document.getElementById('file-input');
+    if(inp){ inp.accept='video/*'; inp.click(); }
+  } else if(mode==='webcam'||mode==='camera'){
+    const el=document.getElementById('src-'+mode); if(el) el.classList.add('on');
+    if(!STATE.webcamOn) toggleWebcam();
+  }
+}
+
+/* ── MOTION VU METER ─────────────────────────────── */
+(function(){
+  let prevData=null, motionSmooth=0;
+  const motBar=document.getElementById('vu-motion');
+  const motVal=document.getElementById('vu-mv');
+  if(!motBar||!motVal) return;
+
+  const motCv=document.createElement('canvas');
+  motCv.width=80; motCv.height=45;
+  const motCtx=motCv.getContext('2d',{willReadFrequently:true});
+
+  function sampleMotion(src){
+    if(!src) return;
+    try{
+      motCtx.drawImage(src,0,0,80,45);
+      const cur=motCtx.getImageData(0,0,80,45).data;
+      if(prevData){
+        let diff=0;
+        for(let i=0;i<cur.length;i+=4){
+          diff+=Math.abs(cur[i]-prevData[i])+Math.abs(cur[i+1]-prevData[i+1])+Math.abs(cur[i+2]-prevData[i+2]);
+        }
+        const raw=Math.min(diff/(cur.length/4*255*3),1);
+        motionSmooth=motionSmooth*0.8+raw*0.2;
+        const pct=Math.round(motionSmooth*100);
+        motBar.style.width=pct+'%';
+        motVal.textContent=pct+'%';
+      }
+      prevData=new Uint8ClampedArray(cur);
+    }catch(e){}
+  }
+
+  // Hook into animation frame after video/webcam is playing
+  const origRAF=window.requestAnimationFrame.bind(window);
+  let frameCount=0;
+  window.requestAnimationFrame=function(cb){
+    return origRAF(function(t){
+      cb(t);
+      if(++frameCount%3===0){
+        if(typeof video!=='undefined'&&video&&!video.paused&&video.readyState>=2) sampleMotion(video);
+      }
+    });
+  };
+})();
+
+/* SOURCE CENTER BUTTON — opens + scrolls to Source panel section */
+(function(){
+  const btn = document.getElementById('source-center-btn');
+  if(!btn) return;
+  btn.addEventListener('click', ()=>{
+    openSection('src');
+    document.getElementById('panel').scrollTo({top:0, behavior:'smooth'});
+  });
+})();
+
+
+/* =========================================
+   CANVAS RESPONSIVE FIT
+   ========================================= */
+function fitCanvas(){
+  const area=document.getElementById('canvas-area'),wrap=document.getElementById('canvas-wrap');
+  const aw=area.clientWidth-24,ah=area.clientHeight-24;
+  const asp=CONFIG.W/CONFIG.H;
+  let w,h;
+  if(aw/ah>asp){h=ah;w=Math.round(h*asp);}else{w=aw;h=Math.round(w/asp);}
+  canvas.style.width=w+'px'; canvas.style.height=h+'px';
+  wrap.style.width=w+'px'; wrap.style.height=h+'px';
+  setTimeout(updatePadCursor,50);
+}
+window.addEventListener('resize',fitCanvas);
+document.addEventListener('fullscreenchange',()=>setTimeout(fitCanvas,100));
+
+fitCanvas();
+
+/* =========================================
+   HELPERS
+   ========================================= */
+function setPillLive(on){
+  document.getElementById('pill-status').classList.toggle('live',on);
+  document.getElementById('pill-label').textContent=on?'LIVE':'NONE';
+  document.getElementById('src-mark').classList.toggle('on',on);
+}
+function fmtDur(s){
+  if(!s||isNaN(s))return'--';
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=Math.floor(s%60);
+  return(h?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+}
+function fmtTC(s){
+  return[Math.floor(s/3600),Math.floor((s%3600)/60),Math.floor(s%60),Math.floor((s%1)*30)].map(n=>String(n).padStart(2,'0')).join(':');
+}
+
+/* Init pad cursor position */
+updatePadCursor();
+
+/* =========================================
+   SECTION TITLE + MARK GRADIENT SYNC   🔒 LOCKED — SEE CSS COMMENT ABOVE 🔒
+   .sec-title (SOURCE, FOCAL LENGTH, …) AND the small .sec-mark line next
+   to each one all share the exact same CSS animation (iri-logo), so the
+   "line" reads as a hole revealing the same underlying color-changing LED
+   as the text next to it. Independent CSS animation instances on separate
+   elements are driven by the same browser clock and never DRIFT apart
+   over time — but they can each begin a few milliseconds apart depending
+   on when the browser first paints that particular element, which is
+   enough to put an many-element, 5s-loop rainbow gradient visibly out of
+   phase. Rather than relying on paint timing, explicitly align every
+   title's AND mark's animation startTime to one shared reference via the
+   Web Animations API: this guarantees pixel-perfect sync from this point
+   on, permanently, no matter how/when each element was first rendered.
+   Do not remove .sec-mark from this sync list, and do not remove this
+   function, unless the user explicitly asks for it in a future prompt. */
+function syncSectionTitleGradients(){
+  try{
+    const titles=document.querySelectorAll('.sec-title, .sec-mark');
+    if(!titles.length)return;
+    let refStart=null;
+    titles.forEach(el=>{
+      const anims=el.getAnimations ? el.getAnimations() : [];
+      const a=anims.find(x=>x.animationName==='iri-logo') || anims[0];
+      if(!a)return;
+      if(refStart===null) refStart=a.startTime;
+      else a.startTime=refStart;
+    });
+  }catch(e){ /* getAnimations() unsupported — titles keep their default
+                (still correct, just not actively re-synced) animation */ }
+}
+requestAnimationFrame(syncSectionTitleGradients);
+</script>
+</body>
+</html>
