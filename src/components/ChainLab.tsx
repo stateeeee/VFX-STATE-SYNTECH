@@ -12,11 +12,13 @@ interface ChainLabProps {
   isDayMode: boolean;
   onBack: () => void;
   /**
-   * Effects to start enabled, in chain order — set when the chain was
-   * created by linking nodes on the brain graph. The remaining effects
-   * are still added to the rack, just bypassed.
+   * The wired chain owned by the shell (node graph wiring order). The rack
+   * mirrors it live: listed effects run in this order, the rest sit
+   * bypassed at the tail. Rack edits flow back up via onChainChange.
    */
-  initialChain?: ModuleId[];
+  chain?: ModuleId[];
+  /** rack toggles / reorders lift the new enabled order back to the shell */
+  onChainChange?: (chain: ModuleId[]) => void;
   /** name of a saved chain preset to load on mount (Projects nav) */
   initialPreset?: string;
   /**
@@ -30,7 +32,6 @@ interface ChainLabProps {
 
 // default rack order: trackers first, lens/grade passes last
 const RACK_ORDER: ModuleId[] = ['blob_tracker', 'blob_reveal', 'bokeh', 'analog', 'anamorphic_lab'];
-const DEFAULT_ENABLED: ModuleId[] = ['blob_tracker', 'analog'];
 
 /** a saved chain: rack order + enabled set + bases/routes + boolean params */
 interface ChainPreset {
@@ -58,7 +59,7 @@ const readPresets = (): ChainPreset[] => {
  * one WebGL context, all five effects composed in series on the same
  * frame. This is the capability the iframe architecture cannot provide.
  */
-export default function ChainLab({ isDayMode, onBack, initialChain, initialPreset, initialSource, onSourcePicked }: ChainLabProps) {
+export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainChange, initialPreset, initialSource, onSourcePicked }: ChainLabProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const audioFileRef = useRef<HTMLInputElement | null>(null);
@@ -94,7 +95,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain, initialPrese
       setError((e as Error).message);
       return;
     }
-    const active = initialChain?.length ? initialChain : DEFAULT_ENABLED;
+    const active = chainProp ?? [];
     const rack = [...active, ...RACK_ORDER.filter((id) => !active.includes(id))];
     rack.forEach((id) => {
       const node = NODE_FACTORY[id]();
@@ -104,10 +105,14 @@ export default function ChainLab({ isDayMode, onBack, initialChain, initialPrese
     // manual/auto control matrix (PLAN §4.4): bases live in the bus, audio
     // and video signal offsets are layered on top at the start of every frame
     busRef.current!.snapshot(engine.chain);
-    // opened from the Projects nav: restore the requested saved chain
+    // opened from the Projects nav: restore the requested saved chain and
+    // lift its enabled order back up so the node-graph wiring follows
     if (initialPreset) {
       const p = readPresets().find((x) => x.name === initialPreset);
-      if (p) applyPresetTo(engine, p);
+      if (p) {
+        applyPresetTo(engine, p);
+        onChainChange?.(engine.chain.filter((n) => n.enabled).map((n) => n.id as ModuleId));
+      }
     }
     engine.beforeFrame = (now) => {
       const lv = audioRef.current!.tick(now);
@@ -135,6 +140,27 @@ export default function ChainLab({ isDayMode, onBack, initialChain, initialPrese
       engineRef.current = null;
     };
   }, []);
+
+  // Live rack ⇄ wiring sync (Phase 2): when the shell's wired chain changes,
+  // reorder the engine chain to [chain..., bypassed rest] and set enabled
+  // flags to match. Rack edits go the other way through emitChain().
+  const chainKey = (chainProp ?? []).join('|');
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const active = chainProp ?? [];
+    const order = [...active, ...engine.chain.map((n) => n.id as ModuleId).filter((id) => !active.includes(id))];
+    engine.chain.sort((a, b) => order.indexOf(a.id as ModuleId) - order.indexOf(b.id as ModuleId));
+    engine.chain.forEach((n) => { n.enabled = active.includes(n.id as ModuleId); });
+    bump();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chainKey]);
+
+  const emitChain = () => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    onChainChange?.(engine.chain.filter((n) => n.enabled).map((n) => n.id as ModuleId));
+  };
 
   // Shared source: load the dashboard's chosen video (single load path — the
   // Video button lifts its pick up to the shell, which flows back here).
@@ -238,6 +264,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain, initialPrese
     if (!engineRef.current) return;
     applyPresetTo(engineRef.current, preset);
     bump();
+    emitChain();
   };
 
   const deletePreset = (name: string) => writePresets(presets.filter((p) => p.name !== name));
@@ -441,7 +468,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain, initialPrese
         <div className="flex items-center gap-1">
           <button
             title="Move up the chain"
-            onClick={() => { engineRef.current?.swapNodes(idx, idx - 1); bump(); }}
+            onClick={() => { engineRef.current?.swapNodes(idx, idx - 1); bump(); emitChain(); }}
             disabled={idx === 0}
             className="p-1 rounded border border-violet-500/20 text-violet-500 hover:bg-violet-500/10 disabled:opacity-30 cursor-pointer"
           >
@@ -449,7 +476,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain, initialPrese
           </button>
           <button
             title="Move down the chain"
-            onClick={() => { engineRef.current?.swapNodes(idx, idx + 1); bump(); }}
+            onClick={() => { engineRef.current?.swapNodes(idx, idx + 1); bump(); emitChain(); }}
             disabled={idx === chain.length - 1}
             className="p-1 rounded border border-violet-500/20 text-violet-500 hover:bg-violet-500/10 disabled:opacity-30 cursor-pointer"
           >
@@ -458,7 +485,7 @@ export default function ChainLab({ isDayMode, onBack, initialChain, initialPrese
           <button
             title={node.enabled ? 'Bypass this node' : 'Enable this node'}
             data-testid={`toggle-${node.id}`}
-            onClick={() => { node.enabled = !node.enabled; bump(); }}
+            onClick={() => { node.enabled = !node.enabled; bump(); emitChain(); }}
             className={`p-1 rounded border cursor-pointer ${
               node.enabled ? 'border-violet-500 bg-violet-500 text-black' : 'border-violet-500/30 text-neutral-500'
             }`}

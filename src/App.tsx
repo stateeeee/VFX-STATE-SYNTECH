@@ -24,12 +24,34 @@ import VfxCanvas from './components/VfxCanvas';
 import EffectHost, { EffectHostHandle } from './components/EffectHost';
 import ChainLab from './components/ChainLab';
 import AiDirector from './components/AiDirector';
-import NodalComposition, { CompEffect, EFFECT_META } from './components/NodalComposition';
+import NodalComposition, { CompEffect, EFFECT_META, WireMap } from './components/NodalComposition';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 
 // explicit session snapshot for the SAVE nav action (decision #9: localStorage)
 const SESSION_KEY = 'syntech.session';
-const COMP_KEY = 'syntech.composition.v2';
+const COMP_KEY = 'syntech.composition.v3';
+const COMP_KEY_V2 = 'syntech.composition.v2';
+
+// ── serial wiring helpers (03-SPEC-SHELL §6: chain order = wiring order) ──
+const wiresFromChain = (list: ModuleId[]): WireMap => {
+  const w: WireMap = {};
+  let prev = 'IN';
+  list.forEach((id) => { w[prev] = id; prev = id; });
+  w[prev] = 'OUT';
+  return w;
+};
+/** Nodes on the complete IN→OUT path, in wiring order. Anything else ghosts. */
+const walkChain = (nodes: ModuleId[], wires: WireMap): ModuleId[] => {
+  const path: ModuleId[] = [];
+  const seen = new Set<string>();
+  let cur = wires['IN'];
+  while (cur && cur !== 'OUT' && !seen.has(cur) && nodes.includes(cur as ModuleId)) {
+    seen.add(cur);
+    path.push(cur as ModuleId);
+    cur = wires[cur];
+  }
+  return cur === 'OUT' ? path : [];
+};
 interface SavedSession { activeModule?: ModuleId; isDayMode?: boolean; savedAt?: number }
 const readSession = (): SavedSession => {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) ?? '{}') ?? {}; } catch { return {}; }
@@ -94,46 +116,90 @@ export default function App() {
   // Detaching a node's connection port simply toggles enabled. The AI Lab
   // opens with exactly this source + enabled chain (the Nodal Composition is
   // the dashboard shortcut into it).
-  const [compEffects, setCompEffects] = useState<CompEffect[]>(() => {
+  const [comp, setComp] = useState<{ nodes: ModuleId[]; wires: WireMap }>(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(COMP_KEY) ?? 'null');
-      if (Array.isArray(saved)) {
-        const cleaned = saved.filter((e) => e && typeof e.id === 'string' && e.id in EFFECTS_REGISTRY)
-          .map((e) => ({ id: e.id as ModuleId, enabled: !!e.enabled }));
-        if (cleaned.length) return cleaned;
+      const v3 = JSON.parse(localStorage.getItem(COMP_KEY) ?? 'null');
+      if (v3 && Array.isArray(v3.nodes) && v3.wires && typeof v3.wires === 'object') {
+        const nodes = v3.nodes.filter((id: string) => id in EFFECTS_REGISTRY) as ModuleId[];
+        const wires: WireMap = {};
+        Object.entries(v3.wires as Record<string, unknown>).forEach(([f, t]) => {
+          const okF = f === 'IN' || nodes.includes(f as ModuleId);
+          const okT = t === 'OUT' || nodes.includes(t as ModuleId);
+          if (okF && okT && typeof t === 'string') wires[f] = t;
+        });
+        return { nodes, wires };
+      }
+      // migrate v2 (flat {id, enabled} list): enabled order becomes the wiring
+      const v2 = JSON.parse(localStorage.getItem(COMP_KEY_V2) ?? 'null');
+      if (Array.isArray(v2)) {
+        const valid = v2.filter((e) => e && typeof e.id === 'string' && e.id in EFFECTS_REGISTRY);
+        const nodes = valid.map((e) => e.id as ModuleId);
+        const chain = valid.filter((e) => e.enabled).map((e) => e.id as ModuleId);
+        if (nodes.length) return { nodes, wires: wiresFromChain(chain) };
       }
     } catch { /* ignore */ }
-    return [];
+    return { nodes: [], wires: wiresFromChain([]) };
   });
   useEffect(() => {
-    try { localStorage.setItem(COMP_KEY, JSON.stringify(compEffects)); } catch { /* private mode */ }
-  }, [compEffects]);
+    try { localStorage.setItem(COMP_KEY, JSON.stringify(comp)); } catch { /* private mode */ }
+  }, [comp]);
 
-  // the enabled chain (in order) — what the AI Lab / brain graph consume
-  const graphChain: ModuleId[] = compEffects.filter((e) => e.enabled).map((e) => e.id);
+  // the wired chain (in order) — what the AI Lab / brain graph consume;
+  // node presence + derived enabled flag feed every legacy consumer
+  const graphChain: ModuleId[] = walkChain(comp.nodes, comp.wires);
+  const compEffects: CompEffect[] = comp.nodes.map((id) => ({ id, enabled: graphChain.includes(id) }));
 
-  const toggleCompEffect = (id: ModuleId) =>
-    setCompEffects((prev) => prev.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e)));
-  const addCompEffect = (id: ModuleId) =>
-    setCompEffects((prev) => (prev.some((e) => e.id === id) ? prev.map((e) => (e.id === id ? { ...e, enabled: true } : e)) : [...prev, { id, enabled: true }]));
-  const removeCompEffect = (id: ModuleId) =>
-    setCompEffects((prev) => prev.filter((e) => e.id !== id));
-
-  // Linking two hubs on the brain graph adds both to the composition (enabled)
-  const handleChainLink = (from: ModuleId, to: ModuleId) => {
+  /** rebuild the serial wiring from an ordered chain (rack sync, AI, hubs) */
+  const setChainTo = (list: ModuleId[]) => {
+    const dedup = list.filter((id, i) => list.indexOf(id) === i);
+    setComp((prev) => ({
+      nodes: [...prev.nodes, ...dedup.filter((id) => !prev.nodes.includes(id))],
+      wires: wiresFromChain(dedup),
+    }));
+  };
+  const connectWire = (from: string, to: string) => {
     if (from === to) return;
-    setCompEffects((prev) => {
-      let next = prev.slice();
-      const ensure = (id: ModuleId) => {
-        if (!next.some((e) => e.id === id)) next.push({ id, enabled: true });
-        else next = next.map((e) => (e.id === id ? { ...e, enabled: true } : e));
-      };
-      ensure(from);
-      ensure(to);
-      return next;
+    setComp((prev) => {
+      const wires = { ...prev.wires };
+      delete wires[from]; // an out-port hosts one wire
+      Object.keys(wires).forEach((k) => { if (wires[k] === to) delete wires[k]; }); // so does an in-port
+      wires[from] = to;
+      return { ...prev, wires };
     });
   };
-  const clearChain = () => setCompEffects((prev) => prev.map((e) => ({ ...e, enabled: false })));
+  const disconnectWire = (from: string) =>
+    setComp((prev) => {
+      const wires = { ...prev.wires };
+      delete wires[from];
+      return { ...prev, wires };
+    });
+  // + Add Node: insert between INPUT and OUTPUT — appended at chain end
+  const addCompEffect = (id: ModuleId) =>
+    setComp((prev) => {
+      const nodes = prev.nodes.includes(id) ? prev.nodes : [...prev.nodes, id];
+      const chain = walkChain(prev.nodes, prev.wires);
+      if (chain.includes(id)) return { ...prev, nodes };
+      return { nodes, wires: wiresFromChain([...chain, id]) };
+    });
+  // ✕ deletes the node; its neighbours are wired to each other (heal)
+  const removeCompEffect = (id: ModuleId) =>
+    setComp((prev) => {
+      const nodes = prev.nodes.filter((n) => n !== id);
+      const wires = { ...prev.wires };
+      const inFrom = Object.keys(wires).find((k) => wires[k] === id) ?? null;
+      const outTo = wires[id] ?? null;
+      delete wires[id];
+      if (inFrom) delete wires[inFrom];
+      if (inFrom && outTo) wires[inFrom] = outTo;
+      return { nodes, wires };
+    });
+
+  // Linking two hubs on the brain graph appends them to the wired chain
+  const handleChainLink = (from: ModuleId, to: ModuleId) => {
+    if (from === to) return;
+    setChainTo([...graphChain.filter((x) => x !== from && x !== to), from, to]);
+  };
+  const clearChain = () => setComp((prev) => ({ ...prev, wires: wiresFromChain([]) }));
 
   // ── SHARED SOURCE VIDEO (video + audio): the INPUT node ──
   const [compSource, setCompSource] = useState<{ url: string; name: string } | null>(null);
@@ -372,7 +438,9 @@ export default function App() {
 
   // ── left-sidebar navigation (the real commands, re-skinned per reference) ──
   const navItems: Array<{ key: string; label: string; Icon: any; active: boolean; onClick: () => void; title?: string }> = [
-    { key: 'home', label: 'Home', Icon: HomeIcon, active: isHome, onClick: () => { setChainOpen(false); handleEffectClose(); setActiveGeminiMode(null); } },
+    // Home closes the open effect / Gemini panel; the AI Lab stays armed —
+    // only a manual click on its own toggle disarms it (03-SPEC-SHELL §3)
+    { key: 'home', label: 'Home', Icon: HomeIcon, active: isHome, onClick: () => { handleEffectClose(); setActiveGeminiMode(null); } },
     { key: 'save', label: savedFlash ? 'Saved' : 'Save', Icon: SaveIcon, active: savedFlash, onClick: handleSaveSession, title: 'Save the current session (module, theme) to this browser' },
     { key: 'projects', label: 'Projects', Icon: FolderIcon, active: projectsOpen, onClick: () => setProjectsOpen(true), title: 'Saved effect chains' },
     { key: 'ailab', label: 'AI Lab', Icon: AiIcon, active: chainOpen, onClick: toggleLab },
@@ -551,6 +619,21 @@ export default function App() {
                 {/* TOP: Hero (brain graph / video) OR AI Lab OR Effect */}
                 <Panel defaultSize={62} minSize={20}>
                   <div className={`w-full h-full relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
+                    {/* armed AI Lab stays mounted under an open effect so its
+                        composition (nodes, wiring, params) survives navigation */}
+                    {chainOpen && (
+                      <div className={openEffectId ? 'hidden' : 'w-full h-full'}>
+                        <ChainLab
+                          isDayMode={isDayMode}
+                          onBack={() => setChainOpen(false)}
+                          chain={graphChain}
+                          onChainChange={setChainTo}
+                          initialPreset={chainPresetToOpen ?? undefined}
+                          initialSource={compSource}
+                          onSourcePicked={onSourceFile}
+                        />
+                      </div>
+                    )}
                     {openEffectId ? (
                       <EffectHost
                         ref={effectHostRef}
@@ -559,7 +642,7 @@ export default function App() {
                         isDayMode={isDayMode}
                         onBack={handleEffectClose}
                       />
-                    ) : (
+                    ) : chainOpen ? null : (
                       <>
                         {/* background: source video if chosen, else the brain graph */}
                         {compSource ? (
@@ -616,8 +699,10 @@ export default function App() {
                       <NodalComposition
                         isDayMode={isDayMode}
                         effects={compEffects}
+                        wires={comp.wires}
                         source={compSource ? { name: compSource.name } : null}
-                        onToggleEffect={toggleCompEffect}
+                        onConnect={connectWire}
+                        onDisconnect={disconnectWire}
                         onAddEffect={addCompEffect}
                         onRemoveEffect={removeCompEffect}
                         onOpenLab={openLab}
@@ -645,20 +730,10 @@ export default function App() {
                           }}
                           onApplyPreset={(preset) => handleApplyPreset(preset)}
                           onUpdateCompEffects={(enableIds, disableIds) => {
-                            setCompEffects((prev) => {
-                              let next = [...prev];
-                              enableIds.forEach(id => {
-                                if (next.some(e => e.id === id)) {
-                                  next = next.map(e => e.id === id ? { ...e, enabled: true } : e);
-                                } else {
-                                  next.push({ id: id as ModuleId, enabled: true });
-                                }
-                              });
-                              disableIds.forEach(id => {
-                                next = next.map(e => e.id === id ? { ...e, enabled: false } : e);
-                              });
-                              return next;
-                            });
+                            setChainTo([
+                              ...graphChain.filter((id) => !disableIds.includes(id)),
+                              ...(enableIds.filter((id) => !graphChain.includes(id as ModuleId)) as ModuleId[]),
+                            ]);
                           }}
                         />
                       </div>

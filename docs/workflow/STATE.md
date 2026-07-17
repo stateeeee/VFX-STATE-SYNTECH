@@ -5,22 +5,25 @@
 
 ## Current phase
 
-**Phase 2 — AI Lab UX (armed mode + drag wiring)** (not started)
+**Phase 3 — Engine services (reactivity backbone)** (not started)
 
 ## Next step
 
-Run Phase 2 of `05-ROADMAP.md` per 03-SPEC-SHELL §3/§6: make the AI Lab nav
-a persistent violet toggle; upgrade `NodalComposition` ports to drag-wire
-connect/disconnect with side enforcement (INPUT right-only, OUTPUT
-left-only); ghost nodes not connected on both sides (~50% opacity, out of
-chain); Add Node menu strictly alphabetical; chain order derives from
-wiring and stays in sync with the ChainLab rack.
+Run Phase 3 of `05-ROADMAP.md`: replace the four engine stubs —
+`AudioEngine` (mic + file FFT → bass/loud/treble 0..1 smoothed, beat pulse,
+BPM, FileTransport), `VideoAnalyzer` (frame differencing → motion, average
+luma → bright), `ParamBus` (real snapshot/apply,
+`final = clamp(base + signal × amount × paramRange)` per frame,
+serialize/restore), `PersonMask` (shared MediaPipe SelfieSegmentation,
+off/loading/ready, mask canvas via `engine.personMaskSource`). Accept: with
+a music file loaded, meters + BPM move; routing `bass` onto a dummy-node
+param visibly modulates its readout; SEG reaches READY on demand.
 
 ## Phase board
 
 - [x] Phase 0 — Baseline & housekeeping
 - [x] Phase 1 — Single-effect mode + settings save (bridge v1)
-- [ ] Phase 2 — AI Lab UX (armed mode + drag wiring)
+- [x] Phase 2 — AI Lab UX (armed mode + drag wiring)
 - [ ] Phase 3 — Engine services (AudioEngine, VideoAnalyzer, ParamBus, PersonMask)
 - [ ] Phase 4 — 1:1 port: analog
 - [ ] Phase 5 — 1:1 port: bokeh
@@ -59,6 +62,46 @@ wiring and stays in sync with the ChainLab rack.
 | 7 | Port order locked: analog → bokeh → anamorphic_lab → blob_reveal → blob_tracker | 2026-07-17 |
 
 ## Log
+
+### 2026-07-17 — Phase 2 complete (AI Lab armed mode + drag wiring)
+
+- **Wiring model** (new source of truth for the chain): serial `WireMap`
+  (`'IN' | id → id | 'OUT'`, one wire per port) owned by the shell,
+  persisted as `syntech.composition.v3` (v2 auto-migrates: enabled order →
+  wiring). `enabled` is now DERIVED: a node is ACTIVE iff it sits on the
+  complete IN→OUT path (`walkChain`); everything else ghosts at 50% with
+  BYPASS badge and drops out of the chain readout.
+- **NodalComposition**: real drag wiring — press a port, drag, release on a
+  compatible port to connect; sides enforced by construction (only out→in
+  can commit; INPUT has right port only, OUTPUT left only). Pressing an
+  occupied out-port re-aims its wire; pressing an occupied in-port picks
+  the wire's end up; releasing in the void (or back where it started)
+  disconnects. Connecting to an occupied port replaces that port's wire.
+  Add Node menu strictly alphabetical (ANALOG → BOKEH) and auto-wires the
+  new node before OUTPUT (spec §6); ✕ removes the node and heals the chain
+  (neighbours reconnect).
+- **AI Lab armed mode**: nav toggle stays violet until manually clicked
+  off; Home no longer disarms. Arming mounts the real `ChainLab` surface in
+  the hero (it was imported but never rendered before). While armed, an
+  opened effect covers the lab (display:none) without unmounting it, so
+  composition + params survive navigation; Home returns to the lab.
+- **Rack ⇄ graph sync (both ways)**: ChainLab takes a live `chain` prop
+  (engine reordered + enabled flags on change) and lifts rack edits
+  (power toggles, ▲▼ reorder, preset loads) back up via `onChainChange` →
+  the shell rebuilds the wiring.
+- Verified per 06-VERIFICATION: lint clean; headless Playwright
+  (`verify-phase2.js`) **26/26 PASS** including the roadmap acceptance:
+  chain IN→analog→blob_tracker→OUT built purely by port dragging, both
+  ACTIVE; detaching the middle wire ghosts both + readout drops to
+  passthrough; out→out release rejected; armed violet toggle survives
+  effect-open + Home; rack bypass/re-enable rewrites wiring and rack order
+  mirrors it; wiring persists across reload. Regression: Phase 1 suite
+  re-run **21/21 PASS** (all five effects open, save/restore, standalone
+  clean); no page errors.
+- Known limit (logged): node params reset when the lab is disarmed and
+  re-armed (nodes + wiring persist; params are engine-local until ParamBus
+  serialize/restore becomes real in Phase 3). Dummy-node rendering is
+  passthrough until Phases 4–8 port the effects.
 
 ### 2026-07-17 — Phase 1 complete (bridge v1: settings save/restore)
 
