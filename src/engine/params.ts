@@ -27,7 +27,8 @@ export type Signals = Record<ModSource, number>;
 export class ParamBus {
   state: ParamBusState = {};
 
-  /** Seed bases from the nodes' current numeric params (existing entries win). */
+  /** Seed bases from the nodes' current numeric params (existing entries win).
+   *  A param's defaultRoute pre-wires its modulation the first time. */
   snapshot(chain: EngineNode[]): void {
     chain.forEach((node) => {
       node.params.forEach((p) => {
@@ -35,7 +36,10 @@ export class ParamBus {
         const key = `${node.id}.${p.key}`;
         if (!this.state[key]) {
           const cur = Number(node.getParam(p.key));
-          this.state[key] = { base: isNaN(cur) ? Number(p.value) || 0 : cur, mod: null };
+          this.state[key] = {
+            base: isNaN(cur) ? Number(p.value) || 0 : cur,
+            mod: p.defaultRoute ? { source: p.defaultRoute.source, amount: p.defaultRoute.amount } : null,
+          };
         }
       });
     });

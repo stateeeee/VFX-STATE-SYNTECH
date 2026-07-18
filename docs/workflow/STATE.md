@@ -5,19 +5,21 @@
 
 ## Current phase
 
-**Phase 4 — 1:1 port: analog** (not started)
+**Phase 5 — 1:1 port: bokeh** (not started)
 
 ## Next step
 
-Run Phase 4 of `05-ROADMAP.md` (port template): read
-`public/effects/analog/index.html` end-to-end; extract the full param table
-(id, label, range, default) and the render pipeline; implement the real
-`EngineNode` in `src/engine/nodes/analog.ts` (new folder; swap the factory
-in `nodes.ts`); reactive params via ParamBus default routes; then run the
-binding parity protocol of 06-VERIFICATION §4 (param diff, side-by-side
-sweeps, reactivity, chain sanity, evidence in the log). In the Claude
-sandbox use the npm-mirror route interception from the Phase 0 note for
-any CDN the effect needs.
+Run Phase 5 of `05-ROADMAP.md` (port template) for **bokeh**: read
+`public/effects/bokeh/index.html` end-to-end; extract the full param table
+(sliders, knobs via `setKnob`, `#style-sel` seg group, toggles, shape pad)
+and the render pipeline; implement `src/engine/nodes/bokeh.ts`; swap the
+factory; map its audio-reactive controls to ParamBus `defaultRoute`s; the
+effect consumes the shared PersonMask (`segEnabled`). Verify with the
+Phase 4 parity method: static pixel comparison via the `window.__SYN` dev
+tap (pin adaptiveRes off + resScale 1, pause both videos on the same
+frame, use a source clip at 1920×1080 so both canvases match the
+standalone's fixed CONFIG resolution), motion/stochastic behavior checks,
+and frame-based (not wall-time) analysis for any temporal feature.
 
 ## Phase board
 
@@ -25,7 +27,7 @@ any CDN the effect needs.
 - [x] Phase 1 — Single-effect mode + settings save (bridge v1)
 - [x] Phase 2 — AI Lab UX (armed mode + drag wiring)
 - [x] Phase 3 — Engine services (AudioEngine, VideoAnalyzer, ParamBus, PersonMask)
-- [ ] Phase 4 — 1:1 port: analog
+- [x] Phase 4 — 1:1 port: analog
 - [ ] Phase 5 — 1:1 port: bokeh
 - [ ] Phase 6 — 1:1 port: anamorphic_lab
 - [ ] Phase 7 — 1:1 port: blob_reveal
@@ -62,6 +64,65 @@ any CDN the effect needs.
 | 7 | Port order locked: analog → bokeh → anamorphic_lab → blob_reveal → blob_tracker | 2026-07-17 |
 
 ## Log
+
+### 2026-07-18 — Phase 4 complete (1:1 port: ANALOG)
+
+- **`src/engine/nodes/analog.ts`** implements the standalone's exact
+  pipeline in the SynEngine: optional pixel sort (odd-even transposition,
+  1–12 passes, H/V/diag, persistent pass parity) → feedback loop
+  (zoom/rotate/decay/hue/drift/mirror, ping-pong across frames) → CRT &
+  glitch composite (barrel, tracking, tear, chroma split, bloom, dropout,
+  roll bar, noise, scanlines, phosphor, vignette, dry/wet blend). All four
+  fragment shaders are the standalone's GLSL translated to ES 3.00 with
+  the math character-for-character intact, including the fixed
+  1920/1080/540 texel constants that define the CRT look. Factory swapped
+  in `nodes.ts`; the other four effects remain DummyNodes.
+- **Param table — 100% coverage** of the standalone's controls
+  (26 controls → 27 node params): 18 knobs (same data-min/max/defaults),
+  4 sliders (sortThresh 0–1, sortPasses 1–12, reactSens 0.1–2,
+  modDepth 0–1), 3 LED toggles (feedbackMirror, sortEnabled,
+  reactEnabled), sort-direction seg → `sortDir` 0/1/2. Consolidations,
+  justified: the XY pad is a *controller* of two existing params (routing
+  UI covers that role in the lab); transport/source/record/export/preset
+  panels are shell/ChainLab concerns, not effect params.
+- **Deliberate substitution (the one intended difference)**: the
+  standalone's PSEUDO-AUTO reactive generator (synthesized bass/mid/high)
+  is replaced by the real analysis — new `reactBass/reactMid/reactHigh`
+  params pre-wired via the new `ParamSchema.defaultRoute` (seeded in
+  `ParamBus.snapshot`) to bass/loud/treble; reactSens/modDepth/
+  reactEnabled behave exactly as the original's shader math dictates.
+- **Parity run (06-VERIFICATION §4)**, evidence in scratchpad
+  (`phase4-*.json`, `shots/p4*`):
+  1. *Static pixel parity* — via the new dev-only `window.__SYN` tap:
+     adaptiveRes off, resScale 1, both videos paused on the same frame of
+     a generated 1920×1080 clip (canvas sizes must match the standalone's
+     fixed 1080p or fixed-frequency patterns alias differently) —
+     **13/13 checks corr=1.000, mad=0.000 (pixel-identical)** across
+     neutral, barrel, vignette, scanlines, phosphor, chroma, bloom,
+     blend-0, sort-H, sort-V, hero combo.
+  2. *Motion suite* (live playback, long-exposure comparisons): corr
+     0.97–0.99 on all configs; stochastic passes (noise/tear/tracking)
+     raise temporal variance on both sides (S ×3.3, E ×3.6, corr 0.90).
+  3. *Feedback trails* — frame-based analysis (engine runs ~59fps vs
+     standalone ~4.5fps under SwiftShader, so wall-time comparison is
+     invalid): per-rendered-frame decay after a seek step,
+     **S=0.884 vs E=0.888** against fa=0.9 minus decay pull — identical
+     math (first post-seek interval excluded: it captures the source
+     frame switch, not trail decay).
+  4. *Reactivity* — with the 120 BPM file, the auto-routed reactBass
+     readout pulses 0.53→0.98 (spread 0.45) and drives tear/zoom.
+  5. *Chain sanity* — analog + 2 dummy nodes render continuously
+     (19–25 fps at 50% adaptive res under sandbox SwiftShader; the
+     ≥30fps @720p criterion is a GPU-machine check — flagged for the
+     operator, not assessable here).
+  6. Hero screenshots standalone vs engine are visually
+     indistinguishable (barrel curvature, chroma fringe, phosphor
+     texture, vignette, moiré).
+- Regression: Phase 1/2/3 suites re-run (see below), lint clean.
+- Notes for Phases 5–8: use the `__SYN` tap + 1080p clip + paused-frame
+  static comparison as the parity workhorse; MediaRecorder webm seeks
+  need a timeout race (no cues); compare temporal features per rendered
+  frame, never per wall-clock sample.
 
 ### 2026-07-17 — Phase 3 complete (engine services: the reactivity backbone)
 

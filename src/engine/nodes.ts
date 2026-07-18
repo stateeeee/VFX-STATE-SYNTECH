@@ -1,7 +1,8 @@
 import { EngineNode, NodeRenderContext } from './SynEngine';
 import { ParamSchema } from '../bridge/types';
+import { AnalogNode } from './nodes/analog';
 
-/* Still the pre-port stand-ins: rendering is passthrough until Phases 4–8
+/* Pre-port stand-ins: rendering is passthrough until Phases 4–8
  * replace each factory with the real 1:1 EngineNode. Since Phase 3 they DO
  * hold real parameter state, so the ParamBus / AI / preset plumbing runs
  * against the exact interfaces the ports will use. The placeholder schemas
@@ -54,7 +55,8 @@ const placeholder = (segCapable: boolean): ParamSchema[] => [
 
 export const NODE_FACTORY: Record<string, () => EngineNode> = {
   blob_tracker: () => new DummyNode('blob_tracker', 'Blob Tracker', placeholder(false)),
-  analog: () => new DummyNode('analog', 'Analog', placeholder(false)),
+  analog: () => new AnalogNode(), // Phase 4: real 1:1 port
+
   blob_reveal: () => new DummyNode('blob_reveal', 'Blob Reveal', placeholder(true)),
   bokeh: () => new DummyNode('bokeh', 'Bokeh', placeholder(true)),
   anamorphic_lab: () => new DummyNode('anamorphic_lab', 'Anamorphic Lab', placeholder(true))

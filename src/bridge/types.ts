@@ -8,6 +8,9 @@ export interface ParamSchema {
   step?: number;
   aiHint?: string;
   reactive?: boolean;
+  /** pre-wired ParamBus route installed when the node first joins the rack
+   *  (ports use this to map the original effect's built-in audio response) */
+  defaultRoute?: { source: 'bass' | 'treble' | 'loud' | 'beat' | 'motion' | 'bright'; amount: number };
 }
 export interface EffectTelemetry {
   [key: string]: any;

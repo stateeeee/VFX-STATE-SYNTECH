@@ -133,6 +133,13 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
     engine.onResScale = (s) => setResPct(Math.round(s * 100));
     engine.start();
     engineRef.current = engine;
+    // dev-only tap for the parity/verification protocol (06-VERIFICATION):
+    // lets headless runs pin the resolution and drive the source deterministically
+    if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
+      (window as unknown as Record<string, unknown>).__SYN = {
+        engine, audio: audioRef.current, bus: busRef.current, mask: maskRef.current,
+      };
+    }
     return () => {
       audioRef.current?.stop();
       maskRef.current?.dispose();
