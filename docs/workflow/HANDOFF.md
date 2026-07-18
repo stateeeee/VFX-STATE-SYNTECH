@@ -1,141 +1,131 @@
-# HANDOFF — session continuation brief (written 2026-07-18)
+# HANDOFF — session continuation brief (updated 2026-07-18, post-Phase 5)
 
 > For the next Claude session. Read this AFTER `CLAUDE.md` and `STATE.md`.
-> It carries everything the previous session learned that is not obvious
-> from the repo: exact position, environment quirks, and the verification
+> It carries everything previous sessions learned that is not obvious from
+> the repo: exact position, environment quirks, and the verification
 > machinery. Delete or archive this file when it stops being current.
 
 ## Where we are — exactly
 
-- Branch: `claude/fable-5-merge-roadmap-phase-uzbso9` (work + push here).
-  `main` is at the workflow-docs commit; the operator merges between
-  sessions. Session commits so far, all pushed:
-  - `d160864` Phase 0 (baseline, dead scripts removed, cards clickable)
-  - `c836d3c` Phase 1 (settings bridge in the 5 HTMLs + EffectHost/Save)
-  - `e2703e0` Phase 2 (drag wiring, armed AI Lab, rack⇄graph sync)
-  - `73345ef` Phase 3 (real AudioEngine/VideoAnalyzer/ParamBus/PersonMask)
-  - `ddfb9c8` Phase 4 (ANALOG 1:1 port + parity evidence)
-- Phases 0–4 are DONE and verified (see the STATE.md log entries — they
-  contain the full parity numbers and decisions).
-- **Next step: Phase 5 — 1:1 port of BOKEH** per the port template in
-  `05-ROADMAP.md`, one phase per session. STATE.md "Next step" has the
-  concrete instruction.
+- Branch: `claude/vfx-syntech-workflow-48260a` (work + push here). `main`
+  is at the Phase 0–4 merge; the operator merges between sessions.
+  Session commits so far: `834bd6d` (Phase 5 wip checkpoint) + the Phase 5
+  close-out commit that carries this file.
+- Phases 0–5 are DONE and verified (see the STATE.md log entries — they
+  contain the full parity numbers and decisions). Real ports so far:
+  **analog** (`src/engine/nodes/analog.ts`) and **bokeh**
+  (`src/engine/nodes/bokeh.ts`); the other three are DummyNodes.
+- **Next step: Phase 6 — 1:1 port of ANAMORPHIC_LAB** per the port
+  template in `05-ROADMAP.md`, one phase per session. STATE.md "Next
+  step" has the concrete instruction.
 
-## Phase 5 recon already done (bokeh standalone)
+## Phase 6 recon (anamorphic_lab standalone, ~155 KB)
 
-`public/effects/bokeh/index.html` (~3800 lines + our bridge at the end):
-- Controls: 9 range sliders `sl-*` (incl. `sl-bokehRadius`,
-  `sl-anam*`), custom knobs `.knob[data-id]` (e.g. `bokehBloom`,
-  `bokehFeather`) settable via the GLOBAL `setKnob(knobEl, value)`;
-  bokeh style seg group `#style-sel .seg-btn` (click-driven); toggles
-  `tog-anamLetterbox`/`tog-anamBreathing` (P-object flags); `btn-bshape`
-  toggles the BSHAPE pad (stashes `P.bokehStyle`, restores on off — in
-  the Phase 1 bridge we apply style BEFORE btn-bshape for that reason);
-  double-click knob popup uses `#knob-popup-input` (type=number — never
-  save/restore it). File input: `#file-input` (video, off-DOM `video`
-  element — `drop-overlay` hides + `#info-file` shows the name on load).
-- MediaPipe selfie_segmentation loads EAGERLY from a `<script>` tag at
-  the top (cdn.jsdelivr.net — blocked in this sandbox, see below).
-  The engine node must instead consume the shared PersonMask via
-  `segEnabled` + `ctx.personMask` (see how ChainLab wires
-  `engine.personMaskSource`; SynEngine passes it as `ctx.personMask`).
-- The Phase 1 bridge block at the bottom of the HTML documents the
-  save/restore surface — it is a good param checklist starting point,
-  but the port needs the FULL table read from the HTML (renderer uses a
-  `P` object like analog's; find `const P=` and the shader sources).
+- 28 range sliders (`s-fStop`, `s-bokeh`, `s-bokehMM`, `s-ratio`,
+  `s-squeeze`, `s-barrel`, `s-ovalFineTune`, `s-riccardoBlur`, flare
+  group `s-flare*`, grade group `s-exposure/contrast/lift/rolloff/sat/
+  temp/lutMix`, texture group `s-grain/halation/vignette/ca`, camera sims
+  `cam-*-sl`) + toggles (e.g. `tog-flare`) — see 04-SPEC-EFFECTS.
+- **This build HAS an AudioContext** (unlike bokeh): find its reactive
+  wiring and map it to ParamBus `defaultRoute`s like analog did.
+- MediaPipe selfie_segmentation from jsdelivr (blocked in sandbox — same
+  PersonMask consumption + mask-injection parity approach as Phase 5).
+- The Phase 1 bridge block at the bottom of the HTML lists the
+  save/restore surface — a good param checklist starting point, but the
+  port needs the FULL table read from the HTML.
 
-## The verification machinery (now in `tools/verify/`)
+## The verification machinery (`tools/verify/`)
 
-The previous session's headless suites are committed under
-`tools/verify/` (they used to live only in the ephemeral scratchpad).
-Before running them, substitute the scratchpad placeholder:
+Substitute the scratchpad placeholder before running (or copy them):
 
 ```bash
-SCRATCH=<your scratchpad dir>
-sed -i "s|__SCRATCH__|$SCRATCH|g" tools/verify/*.js   # or copy them there first
+S=<your scratchpad dir>
+cp tools/verify/*.js $S/verify/ && sed -i "s|__SCRATCH__|$S|g" $S/verify/*.js
 ```
 
-- `verify-phase1.js` (21 checks) / `verify-phase2.js` (26) /
-  `verify-phase3.js` (14): regression suites — run all three at the end
-  of every phase (06-VERIFICATION §5).
-- `verify-phase4.js`: ANALOG motion/behavior suite (long-exposure
-  comparisons, stochastic variance, reactivity, chain fps).
-- `verify-phase4-static.js`: the parity workhorse — static
-  pixel-comparison template. Adapt it for each new port.
-- `verify-phase4-step2.js`: frame-based temporal parity (feedback decay
-  per rendered frame) — template for any temporal feature.
-- `make-beat-wav.js` (Node; writes `beat120.wav`, 120 BPM kick pattern)
-  and `gen1080.js` (Playwright; records `parity1080.webm`, a structured
-  1920×1080 3 s clip via canvas+MediaRecorder). Regenerate both into the
-  new scratchpad first; `test.webm` (Phase 0/3 suites) is generated
-  in-page by the suites themselves.
+- `verify-phase1.js` (21) / `verify-phase2.js` (26) / `verify-phase3.js`
+  (14): regression suites — run all three at the end of every phase.
+  phase1 needs `cdn/three/build/three.min.js`; phase3 needs `test.webm`
+  in the scratchpad (any short webm; `gen1080.js` output works too).
+- `verify-phase4-static.js` / `verify-phase4.js` / `verify-phase4-step2.js`:
+  ANALOG parity suites.
+- `verify-phase5-static.js`: BOKEH static parity — the mask-injection
+  template for any segmentation-dependent port (Phases 6–8): the SAME
+  drawn mask goes to the standalone via global `onSegResults({...})` and
+  to the engine via the PersonMask tap (`__SYN.mask`: set state/ready,
+  draw into maskCanvas, bump `version` once per engine frame). 18 configs,
+  all corr=1.000/mad=0.000 for bokeh.
+- `verify-phase5-behavior.js`: temporal/stochastic/reactive checks
+  (real-MediaPipe path, bgfx subject-protection, frame-based datamosh
+  cadence engine-side, breathing, manual mod routing).
+- `verify-phase5-chain.js`: chain sanity in a fresh session (bokeh→analog
+  + three bypassed rack nodes).
+- Asset generators: `gen1080.js` (1080p parity clip — REQUIRED at
+  1920×1080 or fixed-frequency looks alias), `make-beat-wav.js` (120 BPM).
+- Mirror CDN packages into `<scratch>/cdn/` first:
+  `npm pack three@0.128.0 @mediapipe/selfie_segmentation` → extract to
+  `cdn/three/…` and `cdn/@mediapipe/selfie_segmentation/…`.
 
 Run pattern:
 ```bash
 npm run dev &   # tsx server.ts → :3000
-NODE_PATH=/opt/node22/lib/node_modules node tools/verify/<suite>.js
+NODE_PATH=/opt/node22/lib/node_modules node $S/verify/<suite>.js
 ```
 
-## Parity method that works (use for Phases 5–8)
+## Parity method that works (Phases 6–8)
 
-1. **Static pixel parity**: dev-only tap `window.__SYN`
-   ({engine, audio, bus, mask}, set in ChainLab mount) → set
-   `engine.adaptiveRes=false; engine.setResScale(1)`; pause BOTH videos
-   on the same frame (`engine.source` for the lab; the standalone's
-   top-level `video` global). **Use a 1920×1080 source clip** so the
-   engine canvas matches the standalone's fixed 1080p CONFIG — with
-   mismatched canvas sizes, fixed-frequency patterns (scanlines,
-   phosphor triads) alias differently and corrupt the comparison.
-   Expect corr≈1.000 / mad≈0.000 for deterministic passes.
-2. **Temporal features**: compare per RENDERED FRAME, never wall-time —
-   in the sandbox the engine runs ~59 fps while the WebGL1 standalone
-   does ~4.5 fps (SwiftShader). Frame counters: standalone
-   `STATE.frameCount` (top-level global), engine `__SYN.engine.frame`.
-   Discard the first post-seek sample (it captures the source frame
-   switch, not the effect's dynamics).
-3. **Stochastic passes** (noise/grain/jitter): judge behavior (temporal
-   variance vs a neutral baseline), not pixels.
-4. Drive the standalone's controls via its own globals
-   (`syncKnob`/`setKnob`, sliders + `input` events, LED `.click()`);
-   drive the engine via the rack testids (`param-<id>-<key>`,
-   `toggle-<id>`) or `__SYN.bus.setBase`.
+1. **Static pixel parity**: `window.__SYN` tap ({engine, audio, bus,
+   mask}) → `engine.adaptiveRes=false; engine.setResScale(1)`; pause BOTH
+   videos on the same frame of the 1920×1080 clip; inject the SAME person
+   mask both sides (see phase5-static) stepping the temporal smoothing
+   equally; expect corr≈1.000/mad≈0.000 for deterministic passes.
+   Clock-seeded jitter (gold noise etc.) differs per side — invisible at
+   the 128×72 verification downscale but exclude configs whose LOOK
+   depends on wall-clock phase (e.g. breathing oscillation).
+2. **Temporal features**: compare per RENDERED FRAME (standalone
+   `STATE.frameCount`, engine `__SYN.engine.frame`) — never wall-time; a
+   frame-based clock at standalone SwiftShader fps (<1fps under heavy
+   shaders) can make cadence effects unobservable headless: prove the
+   mechanism engine-side, log it, flag a GPU spot check.
+3. **Stochastic passes**: judge behavior (variance vs baseline), not
+   pixels. For playing-video cross-side comparisons, grab BOTH sides at
+   the same instants (`Promise.all`) — sequential sweeps average
+   different windows of the looping clip.
+4. Drive the standalone via its own globals (`updateParam` writes any P
+   key; `syncKnob`; sliders + `input` events; **bgfx/style switches via
+   their real seg-button `.click()`** — the click handlers run
+   `clearBgFx()`, matching the engine node's style-change clear); drive
+   the engine via rack testids (`param-bokeh-<key>` etc.) or `__SYN.bus`.
 
-## Sandbox environment facts (will bite you if forgotten)
+## Sandbox facts (will bite you if forgotten)
 
-- **Network policy**: `cdn.jsdelivr.net` and `cdnjs.cloudflare.com` are
-  BLOCKED (403 CONNECT). `registry.npmjs.org` is open. Mirror CDN
-  packages via `npm pack three@0.128.0 @mediapipe/selfie_segmentation
-  @mediapipe/face_mesh@0.4.1633559619 @mediapipe/pose@0.5.1675469404
-  @mediapipe/tasks-vision@0.10.3`, extract into `<scratch>/cdn/<pkg>/…`,
-  and serve with Playwright `context.route()` (see any suite's `routeCdn`
-  — jsdelivr `/npm/<pkg>@<ver>/<file>` maps 1:1 to package contents).
-  `fonts.googleapis.com` works via the tool proxy but NOT from the
-  headless browser (launch Chromium WITHOUT a proxy — localhost must
-  stay direct; browser-proxying localhost hits the relay's
-  CONNECT-only error page).
-- **Playwright**: global install — `NODE_PATH=/opt/node22/lib/node_modules`.
-  Launch args that matter: `--autoplay-policy=no-user-gesture-required`
-  (audio), `--use-fake-ui-for-media-stream --use-fake-device-for-media-stream`
-  (mic/webcam), `--enable-unsafe-swiftshader` (quiet software-GL).
-  `locator.boundingBox()` is flaky on SVG `<g>` — use
-  `getBoundingClientRect` via `evaluate`. `page.screenshot` can starve
-  under heavy GL — read canvases with `toDataURL` instead.
-  No usable ffmpeg (`lavfi` missing in Playwright's build) — generate
-  WAVs in Node (see `make-beat-wav.js`) and videos with
-  canvas+MediaRecorder. MediaRecorder webms have no cues: `seeked` may
-  never fire — always race seeks against a ~2.5 s timeout.
-- **React StrictMode double-mount** (dev): ChainLab's cleanup runs on
-  ref-persistent service instances — any `dispose()` must be reversible
-  (PersonMask uses a load token for exactly this; same care for future
-  services).
-- **Adaptive resolution**: engine steps 1 → .75 → .5 under low fps; every
-  step resizes node targets and legitimately clears feedback-style
-  buffers. Pin it during parity runs (see above).
-- The `≥30 fps @720p chain` acceptance is a GPU-machine criterion — the
-  sandbox is SwiftShader-only (19–25 fps @50%). Measure, report
-  honestly, flag for the operator; don't block the phase on it.
-- `npm run lint` = `tsc --noEmit` (src only; `tools/verify/*.js` is not
-  type-checked). Keep it clean before every commit.
+- **Never write ANY file into the repo while a suite is driving the
+  shell page** — the dev server full-reloads the page and kills the run.
+  Stage STATE.md text in the scratchpad; write repo files only between
+  runs.
+- `page.screenshot` starves under heavy GL — grab canvases with
+  `toDataURL` (see phase5-static's `shot`).
+- ChainLab racks ALL five registry nodes (unwired ⇒ `enabled=false`):
+  wait on chain CONTENT (ids + enabled), never on `chain.length`.
+- When two heavy pages must coexist (standalone + engine), boot the
+  second one with the first QUIET: `__SYN.engine.stop()` /
+  `engine.source.pause()` around the navigation, restart after. Close the
+  standalone page as soon as it's no longer needed.
+- Network: `cdn.jsdelivr.net`/`cdnjs.cloudflare.com` blocked (mirror from
+  npm + `context.route()`); launch args
+  `--autoplay-policy=no-user-gesture-required --enable-unsafe-swiftshader`
+  (+ fake media-stream flags for mic/webcam). No usable ffmpeg;
+  MediaRecorder webms have no cues — race seeks against ~2.5s timeouts.
+- Playwright: global install → `NODE_PATH=/opt/node22/lib/node_modules`.
+- **React StrictMode double-mount** (dev): services must dispose
+  reversibly (PersonMask uses a load token + `version` counter).
+- Adaptive resolution steps clear feedback-style buffers — pin it during
+  parity (`adaptiveRes=false`, `setResScale(1)`).
+- The `≥30fps @720p chain` acceptance is a GPU-machine criterion — the
+  sandbox is SwiftShader-only (bokeh→analog measured 1fps @ 50% res
+  there). Measure, report honestly, flag for the operator.
+- `npm run lint` = `tsc --noEmit` (src only). Keep it clean before every
+  commit.
 
 ## Protocol reminders
 

@@ -203,9 +203,10 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
     step(`static ${cfg.name}`, c > 0.93 && d < 0.06, `corr=${c.toFixed(3)} mad=${d.toFixed(3)}`);
   }
 
+  // page.screenshot starves under heavy GL (HANDOFF) — read the canvas directly
   const shot = async (page, sel, file) => {
-    const box = await page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }, sel);
-    await page.screenshot({ path: path.join(SHOTS, file), clip: box });
+    const dataUrl = await page.evaluate((s) => document.querySelector(s).toDataURL('image/png'), sel);
+    fs.writeFileSync(path.join(SHOTS, file), Buffer.from(dataUrl.split(',')[1], 'base64'));
   };
   await shot(sa, '#glcanvas', 'p5s-hero-standalone.png');
   await shot(en, '[data-testid="chain-canvas"]', 'p5s-hero-engine.png');
