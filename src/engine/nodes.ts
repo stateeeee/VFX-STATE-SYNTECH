@@ -2,6 +2,7 @@ import { EngineNode, NodeRenderContext } from './SynEngine';
 import { ParamSchema } from '../bridge/types';
 import { AnalogNode } from './nodes/analog';
 import { BokehNode } from './nodes/bokeh';
+import { AnamorphicLabNode } from './nodes/anamorphic_lab';
 
 /* Pre-port stand-ins: rendering is passthrough until Phases 4–8
  * replace each factory with the real 1:1 EngineNode. Since Phase 3 they DO
@@ -60,5 +61,5 @@ export const NODE_FACTORY: Record<string, () => EngineNode> = {
 
   blob_reveal: () => new DummyNode('blob_reveal', 'Blob Reveal', placeholder(true)),
   bokeh: () => new BokehNode(), // Phase 5: real 1:1 port
-  anamorphic_lab: () => new DummyNode('anamorphic_lab', 'Anamorphic Lab', placeholder(true))
+  anamorphic_lab: () => new AnamorphicLabNode() // Phase 6: real 1:1 port
 };
