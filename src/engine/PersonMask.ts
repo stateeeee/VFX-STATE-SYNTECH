@@ -42,6 +42,8 @@ export class PersonMask {
   state: PersonMaskState = 'off';
   ready = false;
   maskCanvas: HTMLCanvasElement | null = null;
+  /** bumps once per fresh segmentation result — consumers gate per-arrival work on it */
+  version = 0;
 
   private seg: SelfieSegmentationLike | null = null;
   private maskCtx: CanvasRenderingContext2D | null = null;
@@ -80,8 +82,13 @@ export class PersonMask {
           this.maskCanvas.width = w;
           this.maskCanvas.height = h;
         }
+        // the mask's background is transparent — without a clear, person
+        // pixels from earlier frames survive source-over and the mask can
+        // only ever grow
+        this.maskCtx?.clearRect(0, 0, w, h);
         this.maskCtx?.drawImage(mask, 0, 0, w, h);
         this.ready = true;
+        this.version++;
       });
       await seg.initialize();
       if (token !== this.loadToken || this.state !== 'loading') { void seg.close(); return; }

@@ -5,7 +5,8 @@
 
 ## Current phase
 
-**Phase 5 — 1:1 port: bokeh** (not started)
+**Phase 5 — 1:1 port: bokeh** (in progress: node implemented + lint clean;
+parity suites running — NOT yet verified, do not treat as done)
 
 ## Next step
 
