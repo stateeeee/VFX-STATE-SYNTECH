@@ -9,7 +9,10 @@
 
 ## Next step
 
-Run Phase 5 of `05-ROADMAP.md` (port template) for **bokeh**: read
+**Read `docs/workflow/HANDOFF.md` first** (session continuation brief:
+exact position, sandbox quirks, verification machinery in
+`tools/verify/`). Then run Phase 5 of `05-ROADMAP.md` (port template)
+for **bokeh**: read
 `public/effects/bokeh/index.html` end-to-end; extract the full param table
 (sliders, knobs via `setKnob`, `#style-sel` seg group, toggles, shape pad)
 and the render pipeline; implement `src/engine/nodes/bokeh.ts`; swap the
