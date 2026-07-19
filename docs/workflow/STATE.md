@@ -5,19 +5,18 @@
 
 ## Current phase
 
-**Phase 6 — 1:1 port: anamorphic_lab** (IN PROGRESS — node implemented,
-static parity 26/26 GREEN, behavior A–D+F green; E/chain/regression and
-the close-out log entry remain. NOT done yet.)
+**Phase 7 — 1:1 port: blob_reveal** (NOT STARTED)
 
 ## Next step
 
-**Read `docs/workflow/HANDOFF.md` first — it contains the exact
-mid-phase position, the list of already-proven results (do NOT redo
-them), the three remaining verification items (behavior E option a/b,
-chain script, regression), the scratchpad rebuild steps, and a ready
-draft of the Phase 6 STATE.md log entry.** Continue from its
-"What remains" list, then close the phase (checkbox, log entry, next
-step → Phase 7 blob_reveal) in the same commit.
+**Read `docs/workflow/HANDOFF.md` first** — it carries the Phase 7 brief
+with the blob_reveal facts already gathered (pure-Canvas2D pipeline,
+viewport-fit canvas sizing, real audio reactivity → defaultRoutes) and
+the scratchpad rebuild steps. Then execute Phase 7 per the port template
+in 05-ROADMAP.md (Phases 4–8 section): read the effect HTML end-to-end,
+implement `src/engine/nodes/blob_reveal.ts`, factory swap, parity run
+per 06-VERIFICATION §4, regression, STATE.md + HANDOFF update, commit,
+push.
 
 ## Phase board
 
@@ -27,7 +26,7 @@ step → Phase 7 blob_reveal) in the same commit.
 - [x] Phase 3 — Engine services (AudioEngine, VideoAnalyzer, ParamBus, PersonMask)
 - [x] Phase 4 — 1:1 port: analog
 - [x] Phase 5 — 1:1 port: bokeh
-- [ ] Phase 6 — 1:1 port: anamorphic_lab
+- [x] Phase 6 — 1:1 port: anamorphic_lab
 - [ ] Phase 7 — 1:1 port: blob_reveal
 - [ ] Phase 8 — 1:1 port: blob_tracker
 - [ ] Phase 9 — Chain export (Master MP4)
@@ -62,6 +61,88 @@ step → Phase 7 blob_reveal) in the same commit.
 | 7 | Port order locked: analog → bokeh → anamorphic_lab → blob_reveal → blob_tracker | 2026-07-17 |
 
 ## Log
+
+### 2026-07-19 — Phase 6 complete (1:1 port: ANAMORPHIC LAB)
+
+- **`src/engine/nodes/anamorphic_lab.ts`** implements the standalone's exact
+  pipeline in the SynEngine: subject-aware bokeh pre-pass at the standalone's
+  FIXED 1280×720 working res, active only while `bokehMM > 0` (mask intake
+  per segmentation arrival with the 320×180 alpha→R swizzle, temporal EMA
+  α=0.35 with 1.6× rising asymmetry, 5×5 feather → 48-tap pillbox disc blur
+  with oval ratio from squeeze+trim, bright-rim edge ring, background
+  magnification, hard subject-gate → feathered composite 0.45) → single
+  main pass: chromatic aberration → exposure → anisotropic bokeh bloom +
+  halation → film grade (lift/contrast/filmic shoulder/split-tone temp/sat)
+  → LUT (identity in this build) → Instax/VHS grain → elliptical vignette →
+  auto-detected anamorphic flare (+ ghosts) → compare split, with squeeze/
+  barrel/letterbox/breathing shaping the sampled UVs. GLSL → ES 3.00 with
+  the math untouched (`active` renamed `act`: reserved word in ES 3.00).
+  The f-stop→CoC easing (~120ms τ, dt-clamped) and the CPU auto-flare
+  hotspot detector (80×45 source readback every 160ms, same smoothing/
+  jitter constants) are ported verbatim. ghostGlitch reproduces the
+  deliberate mask double-flip. Factory swapped in `nodes.ts`.
+- **Param table — 100% coverage** (29 node params): the 20 `s-*` sliders
+  (same ranges/steps), fStop/ovalFineTune/bokehMM (the Ghost mm slider =
+  the Bokeh % slider = one engine, exposed once), LED toggles → letterbox/
+  breathing/flare/flareMaster/compare/ghostGlitch booleans, `segEnabled`
+  for the shared PersonMask. **Defaults are the standalone's BOOT state**
+  (P literals overlaid with the `isco` preset it applies on load).
+  Consolidations, justified: mm chips + riccardo %/toggle are controllers
+  of bokehMM; auto-temp button is a one-shot controller of temp; presets →
+  ChainLab presets; `desqueeze` resizes the standalone's CANVAS (display
+  geometry — a chain node cannot change the chain resolution; the squeeze
+  LOOK is uSqueeze, fully ported); LUT file upload omitted (sampleLUT is
+  an identity pass-through in this build — lutMix is still a param);
+  source/webcam/Nikon-UVC camera panel + cam-* hardware sliders
+  (ISO/exposure/WB/zoom via applyConstraints) are SOURCE concerns, not
+  effect params; REC/fullscreen/motion-VU are shell/display concerns.
+- **Reactivity finding (corrects the Phase 5 handoff note)**: the build's
+  only AudioContext is REC-export plumbing — there is NO audio-reactive
+  parameter modulation in the original; its reactivity is video-driven
+  (auto-flare hotspot tracking, ported). Therefore NO defaultRoutes are
+  seeded; continuous look params are marked `reactive` for the mod matrix.
+- **Parity run (06-VERIFICATION §4)**, suites committed as
+  `tools/verify/verify-phase6-{static,behavior,chain}.js`:
+  1. *Static pixel parity* — standalone canvas caps at 1280×720 → engine
+     pinned at resScale 2/3; same injected mask both sides; settle-detected
+     grabs — **22/22 configs corr ≥0.999, mad ≤0.004** (26 suite steps,
+     0 failed): isco defaults, raw-neutral, temp ±1, lift+contrast,
+     sat 0/1.8, rolloff, exposure ±1, halation, bloom, CA, barrel,
+     vignette, squeeze 2.2, ratio 2.8, compare split, bokehMM+fStop,
+     oval bokeh, ghost-glitch, hero combo. (Proven in the previous
+     session; suite unchanged since.)
+  2. *Behavior suite* — **9/9 PASS (run 6, 0 failed)**: A real-MediaPipe
+     READY; B playing long-exposure corr=0.971 (0.967–0.983 across runs
+     4–6); C auto-flare fires on both sides (on-vs-off delta
+     S/E=0.0836/0.0797) and flickers (S/E .0069/.0068); D breathing
+     drift only when enabled (off 0/0, on S/E .0020/.0015); E f-stop
+     easing verified with **option (b)** per HANDOFF: rack f/22→f/2.8
+     (radius 27px — sandbox-viable; same dt-clamped easing math
+     exercised; wide-aperture settled look already pixel-proven by the
+     static configs f/2 and f/1.4) — total S/E=.014/.010,
+     remaining-early S/E=.008/.003 (57%/30% mid-flight: gradual on both
+     sides), settled corr=0.981. E needed two more calibration fixes
+     (runs 4–5 were 8/9 with only E red and the port math fine): each
+     side's mid-flight state must be observed on ITS OWN frame clock,
+     and the engine's param change + frame+2 pixel grab must be FUSED
+     into one in-page evaluate — Playwright round-trips queue ~16
+     rendered frames behind the SwiftShader pipeline, reading a settled
+     frame as "snap". F manual bass route onto vignette modulates the
+     readout (spread=0.35; no default routes BY DESIGN — see reactivity
+     finding).
+  3. *Chain sanity* — **3/3 PASS**: fresh session, the three real ports
+     anamorphic_lab→bokeh→analog wired (blob_tracker/blob_reveal racked
+     but bypassed), PersonMask READY on the real MediaPipe path, mask
+     v13 flowing, no GL errors, non-black output (meanLum 22.6), no
+     page errors. **fps 1 @ res 0.5 under sandbox SwiftShader** — the
+     ≥30fps @720p acceptance stays a GPU-machine criterion (as in
+     Phases 4–5): flagged for the operator, not assessable here.
+  4. Regression: phase 1 **21/21**, phase 2 **26/26**, phase 3 **14/14**,
+     phase 5 static **22/22** — all green, 0 failed; lint clean.
+- Notes for Phases 7–8: ES 3.00 reserved words; frame-aware waits for
+  anything eased per rendered frame; match the standalone's real canvas
+  size before comparing (blob_reveal fits the VIEWPORT — read
+  `dc.width/height` after `fit()`).
 
 ### 2026-07-18 — Phase 5 complete (1:1 port: BOKEH)
 
