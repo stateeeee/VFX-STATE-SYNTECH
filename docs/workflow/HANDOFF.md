@@ -1,109 +1,131 @@
-# HANDOFF — session continuation brief (updated 2026-07-19, Phase 6 CLOSED)
+# HANDOFF — session continuation brief (updated 2026-07-19, Phase 7 CLOSED)
 
 > For the next Claude session. Read this AFTER `CLAUDE.md` and `STATE.md`.
-> Phases 0–6 are DONE and verified (STATE.md log has all numbers).
-> The next session executes **Phase 7 — 1:1 port: blob_reveal** per the
-> port template in 05-ROADMAP.md (Phases 4–8 section).
+> Phases 0–7 are DONE and verified (STATE.md log has all numbers).
+> The next session executes **Phase 8 — 1:1 port: blob_tracker**, the LAST
+> and HARDEST port, per the port template in 05-ROADMAP.md (Phases 4–8).
 
 ## Where we are
 
 - Branch: `claude/vfx-syntech-workflow-vawwx9`, restarted from `origin/main`
-  (= merge `b9c0001`) after the Phase-5/6-WIP merge. Work + push here.
-- Real ports live in `src/engine/nodes/`: **analog**, **bokeh**,
-  **anamorphic_lab** — all parity-verified (static ≈ pixel-identical).
-  DummyNodes remain for blob_reveal and blob_tracker.
-- Verify suites for phases 1–6 live in `tools/verify/` (`__SCRATCH__`
-  placeholder pattern). Phase 6 close-out numbers are in the STATE.md log.
+  after the Phase-5/6 merge. Work + push here (unless it too was merged —
+  then restart the same branch name from the new `origin/main`).
+- Real ports live in `src/engine/nodes/`: **analog, bokeh, anamorphic_lab,
+  blob_reveal** — all parity-verified. Only **blob_tracker** remains a
+  DummyNode.
+- Verify suites for phases 1–7 live in `tools/verify/` (`__SCRATCH__`
+  placeholder pattern). Phase 7 numbers are in the STATE.md log.
+- Phase 7 established the **offscreen-2D→GL-texture** node pattern
+  (`blob_reveal.ts`): run a Canvas-2D pipeline on the node's own canvases,
+  upload the finished `dc` to the output texture with FLIP_Y. Reuse it.
 
-## Phase 7 — blob_reveal: facts already gathered (save a read)
+## Phase 8 — blob_tracker: facts already gathered
 
-- `public/effects/blob_reveal/index.html` (~1763 lines) is **pure Canvas 2D**
-  — seven 2d contexts (`dc`, `cBlob`, `cMask`, `cSub`, `cErode`, `cProc`
-  willReadFrequently, waveform), NO WebGL. 04-SPEC port note (binding):
-  the 2D pipeline may render offscreen and upload to the node's GL texture
-  per frame — 1:1 means identical output, not identical plumbing. The mask
-  comes from the shared PersonMask (its own MediaPipe load must be replaced
-  the way bokeh/anamorphic did it, via `segEnabled`).
-- Canvas size is **viewport-fit** (`fit()` at line ~983: aspect-fits
-  `canvas-area` minus 24px padding to the video aspect), NOT fixed like
-  bokeh (1920×1080) or capped like anamorphic (1280). For static parity,
-  read the standalone's actual `dc.width/height` after fit and pin the
-  engine canvas to exactly that (drive the viewport so it lands on a
-  clean size).
-- **It HAS real audio reactivity** (unlike anamorphic): its own
-  AudioContext/analyser (fft 2048, smoothing 0.82) fed by the VIDEO's
-  audio track or mic; beat detection drives blob expansion
-  (`sl-audioexp` = audio-driven expansion, `sl-bsens` = beat sensitivity).
-  Per the port template this maps to **defaultRoutes on the real
-  AudioEngine** (the Phase-4 analog substitution pattern: real analysis
-  replaces the built-in analyser; the sliders keep their exact math).
-- Controls (04-SPEC): `sl-thr, sl-lum, sl-segn, sl-feather, sl-erode,
-  sl-dil, sl-minarea, sl-maxblobs, sl-bgap, sl-bsens, sl-opacity,
-  sl-audioexp` + `btn-seg`/`btn-model` toggles (bridge v1 already
-  serializes these — see Phase 1 log).
-- The erode trick is GPU-compositing ("shadow" offset draws + threshold),
-  documented in a comment block right after `fit()`. `cProc` uses
-  `willReadFrequently` — there IS CPU pixel work (blob detection);
-  expect a CPU stage like bokeh's pixel sort (fixed-res it if the
-  original does).
+- `public/effects/blob_tracker/index.html` is **~6876 lines** — by far the
+  biggest. It is a **three.js r128 + many-Canvas2D hybrid**:
+  - three.js `WebGLRenderer` on a canvas `glC` (line ~2424), with FLOAT/
+    HalfFloat WebGLRenderTargets ping-ponged for a ripple/fluid simulation
+    (SIM×SIM), OrthographicCamera, PlaneGeometry(2,2) full-screen passes.
+    Also a `panelsScene/panelsRenderer` (three.js) for panel visuals.
+  - Many 2D contexts, several `willReadFrequently`: `_vrFCtx` (video-react),
+    `vrCtx`, `_ctMaskCtx` (contour mask), `fxOvCtx` (fx overlay),
+    `panelsReadCtx`, `dCtx` (main `dc`), `pCtx` (`procCv` tracking),
+    `pipCtx`, `motionCtx`, `rSrcCtx`, `capCtx`.
+  - CDN: three.js from **cdnjs.cloudflare.com/ajax/libs/three.js/r128** (the
+    sandbox blocks cdnjs — the `three@0.128.0` npm mirror already used by the
+    other suites serves it; route-intercept cdnjs → the mirror, OR the engine
+    node imports three as an npm dep per 04-SPEC).
+- **04-SPEC port note (binding)**: "a 1:1 port may keep three.js rendering to
+  an offscreen canvas whose output is uploaded as the node's texture, rather
+  than translating every three.js pass to raw GL. 1:1 means identical output,
+  not identical plumbing. (three.js becomes a real npm dependency for the
+  engine — allowed by the roadmap in THIS phase.)" So: `npm i three@0.128.0`
+  (Hard Rule 6 lets Phase 8 add it), build the three.js scene + the 2D
+  overlays inside the node on offscreen canvases, composite to `dc`, upload
+  FLIP_Y like blob_reveal.
+- **Heaviest reactivity of all** (04-SPEC): dedicated audio-react gains
+  (`ar-bass-gain`, `ar-mid-gain`, `ar-hi-gain`, `ar-onset-sens`) AND
+  video-react (`vr-mot-sens`, `vr-cut-thr`, `vr-smooth`, `vr-srate`). Map the
+  audio gains to ParamBus defaultRoutes (bass/mid→loud/hi→treble, the Phase-4
+  pattern) and the video-react to the VideoAnalyzer motion/bright signals.
+  Confirm against the HTML which are real vs built-in-analyser tuning
+  (blob_reveal's beat-detector tuning was consolidated; do the same audit).
+- Controls (04-SPEC, verify ranges in the markup): tracking (`sThr`, `sMin`,
+  `sScale`, `ct-expand-sl`, `ct-smooth-sl`), optical flow (`flow-scale-sl`,
+  `flow-trail-sl`), dynamics (`sDisp`, `sTurb`, `sWave`, `sDamp`, `sDmx`,
+  `sFixedMax`), look (`sBri`, `sCon`, `sBgOp`, `sFxOp`, `sConnGlow`,
+  `sConnOp`, `sConnSat`, `sLW`, `sGlx`, `sCamZ`), audio gains, video-react,
+  camera sims (`cam-exp-sl`, `cam-iso-sl`, `cam-wb-sl`, `cam-zoom-sl`).
+  Camera sims are SOURCE concerns (consolidate, like anamorphic/blob_reveal).
+- It has custom text + colors (the bridge already serializes them, Phase 1).
+- Canvas sizing: check the resize code (like blob_reveal's viewport-fit
+  `fit()`); match the standalone's REAL canvas size before static compare.
 
-## Phase 7 session plan (per protocol)
+## Phase 8 session plan (per protocol)
 
-1. Read the HTML end-to-end; extract the FULL param table (ranges/steps/
-   defaults from the markup) and the exact render pipeline order.
-2. Implement `src/engine/nodes/blob_reveal.ts`; factory swap in
-   `nodes.ts`. Offscreen-2D + texture upload is sanctioned (04-SPEC).
-3. Audio reactivity via defaultRoutes; segmentation via shared PersonMask
-   (`segEnabled` + `personMaskVersion` like bokeh).
-4. Parity per 06-VERIFICATION §4: static (match the standalone's REAL
-   fitted canvas size), behavior (beat expansion, seg on/off, blob
-   dynamics), chain (4 real ports), regression 1/2/3/5/6-static, lint.
-5. STATE.md flip + log + next step (Phase 8 blob_tracker), commit, push,
-   rewrite this HANDOFF for Phase 8.
+1. Read the HTML end-to-end (it's long — budget for it). Extract the FULL
+   param table + the render pipeline (three.js passes + 2D overlays order).
+2. `npm i three@0.128.0`; implement `src/engine/nodes/blob_tracker.ts`
+   (three.js offscreen + 2D overlays → `dc` → FLIP_Y upload). Factory swap.
+3. Audio gains → defaultRoutes; video-react → VideoAnalyzer; segmentation if
+   any via shared PersonMask.
+4. Parity per 06-VERIFICATION §4: static (match the standalone's real canvas
+   size; the tracking BFS + optical flow are deterministic given the same
+   frame — expect high corr, but the ripple sim is temporal/feedback so
+   compare it behaviorally like bokeh's datamosh), behavior, chain (all 5
+   real ports), regression 1/2/3/5-static/6-static/7-static, lint.
+5. STATE.md flip → Phase 9 (Chain export / Master MP4); rewrite this HANDOFF
+   for Phase 9; commit; push.
 
-## Parity method (unchanged)
+## Parity method (unchanged — reuse the Phase 7 suites as templates)
 
-- Static: `__SYN` tap; pin `adaptiveRes=false`; match the STANDALONE's
-  actual canvas size; pause both videos on the same 1080p-clip frame;
-  inject the SAME mask both sides (standalone global seg callback,
-  engine PersonMask tap); settle-detect grabs; corr>0.93/mad<0.06 gates
-  (expect ≈1.000 where the pipeline is deterministic — blob_reveal has
-  CPU blob detection: check determinism before promising pixel-identity).
-- Temporal: count RENDERED frames per side (engine `__SYN.engine.frame`;
-  standalone: rAF-wrapper counter trick — works when render() re-invokes
-  rAF via the global).
-- Drive the standalone through its own globals (function declarations are
-  on window; `const`/`let` objects only through those functions).
-- GLSL ES 3.00 reserved words (`active` bit Phase 6) — scan before first
-  compile.
+- Static: `__SYN` tap; pin `adaptiveRes=false`; match the STANDALONE's real
+  canvas size (blob_reveal forced dc/c-* to 1280×720 via DOM ids + engine
+  resScale 2/3 — do the same); pause both on the same 1080p-clip frame;
+  inject the SAME mask if seg is used; settle-detect grabs; corr>0.93/
+  mad<0.06 (blob_reveal hit pixel-identical 1.000 on the deterministic path).
+- The standalone drives via globals (function declarations on window;
+  const/let objects only through those functions). For blob_reveal the seg
+  toggle/sliders were reached by DOM id + dispatch 'input'; the mask was
+  injected by overriding `window.createImageBitmap` while real MediaPipe
+  fired onResults (the onResults var was unreachable directly). blob_tracker
+  may expose different globals — check first.
+- Temporal (ripple sim / optical-flow trails): count RENDERED frames per side
+  (engine `__SYN.engine.frame`; standalone: rAF-wrapper counter trick).
+- ES 3.00 reserved words if you hand-write any GLSL (three.js handles its own).
 
-## Sandbox facts (will bite you if forgotten)
+## Sandbox facts (unchanged — will bite you if forgotten)
 
-- NEVER write any repo file while a suite drives the shell page (Vite
-  full-reload kills the run). Stage texts in the scratchpad.
-- `page.screenshot` starves under GL load — use canvas `toDataURL`.
-- ChainLab racks ALL five nodes (unwired ⇒ enabled=false): wait on chain
-  CONTENT, never length. Two heavy pages: `__SYN.engine.stop()` around
-  navigation; close the standalone page as soon as it's done.
-- Network: jsdelivr/cdnjs blocked → npm mirror + `context.route()`.
-  Scratchpad rebuild: copy `tools/verify/*.js` + `sed -i
+- NEVER write any repo file while a suite drives the shell page (Vite full
+  reload kills the run). Stage texts in the scratchpad.
+- Scratchpad rebuild: copy `tools/verify/*.js` + `sed -i
   "s|__SCRATCH__|$S|g"`; `npm pack three@0.128.0
   @mediapipe/selfie_segmentation` → extract to `$S/cdn/three/…` and
   `$S/cdn/@mediapipe/selfie_segmentation/…`; `node gen1080.js`;
   `node make-beat-wav.js`; `cp parity1080.webm $S/test.webm`.
-  Launch args: `--autoplay-policy=no-user-gesture-required
-  --enable-unsafe-swiftshader` (+ fake media flags when mic/webcam).
-  Playwright global: `NODE_PATH=/opt/node22/lib/node_modules`.
-  MediaRecorder webms have no cues → race seeks with ~2.5s timeout.
-- React StrictMode double-mount: services must dispose reversibly.
+- `page.screenshot` starves under GL load — use canvas `toDataURL`.
+- Two heavy pages starve each other: close the standalone page as soon as its
+  side is done (Phase 7's audio block only passed AFTER closing it); wait on
+  engine state via `window.__SYN` (engine/audio/mask), not 5 s DOM timeouts.
+- ChainLab racks ALL five nodes (unwired ⇒ enabled=false): wait on chain
+  CONTENT, never length.
+- Network: jsdelivr/cdnjs blocked → npm mirror + `context.route()`. Launch
+  args: `--autoplay-policy=no-user-gesture-required
+  --enable-unsafe-swiftshader`. Playwright global:
+  `NODE_PATH=/opt/node22/lib/node_modules`. MediaRecorder webms have no cues
+  → race seeks with ~2.5 s timeout.
+- The standalone eagerly loads its CDN libs at boot; when a suite blocks the
+  CDN (e.g. seg-off runs), filter the resulting `ReferenceError` out of the
+  page-error gate (Phase 7 static did this for `SelfieSegmentation`; Phase 8
+  will need the same for `THREE`).
 - fps acceptance (≥30 @720p) is a GPU-machine criterion — sandbox is
-  SwiftShader. Report honestly.
+  SwiftShader (measured ~1fps). Report honestly.
 - `npm run lint` = `tsc --noEmit`. Clean before every commit.
 
 ## Protocol reminders
 
-One phase per session; specs first; short plan; verify per
-06-VERIFICATION; STATE.md (checkboxes, log with evidence, next step) in
-the same commit as the work; push with retries. Operator speaks Italian;
-repo docs English. Never touch the five effect HTMLs outside the bridge
-blocks. ModuleIds and `--syn-*` tokens are load-bearing.
+One phase per session; specs first; short plan; verify per 06-VERIFICATION;
+STATE.md (checkboxes, log with evidence, next step) in the same commit as the
+work; push with retries. Operator speaks Italian; repo docs English. Never
+touch the five effect HTMLs outside the bridge blocks. ModuleIds and
+`--syn-*` tokens are load-bearing.
