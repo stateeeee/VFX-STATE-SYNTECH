@@ -40,7 +40,10 @@ import { ParamSchema } from '../../bridge/types';
         .tflite via storage.googleapis.com, L4731/4886 `_ctRunSmartSeg`), NOT
         the SelfieSegmentation the shared PersonMask uses; decide per 04-SPEC
         (shared-service map vs new dep). Until then ctMode=2 falls back to edge.
-   □ L4 — optical flow (_flowUpdateGray/_flowComputeVel/_drawFlowViz).
+   ◐ L4 — optical flow DONE (Lucas-Kanade 16×16 per blob → EMA 0.42 →
+        arrows green→red + fading trails; flowUpdateGray on raw gray before
+        processForDetect). Temporal ⇒ verified behaviourally. flowFeedAR
+        (flow→AR signal) deferred to L7 reactivity.
    □ L5 — three.js ripple sim (rRenderer on glC, rRtA/rRtB float ping-
         pong, RP={disp,damp,waveC2}) — needs `three` (installed 0.128.0).
    □ L6 — three.js panels scene (panelsRenderer, panelMeshes, labels,
@@ -107,6 +110,10 @@ const PARAMS: ParamSchema[] = [
   { key: 'ctExpand', label: 'Contour Expand', type: 'number', value: 0, min: -20, max: 20, step: 1, aiHint: 'Grow/shrink the contour outline along its rays (proc-space px)' },
   { key: 'ctSmooth', label: 'Contour Smooth', type: 'number', value: 5, min: 0, max: 20, step: 1, aiHint: 'Douglas-Peucker simplification ε — higher = smoother, fewer points' },
   { key: 'ctFill', label: 'Contour Fill', type: 'boolean', value: 0, aiHint: '(on/off switch) Fill the contour interior at 15% opacity' },
+  // L4 — optical flow (Lucas-Kanade per blob → arrows/trails)
+  { key: 'flowOn', label: 'Optical Flow', type: 'boolean', value: 0, aiHint: '(on/off switch) Lucas-Kanade motion arrows per blob (green→red by speed) + optional trails' },
+  { key: 'flowScale', label: 'Arrow Scale', type: 'number', value: 3, min: 0, max: 10, step: 0.5, reactive: true, aiHint: 'Length multiplier of the flow arrows' },
+  { key: 'flowTrail', label: 'Trail Length', type: 'number', value: 0, min: 0, max: 10, step: 1, aiHint: 'How many past positions each blob leaves as a fading dashed trail (0 = off)' },
 ];
 
 const TEXT_MODES = [null, 'nums', 'letters', 'tmix'] as const;
@@ -131,6 +138,11 @@ export class BlobTrackerNode implements EngineNode {
   private prevMotion: Uint8ClampedArray | null = null;
   private rawEnergy = 0;
   private ctContours: { x: number; y: number }[][] = []; // per-blob contour, proc coords
+  // L4 optical-flow state
+  private flowCurrGray: Uint8Array | null = null;
+  private flowPrevGray: Uint8Array | null = null;
+  private flowVel: { dx: number; dy: number; mag: number }[] = [];
+  private flowTrails: { x: number; y: number }[][] = [];
 
   // fixed colours until L7 (ParamSchema can't hold colours)
   private trackerColor = '#ffffff';
@@ -422,6 +434,91 @@ export class BlobTrackerNode implements EngineNode {
     ctx.restore();
   }
 
+  /* ── L4 optical flow (standalone _flowUpdateGray/_flowLK/_flowComputeVel/
+   *    _drawFlowViz). Temporal (frame-pair Lucas-Kanade) — verified
+   *    behaviourally. flowFeedAR is deferred to L7 (reactivity). ── */
+  private flowUpdateGray(data: Uint8ClampedArray): void {
+    if (!this.flowCurrGray) { this.flowCurrGray = new Uint8Array(PW * PH); this.flowPrevGray = new Uint8Array(PW * PH); }
+    const tmp = this.flowPrevGray!; this.flowPrevGray = this.flowCurrGray; this.flowCurrGray = tmp;
+    const g = this.flowCurrGray;
+    for (let i = 0; i < PW * PH; i++) { const j = i << 2; g[i] = (77 * data[j] + 150 * data[j + 1] + 29 * data[j + 2]) >> 8; }
+  }
+
+  private flowLK(prev: Uint8Array, curr: Uint8Array, cx: number, cy: number): { dx: number; dy: number; mag: number } {
+    const W = PW, R = 8;
+    let a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0, n = 0;
+    const x0 = (cx - R) | 0, y0 = (cy - R) | 0;
+    for (let dy = 0; dy < R * 2; dy++) {
+      const y = y0 + dy; if (y < 1 || y >= PH - 1) continue;
+      for (let dx = 0; dx < R * 2; dx++) {
+        const x = x0 + dx; if (x < 1 || x >= W - 1) continue;
+        const Ix = (curr[y * W + x + 1] - curr[y * W + x - 1]) >> 1;
+        const Iy = (curr[(y + 1) * W + x] - curr[(y - 1) * W + x]) >> 1;
+        const It = curr[y * W + x] - prev[y * W + x];
+        a11 += Ix * Ix; a12 += Ix * Iy; a22 += Iy * Iy;
+        b1 -= Ix * It; b2 -= Iy * It; n++;
+      }
+    }
+    if (n < 4) return { dx: 0, dy: 0, mag: 0 };
+    const det = a11 * a22 - a12 * a12;
+    if (Math.abs(det) < 0.5) return { dx: 0, dy: 0, mag: 0 };
+    const u = Math.max(-20, Math.min(20, (a22 * b1 - a12 * b2) / det));
+    const v = Math.max(-20, Math.min(20, (a11 * b2 - a12 * b1) / det));
+    return { dx: u, dy: v, mag: Math.sqrt(u * u + v * v) };
+  }
+
+  private flowComputeVel(blobs: { cx: number; cy: number }[]): void {
+    if (!this.flowPrevGray || !this.flowCurrGray) { this.flowVel = []; return; }
+    const n = blobs.length;
+    if (this.flowVel.length !== n) {
+      this.flowVel = Array.from({ length: n }, () => ({ dx: 0, dy: 0, mag: 0 }));
+      this.flowTrails = Array.from({ length: n }, () => []);
+    }
+    const EMA = 0.42, trailLen = this.v.flowTrail | 0;
+    blobs.forEach((b, i) => {
+      const raw = this.flowLK(this.flowPrevGray!, this.flowCurrGray!, b.cx | 0, b.cy | 0);
+      const p = this.flowVel[i];
+      p.dx += (raw.dx - p.dx) * EMA; p.dy += (raw.dy - p.dy) * EMA; p.mag += (raw.mag - p.mag) * EMA;
+      if (trailLen > 0) { this.flowTrails[i].unshift({ x: b.cx, y: b.cy }); if (this.flowTrails[i].length > trailLen) this.flowTrails[i].length = trailLen; }
+      else this.flowTrails[i] = [];
+    });
+  }
+
+  private drawFlowViz(sc: { cx: number; cy: number }[], scX: number, scY: number): void {
+    if (!this.flowVel.length) return;
+    const ctx = this.dCtx, arrowScale = this.v.flowScale;
+    ctx.save();
+    sc.forEach((b, i) => {
+      const vel = this.flowVel[i]; if (!vel) return;
+      const cx = b.cx, cy = b.cy;
+      const adx = vel.dx * scX * arrowScale, ady = vel.dy * scY * arrowScale, mag = vel.mag;
+      const t = Math.min(1, mag / 10);
+      const R = t > 0.5 ? 255 : Math.round(t * 2 * 255);
+      const G = t > 0.5 ? Math.round((1 - t) * 2 * 255) : 255;
+      const col = `rgb(${R},${G},0)`;
+      const trail = this.flowTrails[i];
+      if (trail && trail.length > 1) {
+        ctx.beginPath(); ctx.moveTo(trail[0].x * scX, trail[0].y * scY);
+        for (let k = 1; k < trail.length; k++) { ctx.globalAlpha = (1 - k / trail.length) * 0.55; ctx.lineTo(trail[k].x * scX, trail[k].y * scY); }
+        ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.setLineDash([2, 3]); ctx.stroke(); ctx.setLineDash([]);
+      }
+      if (mag < 0.3) return;
+      ctx.globalAlpha = 0.88; ctx.strokeStyle = col; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + adx, cy + ady); ctx.stroke();
+      const tipX = cx + adx, tipY = cy + ady, len = Math.sqrt(adx * adx + ady * ady);
+      if (len > 4) {
+        const angle = Math.atan2(ady, adx), hlen = Math.min(10, len * 0.38), spread = 0.42;
+        ctx.fillStyle = col; ctx.globalAlpha = 0.92;
+        ctx.beginPath(); ctx.moveTo(tipX, tipY);
+        ctx.lineTo(tipX - hlen * Math.cos(angle - spread), tipY - hlen * Math.sin(angle - spread));
+        ctx.lineTo(tipX - hlen * Math.cos(angle + spread), tipY - hlen * Math.sin(angle + spread));
+        ctx.closePath(); ctx.fill();
+      }
+    });
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   private computeMotion(src: TexImageSource): void {
     try {
       this.motionCtx.drawImage(src as CanvasImageSource, 0, 0, 64, 36);
@@ -703,9 +800,11 @@ export class BlobTrackerNode implements EngineNode {
     // 2) detect on the 320×180 processing canvas
     this.pCtx.drawImage(src as CanvasImageSource, 0, 0, PW, PH);
     const id = this.pCtx.getImageData(0, 0, PW, PH);
+    if (this.v.flowOn >= 0.5) this.flowUpdateGray(id.data); // raw gray BEFORE processForDetect
     this.processForDetect(id.data);
     const bin = this.getBinary(id.data);
     const blobs = this.findBlobs(bin);
+    if (this.v.flowOn >= 0.5) this.flowComputeVel(blobs);
     const scX = dW / PW, scY = dH / PH;
     const sc = blobs.map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, cx: b.cx * scX, cy: b.cy * scY, area: b.area }));
 
@@ -731,9 +830,10 @@ export class BlobTrackerNode implements EngineNode {
       patches.forEach((p) => { if (p) this.dCtx.putImageData(p.data, p.x, p.y); });
     }
 
-    // 4) tracker overlays (L3–L4 contour/flow still to come)
+    // 4) tracker overlays
     this.drawConnections(sc);
     sc.forEach((b, i) => this.drawBlobMarker(b, scX, scY, i));
+    if (this.v.flowOn >= 0.5) this.drawFlowViz(sc, scX, scY);
     this.computeMotion(src);
 
     // upload composite (FLIP_Y — engine convention)

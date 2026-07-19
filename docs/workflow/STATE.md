@@ -7,10 +7,11 @@
 
 **Phase 8 — 1:1 port: blob_tracker** (IN PROGRESS — the LAST and HARDEST
 port: three.js r128 + many-Canvas2D hybrid, ~6876 lines. **Layers 1
-(tracker core) + 2 (FX system) + 3-edge (contour) implemented AND
-parity-verified pixel-identical**; the node is temp-wired. Remaining:
-L3-smart (new MediaPipe), L4 flow, L5 ripple three.js, L6 panels three.js,
-L7 reactivity+colours, L8 param table + suites — see the node header map.)
+(tracker core) + 2 (FX system) + 3-edge (contour) + 4 (optical flow) done
+and parity-verified**; the node is temp-wired. The whole DETERMINISTIC 2D
+pipeline is now ported. Remaining: L3-smart (new MediaPipe), L5 ripple
+three.js, L6 panels three.js, L7 reactivity+colours, L8 param table +
+suites — see the node header map.)
 
 ## Next step
 
@@ -113,12 +114,22 @@ aborts before wiring its file input (#fi-v).
   (pixel-identical)**: edge default, smooth 0/20, expand ±10, fill. Smart
   mode (ctMode=2) still deferred — a distinct MediaPipe Tasks ImageSegmenter
   dep; ctMode=2 falls back to edge for now.
-- The node is **temp-wired** into `nodes.ts` (renders the correct tracker
-  core + FX + contour — strictly better than the DummyNode passthrough — but
-  L3-smart/L4–L8 are not there yet, so **Phase 8 is NOT done**; checkbox stays
-  unchecked until the full port + full parity/behavior/chain suites).
+- **Layer 4 (optical flow) — DONE and behaviourally verified**: Lucas-Kanade
+  16×16 per blob (`flowUpdateGray`/`flowLK`/`flowComputeVel`/`drawFlowViz`,
+  verbatim) → EMA 0.42 → arrows (green→red by speed) + fading trails.
+  `verify-phase8-behavior-L4.js` **3/3 PASS**: the flow overlay appears and is
+  sustained on BOTH sides while the video plays. Flow is temporal — its
+  absolute magnitude is motion-per-rendered-frame (fps-dependent), so it is
+  NOT cross-comparable between the two independently-running pages (the engine
+  does more 2D work + a GL upload, so it renders at a different rate); the LK
+  is a verbatim transcription. flowFeedAR (flow→AR signal) is deferred to L7.
+- **The whole deterministic 2D pipeline is now ported and verified** (L1+L2+
+  L3edge pixel-identical, L4 behavioural). The node is **temp-wired** into
+  `nodes.ts` (renders tracker core + FX + contour + flow — far better than the
+  DummyNode passthrough — but L3-smart/L5–L8 are not there yet, so **Phase 8
+  is NOT done**; checkbox unchecked until the full port + full suites).
 - Layers remaining (node header has the map): L3-smart (MediaPipe
-  ImageSegmenter), L4 optical flow, L5 three.js ripple sim
+  ImageSegmenter), L5 three.js ripple sim
   (rRenderer/glC float ping-pong), L6 three.js panels scene + the stack
   composite (dc→panels→fxOv→glC), L7 reactivity (ar-*→routes,
   vr-*→VideoAnalyzer) + colours (ParamSchema can't hold colours — design
