@@ -249,11 +249,15 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
     const f0 = await en.evaluate(() => window.__SYN.engine.frame);
     await en.waitForFunction((t) => window.__SYN.engine.frame > t, f0 + k, { timeout: 240000 }).catch(() => {});
   };
+  // Rack 22→2.8 (radius 27px), not 22→0.95: at f/0.95 the standalone drops
+  // below ~0.5fps under SwiftShader and the 80-frame wait exceeds an hour;
+  // the same easing math is exercised at 2.8, and the wide-aperture settled
+  // look (f/2, f/1.4) is already pixel-proven by the static suite.
   const easeCfg = { bokehMM: 100, fStop: 22, grain: 0 };
   await applySA(easeCfg); await applyEN(easeCfg);
   await saFrames(40); await enFrames(40);
   const sharpS = await grabSA(); const sharpE = await grabEN();
-  await applySA({ ...easeCfg, fStop: 0.95 }); await applyEN({ ...easeCfg, fStop: 0.95 });
+  await applySA({ ...easeCfg, fStop: 2.8 }); await applyEN({ ...easeCfg, fStop: 2.8 });
   await saFrames(2); await enFrames(2);
   const midS = await grabSA(); const midE = await grabEN();
   await saFrames(40); await enFrames(40);
