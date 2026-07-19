@@ -5,22 +5,29 @@
 
 ## Current phase
 
-**Phase 8 — 1:1 port: blob_tracker** (NOT STARTED — the LAST and HARDEST
-port: three.js r128 + many-Canvas2D hybrid, ~6876 lines, heaviest
-reactivity)
+**Phase 8 — 1:1 port: blob_tracker** (IN PROGRESS — the LAST and HARDEST
+port: three.js r128 + many-Canvas2D hybrid, ~6876 lines. **Layer 1
+(tracker core) implemented AND parity-verified pixel-identical**; the node
+is temp-wired into the factory. Layers 2–8 remain — see the node header's
+layer map and HANDOFF.)
 
 ## Next step
 
-**Read `docs/workflow/HANDOFF.md` first** — it carries the Phase 8 brief
-with the blob_tracker facts already gathered (three.js WebGLRenderer +
-float ping-pong ripple sim + many willReadFrequently 2D contexts; cdnjs
-r128 mirror; audio+video reactive control groups; camera sims are source
-concerns) and the scratchpad rebuild steps. Then execute Phase 8 per the
-port template in 05-ROADMAP.md (Phases 4–8): `npm i three@0.128.0`
-(allowed this phase), read the HTML end-to-end, implement
-`src/engine/nodes/blob_tracker.ts` reusing blob_reveal's offscreen→texture
-pattern, factory swap, parity run per 06-VERIFICATION §4, regression,
-STATE.md + HANDOFF update, commit, push. Then Phase 9 (Chain export).
+**Read `docs/workflow/HANDOFF.md` and the `src/engine/nodes/blob_tracker.ts`
+header first** — the header carries the full LAYER MAP (■ L1 done / □ L2–L8
+remaining) with standalone line refs. L1 (base video → 320×180 detect →
+blob markers → connections → motion → offscreen→texture) is verified by
+`tools/verify/verify-phase8-static-L1.js` (**7/7 configs corr=1.000,
+mad=0.000** vs the standalone's default tracker state — its default IS L1
+since _applyFxBg no-ops with no FX flags). Continue with **Layer 2**
+(drawFxInBlob: invert/thermal/security/liquid/glitch1/glitch2 + bgFxMode +
+drawTextFill), then L3 contour, L4 flow, L5 three.js ripple sim (three is
+installed), L6 three.js panels + the stack composite, L7 reactivity +
+colours, L8 full param table + parity/behavior/chain suites + regression,
+then flip the checkbox and mark Phase 8 done. **Gotcha:** the standalone
+loads THREE from cdnjs at init — a suite that blocks the CDN must serve the
+three.js r128 mirror (see the L1 suite's route) or the standalone script
+aborts before wiring its file input (#fi-v).
 
 ## Phase board
 
@@ -65,6 +72,39 @@ STATE.md + HANDOFF update, commit, push. Then Phase 9 (Chain export).
 | 7 | Port order locked: analog → bokeh → anamorphic_lab → blob_reveal → blob_tracker | 2026-07-17 |
 
 ## Log
+
+### 2026-07-19 — Phase 8 IN PROGRESS (1:1 port: BLOB TRACKER — Layer 1 verified)
+
+- **`src/engine/nodes/blob_tracker.ts`** started — the last + hardest port
+  (~6876-line three.js r128 + many-Canvas2D hybrid). Strategy (04-SPEC): run
+  the standalone's whole pipeline offscreen (three.js + 2D overlays) and
+  upload the composite as the node texture — the blob_reveal
+  offscreen→texture pattern extended to three.js. `three@0.128.0` added
+  (allowed this phase). The node carries a full LAYER MAP in its header
+  (■ done / □ remaining) with standalone line refs.
+- **Layer 1 — tracker core — DONE and parity-verified**: base video draw →
+  320×180 `processForDetect` (γ=1.75) → `getBinary` (threshold+padY) →
+  `findBlobs` (connected-components, minArea + circularity<0.15 reject) →
+  `drawBlobMarker` (square/rect/circle/corner, dashed, ID/A labels) →
+  `drawConnections` (dist≤500, neonLine glow layers / drawArrow) →
+  `computeMotion` (64×36 energy) → offscreen `dc` uploaded FLIP_Y. All math
+  is the standalone's verbatim. **`verify-phase8-static-L1.js`: 7/7 configs
+  corr=1.000, mad=0.000 (pixel-identical)** vs the standalone's DEFAULT
+  tracker state (default = L1 exactly: FX.blob+conn on, everything else off,
+  and the bgFxMode-off else-branch is a no-op since `_applyFxBg` touches
+  nothing with no FX flag). Both pinned to 1280×720, paused same frame;
+  configs: default, threshold ±, minArea, brightness, contrast, connWidth.
+- The node is **temp-wired** into `nodes.ts` (renders the correct tracker
+  core — strictly better than the DummyNode passthrough — but the L2–L8
+  features/params are not there yet, so **Phase 8 is NOT done**; checkbox
+  stays unchecked until the full port + full parity/behavior/chain suites).
+- Layers remaining (node header has the map): L2 drawFxInBlob (invert/
+  thermal/security/liquid/glitch1/glitch2 + bgFxMode + text fill), L3
+  contour modes (edge/smart — check if smart pulls MediaPipe), L4 optical
+  flow, L5 three.js ripple sim (rRenderer/glC float ping-pong), L6 three.js
+  panels scene + the stack composite (dc→panels→fxOv→glC), L7 reactivity
+  (ar-*→routes, vr-*→VideoAnalyzer) + colours (ParamSchema can't hold
+  colours — design TODO) + fixedPtsMode chaos, L8 full param table + suites.
 
 ### 2026-07-19 — Phase 7 complete (1:1 port: BLOB REVEAL)
 

@@ -4,6 +4,7 @@ import { AnalogNode } from './nodes/analog';
 import { BokehNode } from './nodes/bokeh';
 import { AnamorphicLabNode } from './nodes/anamorphic_lab';
 import { BlobRevealNode } from './nodes/blob_reveal';
+import { BlobTrackerNode } from './nodes/blob_tracker'; // TEMP wiring for Phase 8 Layer-1 parity check; revert to DummyNode until complete
 
 /* Pre-port stand-ins: rendering is passthrough until Phases 4–8
  * replace each factory with the real 1:1 EngineNode. Since Phase 3 they DO
@@ -57,7 +58,8 @@ const placeholder = (segCapable: boolean): ParamSchema[] => [
 ];
 
 export const NODE_FACTORY: Record<string, () => EngineNode> = {
-  blob_tracker: () => new DummyNode('blob_tracker', 'Blob Tracker', placeholder(false)),
+  blob_tracker: () => new BlobTrackerNode(), // TEMP: Phase 8 L1 parity check (revert to DummyNode below until port complete)
+  // blob_tracker: () => new DummyNode('blob_tracker', 'Blob Tracker', placeholder(false)),
   analog: () => new AnalogNode(), // Phase 4: real 1:1 port
 
   blob_reveal: () => new BlobRevealNode(), // Phase 7: real 1:1 port
