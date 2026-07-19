@@ -7,9 +7,10 @@
 
 **Phase 8 — 1:1 port: blob_tracker** (IN PROGRESS — the LAST and HARDEST
 port: three.js r128 + many-Canvas2D hybrid, ~6876 lines. **Layers 1
-(tracker core) + 2 (FX system) implemented AND parity-verified**; the node
-is temp-wired into the factory. Layers 3–8 remain — see the node header's
-layer map and HANDOFF.)
+(tracker core) + 2 (FX system) + 3-edge (contour) implemented AND
+parity-verified pixel-identical**; the node is temp-wired. Remaining:
+L3-smart (new MediaPipe), L4 flow, L5 ripple three.js, L6 panels three.js,
+L7 reactivity+colours, L8 param table + suites — see the node header map.)
 
 ## Next step
 
@@ -104,12 +105,20 @@ aborts before wiring its file input (#fi-v).
   time/Math.random-seeded, so behavioural not pixel-equal). Fixed a real port
   bug found by the check: the standalone's `getBinary` also flips the
   detection binary when invert is on (`FX.invert?1-v:v`) — added.
+- **Layer 3 (edge contour) — DONE and parity-verified**: `radialContour`
+  (64-ray cast on the detection binary) → `douglasPeucker` simplify →
+  `catmullRomPath` spline (+ optional fill); `drawBlobMarker` delegates to
+  `drawContour` when ctMode≥1 and the contour has ≥6 pts.
+  `verify-phase8-static-L3.js` **8/8 PASS, all corr=1.000, mad=0.000
+  (pixel-identical)**: edge default, smooth 0/20, expand ±10, fill. Smart
+  mode (ctMode=2) still deferred — a distinct MediaPipe Tasks ImageSegmenter
+  dep; ctMode=2 falls back to edge for now.
 - The node is **temp-wired** into `nodes.ts` (renders the correct tracker
-  core + FX — strictly better than the DummyNode passthrough — but L3–L8 are
-  not there yet, so **Phase 8 is NOT done**; checkbox stays unchecked until
-  the full port + full parity/behavior/chain suites).
-- Layers remaining (node header has the map): L3 contour modes (edge/smart —
-  check if smart pulls MediaPipe), L4 optical flow, L5 three.js ripple sim
+  core + FX + contour — strictly better than the DummyNode passthrough — but
+  L3-smart/L4–L8 are not there yet, so **Phase 8 is NOT done**; checkbox stays
+  unchecked until the full port + full parity/behavior/chain suites).
+- Layers remaining (node header has the map): L3-smart (MediaPipe
+  ImageSegmenter), L4 optical flow, L5 three.js ripple sim
   (rRenderer/glC float ping-pong), L6 three.js panels scene + the stack
   composite (dc→panels→fxOv→glC), L7 reactivity (ar-*→routes,
   vr-*→VideoAnalyzer) + colours (ParamSchema can't hold colours — design

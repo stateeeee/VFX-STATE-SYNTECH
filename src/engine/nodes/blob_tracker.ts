@@ -32,14 +32,14 @@ import { ParamSchema } from '../../bridge/types';
         exact); security/liquid/glitch1/glitch2/text are time/random-seeded
         (behavioural). Colours use the standalone's built-in FX colours
         (vfxColor override is an L7 TODO — ParamSchema has no colour type).
-   □ L3 — contour modes (ctMode edge/smart + _drawContour organic polygons).
-        EDGE is deterministic: _ctComputeContours traces _ctBinMask (the
-        detection binary) → verifiable pixel-exact. SMART needs a NEW
+   ◐ L3 — contour markers. EDGE DONE (radialContour ray-cast on the detection
+        binary → douglasPeucker → catmull-rom spline + optional fill;
+        drawBlobMarker delegates when ctMode≥1 and the contour has ≥6 pts —
+        deterministic, verifiable pixel-exact). SMART (ctMode=2) still □: a NEW
         MediaPipe dep — the **Tasks-Vision ImageSegmenter** (selfie_segmenter
-        .tflite via storage.googleapis.com, L4731/4886 `_ctRunSmartSeg`),
-        NOT the SelfieSegmentation the shared PersonMask uses — a distinct
-        integration (own tflite + WASM); port edge first, decide smart per
-        04-SPEC (shared-service map vs new dep).
+        .tflite via storage.googleapis.com, L4731/4886 `_ctRunSmartSeg`), NOT
+        the SelfieSegmentation the shared PersonMask uses; decide per 04-SPEC
+        (shared-service map vs new dep). Until then ctMode=2 falls back to edge.
    □ L4 — optical flow (_flowUpdateGray/_flowComputeVel/_drawFlowViz).
    □ L5 — three.js ripple sim (rRenderer on glC, rRtA/rRtB float ping-
         pong, RP={disp,damp,waveC2}) — needs `three` (installed 0.128.0).
@@ -102,6 +102,11 @@ const PARAMS: ParamSchema[] = [
   { key: 'textMode', label: 'Text Fill', type: 'number', value: 0, min: 0, max: 3, step: 1, aiHint: '0 off · 1 numbers · 2 letters · 3 mixed — Matrix-style char fill (random seeded)' },
   { key: 'textPadX', label: 'Text Coverage X', type: 'number', value: 1, min: 0, max: 1, step: 0.01, aiHint: 'Text-fill block coverage, X axis' },
   { key: 'textPadY', label: 'Text Coverage Y', type: 'number', value: 1, min: 0, max: 1, step: 0.01, aiHint: 'Text-fill block coverage, Y axis' },
+  // L3 — contour markers (edge mode; smart = a MediaPipe ImageSegmenter dep, L7)
+  { key: 'ctMode', label: 'Contour Mode', type: 'number', value: 0, min: 0, max: 2, step: 1, aiHint: '0 off (rectangle markers) · 1 edge (organic radial contour from the detection mask) · 2 smart (MediaPipe segmentation — not yet ported)' },
+  { key: 'ctExpand', label: 'Contour Expand', type: 'number', value: 0, min: -20, max: 20, step: 1, aiHint: 'Grow/shrink the contour outline along its rays (proc-space px)' },
+  { key: 'ctSmooth', label: 'Contour Smooth', type: 'number', value: 5, min: 0, max: 20, step: 1, aiHint: 'Douglas-Peucker simplification ε — higher = smoother, fewer points' },
+  { key: 'ctFill', label: 'Contour Fill', type: 'boolean', value: 0, aiHint: '(on/off switch) Fill the contour interior at 15% opacity' },
 ];
 
 const TEXT_MODES = [null, 'nums', 'letters', 'tmix'] as const;
@@ -125,6 +130,7 @@ export class BlobTrackerNode implements EngineNode {
   private motionCv!: HTMLCanvasElement; private motionCtx!: CanvasRenderingContext2D;
   private prevMotion: Uint8ClampedArray | null = null;
   private rawEnergy = 0;
+  private ctContours: { x: number; y: number }[][] = []; // per-blob contour, proc coords
 
   // fixed colours until L7 (ParamSchema can't hold colours)
   private trackerColor = '#ffffff';
@@ -296,9 +302,96 @@ export class BlobTrackerNode implements EngineNode {
     return SHAPES[this.v.blobShape | 0] ?? SHAPES[idx % 4];
   }
 
+  /* ── L3 contour (edge): radial ray-cast on the detection mask → DP simplify
+   *    → catmull-rom spline (standalone _radialContour/_douglasPeucker/
+   *    _catmullRomPath/_ctComputeContours/_drawContour). Deterministic. ── */
+  private radialContour(mask: Uint8Array, W: number, H: number, cx: number, cy: number, maxR: number, expand: number): { x: number; y: number }[] {
+    const N = 64, pts: { x: number; y: number }[] = [];
+    const mr = maxR + Math.abs(expand) + 2;
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2, cos = Math.cos(a), sin = Math.sin(a);
+      let lx = cx | 0, ly = cy | 0, found = false;
+      for (let r = 1; r <= mr; r++) {
+        const x = Math.round(cx + cos * r), y = Math.round(cy + sin * r);
+        if (x < 0 || x >= W || y < 0 || y >= H) break;
+        if (mask[y * W + x]) { lx = x; ly = y; found = true; }
+        else if (found) break;
+      }
+      pts.push({ x: lx + cos * expand, y: ly + sin * expand });
+    }
+    return pts;
+  }
+
+  private dpDist(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1e-6) return Math.sqrt((p.x - a.x) ** 2 + (p.y - a.y) ** 2);
+    return Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x) / len;
+  }
+
+  private dp(pts: { x: number; y: number }[], eps: number, s: number, e: number, keep: Uint8Array): void {
+    if (e <= s + 1) return;
+    let mx = 0, mi = s + 1;
+    for (let i = s + 1; i < e; i++) { const d = this.dpDist(pts[i], pts[s], pts[e]); if (d > mx) { mx = d; mi = i; } }
+    if (mx > eps) { keep[mi] = 1; this.dp(pts, eps, s, mi, keep); this.dp(pts, eps, mi, e, keep); }
+  }
+
+  private douglasPeucker(pts: { x: number; y: number }[], eps: number): { x: number; y: number }[] {
+    if (pts.length < 4) return pts;
+    const n = pts.length, keep = new Uint8Array(n); keep[0] = keep[n - 1] = 1;
+    this.dp(pts, eps, 0, n - 1, keep);
+    return pts.filter((_, i) => keep[i]);
+  }
+
+  private catmullRomPath(ctx: CanvasRenderingContext2D, pts: { x: number; y: number }[]): void {
+    const n = pts.length;
+    if (n < 3) return;
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+      const cp1x = p1.x + (p2.x - p0.x) / 6, cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6, cp2y = p2.y - (p3.y - p1.y) / 6;
+      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+    }
+  }
+
+  private computeContours(blobs: { cx: number; cy: number; w: number; h: number }[], bin: Uint8Array): void {
+    const expand = this.v.ctExpand, smooth = this.v.ctSmooth;
+    this.ctContours = blobs.map((b) => {
+      const maxR = (Math.max(b.w, b.h) * 0.55) + Math.abs(expand) + 4;
+      let pts = this.radialContour(bin, PW, PH, b.cx, b.cy, maxR, expand);
+      if (smooth > 0) pts = this.douglasPeucker(pts, smooth);
+      return pts;
+    });
+  }
+
+  private drawContour(b: { cx: number; cy: number; area: number }, scX: number, scY: number, idx: number): void {
+    const raw = this.ctContours[idx];
+    if (!raw || raw.length < 3) return;
+    const ctx = this.dCtx, tCol = this.trackerColor;
+    const pts = raw.map((p) => ({ x: p.x * scX, y: p.y * scY }));
+    ctx.save();
+    ctx.strokeStyle = tCol; ctx.lineWidth = 1.5; ctx.globalAlpha = 1.0;
+    if (this.v.blobDashed >= 0.5) ctx.setLineDash([5, 3]); else ctx.setLineDash([]);
+    ctx.beginPath(); this.catmullRomPath(ctx, pts); ctx.closePath(); ctx.stroke();
+    if (this.v.ctFill >= 0.5) {
+      ctx.beginPath(); this.catmullRomPath(ctx, pts); ctx.closePath();
+      ctx.fillStyle = tCol; ctx.globalAlpha = 0.15; ctx.fill();
+    }
+    ctx.setLineDash([]); ctx.globalAlpha = 1.0;
+    ctx.beginPath(); ctx.arc(b.cx, b.cy, 5, 0, Math.PI * 2); ctx.fillStyle = tCol; ctx.fill(); ctx.strokeStyle = tCol; ctx.stroke();
+    ctx.font = '10px JetBrains Mono,monospace'; ctx.fillStyle = tCol; ctx.globalAlpha = 0.85;
+    ctx.fillText('ID:' + (idx + 1), b.cx + 22, b.cy - 12);
+    ctx.fillText('A:' + b.area, b.cx + 22, b.cy + 1);
+    ctx.restore();
+  }
+
   private drawBlobMarker(b: { cx: number; cy: number; w: number; h: number; area: number }, scX: number, scY: number, idx: number): void {
     const scale = this.v.blobScale;
     if (this.v.blobEnabled < 0.5 || scale < 0.02) return;
+    // contour mode replaces the rectangle with an organic polygon
+    if (this.v.ctMode >= 0.5 && this.ctContours[idx] && this.ctContours[idx].length >= 6) {
+      this.drawContour(b, scX, scY, idx); return;
+    }
     const ctx = this.dCtx;
     const cx = b.cx, cy = b.cy, bw = b.w * scX * scale, bh = b.h * scY * scale;
     const shape = this.getShape(idx);
@@ -615,6 +708,10 @@ export class BlobTrackerNode implements EngineNode {
     const blobs = this.findBlobs(bin);
     const scX = dW / PW, scY = dH / PH;
     const sc = blobs.map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, cx: b.cx * scX, cy: b.cy * scY, area: b.area }));
+
+    // L3: compute contours from the detection binary (edge mode) — smart mode
+    // (MediaPipe ImageSegmenter) is not ported yet, treated as edge here
+    if (this.v.ctMode >= 0.5) this.computeContours(blobs, bin); else this.ctContours = [];
 
     // 3) FX — bgFxMode ON: FX inside the blobs | OFF: FX on the background,
     //    blobs kept clean (patch save/restore around applyFxBg)
