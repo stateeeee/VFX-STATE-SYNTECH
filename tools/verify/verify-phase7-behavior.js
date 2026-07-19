@@ -229,16 +229,25 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   const dS = mad(offS, onS), dE = mad(offE, onE);
   step('C. enabling seg reveals the subject on BOTH sides', dS > 0.01 && dE > 0.01, `delta S/E=${dS.toFixed(3)}/${dE.toFixed(3)}`);
 
-  /* ── D. audio-reactive expansion (engine): beatReact→loud default route ── */
+  /* ── D. audio-reactive expansion (engine): beatReact→loud default route.
+     D/E are engine-only (the standalone's built-in analyser is the replaced
+     subsystem) — close the standalone to free the second heavy page. ── */
+  await sa.close();
   await applyEN({}, false); // seg off, blob windows only
-  await pauseBoth(1.0);
+  await en.evaluate(async () => {
+    const v = window.__SYN.engine.source; v.pause(); v.currentTime = 1.0;
+    await Promise.race([new Promise((r) => { const on = () => { v.removeEventListener('seeked', on); r(); }; v.addEventListener('seeked', on); }), new Promise((r) => setTimeout(r, 2500))]);
+  });
   const quietE = await settled(en, '[data-testid="chain-canvas"]');
   await en.setInputFiles('[data-testid="audio-file"]', path.join(SCRATCH, 'beat120.wav'));
-  await en.waitForSelector('[data-testid="audio-playpause"]', { timeout: 5000 });
-  await en.waitForTimeout(500);
+  // the DOM playpause appears once React re-renders the transport; wait on the
+  // engine's own audio state instead (robust under load), then let loud rise
+  const audioUp = await en.waitForFunction(() => !!window.__SYN.audio?.transport && window.__SYN.audio.levels.loud > 0.02, null, { timeout: 25000 })
+    .then(() => true).catch(() => false);
+  step('D. audio file loaded and driving the loud signal', audioUp, '');
   // sample the blob-window area over a couple of seconds of beat playback
   let maxD = 0;
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 16; i++) {
     const g = await grabEN();
     maxD = Math.max(maxD, mad(quietE, g));
     await en.waitForTimeout(200);
