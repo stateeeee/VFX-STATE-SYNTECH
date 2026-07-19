@@ -262,9 +262,24 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   // time in which the engine's dt-clamped easing fully settles — grabbing
   // the engine after the standalone's 2-frame wait reads remaining≈0 even
   // though the easing is gradual (run 4's only red was exactly that).
-  await applyEN({ ...easeCfg, fStop: 2.8 });
-  await enFrames(2);
-  const midE = await grabEN();
+  // …and the engine's change+grab must be FUSED into one in-page evaluate:
+  // protocol round-trips queue behind the SwiftShader render pipeline
+  // (run 5 measured ~16 frames of grab latency → remaining 10% < the 15%
+  // gate), so the grab clock starts in the same JS turn that changes the
+  // param and the pixels are read in-page exactly at frame+2.
+  const midE = await en.evaluate(`(() => new Promise((resolve) => {
+    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    const el = document.querySelector('[data-testid="param-anamorphic_lab-fStop"]');
+    setV.call(el, 2.8); el.dispatchEvent(new Event('change', { bubbles: true }));
+    const S = window.__SYN;
+    const target = S.engine.frame + 2;
+    const tick = () => {
+      if (S.engine.frame >= target) return resolve((${grabOnceSrc})('[data-testid="chain-canvas"]'));
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    setTimeout(() => resolve((${grabOnceSrc})('[data-testid="chain-canvas"]')), 120000);
+  }))()`);
   await applySA({ ...easeCfg, fStop: 2.8 });
   await saFrames(2);
   const midS = await grabSA();
