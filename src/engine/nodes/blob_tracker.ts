@@ -32,8 +32,14 @@ import { ParamSchema } from '../../bridge/types';
         exact); security/liquid/glitch1/glitch2/text are time/random-seeded
         (behavioural). Colours use the standalone's built-in FX colours
         (vfxColor override is an L7 TODO — ParamSchema has no colour type).
-   □ L3 — contour modes (ctMode edge/smart: _ctComputeContours,
-        _ctRunSmartSeg — check if smart pulls MediaPipe) + _drawContour.
+   □ L3 — contour modes (ctMode edge/smart + _drawContour organic polygons).
+        EDGE is deterministic: _ctComputeContours traces _ctBinMask (the
+        detection binary) → verifiable pixel-exact. SMART needs a NEW
+        MediaPipe dep — the **Tasks-Vision ImageSegmenter** (selfie_segmenter
+        .tflite via storage.googleapis.com, L4731/4886 `_ctRunSmartSeg`),
+        NOT the SelfieSegmentation the shared PersonMask uses — a distinct
+        integration (own tflite + WASM); port edge first, decide smart per
+        04-SPEC (shared-service map vs new dep).
    □ L4 — optical flow (_flowUpdateGray/_flowComputeVel/_drawFlowViz).
    □ L5 — three.js ripple sim (rRenderer on glC, rRtA/rRtB float ping-
         pong, RP={disp,damp,waveC2}) — needs `three` (installed 0.128.0).

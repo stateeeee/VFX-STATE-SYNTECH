@@ -1,9 +1,15 @@
-# HANDOFF — session continuation brief (updated 2026-07-19, Phase 7 CLOSED)
+# HANDOFF — session continuation brief (updated 2026-07-19, Phase 8 IN PROGRESS)
 
 > For the next Claude session. Read this AFTER `CLAUDE.md` and `STATE.md`.
-> Phases 0–7 are DONE and verified (STATE.md log has all numbers).
-> The next session executes **Phase 8 — 1:1 port: blob_tracker**, the LAST
-> and HARDEST port, per the port template in 05-ROADMAP.md (Phases 4–8).
+> Phases 0–7 are DONE and verified. **Phase 8 (blob_tracker) is IN PROGRESS:
+> Layers 1 (tracker core) + 2 (FX system) are implemented and parity-verified
+> (see the STATE.md log and the `src/engine/nodes/blob_tracker.ts` header
+> LAYER MAP — the live authority). The node is temp-wired.** Continue from
+> **Layer 3** (contour: edge deterministic first, smart = a NEW MediaPipe
+> Tasks-Vision ImageSegmenter dep — see the node header), then L4 flow, L5
+> three.js ripple sim, L6 three.js panels + stack composite, L7 reactivity +
+> colours + fixedPtsMode, L8 full param table + suites, then mark done. The
+> section below is the original Phase-8 brief (still valid for L3–L8).
 
 ## Where we are
 
