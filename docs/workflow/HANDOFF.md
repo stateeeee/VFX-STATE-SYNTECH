@@ -129,3 +129,63 @@ STATE.md (checkboxes, log with evidence, next step) in the same commit as the
 work; push with retries. Operator speaks Italian; repo docs English. Never
 touch the five effect HTMLs outside the bridge blocks. ModuleIds and
 `--syn-*` tokens are load-bearing.
+
+---
+
+## APPENDIX — blob_tracker control inventory (extracted 2026-07-19)
+
+Ground-truth ranges/defaults from the markup (verify against the HTML before
+porting; the pipeline order still needs a full read of the ~6876 lines).
+
+**Two three.js renderers + one 2D canvas** (line refs approx):
+- `dc` (2D, `#dc`) — the main composite canvas the effect presents.
+- `glC` (`#glC`) — `rRenderer = new THREE.WebGLRenderer` (~L2424): the
+  ripple/fluid SIM×SIM float ping-pong (rRtA/rRtB), OrthographicCamera,
+  PlaneGeometry(2,2) passes.
+- `panels-canvas` — `panelsRenderer = new THREE.WebGLRenderer`
+  (~L2506, antialias, alpha, preserveDrawingBuffer): the tracked-blob "panels"
+  3D visuals (the connection-line / graph look).
+  → Port strategy: run both three.js renderers + the 2D overlays offscreen,
+    composite to `dc`, upload FLIP_Y (blob_reveal pattern). `npm i three@0.128.0`.
+
+**Sliders** (id: [min..max] def step):
+- Tracking: `sThr` [0..255] 127 /1 · `sBri` [-100..100] 31 /1 ·
+  `sCon` [0.5..5] 2.15 /0.05 · `sMin` [10..2000] 100 /10 · `sScale`
+  [0.2..3.0] 1.0 /0.05
+- Contour: `ct-smooth-sl` [0..20] 5 /1 · `ct-expand-sl` [-20..20] 0 /1
+- Optical flow: `flow-scale-sl` [0..10] 3 /0.5 · `flow-trail-sl` [0..10] 0 /1
+- Dynamics: `sDisp` [0.002..0.04] 0.013 /0.001 · `sTurb` [0..3] 1 /0.1 ·
+  `sWave` [0.05..0.5] 0.22 /0.01 · `sDamp` [0.96..0.999] 0.988 /0.001 ·
+  `sDmx` (Glitch1) [0..30] 8 /1 · `sFixedMax` [1..10] 5 /1
+- Look: `sBgOp` [0..100] 50 /1 · `sCamZ` [3..14] 7 /0.5 · `sGlx` (Glitch2)
+  [0..20] 6 /1 · `sFxOp` [0..100] 100 /1 · `sConnOp` [0..100] 100 /1 ·
+  `sConnSat` [0..100] 100 /1 · `sConnGlow` [0..100] 0 /1 · `sLW` [1..20] 10 /1
+  (still to locate in the HTML: `sConnW`? and any sHue/sSat/sVig — grep the
+   full look panel; the 04-SPEC list also names sConnGlow/sLW/sGlx/sCamZ)
+- Audio-react gains: `ar-bass-gain` [0..300] 100 · `ar-mid-gain` [0..300] 100 ·
+  `ar-hi-gain` [0..300] 100 · `ar-onset-sens` [0..200] 100 (all /1, percent)
+- Video-react: `vr-mot-sens` [0..300] 100 /1 · `vr-cut-thr` [5..100] 35 /1 ·
+  `vr-smooth` [0..100] 50 /1 · `vr-srate` [1..10] 2 /1
+- Camera sims (SOURCE concerns — consolidate like anamorphic/blob_reveal):
+  `cam-iso-sl` [100..25600] 400 · `cam-exp-sl` [100..500000] 8333 ·
+  `cam-wb-sl` [2850..7000] 5500 · `cam-zoom-sl` [1.0..10.0] 1.0
+
+**Toggles / LED buttons** (map to booleans; audit which are real vs
+shell/source): contour mode `ct-edge`/`ct-smart`/`ct-fill` (3-state) ·
+`flow-on-btn`/`flow-ar-btn` · `btn-ripple` · `btn-bgfx` · `btn-dashed` ·
+`btn-mirror-bg`/`btn-mirror-panels` · `btn-pconnlines`/`btn-plabels` ·
+`ar-on-btn`/`ar-auto-btn` (audio-react enable/auto) ·
+`vr-on-btn`/`vr-auto-btn`/`vr-face-btn`/`vr-pose-btn`/`vr-flow-btn`
+(video-react + face/pose detection — extra MediaPipe-family deps to check) ·
+color pickers `btn-tracker-color`/`btn-vfx-color`/`btn-panels-color` +
+custom text (bridge already serializes these, Phase 1) · SHELL/source:
+`btn-play`/`btn-loop`/`btn-webcam`/`btn-rec`/`btn-fs`/`btn-fullscreen`/
+`btn-save-preset`/`btn-save-session`/`cam-*`.
+
+**Reactivity mapping** (Phase-4 pattern): audio gains → ParamBus defaultRoutes
+(bass→loud or a dedicated bass signal / mid→loud / hi→treble, scaled by the
+gain); video-react → VideoAnalyzer motion/bright. Audit `ar-*`/`vr-*` against
+the code: some are ENABLE/AUTO toggles for built-in analysers the shared
+engines replace (consolidate those, like blob_reveal's beatSens/beatGap);
+`vr-face-btn`/`vr-pose-btn` may pull in face/pose models — decide per 04-SPEC
+whether they're in scope or a documented consolidation.
