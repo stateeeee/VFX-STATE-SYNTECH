@@ -25,9 +25,13 @@ import { ParamSchema } from '../../bridge/types';
         → drawBlobMarker (square/rect/circle/corner, dashed, ID/A labels)
         → drawConnections (pairwise dist≤500, neonLine glow layers /
         drawArrow) → computeMotion (64×36 frame-diff energy) → upload.
-   □ L2 — FX-in-blob system (drawFxInBlob ~260 lines: invert/thermal/
-        security/liquid/glitch1(datamosh)/glitch2, bgFxMode on/off with
-        the patch save/restore), drawTextFill (nums/letters/tmix).
+   ■ L2 — FX system: drawFxInBlob (invert/thermal/security/liquid/
+        glitch1(datamosh)/glitch2, shape-masked) + drawTextFill (nums/
+        letters/tmix) + applyFxBg, with the bgFxMode on/off branch (patch
+        save→applyFxBg→restore). invert+thermal are deterministic (pixel-
+        exact); security/liquid/glitch1/glitch2/text are time/random-seeded
+        (behavioural). Colours use the standalone's built-in FX colours
+        (vfxColor override is an L7 TODO — ParamSchema has no colour type).
    □ L3 — contour modes (ctMode edge/smart: _ctComputeContours,
         _ctRunSmartSeg — check if smart pulls MediaPipe) + _drawContour.
    □ L4 — optical flow (_flowUpdateGray/_flowComputeVel/_drawFlowViz).
@@ -77,7 +81,24 @@ const PARAMS: ParamSchema[] = [
   { key: 'connWidth', label: 'Line Width', type: 'number', value: 10, min: 1, max: 20, step: 1, reactive: true, aiHint: 'Connection line width' },
   { key: 'connOpacity', label: 'Conn Opacity', type: 'number', value: 1, min: 0, max: 1, step: 0.01, aiHint: 'Connection line opacity' },
   { key: 'connGlow', label: 'Conn Glow', type: 'number', value: 0, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Neon glow halo on the connection lines' },
+  // L2 — FX system
+  { key: 'bgFxMode', label: 'BG FX Mode', type: 'boolean', value: 0, aiHint: '(on/off switch) On = FX fill the background (blobs stay clean video); off = FX only inside the blobs' },
+  { key: 'fxOpacity', label: 'FX Opacity', type: 'number', value: 1, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Global blend of every active FX over the clean pixels' },
+  { key: 'fxInvert', label: 'FX Invert', type: 'boolean', value: 0, aiHint: '(on/off switch) Colour inversion' },
+  { key: 'fxThermal', label: 'FX Thermal', type: 'boolean', value: 0, aiHint: '(on/off switch) Thermal-camera false-colour map' },
+  { key: 'fxSecurity', label: 'FX Security', type: 'boolean', value: 0, aiHint: '(on/off switch) CCTV look: green tint, scanlines, timestamp + CAM ID + corner brackets (time/noise seeded)' },
+  { key: 'fxLiquid', label: 'FX Liquid', type: 'boolean', value: 0, aiHint: '(on/off switch) Travelling sine-wave row shift (time seeded)' },
+  { key: 'fxData', label: 'FX Glitch 1', type: 'boolean', value: 0, aiHint: '(on/off switch) Datamosh block displacement (random seeded)' },
+  { key: 'fxGlitch', label: 'FX Glitch 2', type: 'boolean', value: 0, aiHint: '(on/off switch) RGB-split screen smear + random slices' },
+  { key: 'datamosh', label: 'Glitch 1 Amt', type: 'number', value: 8, min: 0, max: 30, step: 1, reactive: true, aiHint: 'Datamosh (Glitch 1) displacement strength' },
+  { key: 'glitchAmt', label: 'Glitch 2 Amt', type: 'number', value: 6, min: 0, max: 20, step: 1, reactive: true, aiHint: 'Glitch 2 RGB-split smear strength' },
+  { key: 'padX', label: 'FX Pad X', type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, aiHint: 'Background-mode glitch/datamosh strength modifier (standalone padX)' },
+  { key: 'textMode', label: 'Text Fill', type: 'number', value: 0, min: 0, max: 3, step: 1, aiHint: '0 off · 1 numbers · 2 letters · 3 mixed — Matrix-style char fill (random seeded)' },
+  { key: 'textPadX', label: 'Text Coverage X', type: 'number', value: 1, min: 0, max: 1, step: 0.01, aiHint: 'Text-fill block coverage, X axis' },
+  { key: 'textPadY', label: 'Text Coverage Y', type: 'number', value: 1, min: 0, max: 1, step: 0.01, aiHint: 'Text-fill block coverage, Y axis' },
 ];
+
+const TEXT_MODES = [null, 'nums', 'letters', 'tmix'] as const;
 
 export class BlobTrackerNode implements EngineNode {
   readonly id = 'blob_tracker';
@@ -158,7 +179,10 @@ export class BlobTrackerNode implements EngineNode {
     const bin = new Uint8Array(PW * PH);
     const threshold = this.v.threshold;
     const thr = threshold + Math.round((1 - this.v.padThresh) * (255 - threshold));
-    for (let i = 0; i < bin.length; i++) bin[i] = data[i * 4] > thr ? 1 : 0;
+    // FX.invert also flips the detection binary (standalone getBinary): with
+    // invert on, blobs form on the DARK regions
+    const inv = this.v.fxInvert >= 0.5;
+    for (let i = 0; i < bin.length; i++) { const v = data[i * 4] > thr ? 1 : 0; bin[i] = inv ? 1 - v : v; }
     return bin;
   }
 
@@ -314,6 +338,260 @@ export class BlobTrackerNode implements EngineNode {
     } catch { /* source not ready */ }
   }
 
+  /* ── L2 FX system (standalone drawFxInBlob / drawTextFill / _applyFxBg) ──
+   * invert + thermal are deterministic (pixel-exact parity); security,
+   * liquid, glitch1(data), glitch2 and text fill are time/Math.random-seeded
+   * (behavioural, like bokeh's stochastic bgfx). */
+  private fxOn(): { invert: boolean; thermal: boolean; security: boolean; liquid: boolean; data: boolean; glitch: boolean } {
+    return {
+      invert: this.v.fxInvert >= 0.5, thermal: this.v.fxThermal >= 0.5,
+      security: this.v.fxSecurity >= 0.5, liquid: this.v.fxLiquid >= 0.5,
+      data: this.v.fxData >= 0.5, glitch: this.v.fxGlitch >= 0.5,
+    };
+  }
+
+  private shapeInside(shape: string, px: number, py: number, w: number, h: number, x: number, y: number, cx: number, cy: number, r: number, sq: number, cornerLen: number): boolean {
+    switch (shape) {
+      case 'circle': return ((px + x - cx) ** 2 + (py + y - cy) ** 2) <= r * r;
+      case 'square': return Math.abs(px + x - cx) <= sq && Math.abs(py + y - cy) <= sq;
+      case 'rect': return true;
+      case 'corner': {
+        const iT = px < cornerLen && py < cornerLen, iR = px > w - cornerLen && py < cornerLen;
+        const iB = px < cornerLen && py > h - cornerLen, iBR = px > w - cornerLen && py > h - cornerLen;
+        return iT || iR || iB || iBR;
+      }
+      default: return true;
+    }
+  }
+
+  private drawFxInBlob(b: { cx: number; cy: number; w: number; h: number }, scX: number, scY: number, idx: number): void {
+    const FX = this.fxOn();
+    if (!FX.invert && !FX.thermal && !FX.security && !FX.liquid && !FX.data && !FX.glitch) return;
+    const dc = this.dc, dCtx = this.dCtx, fxOpacity = this.v.fxOpacity, scale = this.v.blobScale;
+    const cx = b.cx, cy = b.cy, bw = b.w * scX * scale, bh = b.h * scY * scale;
+    const x = Math.max(0, Math.round(cx - bw / 2));
+    const y = Math.max(0, Math.round(cy - bh / 2));
+    const w = Math.min(dc.width - x, Math.ceil(bw));
+    const h = Math.min(dc.height - y, Math.ceil(bh));
+    if (w < 2 || h < 2) return;
+    const shape = this.getShape(idx);
+    const r = Math.max(bw, bh) / 2, sq = Math.max(bw, bh) / 2, cornerLen = Math.min(bw, bh) * 0.3;
+
+    if (FX.liquid) {
+      try {
+        const t = performance.now() * 0.001, amp = Math.min(w, h) * 0.06, freq = 3.5;
+        const src = dCtx.getImageData(x, y, w, h), dst = dCtx.createImageData(w, h);
+        const sd = src.data, dd = dst.data;
+        for (let py = 0; py < h; py++) {
+          const phase = (py / h) * Math.PI * 2 * freq - t * 2.8;
+          const shift = Math.round(Math.sin(phase) * amp);
+          for (let px = 0; px < w; px++) {
+            if (!this.shapeInside(shape, px, py, w, h, x, y, cx, cy, r, sq, cornerLen)) {
+              const i = (py * w + px) * 4; dd[i] = sd[i]; dd[i + 1] = sd[i + 1]; dd[i + 2] = sd[i + 2]; dd[i + 3] = sd[i + 3]; continue;
+            }
+            const srcPx = Math.max(0, Math.min(w - 1, px + shift));
+            const si = (py * w + srcPx) * 4, di = (py * w + px) * 4;
+            dd[di] = sd[si]; dd[di + 1] = sd[si + 1]; dd[di + 2] = sd[si + 2]; dd[di + 3] = sd[si + 3];
+          }
+        }
+        dCtx.putImageData(dst, x, y);
+      } catch { /* source not ready */ }
+    }
+
+    if (FX.thermal || FX.invert || FX.security) {
+      try {
+        const id = dCtx.getImageData(x, y, w, h), d = id.data;
+        const noiseAmp = 18, scanGap = Math.max(3, Math.round(h / 22));
+        for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
+          if (!this.shapeInside(shape, px, py, w, h, x, y, cx, cy, r, sq, cornerLen)) continue;
+          const i = (py * w + px) * 4;
+          const ro = d[i], go = d[i + 1], bo = d[i + 2];
+          let rv = ro, gv = go, bv = bo;
+          if (FX.thermal) { const gray = 0.299 * ro + 0.587 * go + 0.114 * bo; rv = Math.min(255, gray * 2); gv = Math.max(0, gray - 100); bv = Math.max(0, 128 - gray); }
+          if (FX.invert) { rv = 255 - rv; gv = 255 - gv; bv = 255 - bv; }
+          if (FX.security) {
+            const gray = 0.299 * ro + 0.587 * go + 0.114 * bo;
+            const noise = (Math.random() - 0.5) * noiseAmp;
+            const g2 = Math.max(0, Math.min(255, gray + noise));
+            const scanDim = (py % scanGap === 0) ? 0.55 : 1.0;
+            rv = Math.round(g2 * 0.25 * scanDim); gv = Math.round(g2 * scanDim); bv = Math.round(g2 * 0.35 * scanDim);
+          }
+          d[i] = Math.round(ro + (rv - ro) * fxOpacity); d[i + 1] = Math.round(go + (gv - go) * fxOpacity); d[i + 2] = Math.round(bo + (bv - bo) * fxOpacity);
+        }
+        dCtx.putImageData(id, x, y);
+      } catch { /* source not ready */ }
+    }
+
+    if (FX.security) {
+      try {
+        dCtx.save();
+        dCtx.beginPath();
+        if (shape === 'circle') dCtx.arc(cx, cy, r, 0, Math.PI * 2);
+        else if (shape === 'square') dCtx.rect(cx - sq, cy - sq, sq * 2, sq * 2);
+        else dCtx.rect(x, y, w, h);
+        dCtx.clip();
+        const vg = dCtx.createRadialGradient(cx, cy, Math.min(w, h) * 0.2, cx, cy, Math.max(w, h) * 0.72);
+        vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,20,0,0.55)');
+        dCtx.fillStyle = vg; dCtx.fillRect(x, y, w, h);
+        const now = new Date();
+        const ts = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+        const camId = `CAM ${(idx + 1).toString().padStart(2, '0')}`;
+        dCtx.font = `bold ${Math.max(8, Math.round(w * 0.085))}px JetBrains Mono,monospace`;
+        dCtx.fillStyle = 'rgba(0,255,60,0.85)';
+        dCtx.fillText(camId, x + 4, y + Math.round(w * 0.1) + 4);
+        dCtx.fillText(ts, x + 4, y + h - 6);
+        const bk = Math.min(w, h) * 0.12;
+        dCtx.strokeStyle = 'rgba(0,255,60,0.55)'; dCtx.lineWidth = 1.5;
+        dCtx.beginPath();
+        dCtx.moveTo(x + bk, y + 2); dCtx.lineTo(x + 2, y + 2); dCtx.lineTo(x + 2, y + bk);
+        dCtx.moveTo(x + w - bk, y + 2); dCtx.lineTo(x + w - 2, y + 2); dCtx.lineTo(x + w - 2, y + bk);
+        dCtx.moveTo(x + 2, y + h - bk); dCtx.lineTo(x + 2, y + h - 2); dCtx.lineTo(x + bk, y + h - 2);
+        dCtx.moveTo(x + w - 2, y + h - bk); dCtx.lineTo(x + w - 2, y + h - 2); dCtx.lineTo(x + w - bk, y + h - 2);
+        dCtx.stroke();
+        dCtx.restore();
+      } catch { /* ignore */ }
+    }
+
+    if (FX.data) {
+      const str = this.v.datamosh * (1 + Math.max(bw, bh) * 0.015);
+      const bW = Math.max(8, bw / 6), bH = Math.max(8, bh / 4);
+      dCtx.save(); dCtx.globalAlpha = fxOpacity;
+      dCtx.beginPath();
+      if (shape === 'circle') dCtx.arc(cx, cy, r, 0, Math.PI * 2);
+      else if (shape === 'square') dCtx.rect(cx - sq, cy - sq, sq * 2, sq * 2);
+      else dCtx.rect(x, y, w, h);
+      dCtx.clip();
+      for (let bkx = x; bkx < x + w; bkx += bW) for (let bky = y; bky < y + h; bky += bH) {
+        if (Math.random() < 0.4) {
+          const oX = (Math.random() - 0.5) * str * 2, oY = (Math.random() - 0.5) * str;
+          const bwi = Math.min(bW, x + w - bkx), bhi = Math.min(bH, y + h - bky);
+          if (bwi > 0 && bhi > 0) dCtx.drawImage(dc, bkx, bky, bwi, bhi, bkx + oX, bky + oY, bwi, bhi);
+        }
+      }
+      if (Math.random() < 0.3) {
+        const ly = y + Math.random() * h, lh = Math.random() * 4 + 1;
+        dCtx.drawImage(dc, x, ly, w, lh, x + (Math.random() - 0.5) * str * 3, ly, w, lh);
+      }
+      dCtx.restore();
+    }
+
+    if (FX.glitch) {
+      const str = this.v.glitchAmt * (1 + Math.max(bw, bh) * 0.01);
+      dCtx.save();
+      dCtx.beginPath();
+      if (shape === 'circle') dCtx.arc(cx, cy, r, 0, Math.PI * 2);
+      else if (shape === 'square') dCtx.rect(cx - sq, cy - sq, sq * 2, sq * 2);
+      else dCtx.rect(x, y, w, h);
+      dCtx.clip();
+      dCtx.globalCompositeOperation = 'screen';
+      dCtx.globalAlpha = 0.5 * fxOpacity;
+      dCtx.drawImage(dc, x, y, w, h, x - str, y, w, h);
+      dCtx.globalAlpha = 0.4 * fxOpacity;
+      dCtx.drawImage(dc, x, y, w, h, x + str * 0.5, y + 1, w, h);
+      if (Math.random() < 0.4) {
+        const sY = y + Math.random() * h, sH = Math.random() * 6 + 2;
+        dCtx.drawImage(dc, x, sY, w, sH, x + (Math.random() - 0.5) * str * 4, sY, w, sH);
+      }
+      dCtx.restore();
+    }
+  }
+
+  private drawTextFill(b: { cx: number; cy: number; w: number; h: number }, scX: number, scY: number, idx: number): void {
+    const textFillMode = TEXT_MODES[this.v.textMode | 0];
+    if (!textFillMode) return;
+    const dCtx = this.dCtx, fxOpacity = this.v.fxOpacity, scale = this.v.blobScale;
+    const cx = b.cx, cy = b.cy, bw = b.w * scX * scale, bh = b.h * scY * scale;
+    const x = cx - bw / 2, y = cy - bh / 2;
+    const shape = this.getShape(idx);
+    const r = Math.max(bw, bh) / 2, sq = Math.max(bw, bh) / 2;
+    const chars = textFillMode === 'nums' ? '0123456789' : textFillMode === 'letters' ? 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' :
+      '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg!@#$%&*+-=<>{}[]';
+    const colMap: Record<string, string> = { nums: '#00ff44', letters: '#44aaff', tmix: '#ffaa00' };
+    const fs = Math.max(9, Math.min(22, Math.min(bw, bh) * 0.18));
+    const cw = fs * 0.62;
+    const coverage = Math.max(0, Math.min(1, (this.v.textPadX + this.v.textPadY) / 2));
+    const blkW = Math.max(cw * 3, bw * 0.18), blkH = Math.max(fs * 3, bh * 0.18);
+    dCtx.save();
+    dCtx.beginPath();
+    if (shape === 'circle') dCtx.arc(cx, cy, r, 0, Math.PI * 2);
+    else if (shape === 'square') dCtx.rect(cx - sq, cy - sq, sq * 2, sq * 2);
+    else dCtx.rect(x, y, bw, bh);
+    dCtx.clip();
+    dCtx.font = `bold ${fs}px JetBrains Mono,monospace`;
+    dCtx.fillStyle = colMap[textFillMode] || '#ffffff';
+    dCtx.globalAlpha = 0.75 * fxOpacity;
+    dCtx.globalCompositeOperation = 'screen';
+    for (let bky = y; bky < y + bh; bky += blkH) {
+      for (let bkx = x; bkx < x + bw; bkx += blkW) {
+        if (Math.random() >= coverage) continue;
+        const cols = Math.ceil(blkW / cw) + 1, rows = Math.ceil(blkH / fs) + 1;
+        for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++)
+          dCtx.fillText(chars[Math.floor(Math.random() * chars.length)], bkx + col * cw, bky + (row + 1) * fs);
+      }
+    }
+    dCtx.restore();
+  }
+
+  /* FX on the whole background (bgFxMode off); blobs are saved clean by the
+   * caller and restored after. Standalone _applyFxBg. */
+  private applyFxBg(dW: number, dH: number): void {
+    const FX = this.fxOn(), op = this.v.fxOpacity, dc = this.dc, dCtx = this.dCtx;
+    if (FX.invert || FX.thermal || FX.security) {
+      const id = dCtx.getImageData(0, 0, dW, dH); const d = id.data;
+      const noiseAmp = 18, scanGap = Math.max(3, Math.round(dH / 22));
+      for (let i = 0; i < d.length; i += 4) {
+        const ro = d[i], go = d[i + 1], bo = d[i + 2];
+        let r = ro, g = go, b = bo;
+        if (FX.thermal) { const gv = 0.299 * ro + 0.587 * go + 0.114 * bo; r = Math.min(255, gv * 2); g = Math.max(0, gv - 100); b = Math.max(0, 128 - gv); }
+        if (FX.invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
+        if (FX.security) { const gray = 0.299 * ro + 0.587 * go + 0.114 * bo; const noise = (Math.random() - 0.5) * noiseAmp; const g2 = Math.max(0, Math.min(255, gray + noise)); const row = Math.floor(i / 4 / dW); const scanDim = (row % scanGap === 0) ? 0.55 : 1.0; r = Math.round(g2 * 0.25 * scanDim); g = Math.round(g2 * scanDim); b = Math.round(g2 * 0.35 * scanDim); }
+        d[i] = Math.round(ro + (r - ro) * op); d[i + 1] = Math.round(go + (g - go) * op); d[i + 2] = Math.round(bo + (b - bo) * op);
+      }
+      dCtx.putImageData(id, 0, 0);
+    }
+    if (FX.liquid) {
+      try {
+        const t = performance.now() * 0.001, amp = Math.min(dW, dH) * 0.025, freq = 3.5;
+        const src = dCtx.getImageData(0, 0, dW, dH), dst = dCtx.createImageData(dW, dH);
+        const sd = src.data, dd = dst.data;
+        for (let py = 0; py < dH; py++) { const phase = (py / dH) * Math.PI * 2 * freq - t * 2.8; const shift = Math.round(Math.sin(phase) * amp); for (let px = 0; px < dW; px++) { const srcPx = Math.max(0, Math.min(dW - 1, px + shift)); const si = (py * dW + srcPx) * 4, di = (py * dW + px) * 4; dd[di] = Math.round(sd[di] + (sd[si] - sd[di]) * op); dd[di + 1] = Math.round(sd[di + 1] + (sd[si + 1] - sd[di + 1]) * op); dd[di + 2] = Math.round(sd[di + 2] + (sd[si + 2] - sd[di + 2]) * op); dd[di + 3] = sd[si + 3]; } }
+        dCtx.putImageData(dst, 0, 0);
+      } catch { /* ignore */ }
+    }
+    if (FX.data) {
+      const str = this.v.datamosh * this.v.padThresh * (1 + this.v.padX);
+      const bW = Math.max(8, dW / 6), bH = Math.max(8, dH / 4);
+      dCtx.save(); dCtx.globalAlpha = op;
+      for (let bx = 0; bx < dW; bx += bW) for (let by = 0; by < dH; by += bH) if (Math.random() < 0.4) { const oX = (Math.random() - 0.5) * str * 2, oY = (Math.random() - 0.5) * str, bwi = Math.min(bW, dW - bx), bhi = Math.min(bH, dH - by); dCtx.drawImage(dc, bx, by, bwi, bhi, bx + oX, by + oY, bwi, bhi); }
+      if (Math.random() < 0.3) { const ly = Math.random() * dH, lh = Math.random() * 4 + 1; dCtx.drawImage(dc, 0, ly, dW, lh, (Math.random() - 0.5) * str * 3, ly, dW, lh); }
+      dCtx.restore();
+    }
+    if (FX.glitch) {
+      const str = this.v.glitchAmt * this.v.padThresh * (1 + this.v.padX * 0.5);
+      dCtx.save(); dCtx.globalCompositeOperation = 'screen';
+      dCtx.globalAlpha = 0.5 * op; dCtx.drawImage(dc, 0, 0, dW, dH, -str, 0, dW, dH);
+      dCtx.globalAlpha = 0.4 * op; dCtx.drawImage(dc, 0, 0, dW, dH, str * 0.5, 1, dW, dH);
+      dCtx.restore();
+      if (Math.random() < 0.4) { const sY = Math.random() * dH, sH = Math.random() * 6 + 2; dCtx.drawImage(dc, 0, sY, dW, sH, (Math.random() - 0.5) * str * 4, sY, dW, sH); }
+    }
+    // text fill covering the whole background in BG mode
+    const textFillMode = TEXT_MODES[this.v.textMode | 0];
+    if (textFillMode) {
+      const chars = textFillMode === 'nums' ? '0123456789' : textFillMode === 'letters' ? 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' :
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg!@#$%&*+-=<>{}[]';
+      const colMap: Record<string, string> = { nums: '#00ff44', letters: '#44aaff', tmix: '#ffaa00' };
+      const fs = Math.max(10, Math.min(22, Math.min(dW, dH) * 0.028));
+      const cw = fs * 0.62, cols = Math.ceil(dW / cw) + 2, rows = Math.ceil(dH / fs) + 2;
+      dCtx.save();
+      dCtx.font = `bold ${fs}px JetBrains Mono,monospace`;
+      dCtx.fillStyle = colMap[textFillMode] || '#ffffff';
+      dCtx.globalAlpha = 0.6 * op; dCtx.globalCompositeOperation = 'screen';
+      for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++)
+        dCtx.fillText(chars[Math.floor(Math.random() * chars.length)], col * cw, (row + 1) * fs);
+      dCtx.restore();
+    }
+  }
+
   render(ctx: NodeRenderContext): WebGLTexture {
     const gl = ctx.gl;
     const src = ctx.source;
@@ -332,7 +610,25 @@ export class BlobTrackerNode implements EngineNode {
     const scX = dW / PW, scY = dH / PH;
     const sc = blobs.map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, cx: b.cx * scX, cy: b.cy * scY, area: b.area }));
 
-    // 3) tracker overlays (L2–L4 FX/flow/contour still to come)
+    // 3) FX — bgFxMode ON: FX inside the blobs | OFF: FX on the background,
+    //    blobs kept clean (patch save/restore around applyFxBg)
+    if (this.v.bgFxMode >= 0.5) {
+      sc.forEach((b, i) => this.drawFxInBlob(b, scX, scY, i));
+      sc.forEach((b, i) => this.drawTextFill(b, scX, scY, i));
+    } else {
+      const scale = this.v.blobScale;
+      const patches = sc.map((b) => {
+        const bw = b.w * scX * scale, bh = b.h * scY * scale;
+        const px = Math.max(0, Math.round(b.cx - bw / 2)), py = Math.max(0, Math.round(b.cy - bh / 2));
+        const pw = Math.min(dW - px, Math.ceil(bw)), ph = Math.min(dH - py, Math.ceil(bh));
+        if (pw < 2 || ph < 2) return null;
+        return { x: px, y: py, data: this.dCtx.getImageData(px, py, pw, ph) };
+      });
+      this.applyFxBg(dW, dH);
+      patches.forEach((p) => { if (p) this.dCtx.putImageData(p.data, p.x, p.y); });
+    }
+
+    // 4) tracker overlays (L3–L4 contour/flow still to come)
     this.drawConnections(sc);
     sc.forEach((b, i) => this.drawBlobMarker(b, scX, scY, i));
     this.computeMotion(src);

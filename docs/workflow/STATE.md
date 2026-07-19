@@ -6,25 +6,25 @@
 ## Current phase
 
 **Phase 8 — 1:1 port: blob_tracker** (IN PROGRESS — the LAST and HARDEST
-port: three.js r128 + many-Canvas2D hybrid, ~6876 lines. **Layer 1
-(tracker core) implemented AND parity-verified pixel-identical**; the node
-is temp-wired into the factory. Layers 2–8 remain — see the node header's
+port: three.js r128 + many-Canvas2D hybrid, ~6876 lines. **Layers 1
+(tracker core) + 2 (FX system) implemented AND parity-verified**; the node
+is temp-wired into the factory. Layers 3–8 remain — see the node header's
 layer map and HANDOFF.)
 
 ## Next step
 
 **Read `docs/workflow/HANDOFF.md` and the `src/engine/nodes/blob_tracker.ts`
 header first** — the header carries the full LAYER MAP (■ L1 done / □ L2–L8
-remaining) with standalone line refs. L1 (base video → 320×180 detect →
-blob markers → connections → motion → offscreen→texture) is verified by
-`tools/verify/verify-phase8-static-L1.js` (**7/7 configs corr=1.000,
-mad=0.000** vs the standalone's default tracker state — its default IS L1
-since _applyFxBg no-ops with no FX flags). Continue with **Layer 2**
-(drawFxInBlob: invert/thermal/security/liquid/glitch1/glitch2 + bgFxMode +
-drawTextFill), then L3 contour, L4 flow, L5 three.js ripple sim (three is
-installed), L6 three.js panels + the stack composite, L7 reactivity +
-colours, L8 full param table + parity/behavior/chain suites + regression,
-then flip the checkbox and mark Phase 8 done. **Gotcha:** the standalone
+remaining) with standalone line refs. L1 (tracker core) and L2 (FX
+system) are verified by `verify-phase8-static-L1.js` (**7/7 corr=1.000**)
+and `verify-phase8-static-L2.js` (**12/12**: invert+thermal pixel-identical,
+stochastic FX behavioural). Continue with **Layer 3** (contour modes edge/
+smart — `_ctComputeContours`/`_ctRunSmartSeg`, check if smart pulls
+MediaPipe — + `_drawContour`), then L4 optical flow, L5 three.js ripple sim
+(three is installed), L6 three.js panels + the stack composite, L7
+reactivity + colours + fixedPtsMode, L8 full param table +
+parity/behavior/chain suites + regression, then flip the checkbox and mark
+Phase 8 done. **Gotcha:** the standalone
 loads THREE from cdnjs at init — a suite that blocks the CDN must serve the
 three.js r128 mirror (see the L1 suite's route) or the standalone script
 aborts before wiring its file input (#fi-v).
@@ -94,17 +94,26 @@ aborts before wiring its file input (#fi-v).
   and the bgFxMode-off else-branch is a no-op since `_applyFxBg` touches
   nothing with no FX flag). Both pinned to 1280×720, paused same frame;
   configs: default, threshold ±, minArea, brightness, contrast, connWidth.
+- **Layer 2 — FX system — DONE and parity-verified**: `drawFxInBlob`
+  (invert/thermal/security/liquid/glitch1(data)/glitch2, shape-masked) +
+  `drawTextFill` (nums/letters/tmix) + `applyFxBg`, with the bgFxMode on/off
+  branch (patch save→applyFxBg→restore). `verify-phase8-static-L2.js`
+  **12/12 PASS**: invert + thermal **pixel-identical (corr=1.000, mad=0.000)**
+  in BOTH bg and in-blob modes; security/liquid/glitch1/glitch2/text change
+  the frame on BOTH sides with near-identical magnitude (ratio 1.00–1.06 —
+  time/Math.random-seeded, so behavioural not pixel-equal). Fixed a real port
+  bug found by the check: the standalone's `getBinary` also flips the
+  detection binary when invert is on (`FX.invert?1-v:v`) — added.
 - The node is **temp-wired** into `nodes.ts` (renders the correct tracker
-  core — strictly better than the DummyNode passthrough — but the L2–L8
-  features/params are not there yet, so **Phase 8 is NOT done**; checkbox
-  stays unchecked until the full port + full parity/behavior/chain suites).
-- Layers remaining (node header has the map): L2 drawFxInBlob (invert/
-  thermal/security/liquid/glitch1/glitch2 + bgFxMode + text fill), L3
-  contour modes (edge/smart — check if smart pulls MediaPipe), L4 optical
-  flow, L5 three.js ripple sim (rRenderer/glC float ping-pong), L6 three.js
-  panels scene + the stack composite (dc→panels→fxOv→glC), L7 reactivity
-  (ar-*→routes, vr-*→VideoAnalyzer) + colours (ParamSchema can't hold
-  colours — design TODO) + fixedPtsMode chaos, L8 full param table + suites.
+  core + FX — strictly better than the DummyNode passthrough — but L3–L8 are
+  not there yet, so **Phase 8 is NOT done**; checkbox stays unchecked until
+  the full port + full parity/behavior/chain suites).
+- Layers remaining (node header has the map): L3 contour modes (edge/smart —
+  check if smart pulls MediaPipe), L4 optical flow, L5 three.js ripple sim
+  (rRenderer/glC float ping-pong), L6 three.js panels scene + the stack
+  composite (dc→panels→fxOv→glC), L7 reactivity (ar-*→routes,
+  vr-*→VideoAnalyzer) + colours (ParamSchema can't hold colours — design
+  TODO) + fixedPtsMode chaos, L8 full param table + suites.
 
 ### 2026-07-19 — Phase 7 complete (1:1 port: BLOB REVEAL)
 
