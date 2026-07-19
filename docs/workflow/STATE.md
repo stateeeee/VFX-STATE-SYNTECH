@@ -47,6 +47,14 @@ aborts before wiring its file input (#fi-v).
 
 ## Open items
 
+- **⚠️ OPERATOR DECISION PENDING — Phase 8 L5 (ripple)**: blob_tracker's
+  ripple sim is MOUSE-driven (waves follow the cursor); a chain node has no
+  mouse, so a literal 1:1 port is invisible (flat field → passthrough). The
+  operator must pick the force source before L5 is ported: (a) audio/beat
+  (reactive substitution, matches analog/blob_reveal), (b) video-motion,
+  (c) omit in the chain (interactive single-effect only), (d) flat passthrough.
+  The three.js sim is identical under all options — only the force differs.
+  Was asked at handoff; not yet answered. See the `blob_tracker.ts` L5 header.
 - Operator will deliver 6 images (logo + 5 effect covers) → Phase 10,
   prompt D in 08-PROMPTS.md. Not delivered yet.
 - `ChainLab` "Master MP4" button references `/effects/vendor/*` files that do

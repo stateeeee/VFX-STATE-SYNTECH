@@ -45,7 +45,16 @@ import { ParamSchema } from '../../bridge/types';
         processForDetect). Temporal ⇒ verified behaviourally. flowFeedAR
         (flow→AR signal) deferred to L7 reactivity.
    □ L5 — three.js ripple sim (rRenderer on glC, rRtA/rRtB float ping-
-        pong, RP={disp,damp,waveC2}) — needs `three` (installed 0.128.0).
+        pong wave-equation, RP={disp,damp,waveC2}) — needs `three`
+        (installed). ⚠️ BLOCKED ON AN OPERATOR DECISION: the sim's force is
+        MOUSE-driven only (mousemove → rTargetForce); with no force the wave
+        field stays flat and the display shader is a passthrough. A chain
+        node has no mouse, so a literal 1:1 port is invisible. Options put to
+        the operator (pick before porting L5): (a) audio/beat-driven force
+        [reactive substitution, matches analog/blob_reveal], (b) video-motion
+        -driven force, (c) omit in the chain [interactive single-effect only],
+        (d) port flat/passthrough. The three.js sim + shaders are the same
+        under every option — only the force source differs.
    □ L6 — three.js panels scene (panelsRenderer, panelMeshes, labels,
         panelsBg) + the stack composite (dc→panels→fxOv→glC).
    □ L7 — reactivity: audioReactiveFrame (ar-* gains → ParamBus routes,
