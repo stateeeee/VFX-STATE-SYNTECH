@@ -5,25 +5,19 @@
 
 ## Current phase
 
-**Phase 6 — 1:1 port: anamorphic_lab** (not started)
+**Phase 6 — 1:1 port: anamorphic_lab** (IN PROGRESS — node implemented,
+static parity 26/26 GREEN, behavior A–D+F green; E/chain/regression and
+the close-out log entry remain. NOT done yet.)
 
 ## Next step
 
-**Read `docs/workflow/HANDOFF.md` first** (session continuation brief:
-exact position, sandbox quirks, verification machinery in
-`tools/verify/`). Then run Phase 6 of `05-ROADMAP.md` (port template) for
-**anamorphic_lab**: read `public/effects/anamorphic_lab/index.html`
-end-to-end; extract the full param table (28 range sliders `s-*`/`cam-*`,
-flare/grade/texture groups, camera sims, toggles) and the render
-pipeline; implement `src/engine/nodes/anamorphic_lab.ts`; swap the
-factory; this build HAS an AudioContext — map its audio-reactive controls
-to ParamBus `defaultRoute`s; segmentation features consume the shared
-PersonMask (`segEnabled`). Verify with the Phase 4/5 parity method:
-static pixel comparison via the `window.__SYN` tap (adaptiveRes off,
-resScale 1, both videos paused on the same 1080p frame) with the SAME
-person mask injected on both sides (standalone `onSegResults` + PersonMask
-tap — see the Phase 5 log), behavior checks for temporal/stochastic
-features per RENDERED frame, regression suites 1–3 + phase 5 suites after.
+**Read `docs/workflow/HANDOFF.md` first — it contains the exact
+mid-phase position, the list of already-proven results (do NOT redo
+them), the three remaining verification items (behavior E option a/b,
+chain script, regression), the scratchpad rebuild steps, and a ready
+draft of the Phase 6 STATE.md log entry.** Continue from its
+"What remains" list, then close the phase (checkbox, log entry, next
+step → Phase 7 blob_reveal) in the same commit.
 
 ## Phase board
 
