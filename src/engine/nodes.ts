@@ -3,6 +3,7 @@ import { ParamSchema } from '../bridge/types';
 import { AnalogNode } from './nodes/analog';
 import { BokehNode } from './nodes/bokeh';
 import { AnamorphicLabNode } from './nodes/anamorphic_lab';
+import { BlobRevealNode } from './nodes/blob_reveal';
 
 /* Pre-port stand-ins: rendering is passthrough until Phases 4–8
  * replace each factory with the real 1:1 EngineNode. Since Phase 3 they DO
@@ -59,7 +60,7 @@ export const NODE_FACTORY: Record<string, () => EngineNode> = {
   blob_tracker: () => new DummyNode('blob_tracker', 'Blob Tracker', placeholder(false)),
   analog: () => new AnalogNode(), // Phase 4: real 1:1 port
 
-  blob_reveal: () => new DummyNode('blob_reveal', 'Blob Reveal', placeholder(true)),
+  blob_reveal: () => new BlobRevealNode(), // Phase 7: real 1:1 port
   bokeh: () => new BokehNode(), // Phase 5: real 1:1 port
   anamorphic_lab: () => new AnamorphicLabNode() // Phase 6: real 1:1 port
 };
