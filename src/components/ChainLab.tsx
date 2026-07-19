@@ -124,6 +124,7 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
       if (wantsMask) mask.enable();
       if (wantsMask && mask.state === 'ready') mask.tick(engine.source as HTMLVideoElement | null, now);
       engine.personMaskSource = wantsMask && mask.ready ? mask.maskCanvas : null;
+      engine.personMaskVersion = mask.version;
       busRef.current!.apply(engine.chain, {
         bass: lv.bass, loud: lv.loud, treble: lv.treble, beat: lv.beat,
         motion: va.motion, bright: va.bright,

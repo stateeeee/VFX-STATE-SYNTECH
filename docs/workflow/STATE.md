@@ -5,24 +5,19 @@
 
 ## Current phase
 
-**Phase 5 — 1:1 port: bokeh** (not started)
+**Phase 6 — 1:1 port: anamorphic_lab** (IN PROGRESS — node implemented,
+static parity 26/26 GREEN, behavior A–D+F green; E/chain/regression and
+the close-out log entry remain. NOT done yet.)
 
 ## Next step
 
-**Read `docs/workflow/HANDOFF.md` first** (session continuation brief:
-exact position, sandbox quirks, verification machinery in
-`tools/verify/`). Then run Phase 5 of `05-ROADMAP.md` (port template)
-for **bokeh**: read
-`public/effects/bokeh/index.html` end-to-end; extract the full param table
-(sliders, knobs via `setKnob`, `#style-sel` seg group, toggles, shape pad)
-and the render pipeline; implement `src/engine/nodes/bokeh.ts`; swap the
-factory; map its audio-reactive controls to ParamBus `defaultRoute`s; the
-effect consumes the shared PersonMask (`segEnabled`). Verify with the
-Phase 4 parity method: static pixel comparison via the `window.__SYN` dev
-tap (pin adaptiveRes off + resScale 1, pause both videos on the same
-frame, use a source clip at 1920×1080 so both canvases match the
-standalone's fixed CONFIG resolution), motion/stochastic behavior checks,
-and frame-based (not wall-time) analysis for any temporal feature.
+**Read `docs/workflow/HANDOFF.md` first — it contains the exact
+mid-phase position, the list of already-proven results (do NOT redo
+them), the three remaining verification items (behavior E option a/b,
+chain script, regression), the scratchpad rebuild steps, and a ready
+draft of the Phase 6 STATE.md log entry.** Continue from its
+"What remains" list, then close the phase (checkbox, log entry, next
+step → Phase 7 blob_reveal) in the same commit.
 
 ## Phase board
 
@@ -31,7 +26,7 @@ and frame-based (not wall-time) analysis for any temporal feature.
 - [x] Phase 2 — AI Lab UX (armed mode + drag wiring)
 - [x] Phase 3 — Engine services (AudioEngine, VideoAnalyzer, ParamBus, PersonMask)
 - [x] Phase 4 — 1:1 port: analog
-- [ ] Phase 5 — 1:1 port: bokeh
+- [x] Phase 5 — 1:1 port: bokeh
 - [ ] Phase 6 — 1:1 port: anamorphic_lab
 - [ ] Phase 7 — 1:1 port: blob_reveal
 - [ ] Phase 8 — 1:1 port: blob_tracker
@@ -67,6 +62,98 @@ and frame-based (not wall-time) analysis for any temporal feature.
 | 7 | Port order locked: analog → bokeh → anamorphic_lab → blob_reveal → blob_tracker | 2026-07-17 |
 
 ## Log
+
+### 2026-07-18 — Phase 5 complete (1:1 port: BOKEH)
+
+- **`src/engine/nodes/bokeh.ts`** implements the standalone's exact pipeline
+  in the SynEngine: mask intake per segmentation arrival (temporal EMA
+  ping-pong α=0.28 with the 1.6× rising asymmetry → 5×5 gaussian spatial
+  blur) → STAGE 1 bokeh blur (all 5 kernel styles: 37-tap Poisson disc,
+  swirly Helios, explosive coma, anamorphic 2.39 oval + streak flares,
+  40-tap shape-pad blend) → STAGE 1.5 post-blur distort (swirl / explosive
+  / anamorphic squeeze) → STAGE 2 background FX (datamosh with frame-based
+  I-frame clock, CPU pixel sort at fixed 480×270 with verbatim run/luma
+  logic, liquid, morph, lava — all mask-gated, ping-pong buffers) →
+  STAGE 3 composite (feather, Optics vignette, anamorphic squeeze/barrel/
+  letterbox/breathing/elliptical vignette). All 11 fragment shaders are the
+  standalone's GLSL translated to ES 3.00 with the math untouched, incl.
+  the fixed 16/9 tap-aspect constants. Factory swapped in `nodes.ts`.
+- **Param table — 100% coverage** of the standalone's parameter surface
+  (38 node params): 9 sliders + 21 knobs (same ranges/defaults from the
+  markup data-attrs; `lqAmount` default 0.025 per the knob — the P-object
+  literal 0.5 is overwritten by `initKnobs()` at startup), `#style-sel` →
+  `bokehStyle` 0–4 (4 = shape pad, the `btn-bshape` state), BSHAPE pad →
+  `bshapeX/Y`, `#bgfx-sel` → `bgfxStyle` 0–5, `psAngle` 0–3 (H/V/D+/D-),
+  LED toggles → `anamLetterbox`/`anamBreathing`, plus `segEnabled` for the
+  shared PersonMask. Consolidations, justified: focal-sel buttons and the
+  XY pad are controllers of bokehRadius/bokehBloom (rack covers that);
+  the 6 presets are ChainLab-preset territory; source/transport/record/
+  fullscreen are shell concerns. `psPasses` exists in the standalone's P
+  but has no UI control and is never read by `runPixelSort` — dead key,
+  intentionally not ported. The standalone couples `distortMode` to
+  `bokehStyle` on style clicks (a control-surface behavior); the node
+  keeps them independent params with the same defaults.
+- **Deliberate substitution (decision #1-consistent)**: the standalone's
+  eagerly-loaded MediaPipe becomes the shared PersonMask service via
+  `segEnabled` + new `personMaskVersion` plumbing (SynEngine ctx +
+  ChainLab); until the first mask arrives the node passes through, exactly
+  the standalone's `maskReady` gate. The original has NO audio reactivity
+  (04-SPEC: video-driven only) → no defaultRoutes seeded; continuous look
+  params are marked `reactive` so the lab's mod matrix can route them.
+- **PersonMask fixes (trivial, risk-free)**: `clearRect` before drawing
+  each mask (source-over left stale person pixels forever — the mask
+  could only grow) + `version` counter consumed by the node to step the
+  temporal EMA once per arrival like the standalone's `onSegResults`.
+- **Parity run (06-VERIFICATION §4)**, evidence in scratchpad
+  (`phase5-*-summary.json`, `phase5-*.log`, `shots/p5s-*`), suites
+  committed as `tools/verify/verify-phase5-{static,behavior,chain}.js`:
+  1. *Static pixel parity* — `__SYN` tap, adaptiveRes off @1:1, both
+     videos paused on the same 1920×1080 frame, and the SAME injected
+     person mask on both sides (standalone via global `onSegResults`,
+     engine via the PersonMask tap; EMA stepped 14× each) —
+     **18/18 configs corr=1.000, mad=0.000 (pixel-identical)**: defaults,
+     radius min/max, all 5 kernel styles incl. shape-pad corners,
+     feather 0/1, vignette max, anam-full, letterbox off, ratio max,
+     all 3 distort modes, hero combo. Suite: 22 steps, 0 failed. Hero
+     screenshots standalone vs engine indistinguishable.
+  2. *Behavior suite* — 13/13 PASS: real-MediaPipe path READY with mask
+     versions advancing; playing-defaults long-exposure corr=0.934
+     (interleaved same-instant sampling); all 5 background FX leave the
+     subject core intact (mad ≤0.016) while the background transforms on
+     BOTH sides with matching magnitudes (datamosh S/E .176/.104,
+     pixel-sort .177/.177, liquid .0011/.0013 in its left-edge band —
+     its knob range caps the wipe front at ~4% of width by design,
+     morph .089/.020, lava .065/.052); datamosh I-frame cadence proven on
+     the engine (min-dist from clean: 2Hz=0.002 vs 0.01Hz=0.159);
+     CPU pixel-sort static convergence corr=1.000 cross-side; breathing
+     drift only when enabled (S .0013/E .0018 vs 0/0 off); manual
+     bass→bokehRadius route swings the readout 19→44 (spread 29.5).
+  3. *Chain sanity* — fresh session, bokeh→analog (the two real ports)
+     with the other three racked but bypassed: PersonMask READY on the
+     real path, no GL errors, non-black output, mask v13 flowing.
+     **fps 1 @ res 0.5 under sandbox SwiftShader** — the ≥30fps @720p
+     acceptance stays a GPU-machine criterion (as in Phase 4): flagged
+     for the operator, not assessable here.
+  4. *Accepted deltas (sandbox-only)*: standalone datamosh cadence
+     unobservable headless (<1fps renders make a 30-frame snap cycle >30
+     wall-seconds) — mechanism ported line-for-line and engine-proven;
+     bokeh gold-noise jitter seeds differ per side by clock (behavioral,
+     invisible at verification downscale).
+  5. Regression: phase 1/2/3 suites re-run — phase 1 **21/21** (the two first-run fails were a missing three.js mirror in this session’s scratchpad CDN, not regressions — blob_tracker untouched), phase 2 **26/26**, phase 3 **14/14** (needs `test.webm` present in the scratchpad);
+     lint clean.
+- Notes for Phases 6–8 (also in HANDOFF.md): inject deterministic masks
+  through `onSegResults` (standalone) + the PersonMask tap (engine) so
+  segmentation parity is MediaPipe-independent; never write files into
+  the repo while a suite drives the shell (Vite full-reload kills the
+  run); `page.screenshot` starves under GL load — grab canvases with
+  `toDataURL`; ChainLab racks ALL five nodes (unwired ⇒ enabled=false) —
+  don't wait on chain length; drive standalone bgfx switches via the real
+  seg buttons (their click handlers clear feedback buffers).
+
+### 2026-07-18 — Phase 5 checkpoint (mid-session commit 834bd6d)
+
+- Stop-hook checkpoint before verification finished: node implemented,
+  lint clean, parity still running — superseded by the entry above.
 
 ### 2026-07-18 — Phase 4 complete (1:1 port: ANALOG)
 

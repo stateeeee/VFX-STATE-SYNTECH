@@ -24,6 +24,8 @@ export interface NodeRenderContext {
   source: TexImageSource | null;
   /** person-segmentation confidence mask (top-left canvas), when available */
   personMask: TexImageSource | null;
+  /** bumps when personMask holds a new segmentation result — nodes gate per-arrival passes on it */
+  personMaskVersion: number;
 }
 
 export interface EngineNode {
@@ -131,6 +133,8 @@ export class SynEngine {
   beforeFrame?: (now: number) => void;
   /** set by the host when a person-segmentation mask is available */
   personMaskSource: TexImageSource | null = null;
+  /** host-maintained counter of fresh personMaskSource content */
+  personMaskVersion = 0;
 
   /* ── adaptive internal resolution (PLAN §6.4): when the frame rate
         falls under budget the render size steps down, display size
@@ -332,6 +336,7 @@ export class SynEngine {
       drawQuad: this.drawQuad,
       source: v,
       personMask: this.personMaskSource,
+      personMaskVersion: this.personMaskVersion,
     };
 
     let tex = this.sourceTex;
