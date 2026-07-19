@@ -257,9 +257,17 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   await applySA(easeCfg); await applyEN(easeCfg);
   await saFrames(40); await enFrames(40);
   const sharpS = await grabSA(); const sharpE = await grabEN();
-  await applySA({ ...easeCfg, fStop: 2.8 }); await applyEN({ ...easeCfg, fStop: 2.8 });
-  await saFrames(2); await enFrames(2);
-  const midS = await grabSA(); const midE = await grabEN();
+  // Mid-flight must be observed per side on ITS OWN frame clock, engine
+  // first and immediately: the standalone's minute-long waits burn wall
+  // time in which the engine's dt-clamped easing fully settles — grabbing
+  // the engine after the standalone's 2-frame wait reads remaining≈0 even
+  // though the easing is gradual (run 4's only red was exactly that).
+  await applyEN({ ...easeCfg, fStop: 2.8 });
+  await enFrames(2);
+  const midE = await grabEN();
+  await applySA({ ...easeCfg, fStop: 2.8 });
+  await saFrames(2);
+  const midS = await grabSA();
   await saFrames(40); await enFrames(40);
   const wideS = await grabSA(); const wideE = await grabEN();
   const totS = mad(sharpS, wideS), totE = mad(sharpE, wideE);
