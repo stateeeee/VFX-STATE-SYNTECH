@@ -78,6 +78,37 @@ dev server is flaky here — start it via Bash `run_in_background` and poll for
 
 ## Log
 
+### 2026-07-20 — Phase 8 Layer 7a (BLOB TRACKER — reactivity routes) verified
+
+- **`src/engine/nodes/blob_tracker.ts` L7a — reactivity ROUTES — DONE.** The
+  standalone's bespoke auto-driver (`audioReactiveFrame`/`applyAudioToParams`/
+  `videoReactiveFrame`: a 7-band analyser — sub/bass/lowMid/mid/hiMid/high/air +
+  centroid/flux/onset/BPM — non-linearly modulating threshold, blobScale,
+  datamosh, glitch, connWidth, connStyle, panelTurb, ripple, panel scale, the XY
+  Lissajous…) is **mapped to ParamBus `defaultRoute`s on the shared AudioEngine/
+  VideoAnalyzer signals** (decision #1 architecture, the Phase-4 analog pattern).
+  Seeded (additive `base + signal·amount·range`, so bases at the low end grow
+  with the signal): **connWidth←bass 0.45, connGlow←loud 0.4, datamosh←treble
+  0.5, glitchAmt←beat 0.5, panelScale←bass 0.4, panelTurb←motion 0.6**, plus
+  rippleForce←beat (L5). Chosen to echo the standalone couplings (bass pulses
+  the graph, treble drives datamosh, onset spikes glitch, bass swells the
+  panels, motion stirs the turbulence).
+- **AUDIT / consolidation (documented for review):** the `ar-bass/mid/hi-gain`,
+  `ar-onset-sens`, `vr-mot-sens/cut-thr/smooth/srate` sliders and the
+  `ar-on/ar-auto`, `vr-on/vr-auto/vr-face/vr-pose/vr-flow` toggles are NOT added
+  as node params — they configured the standalone's built-in analyser, which the
+  shared AudioEngine/VideoAnalyzer + the ParamBus route `amount` replace (exactly
+  as blob_reveal consolidated beatSens/beatGap). The mod matrix's amount slider
+  IS the per-band gain; users can re-target or add routes there. blobScale is
+  left unrouted (its default 1 is already the max, so an additive route can't
+  breathe it — the standalone drove padY 0.55→1.0 by override, not addition).
+- **Verified** (`tools/verify/verify-phase8-L7a.js`, engine-only via the
+  ParamBus tap) **4/4 PASS**: all 7 routes seeded with the exact source+amount;
+  driving signals=1 modulates every routed param to `base+amt·(max−min)` (all 7
+  match); zero signals return every param to base; no page errors. `npm run
+  lint` clean. (The container restarted mid-layer — a fresh dev server picked up
+  the new routes cleanly, reconfirming the restart-after-edit rule from L3b.)
+
 ### 2026-07-20 — Phase 8 Layer 3b (BLOB TRACKER — smart contour) verified
 
 - **`src/engine/nodes/blob_tracker.ts` L3b — smart contour (ctMode=2) — DONE.**

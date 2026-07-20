@@ -70,10 +70,18 @@ import { ParamSchema } from '../../bridge/types';
         (btn-mirror-panels) are params; panelsBgOpacity dims the tracker behind
         the panels (the standalone panels-mode #050302 backdrop). autoMode / AR /
         VR panel driving (panelsAnimate's auto branch) is deferred to L7.
-   □ L7 — reactivity: audioReactiveFrame (ar-* gains → ParamBus routes,
-        Phase-4 pattern) + videoReactiveFrame (vr-* → VideoAnalyzer);
-        fixedPtsMode chaos engine; colours (trackerColor/connColor —
-        the number/boolean ParamSchema can't hold colours: design TODO).
+   ◐ L7 — reactivity. L7a ROUTES DONE: the standalone's bespoke auto-driver
+        (audioReactiveFrame/applyAudioToParams/videoReactiveFrame — a 7-band
+        analyser modulating params) is mapped to ParamBus defaultRoutes on the
+        shared AudioEngine/VideoAnalyzer signals (decision #1, the analog
+        pattern). Seeded: connWidth←bass, connGlow←loud, datamosh←treble,
+        glitchAmt←beat, panelScale←bass, panelTurb←motion, rippleForce←beat
+        (L5). The ar-* and vr-* gain sliders + ar-on/auto + vr-on/auto/face/
+        pose/flow toggles are CONSOLIDATED — the shared engines + ParamBus amount
+        replace the built-in analyser (as blob_reveal consolidated beatSens/
+        beatGap). REMAINING □: L7b colours (trackerColor/connColor/vfxColor — the
+        number/boolean ParamSchema can't hold colours: design TODO) + L7c
+        fixedPtsMode chaos engine + the autoMode panel driving (deferred L6).
    □ L8 — full param table + parity suites (static/behavior/chain) +
         regression, then swap the factory and mark Phase 8 done.
 
@@ -109,9 +117,9 @@ const PARAMS: ParamSchema[] = [
   // connections
   { key: 'connEnabled', label: 'Connections', type: 'boolean', value: 1, aiHint: '(on/off switch) Draw graph lines between nearby blobs (FX.conn)' },
   { key: 'connStyle', label: 'Conn Style', type: 'number', value: 0, min: 0, max: 3, step: 1, aiHint: '0 solid · 1 dashed · 2 dash-dot · 3 arrows' },
-  { key: 'connWidth', label: 'Line Width', type: 'number', value: 10, min: 1, max: 20, step: 1, reactive: true, aiHint: 'Connection line width' },
+  { key: 'connWidth', label: 'Line Width', type: 'number', value: 10, min: 1, max: 20, step: 1, reactive: true, defaultRoute: { source: 'bass', amount: 0.45 }, aiHint: 'Connection line width — pre-wired to bass so the graph lines pulse with the low end (standalone auto: bass pulses connWidth)' },
   { key: 'connOpacity', label: 'Conn Opacity', type: 'number', value: 1, min: 0, max: 1, step: 0.01, aiHint: 'Connection line opacity' },
-  { key: 'connGlow', label: 'Conn Glow', type: 'number', value: 0, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Neon glow halo on the connection lines' },
+  { key: 'connGlow', label: 'Conn Glow', type: 'number', value: 0, min: 0, max: 1, step: 0.01, reactive: true, defaultRoute: { source: 'loud', amount: 0.4 }, aiHint: 'Neon glow halo on the connection lines — pre-wired to overall loudness so the glow blooms with the mix' },
   // L2 — FX system
   { key: 'bgFxMode', label: 'BG FX Mode', type: 'boolean', value: 0, aiHint: '(on/off switch) On = FX fill the background (blobs stay clean video); off = FX only inside the blobs' },
   { key: 'fxOpacity', label: 'FX Opacity', type: 'number', value: 1, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Global blend of every active FX over the clean pixels' },
@@ -121,8 +129,8 @@ const PARAMS: ParamSchema[] = [
   { key: 'fxLiquid', label: 'FX Liquid', type: 'boolean', value: 0, aiHint: '(on/off switch) Travelling sine-wave row shift (time seeded)' },
   { key: 'fxData', label: 'FX Glitch 1', type: 'boolean', value: 0, aiHint: '(on/off switch) Datamosh block displacement (random seeded)' },
   { key: 'fxGlitch', label: 'FX Glitch 2', type: 'boolean', value: 0, aiHint: '(on/off switch) RGB-split screen smear + random slices' },
-  { key: 'datamosh', label: 'Glitch 1 Amt', type: 'number', value: 8, min: 0, max: 30, step: 1, reactive: true, aiHint: 'Datamosh (Glitch 1) displacement strength' },
-  { key: 'glitchAmt', label: 'Glitch 2 Amt', type: 'number', value: 6, min: 0, max: 20, step: 1, reactive: true, aiHint: 'Glitch 2 RGB-split smear strength' },
+  { key: 'datamosh', label: 'Glitch 1 Amt', type: 'number', value: 8, min: 0, max: 30, step: 1, reactive: true, defaultRoute: { source: 'treble', amount: 0.5 }, aiHint: 'Datamosh (Glitch 1) displacement strength — pre-wired to treble (standalone auto: treble drives datamosh)' },
+  { key: 'glitchAmt', label: 'Glitch 2 Amt', type: 'number', value: 6, min: 0, max: 20, step: 1, reactive: true, defaultRoute: { source: 'beat', amount: 0.5 }, aiHint: 'Glitch 2 RGB-split smear strength — pre-wired to the beat (standalone auto: onset transients spike glitch)' },
   { key: 'padX', label: 'FX Pad X', type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, aiHint: 'Background-mode glitch/datamosh strength modifier (standalone padX)' },
   { key: 'textMode', label: 'Text Fill', type: 'number', value: 0, min: 0, max: 3, step: 1, aiHint: '0 off · 1 numbers · 2 letters · 3 mixed — Matrix-style char fill (random seeded)' },
   { key: 'textPadX', label: 'Text Coverage X', type: 'number', value: 1, min: 0, max: 1, step: 0.01, aiHint: 'Text-fill block coverage, X axis' },
@@ -148,8 +156,8 @@ const PARAMS: ParamSchema[] = [
   { key: 'rippleWave', label: 'Ripple Speed', type: 'number', value: 0.22, min: 0.05, max: 0.5, step: 0.01, aiHint: 'Wave propagation speed constant (c²)' },
   // L6 — three.js panels scene (FIXED 8-panel 3D montage overlaid on the frame)
   { key: 'panelsEnabled', label: 'Panels', type: 'boolean', value: 0, aiHint: '(on/off switch) Overlay the fixed 8-panel 3D "AI analysis" montage over the tracked frame (standalone FX.panels)' },
-  { key: 'panelScale', label: 'Panel Scale', type: 'number', value: 1, min: 0.2, max: 3, step: 0.05, reactive: true, aiHint: 'Uniform size of every floating panel (standalone sScale)' },
-  { key: 'panelTurb', label: 'Panel Turbulence', type: 'number', value: 1, min: 0, max: 3, step: 0.1, reactive: true, aiHint: 'How strongly the panels drift and tumble (simplex-noise amplitude, also scaled by motion energy)' },
+  { key: 'panelScale', label: 'Panel Scale', type: 'number', value: 1, min: 0.2, max: 3, step: 0.05, reactive: true, defaultRoute: { source: 'bass', amount: 0.4 }, aiHint: 'Uniform size of every floating panel (standalone sScale) — pre-wired to bass so the panels swell with the low end (standalone auto: bass = panel size)' },
+  { key: 'panelTurb', label: 'Panel Turbulence', type: 'number', value: 1, min: 0, max: 3, step: 0.1, reactive: true, defaultRoute: { source: 'motion', amount: 0.6 }, aiHint: 'How strongly the panels drift and tumble (simplex-noise amplitude) — pre-wired to video motion so movement in the frame stirs the panels (standalone videoReactiveFrame: motion drives panelTurb)' },
   { key: 'panelCamZ', label: 'Panel Camera Z', type: 'number', value: 7, min: 3, max: 14, step: 0.5, aiHint: 'Distance of the perspective camera from the panel cluster — lower = closer/wider' },
   { key: 'panelsBgOpacity', label: 'Panel BG Opacity', type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, aiHint: 'How much of the tracker composite stays visible behind the panels (standalone sBgOp panels-mode backdrop); 1 = full tracker, 0 = near-black' },
   { key: 'panelsLabels', label: 'Panel Labels', type: 'boolean', value: 1, aiHint: '(on/off switch) Draw the per-panel tag + score labels (standalone btn-plabels)' },
