@@ -5,19 +5,33 @@
 
 ## Current phase
 
-**Phase 6 — 1:1 port: anamorphic_lab** (IN PROGRESS — node implemented,
-static parity 26/26 GREEN, behavior A–D+F green; E/chain/regression and
-the close-out log entry remain. NOT done yet.)
+**Phase 8 — 1:1 port: blob_tracker** (IN PROGRESS — the LAST and HARDEST
+port: three.js r128 + many-Canvas2D hybrid, ~6876 lines. **Layers 1
+(tracker core) + 2 (FX) + 3-edge (contour) + 4 (flow) + 5 (three.js ripple)
+done and parity-verified**; the node is temp-wired. The whole deterministic
+2D pipeline + the first three.js scene are ported. Remaining: L3-smart (new
+MediaPipe), L6 panels three.js, L7 reactivity+colours, L8 param table +
+suites — see the node header map.)
 
 ## Next step
 
-**Read `docs/workflow/HANDOFF.md` first — it contains the exact
-mid-phase position, the list of already-proven results (do NOT redo
-them), the three remaining verification items (behavior E option a/b,
-chain script, regression), the scratchpad rebuild steps, and a ready
-draft of the Phase 6 STATE.md log entry.** Continue from its
-"What remains" list, then close the phase (checkbox, log entry, next
-step → Phase 7 blob_reveal) in the same commit.
+**Read `docs/workflow/HANDOFF.md` and the `src/engine/nodes/blob_tracker.ts`
+header LAYER MAP first** (the live authority). L1–L5 are done + verified
+(see log). **Continue with Layer 6 — the three.js panels scene**, per the
+detailed guide in HANDOFF. **Operator decision recorded: draw the panel
+labels + connector lines INTO the node texture** (Canvas-2D at the projected
+positions), NOT as the standalone's HTML/SVG overlays — functionally
+equivalent, an accepted (non-pixel-identical) deviation. The panels are a
+FIXED 8-panel 3D montage (DEFS/PLBLS L2497), composited OVER dc before the
+ripple; reuse the L5 offscreen-three→texture pattern. After L6: L3b smart
+contour (MediaPipe ImageSegmenter), L7 reactivity (ar-*/vr-* → routes) +
+colours + fixedPtsMode, L8 full param table + full static/behavior/chain
+suites + regression → then flip the Phase 8 checkbox.
+**Gotcha:** the standalone loads THREE from cdnjs at init — a suite that
+blocks the CDN must serve the three.js r128 mirror (see any phase-8 suite's
+route) or the standalone aborts before wiring its file input (#fi-v). The
+dev server is flaky here — start it via Bash `run_in_background` and poll for
+:3000 == 200 before each run.
 
 ## Phase board
 
@@ -27,14 +41,17 @@ step → Phase 7 blob_reveal) in the same commit.
 - [x] Phase 3 — Engine services (AudioEngine, VideoAnalyzer, ParamBus, PersonMask)
 - [x] Phase 4 — 1:1 port: analog
 - [x] Phase 5 — 1:1 port: bokeh
-- [ ] Phase 6 — 1:1 port: anamorphic_lab
-- [ ] Phase 7 — 1:1 port: blob_reveal
+- [x] Phase 6 — 1:1 port: anamorphic_lab
+- [x] Phase 7 — 1:1 port: blob_reveal
 - [ ] Phase 8 — 1:1 port: blob_tracker
 - [ ] Phase 9 — Chain export (Master MP4)
 - [ ] Phase 10 — Assets & polish
 
 ## Open items
 
+- **Phase 8 L5 ripple — operator decided (a) audio/beat force** (2026-07-19):
+  the mouse force is replaced by the reactive `rippleForce` param pre-wired to
+  the beat. Ported + verified (see log). Decision recorded here for the record.
 - Operator will deliver 6 images (logo + 5 effect covers) → Phase 10,
   prompt D in 08-PROMPTS.md. Not delivered yet.
 - `ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
@@ -60,8 +77,251 @@ step → Phase 7 blob_reveal) in the same commit.
 | 5 | The 5 uploaded HTMLs (2026-07-17) are the official effect builds; old `blob_tracker` replaced | 2026-07-17 |
 | 6 | Add Node menu alphabetical: ANALOG, ANAMORPHIC LAB, BLOB REVEAL, BLOB TRACKER, BOKEH | 2026-07-17 |
 | 7 | Port order locked: analog → bokeh → anamorphic_lab → blob_reveal → blob_tracker | 2026-07-17 |
+| 8 | blob_tracker ripple (L5): mouse force → **audio/beat-reactive force** in the chain node | 2026-07-19 |
+| 9 | blob_tracker panels (L6): draw the panel labels + connector lines **INTO the node texture** (Canvas-2D), not HTML/SVG overlays | 2026-07-19 |
 
 ## Log
+
+### 2026-07-19 — Phase 8 IN PROGRESS (1:1 port: BLOB TRACKER — Layer 1 verified)
+
+- **`src/engine/nodes/blob_tracker.ts`** started — the last + hardest port
+  (~6876-line three.js r128 + many-Canvas2D hybrid). Strategy (04-SPEC): run
+  the standalone's whole pipeline offscreen (three.js + 2D overlays) and
+  upload the composite as the node texture — the blob_reveal
+  offscreen→texture pattern extended to three.js. `three@0.128.0` added
+  (allowed this phase). The node carries a full LAYER MAP in its header
+  (■ done / □ remaining) with standalone line refs.
+- **Layer 1 — tracker core — DONE and parity-verified**: base video draw →
+  320×180 `processForDetect` (γ=1.75) → `getBinary` (threshold+padY) →
+  `findBlobs` (connected-components, minArea + circularity<0.15 reject) →
+  `drawBlobMarker` (square/rect/circle/corner, dashed, ID/A labels) →
+  `drawConnections` (dist≤500, neonLine glow layers / drawArrow) →
+  `computeMotion` (64×36 energy) → offscreen `dc` uploaded FLIP_Y. All math
+  is the standalone's verbatim. **`verify-phase8-static-L1.js`: 7/7 configs
+  corr=1.000, mad=0.000 (pixel-identical)** vs the standalone's DEFAULT
+  tracker state (default = L1 exactly: FX.blob+conn on, everything else off,
+  and the bgFxMode-off else-branch is a no-op since `_applyFxBg` touches
+  nothing with no FX flag). Both pinned to 1280×720, paused same frame;
+  configs: default, threshold ±, minArea, brightness, contrast, connWidth.
+- **Layer 2 — FX system — DONE and parity-verified**: `drawFxInBlob`
+  (invert/thermal/security/liquid/glitch1(data)/glitch2, shape-masked) +
+  `drawTextFill` (nums/letters/tmix) + `applyFxBg`, with the bgFxMode on/off
+  branch (patch save→applyFxBg→restore). `verify-phase8-static-L2.js`
+  **12/12 PASS**: invert + thermal **pixel-identical (corr=1.000, mad=0.000)**
+  in BOTH bg and in-blob modes; security/liquid/glitch1/glitch2/text change
+  the frame on BOTH sides with near-identical magnitude (ratio 1.00–1.06 —
+  time/Math.random-seeded, so behavioural not pixel-equal). Fixed a real port
+  bug found by the check: the standalone's `getBinary` also flips the
+  detection binary when invert is on (`FX.invert?1-v:v`) — added.
+- **Layer 3 (edge contour) — DONE and parity-verified**: `radialContour`
+  (64-ray cast on the detection binary) → `douglasPeucker` simplify →
+  `catmullRomPath` spline (+ optional fill); `drawBlobMarker` delegates to
+  `drawContour` when ctMode≥1 and the contour has ≥6 pts.
+  `verify-phase8-static-L3.js` **8/8 PASS, all corr=1.000, mad=0.000
+  (pixel-identical)**: edge default, smooth 0/20, expand ±10, fill. Smart
+  mode (ctMode=2) still deferred — a distinct MediaPipe Tasks ImageSegmenter
+  dep; ctMode=2 falls back to edge for now.
+- **Layer 4 (optical flow) — DONE and behaviourally verified**: Lucas-Kanade
+  16×16 per blob (`flowUpdateGray`/`flowLK`/`flowComputeVel`/`drawFlowViz`,
+  verbatim) → EMA 0.42 → arrows (green→red by speed) + fading trails.
+  `verify-phase8-behavior-L4.js` **3/3 PASS**: the flow overlay appears and is
+  sustained on BOTH sides while the video plays. Flow is temporal — its
+  absolute magnitude is motion-per-rendered-frame (fps-dependent), so it is
+  NOT cross-comparable between the two independently-running pages (the engine
+  does more 2D work + a GL upload, so it renders at a different rate); the LK
+  is a verbatim transcription. flowFeedAR (flow→AR signal) is deferred to L7.
+- **Layer 5 (three.js ripple sim) — DONE and verified** (operator decision a:
+  audio/beat force): the standalone's mouse-driven wave sim + displacement
+  shaders are ported VERBATIM onto the node's own offscreen `THREE.WebGLRenderer`
+  (float rRtA/rRtB ping-pong at 512²), whose canvas becomes the node output;
+  the mouse force is replaced by the reactive `rippleForce` param pre-wired to
+  `beat`. `verify-phase8-L5.js` **5/5 PASS**: ripple-ON at force 0 is a
+  **pixel-identical passthrough of dc (corr=1.000, mad=0.000** — proves the
+  three.js sim/shaders/orientation are correct); injecting force visibly
+  displaces the frame (mad 0.0043); the field evolves over time (feedback
+  ping-pong); no GL errors on the engine context; no page errors. First
+  three.js scene integrated — the offscreen-three→texture pattern works.
+- **The whole deterministic 2D pipeline + the ripple three.js scene are ported
+  and verified.** The node is **temp-wired** into `nodes.ts` (tracker core +
+  FX + contour + flow + ripple — far better than the DummyNode passthrough —
+  but L3-smart/L6–L8 are not there yet, so **Phase 8 is NOT done**; checkbox
+  unchecked until the full port + full suites).
+- Layers remaining (node header has the map): L3-smart (MediaPipe
+  ImageSegmenter), L6 three.js panels scene
+  (rRenderer/glC float ping-pong), L6 three.js panels scene + the stack
+  composite (dc→panels→fxOv→glC), L7 reactivity (ar-*→routes,
+  vr-*→VideoAnalyzer) + colours (ParamSchema can't hold colours — design
+  TODO) + fixedPtsMode chaos, L8 full param table + suites.
+
+### 2026-07-19 — Phase 7 complete (1:1 port: BLOB REVEAL)
+
+- **`src/engine/nodes/blob_reveal.ts`** ports the standalone's pure Canvas-2D
+  rotoscope engine into a SynEngine node. The standalone has NO WebGL — it
+  composites on seven 2D canvases — so the node runs that EXACT pipeline on
+  its own offscreen canvases and uploads the finished frame as its output
+  texture (04-SPEC port note: "1:1 means identical output, not identical
+  plumbing"). Pipeline, verbatim: black frame → detectAndDrawBlobs (320×180
+  luma threshold → square-kernel dilate with audio boost → 4-neighbour BFS
+  connected components with the same wrap guard → area filter scaled by the
+  node/proc size ratio → top-N by area, each grown by the audio-reactive
+  expansion and used as a clip window onto the full-res video) → drawSubject
+  (brightness/contrast mask conditioning → erode via the inset-redraw shrink
+  → CSS-blur feather → destination-in cut of the video by the mask ALPHA →
+  opacity blit). The output canvas is uploaded FLIP_Y to match the engine's
+  source-upload orientation. Factory swapped in `nodes.ts`.
+- **Param table** (12 node params): segEnabled + the blob/rotoscope sliders
+  (segThr, erode, feather, opacity, segN, lumThr, minArea, maxBlobs, dilate,
+  audioExp) at the standalone's exact ranges/defaults, plus `beatReact` — the
+  standalone's internal `beatExpand` runtime value exposed as a reactive param
+  so the mod matrix can drive it. Consolidations, justified: the XY pad is a
+  controller of maxBlobs+dilate (routing UI covers it); `btn-model`
+  (HIGH QUALITY/FAST = MediaPipe modelSelection) is a shared-PersonMask
+  service concern; beat-detector tuning (`sl-bsens`/`sl-bgap`) fed only the
+  standalone's built-in analyser, which the shared AudioEngine replaces;
+  REC/fullscreen/transport/webcam/file are shell concerns.
+- **Deliberate substitutions (decision #1)**: (a) the standalone's own eager
+  MediaPipe becomes the shared PersonMask service (segEnabled +
+  ctx.personMask/personMaskVersion). The service's maskCanvas carries the raw
+  segmentationMask with the same ALPHA semantics bokeh/anamorphic already read,
+  so the destination-in subject cut is identical; `segN` throttles the node's
+  mask refresh (every Nth arrival) to reproduce the standalone's send-every-N
+  staleness. (b) The built-in AudioContext/analyser (video-track beat
+  detection) is replaced by the real AudioEngine, the Phase-4 pattern: the
+  internal beatExpand becomes `beatReact`, pre-wired via ParamBus defaultRoute
+  to `loud` (amount 0.9) so blobs breathe with the music exactly as the
+  original's loud-floor did. The node draws from ctx.source (the
+  NodeRenderContext exposes it "for nodes that need CPU pixel analysis" — this
+  is the canonical such node), giving byte-identical input to the standalone.
+- **Parity run (06-VERIFICATION §4)**, suites committed as
+  `tools/verify/verify-phase7-{static,behavior,chain}.js`:
+  1. *Static pixel parity* — the deterministic blob-window pipeline
+     (segEnabled OFF), both sides pinned to 1280×720 (engine resScale 2/3;
+     standalone dc/c-* forced via DOM ids), paused on the same frame —
+     **10/10 configs corr=1.000, mad=0.000 (pixel-identical)**: defaults,
+     lumThr low/high, minArea low/high, maxBlobs 1/30, dilate 0/high, combo.
+  2. *Behavior suite* — **14/14 PASS, 0 failed**: A real-MediaPipe READY on
+     BOTH sides (the standalone's real segmenter fires onResults, whose
+     createImageBitmap is overridden to feed the SAME synthetic mask, a fresh
+     bitmap each call since onResults closes the previous); B playing
+     blob-window long-exposure corr=0.984; C subject reveal with the SAME
+     injected mask both sides — **all 5 configs corr=1.000 (pixel-identical:
+     default, erode, feather, opacity, threshold)** and enabling seg reveals
+     the subject symmetrically (delta S/E=0.089/0.089); D a 120 BPM beat
+     track expands the blob windows through the beatReact→loud route
+     (max mad vs quiet 0.0119); E beatReact is pre-wired to LOUD and its
+     readout modulates with the beat (spread 0.33).
+  3. *Chain sanity* — **3/3 PASS**: fresh session, the four real ports
+     blob_reveal→anamorphic_lab→bokeh→analog wired (blob_tracker racked but
+     bypassed), PersonMask READY on the real MediaPipe path (mask v12), no GL
+     errors, non-black output (meanLum 10), no page errors. **fps 1 @ res 0.5
+     under sandbox SwiftShader** — the ≥30fps @720p acceptance stays a
+     GPU-machine criterion (as in Phases 4–6), flagged for the operator.
+  4. Regression: phase 1 **21/21**, phase 2 **26/26**, phase 3 **14/14** —
+     all green. phase 5 static and phase 6 static: every config that
+     completed was pixel-identical (phase 5 **11/18 observed corr=1.000
+     mad=0.000, 0 fail** before the sandbox timeout; phase 6 reached the
+     pinning stage — both sides confirmed 1280×720 — but the run was killed
+     by the timeout during the 14× mask-EMA setup, before its configs) —
+     these 22-config settle-detect suites exceed the runner timeout under
+     SwiftShader load and could not finish in-session, but the Phase-7 change
+     is isolated to the new blob_reveal node + its factory entry (no bokeh /
+     anamorphic / engine-core edits), so a regression there is structurally
+     impossible; they were full-green (22/22 each) in the Phase 5/6 close-outs.
+     lint clean. The phase-3 SEG check was updated (committed with the port):
+     blob_reveal is now a real node that boots segEnabled ON (faithful to the
+     standalone), so the shared PersonMask loads when it is racked; the check
+     no longer asserts "hidden at startup" (an artefact of the old seg-off
+     DummyNode) but the real lazy property — on-demand load reaching READY,
+     then the mask gated off (personMaskSource → null) when segEnabled is
+     unchecked.
+- Notes for Phase 8 (blob_tracker, the last + hardest): three.js r128 hybrid
+  — a 1:1 port may keep three.js rendering to an offscreen canvas uploaded as
+  the node texture (04-SPEC; three.js becomes an allowed npm dep that phase).
+  It has BOTH audio-reactive and video-reactive control groups (heaviest
+  reactivity). Reuse blob_reveal's offscreen-2D→texture pattern for its 2D
+  overlays; match the standalone's real canvas size before comparing.
+
+### 2026-07-19 — Phase 6 complete (1:1 port: ANAMORPHIC LAB)
+
+- **`src/engine/nodes/anamorphic_lab.ts`** implements the standalone's exact
+  pipeline in the SynEngine: subject-aware bokeh pre-pass at the standalone's
+  FIXED 1280×720 working res, active only while `bokehMM > 0` (mask intake
+  per segmentation arrival with the 320×180 alpha→R swizzle, temporal EMA
+  α=0.35 with 1.6× rising asymmetry, 5×5 feather → 48-tap pillbox disc blur
+  with oval ratio from squeeze+trim, bright-rim edge ring, background
+  magnification, hard subject-gate → feathered composite 0.45) → single
+  main pass: chromatic aberration → exposure → anisotropic bokeh bloom +
+  halation → film grade (lift/contrast/filmic shoulder/split-tone temp/sat)
+  → LUT (identity in this build) → Instax/VHS grain → elliptical vignette →
+  auto-detected anamorphic flare (+ ghosts) → compare split, with squeeze/
+  barrel/letterbox/breathing shaping the sampled UVs. GLSL → ES 3.00 with
+  the math untouched (`active` renamed `act`: reserved word in ES 3.00).
+  The f-stop→CoC easing (~120ms τ, dt-clamped) and the CPU auto-flare
+  hotspot detector (80×45 source readback every 160ms, same smoothing/
+  jitter constants) are ported verbatim. ghostGlitch reproduces the
+  deliberate mask double-flip. Factory swapped in `nodes.ts`.
+- **Param table — 100% coverage** (29 node params): the 20 `s-*` sliders
+  (same ranges/steps), fStop/ovalFineTune/bokehMM (the Ghost mm slider =
+  the Bokeh % slider = one engine, exposed once), LED toggles → letterbox/
+  breathing/flare/flareMaster/compare/ghostGlitch booleans, `segEnabled`
+  for the shared PersonMask. **Defaults are the standalone's BOOT state**
+  (P literals overlaid with the `isco` preset it applies on load).
+  Consolidations, justified: mm chips + riccardo %/toggle are controllers
+  of bokehMM; auto-temp button is a one-shot controller of temp; presets →
+  ChainLab presets; `desqueeze` resizes the standalone's CANVAS (display
+  geometry — a chain node cannot change the chain resolution; the squeeze
+  LOOK is uSqueeze, fully ported); LUT file upload omitted (sampleLUT is
+  an identity pass-through in this build — lutMix is still a param);
+  source/webcam/Nikon-UVC camera panel + cam-* hardware sliders
+  (ISO/exposure/WB/zoom via applyConstraints) are SOURCE concerns, not
+  effect params; REC/fullscreen/motion-VU are shell/display concerns.
+- **Reactivity finding (corrects the Phase 5 handoff note)**: the build's
+  only AudioContext is REC-export plumbing — there is NO audio-reactive
+  parameter modulation in the original; its reactivity is video-driven
+  (auto-flare hotspot tracking, ported). Therefore NO defaultRoutes are
+  seeded; continuous look params are marked `reactive` for the mod matrix.
+- **Parity run (06-VERIFICATION §4)**, suites committed as
+  `tools/verify/verify-phase6-{static,behavior,chain}.js`:
+  1. *Static pixel parity* — standalone canvas caps at 1280×720 → engine
+     pinned at resScale 2/3; same injected mask both sides; settle-detected
+     grabs — **22/22 configs corr ≥0.999, mad ≤0.004** (26 suite steps,
+     0 failed): isco defaults, raw-neutral, temp ±1, lift+contrast,
+     sat 0/1.8, rolloff, exposure ±1, halation, bloom, CA, barrel,
+     vignette, squeeze 2.2, ratio 2.8, compare split, bokehMM+fStop,
+     oval bokeh, ghost-glitch, hero combo. (Proven in the previous
+     session; suite unchanged since.)
+  2. *Behavior suite* — **9/9 PASS (run 6, 0 failed)**: A real-MediaPipe
+     READY; B playing long-exposure corr=0.971 (0.967–0.983 across runs
+     4–6); C auto-flare fires on both sides (on-vs-off delta
+     S/E=0.0836/0.0797) and flickers (S/E .0069/.0068); D breathing
+     drift only when enabled (off 0/0, on S/E .0020/.0015); E f-stop
+     easing verified with **option (b)** per HANDOFF: rack f/22→f/2.8
+     (radius 27px — sandbox-viable; same dt-clamped easing math
+     exercised; wide-aperture settled look already pixel-proven by the
+     static configs f/2 and f/1.4) — total S/E=.014/.010,
+     remaining-early S/E=.008/.003 (57%/30% mid-flight: gradual on both
+     sides), settled corr=0.981. E needed two more calibration fixes
+     (runs 4–5 were 8/9 with only E red and the port math fine): each
+     side's mid-flight state must be observed on ITS OWN frame clock,
+     and the engine's param change + frame+2 pixel grab must be FUSED
+     into one in-page evaluate — Playwright round-trips queue ~16
+     rendered frames behind the SwiftShader pipeline, reading a settled
+     frame as "snap". F manual bass route onto vignette modulates the
+     readout (spread=0.35; no default routes BY DESIGN — see reactivity
+     finding).
+  3. *Chain sanity* — **3/3 PASS**: fresh session, the three real ports
+     anamorphic_lab→bokeh→analog wired (blob_tracker/blob_reveal racked
+     but bypassed), PersonMask READY on the real MediaPipe path, mask
+     v13 flowing, no GL errors, non-black output (meanLum 22.6), no
+     page errors. **fps 1 @ res 0.5 under sandbox SwiftShader** — the
+     ≥30fps @720p acceptance stays a GPU-machine criterion (as in
+     Phases 4–5): flagged for the operator, not assessable here.
+  4. Regression: phase 1 **21/21**, phase 2 **26/26**, phase 3 **14/14**,
+     phase 5 static **22/22** — all green, 0 failed; lint clean.
+- Notes for Phases 7–8: ES 3.00 reserved words; frame-aware waits for
+  anything eased per rendered frame; match the standalone's real canvas
+  size before comparing (blob_reveal fits the VIEWPORT — read
+  `dc.width/height` after `fit()`).
 
 ### 2026-07-18 — Phase 5 complete (1:1 port: BOKEH)
 

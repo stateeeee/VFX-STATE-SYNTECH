@@ -129,18 +129,29 @@ const MIME = { '.js': 'application/javascript', '.wasm': 'application/wasm', '.c
   step('motion signal moves with the video', Math.max(...motion) >= 3, `motion: ${motion.join(',')}`);
   step('bright signal tracks luma', Math.max(...bright) > 10, `bright: ${bright.join(',')}`);
 
-  /* ── 5. SEG reaches READY on demand ── */
-  const segAbsent = (await page.$('[data-testid="seg-status"]')) === null;
-  step('SEG indicator hidden while off (lazy)', segAbsent);
-  await page.click('[data-testid="param-blob_reveal-segEnabled"]'); // person-mask checkbox
+  /* ── 5. SEG service loads on demand and is gated by segEnabled.
+     blob_reveal is now a real node that boots segEnabled ON (faithful to the
+     standalone, where the rotoscope subject reveal IS the effect — a seg-off
+     default would show only the bright blob windows), so the shared
+     PersonMask loads as soon as the node is racked. Verify it reaches READY,
+     then that unchecking segEnabled gates the mask off (personMaskSource →
+     null) — the real lazy/gating property, since the old "hidden at startup"
+     check only held while blob_reveal was a seg-off DummyNode. ── */
   let segTxt = '';
   let segReady = false;
   for (let i = 0; i < 60; i++) {
-    segTxt = await page.textContent('[data-testid="seg-status"]');
+    segTxt = await page.textContent('[data-testid="seg-status"]').catch(() => '');
     if (/READY/.test(segTxt)) { segReady = true; break; }
     await page.waitForTimeout(500);
   }
-  step('SEG reaches READY on demand', segReady, segTxt.trim());
+  step('SEG reaches READY on demand (seg-on node racked)', segReady, (segTxt || '').trim());
+  await page.click('[data-testid="param-blob_reveal-segEnabled"]'); // disable seg
+  const gatedOff = await page.waitForFunction(
+    () => window.__SYN && window.__SYN.engine.personMaskSource === null,
+    null, { timeout: 8000 }
+  ).then(() => true).catch(() => false);
+  step('SEG mask gated off when segEnabled unchecked', gatedOff);
+  await page.click('[data-testid="param-blob_reveal-segEnabled"]'); // re-enable for downstream state
 
   /* ── 6. preset round-trip: routing survives save→mutate→load ── */
   await page.fill('[data-testid="preset-name"]', 'p3test').catch(() => {});

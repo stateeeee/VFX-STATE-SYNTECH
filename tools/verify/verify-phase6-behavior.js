@@ -249,13 +249,40 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
     const f0 = await en.evaluate(() => window.__SYN.engine.frame);
     await en.waitForFunction((t) => window.__SYN.engine.frame > t, f0 + k, { timeout: 240000 }).catch(() => {});
   };
+  // Rack 22→2.8 (radius 27px), not 22→0.95: at f/0.95 the standalone drops
+  // below ~0.5fps under SwiftShader and the 80-frame wait exceeds an hour;
+  // the same easing math is exercised at 2.8, and the wide-aperture settled
+  // look (f/2, f/1.4) is already pixel-proven by the static suite.
   const easeCfg = { bokehMM: 100, fStop: 22, grain: 0 };
   await applySA(easeCfg); await applyEN(easeCfg);
   await saFrames(40); await enFrames(40);
   const sharpS = await grabSA(); const sharpE = await grabEN();
-  await applySA({ ...easeCfg, fStop: 0.95 }); await applyEN({ ...easeCfg, fStop: 0.95 });
-  await saFrames(2); await enFrames(2);
-  const midS = await grabSA(); const midE = await grabEN();
+  // Mid-flight must be observed per side on ITS OWN frame clock, engine
+  // first and immediately: the standalone's minute-long waits burn wall
+  // time in which the engine's dt-clamped easing fully settles — grabbing
+  // the engine after the standalone's 2-frame wait reads remaining≈0 even
+  // though the easing is gradual (run 4's only red was exactly that).
+  // …and the engine's change+grab must be FUSED into one in-page evaluate:
+  // protocol round-trips queue behind the SwiftShader render pipeline
+  // (run 5 measured ~16 frames of grab latency → remaining 10% < the 15%
+  // gate), so the grab clock starts in the same JS turn that changes the
+  // param and the pixels are read in-page exactly at frame+2.
+  const midE = await en.evaluate(`(() => new Promise((resolve) => {
+    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    const el = document.querySelector('[data-testid="param-anamorphic_lab-fStop"]');
+    setV.call(el, 2.8); el.dispatchEvent(new Event('change', { bubbles: true }));
+    const S = window.__SYN;
+    const target = S.engine.frame + 2;
+    const tick = () => {
+      if (S.engine.frame >= target) return resolve((${grabOnceSrc})('[data-testid="chain-canvas"]'));
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    setTimeout(() => resolve((${grabOnceSrc})('[data-testid="chain-canvas"]')), 120000);
+  }))()`);
+  await applySA({ ...easeCfg, fStop: 2.8 });
+  await saFrames(2);
+  const midS = await grabSA();
   await saFrames(40); await enFrames(40);
   const wideS = await grabSA(); const wideE = await grabEN();
   const totS = mad(sharpS, wideS), totE = mad(sharpE, wideE);
