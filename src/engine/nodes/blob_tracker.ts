@@ -70,7 +70,7 @@ import { ParamSchema } from '../../bridge/types';
         (btn-mirror-panels) are params; panelsBgOpacity dims the tracker behind
         the panels (the standalone panels-mode #050302 backdrop). autoMode / AR /
         VR panel driving (panelsAnimate's auto branch) is deferred to L7.
-   ◐ L7 — reactivity. L7a ROUTES DONE: the standalone's bespoke auto-driver
+   ■ L7 — reactivity + colours + chaos. L7a ROUTES DONE: the standalone's bespoke auto-driver
         (audioReactiveFrame/applyAudioToParams/videoReactiveFrame — a 7-band
         analyser modulating params) is mapped to ParamBus defaultRoutes on the
         shared AudioEngine/VideoAnalyzer signals (decision #1, the analog
@@ -83,11 +83,17 @@ import { ParamSchema } from '../../bridge/types';
         palette-enum indices (PALETTE + pal()) — trackerColorIdx (markers/
         contours/labels), connColorIdx (tracker + panel connections), vfxColorOn
         + vfxColorIdx (FX text override); resolved into this.trackerColor/
-        connColor each render. REMAINING □: L7c fixedPtsMode chaos engine + the
-        autoMode panel driving (deferred L6). (Panel-label colour override —
-        standalone panelsColorActive — left at the L6 default styling.)
-   □ L8 — full param table + parity suites (static/behavior/chain) +
-        regression, then swap the factory and mark Phase 8 done.
+        connColor each render. L7c fixedPtsMode DONE: the chaos engine
+        (fpInitState/fpTick/fpBlobsForFrame, verbatim) replaces detection with a
+        set of AUTO-PLACED points (golden-angle scatter — the chain has no mouse),
+        each an animated jitter/size/shape/FX/alpha marker fed through the
+        existing draw pipeline via per-blob global swaps (fpRender). CONSOLIDATED
+        (decision #1): the autoMode panel driving (per-panel Z-thrust/kick from
+        the bespoke onset detector) IS the auto-driver replaced by the L7a routes
+        (panelTurb←motion, panelScale←bass) — the per-mesh onset choreography is
+        an accepted omission. Panel-label colour override left at L6 styling.
+   □ L8 — reconcile the full param table + parity suites (static/behavior/chain)
+        + regression, then mark Phase 8 done.
 
    Standalone state defaults captured (index.html L1767-1788):
      P={threshold:127,brightness:31,contrast:2.15,minArea:100,
@@ -172,6 +178,9 @@ const PARAMS: ParamSchema[] = [
   { key: 'connColorIdx', label: 'Connection Color', type: 'number', value: 1, min: 0, max: 9, step: 1, aiHint: 'Colour of the connection lines (tracker graph + panel graph) — same palette; default 1 = blue (#0011ff)' },
   { key: 'vfxColorOn', label: 'VFX Color Override', type: 'boolean', value: 0, aiHint: '(on/off switch) Override the built-in FX text-fill colour with the palette colour below (standalone vfxColorActive)' },
   { key: 'vfxColorIdx', label: 'VFX Color', type: 'number', value: 2, min: 0, max: 9, step: 1, aiHint: 'Palette colour for the Text Fill FX when VFX Color Override is on; default 2 = mint (#00ff88)' },
+  // L7c — fixed-points chaos engine (replaces standard detection)
+  { key: 'fixedPtsMode', label: 'Chaos Points', type: 'boolean', value: 0, aiHint: '(on/off switch) Replace blob detection with a fixed set of auto-placed points, each an animated chaos marker (jittering size/shape, random per-point FX, alpha lifecycle) — the standalone fixedPtsMode' },
+  { key: 'fixedMaxPts', label: 'Chaos Point Count', type: 'number', value: 5, min: 1, max: 10, step: 1, aiHint: 'How many chaos points to animate when Chaos Points is on (standalone sFixedMax)' },
 ];
 
 /* ripple shaders — verbatim from the standalone (qV/sF/dF) */
@@ -188,6 +197,23 @@ const TEXT_MODES = [null, 'nums', 'letters', 'tmix'] as const;
  * (#ffffff tracker · #0011ff conn · #00ff88 vfx); 3 is the app accent violet. */
 const PALETTE = ['#ffffff', '#0011ff', '#00ff88', '#8b5cf6', '#22d3ee', '#ef4444', '#f59e0b', '#22c55e', '#e879f9', '#000000'] as const;
 const pal = (i: number): string => PALETTE[Math.max(0, Math.min(PALETTE.length - 1, i | 0))];
+
+/* L7c — fixed-points chaos engine per-point state (standalone _initFpState,
+ * L5482). Shapes 0-4 map to SHAPES with 4='mix' (per-index); styles 0-3. */
+interface FpState {
+  jx: number; jy: number; jvx: number; jvy: number;
+  w: number; h: number; wv: number; hv: number;
+  myShape: number; myConnStyle: number;
+  myFadeIn: number; myFadeOut: number; myJitterScale: number; myWobble: number;
+  myInvert: boolean; myThermal: boolean; mySecurity: boolean; myLiquid: boolean; myGlitch: boolean; myData: boolean;
+  alpha: number; alive: boolean; timer: number; lifeDur: number; fadeIn: number; fadeOut: number;
+  shapeTimer: number; fxTimer: number;
+}
+interface FpBlob {
+  cx: number; cy: number; x: number; y: number; w: number; h: number; area: number;
+  fpAlpha: number; myShape: number;
+  myInvert: boolean; myThermal: boolean; mySecurity: boolean; myLiquid: boolean; myGlitch: boolean; myData: boolean;
+}
 
 /* ═══ L6 — three.js PANELS scene (standalone DEFS/PLBLS/VS/FS/SimplexNoise,
    L2482-2500). A FIXED 8-panel 3D montage of the video shown as floating
@@ -280,6 +306,12 @@ export class BlobTrackerNode implements EngineNode {
   private ctSmartMask: Uint8Array | null = null;
   private ctSmartMaskV = -1;
   private smartMaskCv!: HTMLCanvasElement; private smartMaskCtx!: CanvasRenderingContext2D;
+  // L7c fixed-points chaos engine (points auto-placed in dc space)
+  private fpPoints: { x: number; y: number }[] = [];
+  private fpStates: FpState[] = [];
+  private fpOverlaps: { cx: number; cy: number; w: number; h: number; alpha: number; fadeOut: number; shape: number }[] = [];
+  private fpGlobalPhase = 0;
+  private fpW = 0; private fpH = 0;
   // L4 optical-flow state
   private flowCurrGray: Uint8Array | null = null;
   private flowPrevGray: Uint8Array | null = null;
@@ -938,6 +970,105 @@ export class BlobTrackerNode implements EngineNode {
     ctx.restore();
   }
 
+  /* ── L7c fixed-points chaos engine (standalone _initFpState/_tickFpStates/
+   *    _fpBlobsForFrame, L5482-5554). Replaces detection with a fixed set of
+   *    animated points; the chain has no mouse, so the points are AUTO-PLACED on
+   *    a golden-angle scatter (stable). Each point animates its own jitter/size/
+   *    shape/FX/alpha lifecycle; the synthetic blobs feed the existing draw
+   *    pipeline via per-blob global swaps (like the standalone). Stochastic ⇒
+   *    behavioural. ── */
+  private fpInitState(): FpState {
+    const startAlive = Math.random() < 0.85;
+    return {
+      jx: 0, jy: 0, jvx: (Math.random() - .5) * 2, jvy: (Math.random() - .5) * 2,
+      w: 30 + Math.random() * 160, h: 25 + Math.random() * 140,
+      wv: (Math.random() - .5) * 3, hv: (Math.random() - .5) * 2,
+      myShape: Math.floor(Math.random() * 5), myConnStyle: Math.floor(Math.random() * 4),
+      myFadeIn: 0.012 + Math.random() * 0.020, myFadeOut: 0.001 + Math.random() * 0.003,
+      myJitterScale: 0.5 + Math.random() * 2.5, myWobble: 0.3 + Math.random() * 2.0,
+      myInvert: Math.random() < 0.15, myThermal: Math.random() < 0.12,
+      mySecurity: Math.random() < 0.10, myLiquid: Math.random() < 0.18,
+      myGlitch: Math.random() < 0.50, myData: Math.random() < 0.40,
+      alpha: startAlive ? (0.5 + Math.random() * 0.5) : 0, alive: startAlive,
+      timer: startAlive ? (900 + Math.round(Math.random() * 3000)) : (Math.round(Math.random() * 120)),
+      lifeDur: startAlive ? (900 + Math.round(Math.random() * 3000)) : 0,
+      fadeIn: 0.012 + Math.random() * 0.018, fadeOut: 0.001 + Math.random() * 0.003,
+      shapeTimer: 300 + Math.round(Math.random() * 1200), fxTimer: 200 + Math.round(Math.random() * 800),
+    };
+  }
+
+  private fpEnsurePoints(n: number): void {
+    if (this.fpPoints.length === n && this.fpW === this.w && this.fpH === this.h) return;
+    this.fpW = this.w; this.fpH = this.h;
+    const pts: { x: number; y: number }[] = [];
+    for (let i = 0; i < n; i++) {
+      const a = i * 2.399963, r = 0.14 + 0.34 * Math.sqrt((i + 0.5) / n); // golden-angle scatter
+      pts.push({ x: (0.5 + Math.cos(a) * r) * this.w, y: (0.5 + Math.sin(a) * r) * this.h });
+    }
+    this.fpPoints = pts;
+    while (this.fpStates.length < n) this.fpStates.push(this.fpInitState());
+    if (this.fpStates.length > n) this.fpStates.length = n;
+  }
+
+  private fpTick(): void {
+    this.fpGlobalPhase += 0.012;
+    // occasional global jolt on the shared reactive params (standalone)
+    if (Math.random() < 0.006) { this.v.connWidth = 1 + Math.random() * 3; this.v.datamosh = Math.random() * 22; this.v.glitchAmt = Math.random() * 15; }
+    this.v.connWidth = Math.max(1, Math.min(4, this.v.connWidth + (Math.random() - .5) * 1.5));
+    this.v.datamosh = Math.max(0, this.v.datamosh + (Math.random() - .5) * 1.0);
+    this.v.glitchAmt = Math.max(0, this.v.glitchAmt + (Math.random() - .5) * 0.8);
+    this.fpOverlaps = this.fpOverlaps.filter((o) => { o.alpha = Math.max(0, o.alpha - o.fadeOut); return o.alpha > 0.01; });
+    this.fpStates.forEach((s, i) => {
+      const js = s.myJitterScale;
+      s.jvx += (Math.random() - .5) * 2.0 * js; s.jvx *= 0.80; s.jvy += (Math.random() - .5) * 1.6 * js; s.jvy *= 0.80;
+      const maxJ = 10 * js; s.jx = Math.max(-maxJ, Math.min(maxJ, s.jx + s.jvx)); s.jy = Math.max(-maxJ, Math.min(maxJ, s.jy + s.jvy));
+      const wb = s.myWobble; s.wv += (Math.random() - .5) * 1.4 * wb; s.wv *= 0.86; s.hv += (Math.random() - .5) * 1.1 * wb; s.hv *= 0.86;
+      s.w = Math.max(28, Math.min(240, s.w + s.wv)); s.h = Math.max(22, Math.min(200, s.h + s.hv));
+      if (--s.shapeTimer <= 0) { s.shapeTimer = 400 + Math.round(Math.random() * 1400); s.myShape = Math.floor(Math.random() * 5); s.myConnStyle = Math.floor(Math.random() * 4); }
+      if (--s.fxTimer <= 0) { s.fxTimer = 300 + Math.round(Math.random() * 900); s.myInvert = Math.random() < 0.15; s.myThermal = Math.random() < 0.12; s.mySecurity = Math.random() < 0.10; s.myLiquid = Math.random() < 0.18; s.myGlitch = Math.random() < 0.50; s.myData = Math.random() < 0.40; s.myFadeIn = 0.012 + Math.random() * 0.020; s.myFadeOut = 0.001 + Math.random() * 0.003; }
+      if (--s.timer <= 0) {
+        s.alive = !s.alive;
+        if (s.alive) {
+          s.lifeDur = 900 + Math.round(Math.random() * 3000); s.fadeIn = s.myFadeIn; if (Math.random() < 0.06) s.alpha = 0.6;
+          if (Math.random() < 0.04 && this.fpPoints[i]) { const pt = this.fpPoints[i]; this.fpOverlaps.push({ cx: pt.x + (Math.random() - .5) * 20, cy: pt.y + (Math.random() - .5) * 16, w: s.w * (0.5 + Math.random() * 0.8), h: s.h * (0.5 + Math.random() * 0.8), alpha: 0.7 + Math.random() * 0.3, fadeOut: 0.003 + Math.random() * 0.006, shape: Math.floor(Math.random() * 5) }); }
+        } else { s.timer = 10 + Math.round(Math.random() * 60); s.fadeOut = s.myFadeOut; if (Math.random() < 0.08) s.alpha = 0; }
+      }
+      if (s.alive) { s.alpha = Math.min(1, s.alpha + s.fadeIn); if (--s.lifeDur <= 0) { s.alive = false; s.timer = 15 + Math.round(Math.random() * 60); } }
+      else s.alpha = Math.max(0, s.alpha - s.fadeOut);
+    });
+  }
+
+  private fpBlobsForFrame(): FpBlob[] {
+    const blobs: FpBlob[] = [];
+    this.fpStates.forEach((s, i) => {
+      if (s.alpha <= 0.001) return;
+      const pt = this.fpPoints[i]; if (!pt) return;
+      blobs.push({ cx: pt.x + s.jx, cy: pt.y + s.jy, x: pt.x + s.jx - s.w / 2, y: pt.y + s.jy - s.h / 2, w: s.w, h: s.h, area: Math.round(s.w * s.h * 0.78), fpAlpha: s.alpha, myShape: s.myShape, myInvert: s.myInvert, myThermal: s.myThermal, mySecurity: s.mySecurity, myLiquid: s.myLiquid, myGlitch: s.myGlitch, myData: s.myData });
+    });
+    this.fpOverlaps.forEach((o) => blobs.push({ cx: o.cx, cy: o.cy, x: o.cx - o.w / 2, y: o.cy - o.h / 2, w: o.w, h: o.h, area: Math.round(o.w * o.h * 0.78), fpAlpha: o.alpha, myShape: o.shape, myInvert: false, myThermal: false, mySecurity: false, myLiquid: false, myGlitch: true, myData: false }));
+    return blobs;
+  }
+
+  /* draws the chaos blobs through the existing pipeline via per-blob global
+   * swaps (standalone trackerFrame fixedPtsMode branch). */
+  private fpRender(src: TexImageSource): void {
+    this.fpEnsurePoints(Math.max(1, Math.min(10, this.v.fixedMaxPts | 0)));
+    this.fpTick();
+    this.ctContours = []; // no contours in chaos mode → markers stay rectangles
+    const fpBlobs = this.fpBlobsForFrame();
+    const bScale = this.v.blobScale, bShape = this.v.blobShape, bInv = this.v.fxInvert, bTh = this.v.fxThermal, bSec = this.v.fxSecurity, bLiq = this.v.fxLiquid, bGl = this.v.fxGlitch, bData = this.v.fxData;
+    fpBlobs.forEach((b, i) => {
+      this.v.blobShape = b.myShape; this.v.blobScale = bScale * b.fpAlpha;
+      this.v.fxInvert = b.myInvert ? 1 : 0; this.v.fxThermal = b.myThermal ? 1 : 0; this.v.fxSecurity = b.mySecurity ? 1 : 0;
+      this.v.fxLiquid = b.myLiquid ? 1 : 0; this.v.fxGlitch = b.myGlitch ? 1 : 0; this.v.fxData = b.myData ? 1 : 0;
+      this.drawFxInBlob(b, 1, 1, i); this.drawTextFill(b, 1, 1, i); this.drawBlobMarker(b, 1, 1, i);
+    });
+    this.v.blobShape = bShape; this.v.blobScale = bScale; this.v.fxInvert = bInv; this.v.fxThermal = bTh; this.v.fxSecurity = bSec; this.v.fxLiquid = bLiq; this.v.fxGlitch = bGl; this.v.fxData = bData;
+    const cw = this.v.connWidth; this.v.connWidth = Math.min(this.v.connWidth, 4);
+    this.drawConnections(fpBlobs); this.v.connWidth = cw;
+    this.computeMotion(src);
+  }
+
   private computeMotion(src: TexImageSource): void {
     try {
       this.motionCtx.drawImage(src as CanvasImageSource, 0, 0, 64, 36);
@@ -1220,6 +1351,11 @@ export class BlobTrackerNode implements EngineNode {
     // 1) raw colour video base
     this.dCtx.drawImage(src as CanvasImageSource, 0, 0, dW, dH);
 
+    // L7c: chaos-points mode replaces detection entirely; else the normal
+    // detect → contour → FX → markers → flow pipeline (steps 2-4)
+    if (this.v.fixedPtsMode >= 0.5) {
+      this.fpRender(src);
+    } else {
     // 2) detect on the 320×180 processing canvas
     this.pCtx.drawImage(src as CanvasImageSource, 0, 0, PW, PH);
     const id = this.pCtx.getImageData(0, 0, PW, PH);
@@ -1267,6 +1403,7 @@ export class BlobTrackerNode implements EngineNode {
     sc.forEach((b, i) => this.drawBlobMarker(b, scX, scY, i));
     if (this.v.flowOn >= 0.5) this.drawFlowViz(sc, scX, scY);
     this.computeMotion(src);
+    }
 
     // L6: panels — the fixed 8-panel 3D montage composited OVER dc (before the
     // ripple samples dc). The scene renders on its own offscreen three canvas;

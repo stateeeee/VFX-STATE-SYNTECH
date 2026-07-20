@@ -78,6 +78,40 @@ dev server is flaky here — start it via Bash `run_in_background` and poll for
 
 ## Log
 
+### 2026-07-20 — Phase 8 Layer 7c (BLOB TRACKER — chaos engine) verified
+
+- **`src/engine/nodes/blob_tracker.ts` L7c — fixedPtsMode chaos engine — DONE.**
+  `fpInitState`/`fpTick`/`fpBlobsForFrame` are ported verbatim from the
+  standalone (`_initFpState`/`_tickFpStates`/`_fpBlobsForFrame`, L5482-5554): when
+  `fixedPtsMode` is on, blob detection is REPLACED by a fixed set of points, each
+  an animated marker with its own jitter (velocity-damped), size wobble,
+  shape/connStyle timers, per-point FX flags (invert/thermal/security/liquid/
+  glitch/data toggled on their own clocks), an alpha birth/death lifecycle, and
+  occasional ephemeral overlaps. The synthetic blobs feed the EXISTING draw
+  pipeline (drawFxInBlob/drawTextFill/drawBlobMarker/drawConnections) via
+  per-blob **global swaps** — `fpRender` temporarily sets this.v.blobShape/
+  blobScale/fx* to the point's values, draws, restores — exactly the standalone's
+  trick, so no draw-function refactor. connWidth is capped at 4 for the chaos
+  connections, as in the standalone.
+- **DECISION (chain has no mouse): the points are AUTO-PLACED** on a golden-angle
+  scatter (`fpEnsurePoints`, stable per count/size) instead of user clicks — the
+  only faithful adaptation for a non-interactive chain node. `fixedPtsMode` +
+  `fixedMaxPts` (1–10, standalone sFixedMax) are the new params.
+- **CONSOLIDATED (decision #1): the autoMode panel driving** (per-panel
+  Z-thrust/kick from the standalone's bespoke onset detector) is the auto-driver
+  already replaced by the L7a ParamBus routes (panelTurb←motion, panelScale←bass
+  give reactive panels). The per-mesh onset choreography is an accepted omission
+  — documented for the operator; it would require porting the whole bespoke
+  7-band analyser, which decision #1 explicitly replaces with the shared engines.
+- **Verified** (`tools/verify/verify-phase8-L7c.js`, engine-only, behavioural —
+  stochastic) **5/5 PASS**: enabling chaos points replaces detection and changes
+  the frame (mad 0.0043); the field animates over time (jitter+FX, mad 0.0061);
+  the 10-point field is live (mad 0.013); no GL errors; no page errors. A hero
+  screenshot shows the scattered animated markers — a red thermal box, a violet
+  inverted box with a connColor line, subtle boxes — each with its own per-point
+  FX, confirming the global-swap path. `npm run lint` clean. **All L7 sub-layers
+  (a routes / b colours / c chaos) are now done — only L8 remains for Phase 8.**
+
 ### 2026-07-20 — Phase 8 Layer 7b (BLOB TRACKER — colours) verified
 
 - **`src/engine/nodes/blob_tracker.ts` L7b — colours — DONE.** The number/boolean
