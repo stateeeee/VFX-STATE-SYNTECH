@@ -33,14 +33,18 @@ import { ParamSchema } from '../../bridge/types';
         exact); security/liquid/glitch1/glitch2/text are time/random-seeded
         (behavioural). Colours use the standalone's built-in FX colours
         (vfxColor override is an L7 TODO — ParamSchema has no colour type).
-   ◐ L3 — contour markers. EDGE DONE (radialContour ray-cast on the detection
-        binary → douglasPeucker → catmull-rom spline + optional fill;
-        drawBlobMarker delegates when ctMode≥1 and the contour has ≥6 pts —
-        deterministic, verifiable pixel-exact). SMART (ctMode=2) still □: a NEW
-        MediaPipe dep — the **Tasks-Vision ImageSegmenter** (selfie_segmenter
-        .tflite via storage.googleapis.com, L4731/4886 `_ctRunSmartSeg`), NOT
-        the SelfieSegmentation the shared PersonMask uses; decide per 04-SPEC
-        (shared-service map vs new dep). Until then ctMode=2 falls back to edge.
+   ■ L3 — contour markers DONE (edge + smart). EDGE: radialContour ray-cast on
+        the detection binary → douglasPeucker → catmull-rom spline + optional
+        fill; drawBlobMarker delegates when ctMode≥1 and the contour has ≥6 pts
+        (deterministic, pixel-exact). SMART (ctMode=2, L3b): the contour
+        ray-casts the shared PersonMask instead of the detection binary
+        (refreshSmartMask reads the mask ALPHA at PW×PH, per personMaskVersion),
+        falling back to edge until the mask arrives — the standalone's
+        `_ctSmartMask ?? _ctBinMask`. DECISION: mapped to the shared PersonMask
+        (SelfieSegmentation) rather than adding the standalone's distinct
+        Tasks-Vision ImageSegmenter dep — same 04-SPEC substitution as
+        blob_reveal/bokeh/anamorphic. segEnabled is derived from ctMode (smart
+        ⇒ the shell lazy-loads the segmenter), so there is no separate control.
    ◐ L4 — optical flow DONE (Lucas-Kanade 16×16 per blob → EMA 0.42 →
         arrows green→red + fading trails; flowUpdateGray on raw gray before
         processForDetect). Temporal ⇒ verified behaviourally. flowFeedAR
@@ -124,7 +128,7 @@ const PARAMS: ParamSchema[] = [
   { key: 'textPadX', label: 'Text Coverage X', type: 'number', value: 1, min: 0, max: 1, step: 0.01, aiHint: 'Text-fill block coverage, X axis' },
   { key: 'textPadY', label: 'Text Coverage Y', type: 'number', value: 1, min: 0, max: 1, step: 0.01, aiHint: 'Text-fill block coverage, Y axis' },
   // L3 — contour markers (edge mode; smart = a MediaPipe ImageSegmenter dep, L7)
-  { key: 'ctMode', label: 'Contour Mode', type: 'number', value: 0, min: 0, max: 2, step: 1, aiHint: '0 off (rectangle markers) · 1 edge (organic radial contour from the detection mask) · 2 smart (MediaPipe segmentation — not yet ported)' },
+  { key: 'ctMode', label: 'Contour Mode', type: 'number', value: 0, min: 0, max: 2, step: 1, aiHint: '0 off (rectangle markers) · 1 edge (organic radial contour from the detection mask) · 2 smart (contour follows the shared person-segmentation mask; loads on demand, falls back to edge until the mask arrives)' },
   { key: 'ctExpand', label: 'Contour Expand', type: 'number', value: 0, min: -20, max: 20, step: 1, aiHint: 'Grow/shrink the contour outline along its rays (proc-space px)' },
   { key: 'ctSmooth', label: 'Contour Smooth', type: 'number', value: 5, min: 0, max: 20, step: 1, aiHint: 'Douglas-Peucker simplification ε — higher = smoother, fewer points' },
   { key: 'ctFill', label: 'Contour Fill', type: 'boolean', value: 0, aiHint: '(on/off switch) Fill the contour interior at 15% opacity' },
@@ -248,6 +252,10 @@ export class BlobTrackerNode implements EngineNode {
   private prevMotion: Uint8ClampedArray | null = null;
   private rawEnergy = 0;
   private ctContours: { x: number; y: number }[][] = []; // per-blob contour, proc coords
+  // L3b smart-contour mask (from the shared PersonMask, downscaled to PW×PH)
+  private ctSmartMask: Uint8Array | null = null;
+  private ctSmartMaskV = -1;
+  private smartMaskCv!: HTMLCanvasElement; private smartMaskCtx!: CanvasRenderingContext2D;
   // L4 optical-flow state
   private flowCurrGray: Uint8Array | null = null;
   private flowPrevGray: Uint8Array | null = null;
@@ -296,6 +304,11 @@ export class BlobTrackerNode implements EngineNode {
   }
 
   getParam(key: string): unknown {
+    // L3b: smart contour (ctMode=2) sources the shared PersonMask, so report
+    // segEnabled ON in smart mode — the shell lazy-loads the segmenter exactly
+    // as the standalone's ct-smart button triggers _loadMediaPipe. Not a
+    // visible param (the standalone has no separate seg-enable control).
+    if (key === 'segEnabled') return this.v.ctMode >= 1.5 ? 1 : 0;
     return this.v[key] ?? 0;
   }
 
@@ -308,8 +321,10 @@ export class BlobTrackerNode implements EngineNode {
     [this.dc, this.dCtx] = mk();
     [this.procCv, this.pCtx] = mk(true);
     [this.motionCv, this.motionCtx] = mk(true);
+    [this.smartMaskCv, this.smartMaskCtx] = mk(true);
     this.procCv.width = PW; this.procCv.height = PH;
     this.motionCv.width = 64; this.motionCv.height = 36;
+    this.smartMaskCv.width = PW; this.smartMaskCv.height = PH;
 
     this.outTex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, this.outTex);
@@ -502,6 +517,25 @@ export class BlobTrackerNode implements EngineNode {
       const cp2x = p2.x - (p3.x - p1.x) / 6, cp2y = p2.y - (p3.y - p1.y) / 6;
       ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
     }
+  }
+
+  /* L3b: rebuild the PW×PH smart-contour binary from the shared PersonMask
+   * (person confidence is in the mask ALPHA — the same channel bokeh/anamorphic
+   * read), refreshed once per new segmentation arrival (personMaskVersion),
+   * cached between arrivals like the standalone's send-every-N staleness.
+   * Returns the cached mask, or null if none has been built yet (→ edge). */
+  private refreshSmartMask(ctx: NodeRenderContext): Uint8Array | null {
+    if (ctx.personMask && ctx.personMaskVersion !== this.ctSmartMaskV) {
+      this.ctSmartMaskV = ctx.personMaskVersion;
+      if (!this.ctSmartMask) this.ctSmartMask = new Uint8Array(PW * PH);
+      try {
+        this.smartMaskCtx.clearRect(0, 0, PW, PH);
+        this.smartMaskCtx.drawImage(ctx.personMask as CanvasImageSource, 0, 0, PW, PH);
+        const d = this.smartMaskCtx.getImageData(0, 0, PW, PH).data, m = this.ctSmartMask;
+        for (let i = 0; i < PW * PH; i++) m[i] = d[i * 4 + 3] > 127 ? 1 : 0;
+      } catch { /* mask not ready */ }
+    }
+    return this.ctSmartMask;
   }
 
   private computeContours(blobs: { cx: number; cy: number; w: number; h: number }[], bin: Uint8Array): void {
@@ -1167,9 +1201,18 @@ export class BlobTrackerNode implements EngineNode {
     const scX = dW / PW, scY = dH / PH;
     const sc = blobs.map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, cx: b.cx * scX, cy: b.cy * scY, area: b.area }));
 
-    // L3: compute contours from the detection binary (edge mode) — smart mode
-    // (MediaPipe ImageSegmenter) is not ported yet, treated as edge here
-    if (this.v.ctMode >= 0.5) this.computeContours(blobs, bin); else this.ctContours = [];
+    // L3: compute contours — edge (ctMode=1) ray-casts the detection binary;
+    // smart (ctMode=2, L3b) ray-casts the shared PersonMask (mapped to the
+    // standalone's _ctSmartMask), falling back to the binary until the mask
+    // arrives — exactly the standalone's `_ctSmartMask ?? _ctBinMask` choice.
+    if (this.v.ctMode >= 0.5) {
+      let mask = bin;
+      if (this.v.ctMode >= 1.5 && ctx.personMask) {
+        const sm = this.refreshSmartMask(ctx);
+        if (sm) mask = sm;
+      }
+      this.computeContours(blobs, mask);
+    } else this.ctContours = [];
 
     // 3) FX — bgFxMode ON: FX inside the blobs | OFF: FX on the background,
     //    blobs kept clean (patch save/restore around applyFxBg)

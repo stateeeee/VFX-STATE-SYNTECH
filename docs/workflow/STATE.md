@@ -8,21 +8,18 @@
 **Phase 8 — 1:1 port: blob_tracker** (IN PROGRESS — the LAST and HARDEST
 port: three.js r128 + many-Canvas2D hybrid, ~6876 lines. **Layers 1
 (tracker core) + 2 (FX) + 3-edge (contour) + 4 (flow) + 5 (three.js ripple)
-+ 6 (three.js panels) done and parity-verified**; the node is temp-wired.
-The whole deterministic 2D pipeline + BOTH three.js scenes (ripple + panels)
-are ported. Remaining: L3-smart (new MediaPipe), L7 reactivity+colours+
++ 6 (three.js panels) + 3b (smart contour) done and parity-verified**; the
+node is temp-wired. The whole 2D pipeline (edge+smart contour) + BOTH three.js
+scenes (ripple + panels) are ported. Remaining: L7 reactivity+colours+
 fixedPtsMode, L8 param table + suites — see the node header map.)
 
 ## Next step
 
 **Read `docs/workflow/HANDOFF.md` and the `src/engine/nodes/blob_tracker.ts`
-header LAYER MAP first** (the live authority). L1–L6 are done + verified
-(see log). **Continue with Layer 3b (smart contour) and/or Layer 7
-(reactivity + colours + fixedPtsMode)**, then L8 (full param table + full
-static/behavior/chain suites + regression) → then flip the Phase 8 checkbox.
-L3b smart contour = a NEW MediaPipe Tasks-Vision ImageSegmenter
-(selfie_segmenter.tflite) — decide per 04-SPEC whether to map it to the
-shared PersonMask or add the dep. L7 = ar-*/vr-* → ParamBus/VideoAnalyzer
+header LAYER MAP first** (the live authority). L1–L6 + L3b are done + verified
+(see log). **Continue with Layer 7 (reactivity + colours + fixedPtsMode)**,
+then L8 (full param table + full static/behavior/chain suites + regression) →
+then flip the Phase 8 checkbox. L7 = ar-*/vr-* → ParamBus/VideoAnalyzer
 routes (Phase-4 pattern), colours (trackerColor/connColor/vfxColor — the
 number/boolean ParamSchema can't hold colours: design TODO), and the
 autoMode panel driving (panelsAnimate's auto branch, deferred from L6).
@@ -80,6 +77,43 @@ dev server is flaky here — start it via Bash `run_in_background` and poll for
 | 9 | blob_tracker panels (L6): draw the panel labels + connector lines **INTO the node texture** (Canvas-2D), not HTML/SVG overlays | 2026-07-19 |
 
 ## Log
+
+### 2026-07-20 — Phase 8 Layer 3b (BLOB TRACKER — smart contour) verified
+
+- **`src/engine/nodes/blob_tracker.ts` L3b — smart contour (ctMode=2) — DONE.**
+  In smart mode the contour ray-casts the **shared PersonMask** instead of the
+  detection binary — the standalone's `_ctComputeContours` uses
+  `_ctSmartMask ?? _ctBinMask`, so `refreshSmartMask` downscales `ctx.personMask`
+  to PW×PH (reading the mask ALPHA, the same channel bokeh/anamorphic read),
+  refreshed once per `personMaskVersion`, and the render path swaps it in for
+  the contour mask when ctMode≥1.5 and a mask is present (else edge). Everything
+  downstream (radialContour → douglasPeucker → catmull-rom → drawContour) is the
+  already-ported edge machinery, unchanged.
+- **DECISION (operator asleep — documented for review): mapped smart contour to
+  the shared PersonMask (SelfieSegmentation) rather than adding the standalone's
+  distinct Tasks-Vision ImageSegmenter (selfie_segmenter.tflite) dep.** Same
+  04-SPEC substitution as blob_reveal/bokeh/anamorphic — no new dependency, no
+  storage.googleapis.com asset, reuses the established mask plumbing. `segEnabled`
+  is **derived** from ctMode (smart ⇒ 1) via a getParam special-case, so the
+  shell lazy-loads the segmenter exactly like the standalone's ct-smart button
+  triggers `_loadMediaPipe` — no separate seg-enable control (the standalone has
+  none either).
+- **Verified** (`tools/verify/verify-phase8-L3b.js`, engine-only — a synthetic
+  mask injected through the PersonMask tap, no MediaPipe) **5/5 PASS**:
+  segEnabled derives from ctMode (edge=0, smart=1); smart with NO mask is a
+  **pixel-identical fallback to edge (corr 1.000, mad 0.000)**; an injected
+  person mask whose shape ≠ the luma blobs makes the contour follow the MASK
+  (mad 0.030, contour bounds proven to snap to the injected box); no GL/page
+  errors. `npm run lint` clean.
+- **Harness note (bit us, recorded for L7/L8):** (1) the dev server serves
+  STALE code after source edits in this sandbox — RESTART it (kill by port:
+  `fuser -k 3000/tcp` or the PID from `fuser 3000/tcp`; `pkill -f 'tsx
+  server.ts'` does NOT match the real cmdline) before every verify run.
+  (2) The ParamBus pushes each param's base every frame, so a headless
+  `node.setParam(k,v)` is reverted next frame — drive params through the UI
+  control (setBase path) instead. (3) Injecting a PersonMask must neutralise
+  `mask.enable`/`mask.tick` first, or the real loader's async failure
+  (CDN blocked) sets ready=false and wipes the injected mask mid-flight.
 
 ### 2026-07-20 — Phase 8 Layer 6 (BLOB TRACKER — three.js panels scene) verified
 
