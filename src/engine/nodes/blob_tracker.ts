@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { EngineNode, NodeRenderContext } from '../SynEngine';
 import { ParamSchema } from '../../bridge/types';
 
@@ -44,17 +45,14 @@ import { ParamSchema } from '../../bridge/types';
         arrows green→red + fading trails; flowUpdateGray on raw gray before
         processForDetect). Temporal ⇒ verified behaviourally. flowFeedAR
         (flow→AR signal) deferred to L7 reactivity.
-   □ L5 — three.js ripple sim (rRenderer on glC, rRtA/rRtB float ping-
-        pong wave-equation, RP={disp,damp,waveC2}) — needs `three`
-        (installed). ⚠️ BLOCKED ON AN OPERATOR DECISION: the sim's force is
-        MOUSE-driven only (mousemove → rTargetForce); with no force the wave
-        field stays flat and the display shader is a passthrough. A chain
-        node has no mouse, so a literal 1:1 port is invisible. Options put to
-        the operator (pick before porting L5): (a) audio/beat-driven force
-        [reactive substitution, matches analog/blob_reveal], (b) video-motion
-        -driven force, (c) omit in the chain [interactive single-effect only],
-        (d) port flat/passthrough. The three.js sim + shaders are the same
-        under every option — only the force source differs.
+   ■ L5 — three.js ripple sim DONE. rRtA/rRtB float ping-pong wave-equation
+        (RIPPLE_SIM_FS) + gradient-displacement shader (RIPPLE_DISP_FS), both
+        verbatim, on the node's own offscreen THREE.WebGLRenderer; its canvas
+        becomes the node output when rippleOn. OPERATOR DECISION (a): the
+        standalone's mouse force is replaced by the audio-reactive
+        `rippleForce` param, pre-wired to `beat` — the water pulses with the
+        music. With force ~0 the field is flat ⇒ clean passthrough of dc.
+        rippleDisp/Damp/Wave = the standalone RP + sDisp/sDamp/sWave.
    □ L6 — three.js panels scene (panelsRenderer, panelMeshes, labels,
         panelsBg) + the stack composite (dc→panels→fxOv→glC).
    □ L7 — reactivity: audioReactiveFrame (ar-* gains → ParamBus routes,
@@ -123,7 +121,23 @@ const PARAMS: ParamSchema[] = [
   { key: 'flowOn', label: 'Optical Flow', type: 'boolean', value: 0, aiHint: '(on/off switch) Lucas-Kanade motion arrows per blob (green→red by speed) + optional trails' },
   { key: 'flowScale', label: 'Arrow Scale', type: 'number', value: 3, min: 0, max: 10, step: 0.5, reactive: true, aiHint: 'Length multiplier of the flow arrows' },
   { key: 'flowTrail', label: 'Trail Length', type: 'number', value: 0, min: 0, max: 10, step: 1, aiHint: 'How many past positions each blob leaves as a fading dashed trail (0 = off)' },
+  // L5 — three.js ripple sim (wave-equation displacement). Operator decision:
+  // the standalone's mouse force is replaced by an audio-reactive force
+  // (rippleForce, pre-wired to the beat) — the three.js sim/shaders are 1:1.
+  { key: 'rippleOn', label: 'Ripple', type: 'boolean', value: 0, aiHint: '(on/off switch) Water-ripple displacement of the whole frame (three.js wave sim)' },
+  { key: 'rippleForce', label: 'Ripple Force', type: 'number', value: 0, min: 0, max: 1, step: 0.01, reactive: true, defaultRoute: { source: 'beat', amount: 1 }, aiHint: 'Strength of the wave impulse injected each frame — pre-wired to the beat so the water pulses with the music (replaces the standalone mouse force)' },
+  { key: 'rippleX', label: 'Ripple X', type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, aiHint: 'Horizontal position where the wave impulse is injected' },
+  { key: 'rippleY', label: 'Ripple Y', type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, aiHint: 'Vertical position where the wave impulse is injected' },
+  { key: 'rippleDisp', label: 'Ripple Displace', type: 'number', value: 0.013, min: 0.002, max: 0.04, step: 0.001, reactive: true, aiHint: 'How far the wave field bends the underlying image' },
+  { key: 'rippleDamp', label: 'Ripple Damping', type: 'number', value: 0.988, min: 0.96, max: 0.999, step: 0.001, aiHint: 'Wave energy retention per step — higher = longer-lived ripples' },
+  { key: 'rippleWave', label: 'Ripple Speed', type: 'number', value: 0.22, min: 0.05, max: 0.5, step: 0.01, aiHint: 'Wave propagation speed constant (c²)' },
 ];
+
+/* ripple shaders — verbatim from the standalone (qV/sF/dF) */
+const RIPPLE_VS = `varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}`;
+const RIPPLE_SIM_FS = `precision highp float;uniform sampler2D uSt;uniform vec2 uTx;uniform vec2 uMs;uniform float uFo,uRa,uDa,uWc;varying vec2 vUv;void main(){float h=texture2D(uSt,vUv).r,hp=texture2D(uSt,vUv).g;float N=texture2D(uSt,vUv+vec2(0.,uTx.y)).r,S=texture2D(uSt,vUv-vec2(0.,uTx.y)).r,E=texture2D(uSt,vUv+vec2(uTx.x,0.)).r,W=texture2D(uSt,vUv-vec2(uTx.x,0.)).r;float next=2.*h-hp+uWc*(N+S+E+W-4.*h);next*=uDa;vec2 d=vUv-uMs;next+=uFo*exp(-dot(d,d)/(uRa*uRa));gl_FragColor=vec4(clamp(next,-1.,1.),h,0.,1.);}`;
+const RIPPLE_DISP_FS = `precision highp float;uniform sampler2D uSc,uWv;uniform vec2 uTx;uniform float uSt;varying vec2 vUv;void main(){vec2 t=uTx*2.;float dx=texture2D(uWv,vUv+vec2(t.x,0.)).r-texture2D(uWv,vUv-vec2(t.x,0.)).r,dy=texture2D(uWv,vUv+vec2(0.,t.y)).r-texture2D(uWv,vUv-vec2(0.,t.y)).r;vec4 col=texture2D(uSc,vUv+vec2(dx,-dy)*uSt);float h=texture2D(uWv,vUv).r;col.rgb+=max(h,0.)*.09;col.rgb-=max(-h,0.)*.04;gl_FragColor=vec4(col.rgb,1.);}`;
+const RIPPLE_SIM = 512;
 
 const TEXT_MODES = [null, 'nums', 'letters', 'tmix'] as const;
 
@@ -152,6 +166,20 @@ export class BlobTrackerNode implements EngineNode {
   private flowPrevGray: Uint8Array | null = null;
   private flowVel: { dx: number; dy: number; mag: number }[] = [];
   private flowTrails: { x: number; y: number }[][] = [];
+  // L5 ripple (three.js) — separate GL context on an offscreen canvas
+  private rRenderer: THREE.WebGLRenderer | null = null;
+  private rCanvas: HTMLCanvasElement | null = null;
+  private rCam: THREE.OrthographicCamera | null = null;
+  private rSimScene: THREE.Scene | null = null;
+  private rDispScene: THREE.Scene | null = null;
+  private rRtA: THREE.WebGLRenderTarget | null = null;
+  private rRtB: THREE.WebGLRenderTarget | null = null;
+  private rSimUni: Record<string, { value: unknown }> | null = null;
+  private rDispUni: Record<string, { value: unknown }> | null = null;
+  private rSceneTex: THREE.CanvasTexture | null = null;
+  private rForce = 0;
+  private rTargetForce = 0;
+  private rInited = false;
 
   // fixed colours until L7 (ParamSchema can't hold colours)
   private trackerColor = '#ffffff';
@@ -528,6 +556,55 @@ export class BlobTrackerNode implements EngineNode {
     ctx.restore();
   }
 
+  /* ── L5 ripple sim (standalone initRipple/rippleTick, three.js). The
+   *    wave sim + display shaders are verbatim; the mouse force is replaced
+   *    by the audio-reactive rippleForce param (operator decision). Renders
+   *    on its own offscreen canvas (its own GL context) that we upload as the
+   *    node texture — the offscreen-three→texture pattern (04-SPEC). ── */
+  private initRipple(): void {
+    if (this.rInited) return;
+    this.rInited = true;
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(2, this.w); cv.height = Math.max(2, this.h);
+    this.rCanvas = cv;
+    const renderer = new THREE.WebGLRenderer({ canvas: cv, alpha: false, antialias: false, powerPreference: 'high-performance' });
+    renderer.autoClear = false; renderer.setPixelRatio(1); renderer.setSize(cv.width, cv.height, false);
+    this.rRenderer = renderer;
+    this.rCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const rtT = renderer.capabilities.isWebGL2 ? THREE.FloatType : THREE.HalfFloatType;
+    const rtO = { type: rtT, format: THREE.RGBAFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, stencilBuffer: false };
+    this.rRtA = new THREE.WebGLRenderTarget(RIPPLE_SIM, RIPPLE_SIM, rtO);
+    this.rRtB = new THREE.WebGLRenderTarget(RIPPLE_SIM, RIPPLE_SIM, rtO);
+    const geo = new THREE.PlaneGeometry(2, 2);
+    this.rSimUni = { uSt: { value: this.rRtA.texture }, uTx: { value: new THREE.Vector2(1 / RIPPLE_SIM, 1 / RIPPLE_SIM) }, uMs: { value: new THREE.Vector2(-5, -5) }, uFo: { value: 0 }, uRa: { value: 0.048 }, uDa: { value: this.v.rippleDamp }, uWc: { value: this.v.rippleWave } };
+    this.rSimScene = new THREE.Scene();
+    this.rSimScene.add(new THREE.Mesh(geo, new THREE.ShaderMaterial({ vertexShader: RIPPLE_VS, fragmentShader: RIPPLE_SIM_FS, uniforms: this.rSimUni as never, depthTest: false, depthWrite: false })));
+    this.rSceneTex = new THREE.CanvasTexture(this.dc); this.rSceneTex.minFilter = THREE.LinearFilter;
+    this.rDispUni = { uSc: { value: this.rSceneTex }, uWv: { value: this.rRtA.texture }, uTx: { value: new THREE.Vector2(1 / RIPPLE_SIM, 1 / RIPPLE_SIM) }, uSt: { value: this.v.rippleDisp } };
+    this.rDispScene = new THREE.Scene();
+    this.rDispScene.add(new THREE.Mesh(geo, new THREE.ShaderMaterial({ vertexShader: RIPPLE_VS, fragmentShader: RIPPLE_DISP_FS, uniforms: this.rDispUni as never, depthTest: false, depthWrite: false })));
+  }
+
+  private rippleTick(): void {
+    const r = this.rRenderer, sim = this.rSimUni, disp = this.rDispUni;
+    if (!r || !sim || !disp || !this.rRtA || !this.rRtB || !this.rSimScene || !this.rDispScene || !this.rCam) return;
+    if (this.rCanvas && (this.rCanvas.width !== this.w || this.rCanvas.height !== this.h)) {
+      this.rCanvas.width = this.w; this.rCanvas.height = this.h; r.setSize(this.w, this.h, false);
+    }
+    // audio-reactive force: rippleForce (beat-routed) replaces the mouse speed
+    this.rTargetForce = Math.max(this.rTargetForce, this.v.rippleForce * 0.85);
+    this.rForce += (this.rTargetForce - this.rForce) * 0.28; this.rTargetForce *= 0.78;
+    if (this.rSceneTex) this.rSceneTex.needsUpdate = true;
+    (sim.uSt.value as THREE.Texture) = this.rRtA.texture;
+    (sim.uMs.value as THREE.Vector2).set(this.v.rippleX, this.v.rippleY);
+    sim.uFo.value = this.rForce; sim.uDa.value = this.v.rippleDamp; sim.uWc.value = this.v.rippleWave;
+    disp.uSt.value = this.v.rippleDisp;
+    r.setRenderTarget(this.rRtB); r.render(this.rSimScene, this.rCam);
+    const tmp = this.rRtA; this.rRtA = this.rRtB; this.rRtB = tmp;
+    disp.uWv.value = this.rRtA.texture;
+    r.setRenderTarget(null); r.render(this.rDispScene, this.rCam);
+  }
+
   private computeMotion(src: TexImageSource): void {
     try {
       this.motionCtx.drawImage(src as CanvasImageSource, 0, 0, 64, 36);
@@ -845,15 +922,28 @@ export class BlobTrackerNode implements EngineNode {
     if (this.v.flowOn >= 0.5) this.drawFlowViz(sc, scX, scY);
     this.computeMotion(src);
 
+    // L5: ripple displaces the whole 2D composite (three.js, own GL context).
+    // Its canvas becomes the node output when on; with force ~0 (no beat) the
+    // wave field is flat and it is a clean passthrough of dc.
+    let outSrc: TexImageSource = this.dc;
+    if (this.v.rippleOn >= 0.5) {
+      if (!this.rInited) this.initRipple();
+      this.rippleTick();
+      if (this.rCanvas) outSrc = this.rCanvas;
+    }
+
     // upload composite (FLIP_Y — engine convention)
     gl.bindTexture(gl.TEXTURE_2D, this.outTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, this.dc);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, outSrc);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     return this.outTex;
   }
 
   dispose(gl: WebGL2RenderingContext): void {
     if (this.outTex) { gl.deleteTexture(this.outTex); this.outTex = null; }
+    this.rRtA?.dispose(); this.rRtB?.dispose(); this.rSceneTex?.dispose();
+    this.rRenderer?.dispose();
+    this.rRenderer = null; this.rInited = false;
   }
 }

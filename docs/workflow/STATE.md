@@ -7,10 +7,10 @@
 
 **Phase 8 — 1:1 port: blob_tracker** (IN PROGRESS — the LAST and HARDEST
 port: three.js r128 + many-Canvas2D hybrid, ~6876 lines. **Layers 1
-(tracker core) + 2 (FX system) + 3-edge (contour) + 4 (optical flow) done
-and parity-verified**; the node is temp-wired. The whole DETERMINISTIC 2D
-pipeline is now ported. Remaining: L3-smart (new MediaPipe), L5 ripple
-three.js, L6 panels three.js, L7 reactivity+colours, L8 param table +
+(tracker core) + 2 (FX) + 3-edge (contour) + 4 (flow) + 5 (three.js ripple)
+done and parity-verified**; the node is temp-wired. The whole deterministic
+2D pipeline + the first three.js scene are ported. Remaining: L3-smart (new
+MediaPipe), L6 panels three.js, L7 reactivity+colours, L8 param table +
 suites — see the node header map.)
 
 ## Next step
@@ -47,14 +47,9 @@ aborts before wiring its file input (#fi-v).
 
 ## Open items
 
-- **⚠️ OPERATOR DECISION PENDING — Phase 8 L5 (ripple)**: blob_tracker's
-  ripple sim is MOUSE-driven (waves follow the cursor); a chain node has no
-  mouse, so a literal 1:1 port is invisible (flat field → passthrough). The
-  operator must pick the force source before L5 is ported: (a) audio/beat
-  (reactive substitution, matches analog/blob_reveal), (b) video-motion,
-  (c) omit in the chain (interactive single-effect only), (d) flat passthrough.
-  The three.js sim is identical under all options — only the force differs.
-  Was asked at handoff; not yet answered. See the `blob_tracker.ts` L5 header.
+- **Phase 8 L5 ripple — operator decided (a) audio/beat force** (2026-07-19):
+  the mouse force is replaced by the reactive `rippleForce` param pre-wired to
+  the beat. Ported + verified (see log). Decision recorded here for the record.
 - Operator will deliver 6 images (logo + 5 effect covers) → Phase 10,
   prompt D in 08-PROMPTS.md. Not delivered yet.
 - `ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
@@ -131,13 +126,24 @@ aborts before wiring its file input (#fi-v).
   NOT cross-comparable between the two independently-running pages (the engine
   does more 2D work + a GL upload, so it renders at a different rate); the LK
   is a verbatim transcription. flowFeedAR (flow→AR signal) is deferred to L7.
-- **The whole deterministic 2D pipeline is now ported and verified** (L1+L2+
-  L3edge pixel-identical, L4 behavioural). The node is **temp-wired** into
-  `nodes.ts` (renders tracker core + FX + contour + flow — far better than the
-  DummyNode passthrough — but L3-smart/L5–L8 are not there yet, so **Phase 8
-  is NOT done**; checkbox unchecked until the full port + full suites).
+- **Layer 5 (three.js ripple sim) — DONE and verified** (operator decision a:
+  audio/beat force): the standalone's mouse-driven wave sim + displacement
+  shaders are ported VERBATIM onto the node's own offscreen `THREE.WebGLRenderer`
+  (float rRtA/rRtB ping-pong at 512²), whose canvas becomes the node output;
+  the mouse force is replaced by the reactive `rippleForce` param pre-wired to
+  `beat`. `verify-phase8-L5.js` **5/5 PASS**: ripple-ON at force 0 is a
+  **pixel-identical passthrough of dc (corr=1.000, mad=0.000** — proves the
+  three.js sim/shaders/orientation are correct); injecting force visibly
+  displaces the frame (mad 0.0043); the field evolves over time (feedback
+  ping-pong); no GL errors on the engine context; no page errors. First
+  three.js scene integrated — the offscreen-three→texture pattern works.
+- **The whole deterministic 2D pipeline + the ripple three.js scene are ported
+  and verified.** The node is **temp-wired** into `nodes.ts` (tracker core +
+  FX + contour + flow + ripple — far better than the DummyNode passthrough —
+  but L3-smart/L6–L8 are not there yet, so **Phase 8 is NOT done**; checkbox
+  unchecked until the full port + full suites).
 - Layers remaining (node header has the map): L3-smart (MediaPipe
-  ImageSegmenter), L5 three.js ripple sim
+  ImageSegmenter), L6 three.js panels scene
   (rRenderer/glC float ping-pong), L6 three.js panels scene + the stack
   composite (dc→panels→fxOv→glC), L7 reactivity (ar-*→routes,
   vr-*→VideoAnalyzer) + colours (ParamSchema can't hold colours — design
