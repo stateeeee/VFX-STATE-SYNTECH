@@ -4,7 +4,7 @@ import { ParamSchema } from '../../bridge/types';
 
 /* ═══════════════════════════════════════════════════════════════
    BLOB TRACKER — 1:1 port of public/effects/blob_tracker/index.html
-   (Phase 8) — WORK IN PROGRESS, LAYERS 1–6 done.
+   (Phase 8) — COMPLETE. All layers ported + verified.
 
    The standalone is the biggest effect (~6876 lines): a Canvas-2D
    contour tracker + TWO three.js renderers (a float ping-pong ripple
@@ -14,10 +14,11 @@ import { ParamSchema } from '../../bridge/types';
    canvases uploaded as the node texture — the blob_reveal
    offscreen-2D→GL-texture pattern extended to three.js.
 
-   ⚠️ TEMP-WIRED into nodes.ts (factory `blob_tracker: () => new
-   BlobTrackerNode()`, DummyNode line kept commented below it). Far better than
-   the passthrough, but Phase 8 is NOT done — L3-smart + L7 + L8 remain, so the
-   phase checkbox stays unchecked until the full port + full parity suites.
+   WIRED into nodes.ts (factory `blob_tracker: () => new BlobTrackerNode()`).
+   The full deterministic 2D pipeline (tracker core + FX + edge/smart contour +
+   flow + chaos) + BOTH three.js scenes (ripple + panels) are ported and
+   verified; reactivity is mapped to ParamBus routes (decision #1). See the
+   per-layer STATE.md logs (2026-07-20) for the parity numbers.
 
    PORT LAYERS (■ done here / □ remaining):
    ■ L1 — tracker core: base video draw (_drawSrc) → 320×180 detect
@@ -92,8 +93,10 @@ import { ParamSchema } from '../../bridge/types';
         the bespoke onset detector) IS the auto-driver replaced by the L7a routes
         (panelTurb←motion, panelScale←bass) — the per-mesh onset choreography is
         an accepted omission. Panel-label colour override left at L6 styling.
-   □ L8 — reconcile the full param table + parity suites (static/behavior/chain)
-        + regression, then mark Phase 8 done.
+   ■ L8 — DONE. Param table reconciled (added mirrorBg; connSat + ar-* / vr-*
+        gains + panels-label colour consolidated — see STATE.md). chain-sanity +
+        mirrorBg suite green; all L3b/L5/L6/L7 layer suites re-run 0-fail;
+        factory made permanent. Phase 8 complete.
 
    Standalone state defaults captured (index.html L1767-1788):
      P={threshold:127,brightness:31,contrast:2.15,minArea:100,
@@ -173,6 +176,7 @@ const PARAMS: ParamSchema[] = [
   { key: 'panelsLabels', label: 'Panel Labels', type: 'boolean', value: 1, aiHint: '(on/off switch) Draw the per-panel tag + score labels (standalone btn-plabels)' },
   { key: 'panelsConnLines', label: 'Panel Label Lines', type: 'boolean', value: 1, aiHint: '(on/off switch) Draw the connector line from each label to its panel (standalone btn-pconnlines)' },
   { key: 'mirrorPanels', label: 'Mirror Panels', type: 'boolean', value: 0, aiHint: '(on/off switch) Horizontally mirror the video sampled inside each panel (standalone btn-mirror-panels)' },
+  { key: 'mirrorBg', label: 'Mirror Video', type: 'boolean', value: 0, aiHint: '(on/off switch) Horizontally mirror the tracked video (base + detection stay aligned) — standalone btn-mirror-bg' },
   // L7b — colours (palette-enum indices; ParamSchema can't hold hex)
   { key: 'trackerColorIdx', label: 'Tracker Color', type: 'number', value: 0, min: 0, max: 9, step: 1, aiHint: 'Colour of the blob markers, contours + ID/A labels — palette: 0 white·1 blue·2 mint·3 violet·4 cyan·5 red·6 amber·7 green·8 magenta·9 black' },
   { key: 'connColorIdx', label: 'Connection Color', type: 'number', value: 1, min: 0, max: 9, step: 1, aiHint: 'Colour of the connection lines (tracker graph + panel graph) — same palette; default 1 = blue (#0011ff)' },
@@ -1348,16 +1352,19 @@ export class BlobTrackerNode implements EngineNode {
     this.trackerColor = pal(this.v.trackerColorIdx);
     this.connColor = pal(this.v.connColorIdx);
 
-    // 1) raw colour video base
-    this.dCtx.drawImage(src as CanvasImageSource, 0, 0, dW, dH);
+    // 1) raw colour video base (mirrorBg flips it; detection is flipped to match)
+    const mir = this.v.mirrorBg >= 0.5;
+    if (mir) { this.dCtx.save(); this.dCtx.translate(dW, 0); this.dCtx.scale(-1, 1); this.dCtx.drawImage(src as CanvasImageSource, 0, 0, dW, dH); this.dCtx.restore(); }
+    else this.dCtx.drawImage(src as CanvasImageSource, 0, 0, dW, dH);
 
     // L7c: chaos-points mode replaces detection entirely; else the normal
     // detect → contour → FX → markers → flow pipeline (steps 2-4)
     if (this.v.fixedPtsMode >= 0.5) {
       this.fpRender(src);
     } else {
-    // 2) detect on the 320×180 processing canvas
-    this.pCtx.drawImage(src as CanvasImageSource, 0, 0, PW, PH);
+    // 2) detect on the 320×180 processing canvas (flipped to match mirrorBg)
+    if (mir) { this.pCtx.save(); this.pCtx.translate(PW, 0); this.pCtx.scale(-1, 1); this.pCtx.drawImage(src as CanvasImageSource, 0, 0, PW, PH); this.pCtx.restore(); }
+    else this.pCtx.drawImage(src as CanvasImageSource, 0, 0, PW, PH);
     const id = this.pCtx.getImageData(0, 0, PW, PH);
     if (this.v.flowOn >= 0.5) this.flowUpdateGray(id.data); // raw gray BEFORE processForDetect
     this.processForDetect(id.data);
