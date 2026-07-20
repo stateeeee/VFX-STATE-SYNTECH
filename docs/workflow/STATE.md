@@ -16,20 +16,22 @@ suites — see the node header map.)
 ## Next step
 
 **Read `docs/workflow/HANDOFF.md` and the `src/engine/nodes/blob_tracker.ts`
-header first** — the header carries the full LAYER MAP (■ L1 done / □ L2–L8
-remaining) with standalone line refs. L1 (tracker core) and L2 (FX
-system) are verified by `verify-phase8-static-L1.js` (**7/7 corr=1.000**)
-and `verify-phase8-static-L2.js` (**12/12**: invert+thermal pixel-identical,
-stochastic FX behavioural). Continue with **Layer 3** (contour modes edge/
-smart — `_ctComputeContours`/`_ctRunSmartSeg`, check if smart pulls
-MediaPipe — + `_drawContour`), then L4 optical flow, L5 three.js ripple sim
-(three is installed), L6 three.js panels + the stack composite, L7
-reactivity + colours + fixedPtsMode, L8 full param table +
-parity/behavior/chain suites + regression, then flip the checkbox and mark
-Phase 8 done. **Gotcha:** the standalone
-loads THREE from cdnjs at init — a suite that blocks the CDN must serve the
-three.js r128 mirror (see the L1 suite's route) or the standalone script
-aborts before wiring its file input (#fi-v).
+header LAYER MAP first** (the live authority). L1–L5 are done + verified
+(see log). **Continue with Layer 6 — the three.js panels scene**, per the
+detailed guide in HANDOFF. **Operator decision recorded: draw the panel
+labels + connector lines INTO the node texture** (Canvas-2D at the projected
+positions), NOT as the standalone's HTML/SVG overlays — functionally
+equivalent, an accepted (non-pixel-identical) deviation. The panels are a
+FIXED 8-panel 3D montage (DEFS/PLBLS L2497), composited OVER dc before the
+ripple; reuse the L5 offscreen-three→texture pattern. After L6: L3b smart
+contour (MediaPipe ImageSegmenter), L7 reactivity (ar-*/vr-* → routes) +
+colours + fixedPtsMode, L8 full param table + full static/behavior/chain
+suites + regression → then flip the Phase 8 checkbox.
+**Gotcha:** the standalone loads THREE from cdnjs at init — a suite that
+blocks the CDN must serve the three.js r128 mirror (see any phase-8 suite's
+route) or the standalone aborts before wiring its file input (#fi-v). The
+dev server is flaky here — start it via Bash `run_in_background` and poll for
+:3000 == 200 before each run.
 
 ## Phase board
 
@@ -75,6 +77,8 @@ aborts before wiring its file input (#fi-v).
 | 5 | The 5 uploaded HTMLs (2026-07-17) are the official effect builds; old `blob_tracker` replaced | 2026-07-17 |
 | 6 | Add Node menu alphabetical: ANALOG, ANAMORPHIC LAB, BLOB REVEAL, BLOB TRACKER, BOKEH | 2026-07-17 |
 | 7 | Port order locked: analog → bokeh → anamorphic_lab → blob_reveal → blob_tracker | 2026-07-17 |
+| 8 | blob_tracker ripple (L5): mouse force → **audio/beat-reactive force** in the chain node | 2026-07-19 |
+| 9 | blob_tracker panels (L6): draw the panel labels + connector lines **INTO the node texture** (Canvas-2D), not HTML/SVG overlays | 2026-07-19 |
 
 ## Log
 
