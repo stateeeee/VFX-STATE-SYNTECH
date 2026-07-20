@@ -79,9 +79,13 @@ import { ParamSchema } from '../../bridge/types';
         (L5). The ar-* and vr-* gain sliders + ar-on/auto + vr-on/auto/face/
         pose/flow toggles are CONSOLIDATED — the shared engines + ParamBus amount
         replace the built-in analyser (as blob_reveal consolidated beatSens/
-        beatGap). REMAINING □: L7b colours (trackerColor/connColor/vfxColor — the
-        number/boolean ParamSchema can't hold colours: design TODO) + L7c
-        fixedPtsMode chaos engine + the autoMode panel driving (deferred L6).
+        beatGap). L7b COLOURS DONE: trackerColor/connColor/vfxColor become
+        palette-enum indices (PALETTE + pal()) — trackerColorIdx (markers/
+        contours/labels), connColorIdx (tracker + panel connections), vfxColorOn
+        + vfxColorIdx (FX text override); resolved into this.trackerColor/
+        connColor each render. REMAINING □: L7c fixedPtsMode chaos engine + the
+        autoMode panel driving (deferred L6). (Panel-label colour override —
+        standalone panelsColorActive — left at the L6 default styling.)
    □ L8 — full param table + parity suites (static/behavior/chain) +
         regression, then swap the factory and mark Phase 8 done.
 
@@ -163,6 +167,11 @@ const PARAMS: ParamSchema[] = [
   { key: 'panelsLabels', label: 'Panel Labels', type: 'boolean', value: 1, aiHint: '(on/off switch) Draw the per-panel tag + score labels (standalone btn-plabels)' },
   { key: 'panelsConnLines', label: 'Panel Label Lines', type: 'boolean', value: 1, aiHint: '(on/off switch) Draw the connector line from each label to its panel (standalone btn-pconnlines)' },
   { key: 'mirrorPanels', label: 'Mirror Panels', type: 'boolean', value: 0, aiHint: '(on/off switch) Horizontally mirror the video sampled inside each panel (standalone btn-mirror-panels)' },
+  // L7b — colours (palette-enum indices; ParamSchema can't hold hex)
+  { key: 'trackerColorIdx', label: 'Tracker Color', type: 'number', value: 0, min: 0, max: 9, step: 1, aiHint: 'Colour of the blob markers, contours + ID/A labels — palette: 0 white·1 blue·2 mint·3 violet·4 cyan·5 red·6 amber·7 green·8 magenta·9 black' },
+  { key: 'connColorIdx', label: 'Connection Color', type: 'number', value: 1, min: 0, max: 9, step: 1, aiHint: 'Colour of the connection lines (tracker graph + panel graph) — same palette; default 1 = blue (#0011ff)' },
+  { key: 'vfxColorOn', label: 'VFX Color Override', type: 'boolean', value: 0, aiHint: '(on/off switch) Override the built-in FX text-fill colour with the palette colour below (standalone vfxColorActive)' },
+  { key: 'vfxColorIdx', label: 'VFX Color', type: 'number', value: 2, min: 0, max: 9, step: 1, aiHint: 'Palette colour for the Text Fill FX when VFX Color Override is on; default 2 = mint (#00ff88)' },
 ];
 
 /* ripple shaders — verbatim from the standalone (qV/sF/dF) */
@@ -172,6 +181,13 @@ const RIPPLE_DISP_FS = `precision highp float;uniform sampler2D uSc,uWv;uniform 
 const RIPPLE_SIM = 512;
 
 const TEXT_MODES = [null, 'nums', 'letters', 'tmix'] as const;
+
+/* L7b — colour palette. The number/boolean ParamSchema can't carry a hex, so
+ * the standalone's colour pickers (trackerColor/connColor/vfxColor) become enum
+ * indices into this curated palette. Index 0/1/2 are the standalone defaults
+ * (#ffffff tracker · #0011ff conn · #00ff88 vfx); 3 is the app accent violet. */
+const PALETTE = ['#ffffff', '#0011ff', '#00ff88', '#8b5cf6', '#22d3ee', '#ef4444', '#f59e0b', '#22c55e', '#e879f9', '#000000'] as const;
+const pal = (i: number): string => PALETTE[Math.max(0, Math.min(PALETTE.length - 1, i | 0))];
 
 /* ═══ L6 — three.js PANELS scene (standalone DEFS/PLBLS/VS/FS/SimplexNoise,
    L2482-2500). A FIXED 8-panel 3D montage of the video shown as floating
@@ -298,7 +314,9 @@ export class BlobTrackerNode implements EngineNode {
   private camC = { x: 0, y: 0 };
   private _pv = new THREE.Vector3(); // scratch for screen projection
 
-  // fixed colours until L7 (ParamSchema can't hold colours)
+  // L7b: resolved each render() from the palette-enum params (trackerColorIdx /
+  // connColorIdx); the standalone defaults (#ffffff / #0011ff) are the initial
+  // values, used by every marker/contour/connection/panel overlay.
   private trackerColor = '#ffffff';
   private connColor = '#0011ff';
 
@@ -1115,7 +1133,7 @@ export class BlobTrackerNode implements EngineNode {
     else dCtx.rect(x, y, bw, bh);
     dCtx.clip();
     dCtx.font = `bold ${fs}px JetBrains Mono,monospace`;
-    dCtx.fillStyle = colMap[textFillMode] || '#ffffff';
+    dCtx.fillStyle = this.v.vfxColorOn >= 0.5 ? pal(this.v.vfxColorIdx) : (colMap[textFillMode] || '#ffffff');
     dCtx.globalAlpha = 0.75 * fxOpacity;
     dCtx.globalCompositeOperation = 'screen';
     for (let bky = y; bky < y + bh; bky += blkH) {
@@ -1181,7 +1199,7 @@ export class BlobTrackerNode implements EngineNode {
       const cw = fs * 0.62, cols = Math.ceil(dW / cw) + 2, rows = Math.ceil(dH / fs) + 2;
       dCtx.save();
       dCtx.font = `bold ${fs}px JetBrains Mono,monospace`;
-      dCtx.fillStyle = colMap[textFillMode] || '#ffffff';
+      dCtx.fillStyle = this.v.vfxColorOn >= 0.5 ? pal(this.v.vfxColorIdx) : (colMap[textFillMode] || '#ffffff');
       dCtx.globalAlpha = 0.6 * op; dCtx.globalCompositeOperation = 'screen';
       for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++)
         dCtx.fillText(chars[Math.floor(Math.random() * chars.length)], col * cw, (row + 1) * fs);
@@ -1194,6 +1212,10 @@ export class BlobTrackerNode implements EngineNode {
     const src = ctx.source;
     if (!src || !this.outTex || this.w < 2) return ctx.inputTex;
     const dW = this.w, dH = this.h;
+
+    // L7b: resolve the palette-enum colours for every overlay this frame
+    this.trackerColor = pal(this.v.trackerColorIdx);
+    this.connColor = pal(this.v.connColorIdx);
 
     // 1) raw colour video base
     this.dCtx.drawImage(src as CanvasImageSource, 0, 0, dW, dH);

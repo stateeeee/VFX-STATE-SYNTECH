@@ -78,6 +78,31 @@ dev server is flaky here — start it via Bash `run_in_background` and poll for
 
 ## Log
 
+### 2026-07-20 — Phase 8 Layer 7b (BLOB TRACKER — colours) verified
+
+- **`src/engine/nodes/blob_tracker.ts` L7b — colours — DONE.** The number/boolean
+  ParamSchema can't hold a hex, so the standalone's colour pickers become
+  **palette-enum indices** into a curated 10-colour `PALETTE` (index 0/1/2 are
+  the standalone defaults #ffffff / #0011ff / #00ff88; 3 is the app accent
+  violet #8b5cf6). New params: **trackerColorIdx** (default 0 — markers,
+  contours, ID/A labels, dots), **connColorIdx** (default 1 — the tracker graph
+  AND the L6 panel graph), **vfxColorOn** + **vfxColorIdx** (default off / 2 —
+  overrides the Text-Fill FX colour, the standalone's `vfxColorActive`+`vfxColor`
+  on the two text sites). `this.trackerColor`/`this.connColor` are resolved from
+  the enums via `pal()` each render, so every existing overlay call site picks up
+  the colour with no other change.
+- **DECISION (documented): palette-enum indices** over free hex (ParamSchema
+  constraint) — keeps the mod matrix/AI-hint model uniform and the look curated.
+  The panel-label colour override (standalone `panelsColorActive`/
+  `panelsLabelColor`) is left at the L6 default styling — a minor, low-value
+  deferral, noted for the operator.
+- **Verified** (`tools/verify/verify-phase8-L7b.js`, engine-only, mean-RGB
+  direction on deterministic overlays) **4/4 PASS**: trackerColorIdx white→red
+  on a filled contour drops mean G+B (−17.9/−17.9); connColorIdx blue→amber on
+  the glowing panel graph raises R, drops B (+1.85/−1.90); the vfxColor override
+  recolours the (random) Text-Fill green→magenta, raising mean R+B when averaged
+  over 7 frames (+9.35/+7.20); no page errors. `npm run lint` clean.
+
 ### 2026-07-20 — Phase 8 Layer 7a (BLOB TRACKER — reactivity routes) verified
 
 - **`src/engine/nodes/blob_tracker.ts` L7a — reactivity ROUTES — DONE.** The
