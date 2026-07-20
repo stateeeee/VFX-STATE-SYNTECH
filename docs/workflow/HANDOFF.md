@@ -1,17 +1,25 @@
-# HANDOFF — session continuation brief (updated 2026-07-20, Phase 8 COMPLETE)
+# HANDOFF — session continuation brief (updated 2026-07-20, Phases 0–9 COMPLETE)
 
 > For the next Claude session. Read this AFTER `CLAUDE.md` and `STATE.md`.
-> **Phase 8 is done — all five effects are now real 1:1 SynEngine ports.**
-> Next up is **Phase 9 — Chain export (Master MP4)**. Develop on the branch the
-> operator names in the session brief; if the current PR is already merged,
-> restart the branch from the latest `origin/main` per the branch policy.
+> **Phases 0–9 are done** — all five effects are real 1:1 SynEngine ports and
+> the ChainLab **Master MP4** export works. **Only Phase 10 (Assets & polish)
+> remains, and it is BLOCKED on the operator's 6 images.** Develop on the branch
+> the operator names; if the current PR is already merged, restart the branch
+> from the latest `origin/main` per the branch policy.
 
 ## Where we are — exactly
 
-- **Phases 0–8 DONE and verified.** The five standalone effects are all ported
+- **Phases 0–9 DONE and verified.** The five standalone effects are all ported
   to SynEngine nodes: `analog`, `bokeh`, `anamorphic_lab`, `blob_reveal`,
   `blob_tracker`. `src/engine/nodes.ts` wires all five to their real classes —
   **no DummyNode remains**. `three@0.128.0` is a real dep (added in Phase 8).
+- **Phase 9 (Master MP4 export) DONE**: `public/effects/vendor/mp4-muxer.min.js`
+  (real mp4-muxer v5.2.2 UMD, `window.Mp4Muxer`) + `syntech-export.js`
+  (`window.SyntechExport`, WebCodecs frame-stepping → MP4). Codec: prefer
+  universal H.264, fall back AV1→VP9. Video-only v1 (audio = follow-up).
+  `tools/verify/verify-phase9-export.js` 7/7 (valid MP4, frame count + duration
+  correct, real ChainLab button exports). Headless has no H.264 encoder → uses
+  AV1 in-sandbox; the operator's Chrome uses H.264.
 - **blob_tracker** (the last + hardest, ~6876-line three.js + many-Canvas2D
   hybrid) is complete. Layer map + per-layer parity numbers live in the
   `src/engine/nodes/blob_tracker.ts` header and the STATE.md 2026-07-20 logs.
@@ -32,18 +40,24 @@
   - Panels-label colour override + cam-* hardware sliders: not ported (styling /
     source concerns).
 
-## NEXT — Phase 9: Chain export (Master MP4)
+## NEXT — Phase 10: Assets & polish (the FINAL phase)
 
-Read `05-ROADMAP.md` Phase 9 + `06-VERIFICATION.md` for the acceptance criteria.
-The goal: make the ChainLab **"Master MP4"** button real — capture the live
-chain composite (the `chain-canvas`) to a downloadable file.
-- The button currently references `/effects/vendor/*` files that **do not exist
-  yet** (see STATE Open items) — Phase 9 provides them or replaces the approach.
-- The five ports render a real composite now, so there is genuine output to
-  capture. Likely approach: `MediaRecorder` on `canvas.captureStream()` (webm),
-  or WebCodecs/mp4 if the phase calls for MP4 specifically — check the roadmap.
-- Mind audio: if the export should carry the track, mux the AudioEngine output.
-- Persistence stays localStorage (hard rule #7); no backend.
+Read `05-ROADMAP.md` Phase 10 + `06-VERIFICATION.md`. Items:
+1. **Integrate the 6 operator images** (logo top-left; 5 effect-card covers on
+   the right sidebar) — **BLOCKED until the operator delivers them** (prompt D in
+   `08-PROMPTS.md`). **Notify the operator to upload them.** Don't fabricate
+   placeholders as if real; wire the slots so dropping the files in works.
+2. **Functional search box** — filter the effect cards by name.
+3. **Vendor CDN deps locally** — three.js, MediaPipe models, fonts — for offline
+   resilience (the effects currently load these from CDNs; this also fixes the
+   sandbox-CDN test friction). Mirror into `public/effects/vendor/` and repoint.
+4. **Perf pass** — 5-effect chain ≥30fps@720p or graceful adaptive-res (a
+   GPU-machine check; unassessable under sandbox SwiftShader).
+5. **Colour sweep** — stray non-`--syn-*`/off-palette colours; day-mode audit.
+
+Items 2–5 can proceed WITHOUT the images; item 1 waits on the operator.
+Audio in the MP4 export is a reasonable follow-up too (the muxer supports an
+audio track; v1 is video-only). Persistence stays localStorage (hard rule #7).
 
 ## Verification harness — operational playbook (this WILL bite you)
 

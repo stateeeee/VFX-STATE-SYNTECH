@@ -5,30 +5,35 @@
 
 ## Current phase
 
-**Phase 8 — 1:1 port: blob_tracker — COMPLETE** (2026-07-20). The LAST and
-HARDEST port (three.js r128 + many-Canvas2D hybrid, ~6876 lines) is done and
-verified across all layers: tracker core, FX, edge+smart contour, optical
-flow, three.js ripple, three.js panels, reactivity routes, colours, and the
-fixed-points chaos engine. The factory in `nodes.ts` is now permanent (no more
-DummyNode). **All five effects are now real 1:1 SynEngine ports.** Ready for
-**Phase 9 — Chain export (Master MP4)**.
+**Phases 0–9 COMPLETE** (2026-07-20). All five effects are real 1:1 SynEngine
+ports (Phase 8 blob_tracker was the last + hardest), and the ChainLab
+**Master MP4** export works end-to-end (Phase 9: WebCodecs frame-stepping →
+mp4-muxer, vendored under `public/effects/vendor/`). **Only Phase 10 (Assets &
+polish) remains — and it is BLOCKED on the operator delivering the 6 images**
+(logo + 5 effect-card covers). The rest of Phase 10 (functional search box,
+vendoring CDN deps locally, perf pass, day-mode colour sweep) can proceed
+without the images if desired.
 
 ## Next step
 
-**Phase 8 is COMPLETE — begin Phase 9 (Chain export / Master MP4).** Read
-`docs/workflow/HANDOFF.md` (rewritten for Phase 9) then `05-ROADMAP.md` Phase 9
-+ `06-VERIFICATION.md`. Phase 9 makes the ChainLab "Master MP4" button real:
-it references `/effects/vendor/*` files that don't exist yet (see Open items).
-The five effect ports are done, so the chain renders a real composite — Phase 9
-captures that composite (MediaRecorder or WebCodecs) to an MP4/webm the operator
-can download. **Gotcha (still applies):** the standalone HTMLs load THREE from
-cdnjs at init — any suite that opens a standalone AND blocks the CDN must serve
-the three.js r128 mirror or the standalone aborts (this bit the Phase-1
-regression: its 5 fails were all `THREE`/`SelfieSegmentation is not defined`
-from the blocked CDN, not real regressions — the effect HTMLs are untouched).
+**Phases 0–9 are COMPLETE. Only Phase 10 (Assets & polish) remains, and it is
+BLOCKED on the operator's 6 images** (logo top-left + 5 effect-card covers —
+prompt D in `08-PROMPTS.md`, not delivered yet). **⇒ Notify the operator to
+upload the 6 images before doing the image-integration part of Phase 10.** The
+non-image Phase-10 items can proceed meanwhile: functional effect **search box**;
+**vendor the CDN deps** locally (three.js, MediaPipe models, fonts) for offline
+resilience; **perf pass** (5-effect chain ≥30fps@720p or graceful adaptive-res —
+a GPU-machine check); **day-mode + stray non-token colour sweep**. Read
+`05-ROADMAP.md` Phase 10 + `06-VERIFICATION.md`.
+**Gotchas (still apply):** standalone HTMLs load THREE from cdnjs — a suite that
+opens a standalone AND blocks the CDN must serve the three.js r128 mirror or it
+aborts (this is why the Phase-1 regression showed 5 `THREE`/`SelfieSegmentation
+is not defined` fails — not real regressions; the effect HTMLs are untouched).
 Restart the flaky dev server (`fuser -k 3000/tcp` — `pkill -f 'tsx server.ts'`
-does NOT match the real cmdline) after every source edit; it serves STALE code
-otherwise.
+does NOT match the real cmdline) after every SOURCE edit (it serves STALE code
+otherwise); vendored `public/` files are static and need no restart. Headless
+Chromium has no H.264 WebCodecs encoder (export falls back to AV1/VP9 in-sandbox;
+the operator's Chrome uses H.264).
 
 ## Phase board
 
@@ -41,8 +46,8 @@ otherwise.
 - [x] Phase 6 — 1:1 port: anamorphic_lab
 - [x] Phase 7 — 1:1 port: blob_reveal
 - [x] Phase 8 — 1:1 port: blob_tracker
-- [ ] Phase 9 — Chain export (Master MP4)
-- [ ] Phase 10 — Assets & polish
+- [x] Phase 9 — Chain export (Master MP4)
+- [ ] Phase 10 — Assets & polish  ← **BLOCKED on the 6 operator images**
 
 ## Open items
 
@@ -51,8 +56,12 @@ otherwise.
   the beat. Ported + verified (see log). Decision recorded here for the record.
 - Operator will deliver 6 images (logo + 5 effect covers) → Phase 10,
   prompt D in 08-PROMPTS.md. Not delivered yet.
-- `ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
-  not exist until Phase 9 — expected to fail until then.
+- ~~`ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
+  not exist until Phase 9~~ — **RESOLVED (Phase 9)**: `mp4-muxer.min.js` +
+  `syntech-export.js` vendored; the button exports a real MP4.
+- **Phase 10 is BLOCKED on the operator delivering 6 images** (logo + 5 effect
+  covers, prompt D in 08-PROMPTS.md). Notify the operator; the non-image
+  Phase-10 items can proceed meanwhile.
 - Effects load CDNs (three.js, MediaPipe, fonts) — network required at
   runtime until Phase 10 vendors them.
 - Claude remote sandbox only: `cdn.jsdelivr.net` and `cdnjs.cloudflare.com`
@@ -80,8 +89,49 @@ otherwise.
 | 11 | blob_tracker L7 reactivity → the bespoke 7-band auto-driver mapped to **ParamBus defaultRoutes** on the shared signals (analog pattern); ar-*/vr-* gains + toggles consolidated (*Claude, operator away*) | 2026-07-20 |
 | 12 | blob_tracker L7b colours → **palette-enum indices** (ParamSchema can't hold hex); panels-label colour left at L6 styling (*Claude, operator away*) | 2026-07-20 |
 | 13 | blob_tracker L7c chaos points **auto-placed** (golden-angle scatter) since the chain has no mouse; autoMode per-panel onset choreography omitted (consolidated into L7a routes) (*Claude, operator away*) | 2026-07-20 |
+| 14 | Phase 9 export → preferred codec **universal H.264 (avc)** with **AV1/VP9 fallbacks** (headless has no H.264 encoder; robustness); video-only for v1, audio muxing a follow-up (*Claude, operator away*) | 2026-07-20 |
 
 ## Log
+
+### 2026-07-20 — Phase 9 COMPLETE (Chain export — Master MP4)
+
+- **The ChainLab "Master MP4" button is real.** Two vendored files under
+  `public/effects/vendor/` (served statically, NOT package.json deps — hard rule
+  #6 OK):
+  - **`mp4-muxer.min.js`** — the real `mp4-muxer` v5.2.2 UMD build (Vanilagy,
+    MIT), exposes `window.Mp4Muxer` (`Muxer` + `ArrayBufferTarget`), obtained via
+    `npm pack` (not installed).
+  - **`syntech-export.js`** — the WebCodecs frame-stepping exporter matching the
+    exact contract ChainLab already calls: `window.SyntechExport.{isSupported,
+    exportMasterQuality({video, fps, getFrame, filename, onProgress})}` →
+    `{filename, codec, audio}`. It seeks the source video frame-by-frame, calls
+    the caller's `getFrame()` (which advances a synthetic clock + returns
+    `engine.canvas` — deterministic render at native res), encodes each frame via
+    `VideoEncoder`, muxes to a `fastStart:'in-memory'` MP4, and downloads it.
+- **Codec strategy:** preferred **universal H.264 (avc)** first (so the operator's
+  Chrome produces a QuickTime/everything-compatible MP4), with **AV1 then VP9**
+  fallbacks for machines lacking an H.264 encoder (both play in-MP4 in modern
+  browsers). `isConfigSupported()` picks the first the encoder accepts; the muxer
+  video codec + the `avc:{format:'avc'}` flag follow the pick. v1 is video-only
+  (audio muxing is a documented follow-up — the muxer already supports a track).
+- **DECISION (documented): added AV1/VP9 fallbacks** beyond the roadmap's plain
+  H.264 — headless Chromium has NO H.264 encoder (all `avc1.*` `isConfigSupported`
+  = false; a no-GPU/headless limitation like the ≥30fps criterion), so H.264-only
+  would be unverifiable here AND would fail on any user machine without an H.264
+  encoder. The fallbacks make the exporter robust and let the full pipeline be
+  proven headless.
+- **Verified** (`tools/verify/verify-phase9-export.js`) **7/7 PASS**: SyntechExport
+  + Mp4Muxer load and `isSupported()`; a UNIT export (mock 2s video + synthetic
+  getFrame) produces a **structurally-valid MP4** (ftyp+moov+mdat) whose **stsz
+  sample_count = 60 (2s × 30fps)** and **mvhd duration = 2.0s**; the **real
+  ChainLab "Master MP4" button** over a short clip + a blob_tracker→analog chain
+  reports **"✓ …mp4 (AV1)"** and the downloaded blob is a valid MP4 (29 frames,
+  ~0.97s); no page errors. **The 10s@1080p acceptance is the same code path at
+  scale — a machine-capability run (like ≥30fps@720p); the operator's Chrome uses
+  H.264.** `npm run lint` clean (vendor .js are static, outside tsc).
+- **Autonomous session note:** done without the operator (they're away); decisions
+  recorded (#14). Next is **Phase 10, which is BLOCKED on the 6 operator images**
+  — see the notification below / Open items.
 
 ### 2026-07-20 — Phase 8 COMPLETE (1:1 port: BLOB TRACKER) + L8 close-out
 
