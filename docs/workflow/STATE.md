@@ -8,25 +8,24 @@
 **Phase 8 — 1:1 port: blob_tracker** (IN PROGRESS — the LAST and HARDEST
 port: three.js r128 + many-Canvas2D hybrid, ~6876 lines. **Layers 1
 (tracker core) + 2 (FX) + 3-edge (contour) + 4 (flow) + 5 (three.js ripple)
-done and parity-verified**; the node is temp-wired. The whole deterministic
-2D pipeline + the first three.js scene are ported. Remaining: L3-smart (new
-MediaPipe), L6 panels three.js, L7 reactivity+colours, L8 param table +
-suites — see the node header map.)
++ 6 (three.js panels) done and parity-verified**; the node is temp-wired.
+The whole deterministic 2D pipeline + BOTH three.js scenes (ripple + panels)
+are ported. Remaining: L3-smart (new MediaPipe), L7 reactivity+colours+
+fixedPtsMode, L8 param table + suites — see the node header map.)
 
 ## Next step
 
 **Read `docs/workflow/HANDOFF.md` and the `src/engine/nodes/blob_tracker.ts`
-header LAYER MAP first** (the live authority). L1–L5 are done + verified
-(see log). **Continue with Layer 6 — the three.js panels scene**, per the
-detailed guide in HANDOFF. **Operator decision recorded: draw the panel
-labels + connector lines INTO the node texture** (Canvas-2D at the projected
-positions), NOT as the standalone's HTML/SVG overlays — functionally
-equivalent, an accepted (non-pixel-identical) deviation. The panels are a
-FIXED 8-panel 3D montage (DEFS/PLBLS L2497), composited OVER dc before the
-ripple; reuse the L5 offscreen-three→texture pattern. After L6: L3b smart
-contour (MediaPipe ImageSegmenter), L7 reactivity (ar-*/vr-* → routes) +
-colours + fixedPtsMode, L8 full param table + full static/behavior/chain
-suites + regression → then flip the Phase 8 checkbox.
+header LAYER MAP first** (the live authority). L1–L6 are done + verified
+(see log). **Continue with Layer 3b (smart contour) and/or Layer 7
+(reactivity + colours + fixedPtsMode)**, then L8 (full param table + full
+static/behavior/chain suites + regression) → then flip the Phase 8 checkbox.
+L3b smart contour = a NEW MediaPipe Tasks-Vision ImageSegmenter
+(selfie_segmenter.tflite) — decide per 04-SPEC whether to map it to the
+shared PersonMask or add the dep. L7 = ar-*/vr-* → ParamBus/VideoAnalyzer
+routes (Phase-4 pattern), colours (trackerColor/connColor/vfxColor — the
+number/boolean ParamSchema can't hold colours: design TODO), and the
+autoMode panel driving (panelsAnimate's auto branch, deferred from L6).
 **Gotcha:** the standalone loads THREE from cdnjs at init — a suite that
 blocks the CDN must serve the three.js r128 mirror (see any phase-8 suite's
 route) or the standalone aborts before wiring its file input (#fi-v). The
@@ -81,6 +80,55 @@ dev server is flaky here — start it via Bash `run_in_background` and poll for
 | 9 | blob_tracker panels (L6): draw the panel labels + connector lines **INTO the node texture** (Canvas-2D), not HTML/SVG overlays | 2026-07-19 |
 
 ## Log
+
+### 2026-07-20 — Phase 8 Layer 6 (BLOB TRACKER — three.js panels scene) verified
+
+- **`src/engine/nodes/blob_tracker.ts` L6 — the FIXED 8-panel 3D "AI analysis"
+  montage — DONE and verified behaviourally.** The standalone's `DEFS`/`PLBLS`
+  (8 panel geometries + labels, L2497-98), panel `VS`/`FS` (UV-rect sampling +
+  edge vignette + `mirrorU`, L2499-2500) and `SimplexNoise` (L2482-84) are
+  ported verbatim onto the node's OWN second offscreen `THREE.WebGLRenderer`
+  (transparent, `preserveDrawingBuffer`) — the L5 offscreen-three→texture
+  pattern reused. `panelsAnimate`'s non-auto branch is ported: per-panel
+  simplex float/rotation scaled by `panelTurb` × motion-energy (`motionEnergy`
+  now smoothed from the L1 `rawEnergy`), `panelScale`, `padY`(=padThresh)
+  opacity, `mirrorPanels`, and the noise-driven camera drift. The panel source
+  is `ctx.source` (raw video, like the standalone's `THREE.VideoTexture(vidEl)`).
+- **Compositing (per HANDOFF recipe):** after the L1–L4 tracker overlays land
+  on `dc`, when `panelsEnabled` the node dims `dc` by `1-panelsBgOpacity` toward
+  the standalone's `#050302` backdrop, renders the panels scene to its offscreen
+  canvas, `drawImage`s it OVER `dc`, then draws the labels/lines into `dc` —
+  BEFORE the L5 ripple samples `dc`. Order proven correct by the hero shot: the
+  tracker's own blob `ID:/A:` labels sit dimmed behind the panels while the
+  panel labels are crisp on top.
+- **Operator decision #9 honoured — labels + connector lines drawn INTO the
+  node texture** (Canvas-2D at the projected screen positions via
+  camera-`project()` → `toScreen`/`lAnchor`), NOT the standalone's HTML `p-lbl`
+  divs + SVG `svg-lines`. The label box (`rgba(8,6,20,.88)` bg, `#a0b8ff` tag,
+  `#70a0ff` score) approximates the `.p-lbl` CSS; the panel↔panel connections
+  reuse the tracker's connColor/connStyle/connWidth/connOpacity/connGlow at the
+  standalone's `×0.08` panel-line scale; the label→panel connector lines gate on
+  `panelsLabels`+`panelsConnLines`. Accepted (non-pixel-identical) deviation.
+- **Params added (8):** `panelsEnabled` (fx-panels), `panelScale` (sScale,
+  reactive), `panelTurb` (sTurb, reactive), `panelCamZ` (sCamZ),
+  `panelsBgOpacity` (sBgOp — maps the standalone panels-mode backdrop: in the
+  chain node it dims the tracker composite behind the panels; default 0.5),
+  `panelsLabels` (btn-plabels, on), `panelsConnLines` (btn-pconnlines, on),
+  `mirrorPanels` (btn-mirror-panels). Note `sScale`→`panelScale` is DISTINCT
+  from `blobScale`(=xyBlobScale, XY-pad driven) — verified against the HTML.
+- **Verified** (`tools/verify/verify-phase8-L6.js`, engine-only — three comes
+  from npm so no CDN mirror needed) **7/7 PASS**: enabling panels changes the
+  frame (mad 0.203 vs off); the montage is **pixel-static at panelTurb=0
+  (mad 0.0000** — deterministic frozen simplex + converged camera); labels
+  toggle changes the frame (mad 0.0055); mirrorPanels flips the sampled UV
+  (mad 0.055); panelTurb=1 animates it over time (mad 0.0029); no GL errors on
+  the engine context; no page errors. Hero screenshot shows all 8 labelled
+  panels + the blue connection graph over the dimmed tracker. Pixel-exact vs
+  the standalone is NOT expected (HTML-label deviation + independent animation
+  clock) — behavioural per the HANDOFF. `npm run lint` clean.
+- Remaining for Phase 8: L3b smart contour (MediaPipe ImageSegmenter), L7
+  reactivity + colours + fixedPtsMode + the autoMode panel branch, L8 full
+  param table + full suites + regression → then the checkbox flips.
 
 ### 2026-07-19 — Phase 8 IN PROGRESS (1:1 port: BLOB TRACKER — Layer 1 verified)
 

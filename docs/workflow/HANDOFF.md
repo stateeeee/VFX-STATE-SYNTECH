@@ -1,4 +1,4 @@
-# HANDOFF — session continuation brief (updated 2026-07-19, Phase 8 mid-flight, L1–L5 done)
+# HANDOFF — session continuation brief (updated 2026-07-20, Phase 8 mid-flight, L1–L6 done)
 
 > For the next Claude session. Read this AFTER `CLAUDE.md` and `STATE.md`,
 > and read the **`src/engine/nodes/blob_tracker.ts` header LAYER MAP** — it is
@@ -12,7 +12,7 @@
 
 - Phases 0–7 DONE and verified (analog, bokeh, anamorphic_lab, blob_reveal
   are real 1:1 ports; STATE.md log has all numbers).
-- **Phase 8 (blob_tracker) is MID-FLIGHT.** The port lives in
+- **Phase 8 (blob_tracker) is MID-FLIGHT — L1–L6 done.** The port lives in
   `src/engine/nodes/blob_tracker.ts` and is **temp-wired** into
   `src/engine/nodes.ts` (factory entry `blob_tracker: () => new
   BlobTrackerNode()`, with the old DummyNode line kept commented right below —
@@ -41,52 +41,22 @@
     force is replaced by the reactive `rippleForce` param pre-wired to `beat`.**
     `verify-phase8-L5.js` **5/5** (ripple@force0 = pixel-identical passthrough
     corr=1.000; force displaces; field evolves; no GL errors).
+  - **L6 three.js panels** — the FIXED 8-panel 3D montage (PANEL_DEFS/LBLS/VS/FS
+    + SimplexNoise verbatim) on a SECOND offscreen `THREE.WebGLRenderer`
+    (transparent), composited OVER dc BEFORE the ripple. **Operator decision #9:
+    labels + connector lines drawn INTO dc via Canvas-2D** at the projected
+    positions (not HTML/SVG — accepted non-pixel-identical deviation). Params:
+    panelsEnabled/panelScale(sScale)/panelTurb/panelCamZ/panelsBgOpacity(dims the
+    tracker behind the panels)/panelsLabels/panelsConnLines/mirrorPanels.
+    autoMode/AR/VR panel driving deferred to L7. `verify-phase8-L6.js` **7/7**
+    (panels-on Δ0.20; static@turb0 mad 0.0000; labels Δ; mirror Δ; animates;
+    no GL/page errors).
 
-## NEXT — Layer 6: three.js panels scene (operator decision made)
+## NEXT — Layer 3b (smart contour) and/or Layer 7 (reactivity + colours)
 
-**Operator decision (this session): draw the panel LABELS and CONNECTOR LINES
-INTO the node's texture** (Canvas-2D text/lines at the projected positions),
-NOT as the standalone's HTML `p-lbl` divs + SVG `svg-lines`. Functionally
-equivalent output; won't be pixel-identical to the HTML styling (that's the
-accepted deviation — record it in the L6 log entry).
-
-The panels are a **FIXED 8-panel 3D montage** (not per-blob), an aesthetic
-overlay of the video shown as floating planes with fake "AI analysis" labels.
-Standalone refs (public/effects/blob_tracker/index.html):
-- `DEFS` (L2497): 8 panel defs — UV rect (u,v,uw,uh) + size (w,h) + position
-  (ox,oy,oz) + rotation (rx,ry,rz). `PLBLS` (L2498): 8 {tag,score} labels.
-- `VS`/`FS` (L2499/2500): panel shaders (UV-rect sampling + edge vignette +
-  mirrorU). `createFloralTex` (L2487): the default (no-source) texture.
-- `initPanels` (L2502): PerspectiveCamera(55, W/H, .1,100) at z=panelCamZ;
-  one PlaneGeometry+ShaderMaterial mesh per DEF; userData carries base
-  position/rotation + per-panel noise offsets (`no`, `snOff`) + baseScore.
-- `panelsAnimate` (L2532): motion/chaos energy → turbulence; per-panel
-  simplex-ish float+rotation via panelsT; sets VideoTexture.needsUpdate;
-  projects each mesh to screen (`toScreen` L2525, `lAnchor` L2527) to place
-  the labels; builds the SVG connector string (ends `svgLines.innerHTML=svg`
-  L2607). ← THIS is where the labels/lines are produced; render them into the
-  canvas instead.
-- Texture: `updatePanelsTex` (L2876) sets each panel's `map` uniform to a
-  `THREE.VideoTexture(vidEl)`. In the node, use `ctx.source` as the video →
-  `new THREE.VideoTexture(ctx.source)` (or a CanvasTexture of dc if you prefer
-  the composited base — the standalone uses the raw video).
-- Toggles: `fx-panels` → `FX.panels` (panelsEnabled param); `btn-plabels`
-  (`panelsLabelsVisible`), `btn-pconnlines` (`panelsConnLinesVisible`),
-  `btn-mirror-panels` (`mirrorPanels`) — add as params. Sliders: `sBgOp`
-  (panelsBgOpacity), `sCamZ` (panelCamZ), `sTurb` (panelTurb), `sScale`
-  (panelScale). `panelsBgLoop` (L2854) draws a dim video bg behind the panels.
-- Compositing: the standalone stacks panelsCv OVER dc (capLoop L3022:
-  dc→panelsCv→fxOv→glC). In the node: render the panels scene (transparent
-  bg) to an offscreen three canvas, then composite it OVER dc in 2D
-  (`dCtx.drawImage(panelsCanvas)`), draw the labels/lines into dc, THEN (if
-  rippleOn) run the ripple on the composited dc, THEN upload. Mind the order:
-  panels compose into dc BEFORE the ripple sim samples dc.
-- Reuse the L5 pattern for the three.js renderer lifecycle (init once, resize,
-  dispose). It's a SECOND offscreen THREE.WebGLRenderer — fine.
-- Verify like L5 (engine-focused): panels-on changes the frame; labels/lines
-  appear; motion/turbulence animates it; no GL errors. Pixel-exact vs the
-  standalone isn't expected (HTML-label deviation + independent animation
-  clock) — behavioural, documented.
+L6 is DONE (panels). Pick up L3b and/or L7, then L8 close-out. (The L6 build
+notes live in the node header LAYER MAP + the STATE.md 2026-07-20 log; the
+`panelsAnimate` auto/AR/VR branch was intentionally deferred here to L7.)
 
 ## Then — the rest of Phase 8
 
@@ -179,7 +149,8 @@ porting; the pipeline order still needs a full read of the ~6876 lines).
   PlaneGeometry(2,2) passes. ✅ ported (L5).
 - `panels-canvas` — `panelsRenderer = new THREE.WebGLRenderer`
   (~L2506, antialias, alpha, preserveDrawingBuffer): the 8-panel 3D scene.
-  → NEXT (L6). Reuse the L5 offscreen-three→texture pattern.
+  ✅ ported (L6) — the node's second offscreen three renderer; labels/lines
+  drawn into dc (operator decision #9). autoMode/AR/VR branch deferred to L7.
 
 **Sliders** (id: [min..max] def step):
 - Tracking: `sThr` [0..255] 127 /1 · `sBri` [-100..100] 31 /1 ·
@@ -217,5 +188,7 @@ blobDashed, connEnabled, connStyle, connWidth, connOpacity, connGlow (L1);
 bgFxMode, fxOpacity, fxInvert/Thermal/Security/Liquid/Data/Glitch, datamosh,
 glitchAmt, padX, textMode, textPadX/Y (L2); ctMode, ctExpand, ctSmooth, ctFill
 (L3); flowOn, flowScale, flowTrail (L4); rippleOn, rippleForce, rippleX/Y,
-rippleDisp/Damp/Wave (L5). **Still to add (L6–L8)**: panels group, connSat,
-mirror toggles, ar-*/vr-* reactive params + routes, colours.
+rippleDisp/Damp/Wave (L5); panelsEnabled, panelScale, panelTurb, panelCamZ,
+panelsBgOpacity, panelsLabels, panelsConnLines, mirrorPanels (L6). **Still to
+add (L7–L8)**: connSat, mirror-bg toggle, ar-*/vr-* reactive params + routes,
+colours (trackerColor/connColor/vfxColor).

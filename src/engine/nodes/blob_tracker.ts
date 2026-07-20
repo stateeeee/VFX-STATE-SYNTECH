@@ -4,7 +4,7 @@ import { ParamSchema } from '../../bridge/types';
 
 /* ═══════════════════════════════════════════════════════════════
    BLOB TRACKER — 1:1 port of public/effects/blob_tracker/index.html
-   (Phase 8) — WORK IN PROGRESS, LAYER 1.
+   (Phase 8) — WORK IN PROGRESS, LAYERS 1–6 done.
 
    The standalone is the biggest effect (~6876 lines): a Canvas-2D
    contour tracker + TWO three.js renderers (a float ping-pong ripple
@@ -14,10 +14,10 @@ import { ParamSchema } from '../../bridge/types';
    canvases uploaded as the node texture — the blob_reveal
    offscreen-2D→GL-texture pattern extended to three.js.
 
-   ⚠️ NOT YET WIRED into nodes.ts — blob_tracker stays a DummyNode until
-   every layer below is ported and parity-verified. This file is a
-   clearly-labelled WIP foundation so the port can proceed in faithful,
-   testable layers without breaking the working app.
+   ⚠️ TEMP-WIRED into nodes.ts (factory `blob_tracker: () => new
+   BlobTrackerNode()`, DummyNode line kept commented below it). Far better than
+   the passthrough, but Phase 8 is NOT done — L3-smart + L7 + L8 remain, so the
+   phase checkbox stays unchecked until the full port + full parity suites.
 
    PORT LAYERS (■ done here / □ remaining):
    ■ L1 — tracker core: base video draw (_drawSrc) → 320×180 detect
@@ -53,8 +53,19 @@ import { ParamSchema } from '../../bridge/types';
         `rippleForce` param, pre-wired to `beat` — the water pulses with the
         music. With force ~0 the field is flat ⇒ clean passthrough of dc.
         rippleDisp/Damp/Wave = the standalone RP + sDisp/sDamp/sWave.
-   □ L6 — three.js panels scene (panelsRenderer, panelMeshes, labels,
-        panelsBg) + the stack composite (dc→panels→fxOv→glC).
+   ■ L6 — three.js panels scene DONE. A FIXED 8-panel 3D montage (PANEL_DEFS/
+        PANEL_LBLS/PANEL_VS/PANEL_FS + SimplexNoise, verbatim) on the node's
+        OWN offscreen THREE.WebGLRenderer (transparent); composited OVER dc in
+        2D BEFORE the ripple samples dc. OPERATOR DECISION: the panel labels +
+        connector lines are drawn INTO dc via Canvas-2D at the projected
+        positions (functionally equivalent to the standalone's HTML p-lbl divs
+        + SVG svg-lines — an accepted, non-pixel-identical deviation). The
+        panels source is ctx.source (raw video, like the standalone). panelScale
+        (sScale)/panelTurb (sTurb)/panelCamZ (sCamZ)/panelsBgOpacity (sBgOp)/
+        panelsLabels (btn-plabels)/panelsConnLines (btn-pconnlines)/mirrorPanels
+        (btn-mirror-panels) are params; panelsBgOpacity dims the tracker behind
+        the panels (the standalone panels-mode #050302 backdrop). autoMode / AR /
+        VR panel driving (panelsAnimate's auto branch) is deferred to L7.
    □ L7 — reactivity: audioReactiveFrame (ar-* gains → ParamBus routes,
         Phase-4 pattern) + videoReactiveFrame (vr-* → VideoAnalyzer);
         fixedPtsMode chaos engine; colours (trackerColor/connColor —
@@ -131,6 +142,15 @@ const PARAMS: ParamSchema[] = [
   { key: 'rippleDisp', label: 'Ripple Displace', type: 'number', value: 0.013, min: 0.002, max: 0.04, step: 0.001, reactive: true, aiHint: 'How far the wave field bends the underlying image' },
   { key: 'rippleDamp', label: 'Ripple Damping', type: 'number', value: 0.988, min: 0.96, max: 0.999, step: 0.001, aiHint: 'Wave energy retention per step — higher = longer-lived ripples' },
   { key: 'rippleWave', label: 'Ripple Speed', type: 'number', value: 0.22, min: 0.05, max: 0.5, step: 0.01, aiHint: 'Wave propagation speed constant (c²)' },
+  // L6 — three.js panels scene (FIXED 8-panel 3D montage overlaid on the frame)
+  { key: 'panelsEnabled', label: 'Panels', type: 'boolean', value: 0, aiHint: '(on/off switch) Overlay the fixed 8-panel 3D "AI analysis" montage over the tracked frame (standalone FX.panels)' },
+  { key: 'panelScale', label: 'Panel Scale', type: 'number', value: 1, min: 0.2, max: 3, step: 0.05, reactive: true, aiHint: 'Uniform size of every floating panel (standalone sScale)' },
+  { key: 'panelTurb', label: 'Panel Turbulence', type: 'number', value: 1, min: 0, max: 3, step: 0.1, reactive: true, aiHint: 'How strongly the panels drift and tumble (simplex-noise amplitude, also scaled by motion energy)' },
+  { key: 'panelCamZ', label: 'Panel Camera Z', type: 'number', value: 7, min: 3, max: 14, step: 0.5, aiHint: 'Distance of the perspective camera from the panel cluster — lower = closer/wider' },
+  { key: 'panelsBgOpacity', label: 'Panel BG Opacity', type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, aiHint: 'How much of the tracker composite stays visible behind the panels (standalone sBgOp panels-mode backdrop); 1 = full tracker, 0 = near-black' },
+  { key: 'panelsLabels', label: 'Panel Labels', type: 'boolean', value: 1, aiHint: '(on/off switch) Draw the per-panel tag + score labels (standalone btn-plabels)' },
+  { key: 'panelsConnLines', label: 'Panel Label Lines', type: 'boolean', value: 1, aiHint: '(on/off switch) Draw the connector line from each label to its panel (standalone btn-pconnlines)' },
+  { key: 'mirrorPanels', label: 'Mirror Panels', type: 'boolean', value: 0, aiHint: '(on/off switch) Horizontally mirror the video sampled inside each panel (standalone btn-mirror-panels)' },
 ];
 
 /* ripple shaders — verbatim from the standalone (qV/sF/dF) */
@@ -140,6 +160,73 @@ const RIPPLE_DISP_FS = `precision highp float;uniform sampler2D uSc,uWv;uniform 
 const RIPPLE_SIM = 512;
 
 const TEXT_MODES = [null, 'nums', 'letters', 'tmix'] as const;
+
+/* ═══ L6 — three.js PANELS scene (standalone DEFS/PLBLS/VS/FS/SimplexNoise,
+   L2482-2500). A FIXED 8-panel 3D montage of the video shown as floating
+   planes with fake "AI analysis" labels. Verbatim data + shaders. ═══ */
+interface PanelDef { u: number; v: number; uw: number; uh: number; w: number; h: number; ox: number; oy: number; oz: number; rx: number; ry: number; rz: number; }
+const PANEL_DEFS: PanelDef[] = [
+  { u: .15, v: .15, uw: .5, uh: .55, w: 2.8, h: 3.2, ox: .1, oy: .3, oz: 0, rx: -.06, ry: .08, rz: .03 },
+  { u: .55, v: .05, uw: .42, uh: .38, w: 2.2, h: 2.0, ox: 1.8, oy: 1.0, oz: -.6, rx: .10, ry: -.18, rz: -.04 },
+  { u: .5, v: .52, uw: .48, uh: .45, w: 2.4, h: 2.3, ox: 1.5, oy: -1.2, oz: -.8, rx: -.08, ry: -.15, rz: .06 },
+  { u: .02, v: .1, uw: .2, uh: .65, w: 1.1, h: 3.5, ox: -1.9, oy: 0, oz: -.5, rx: .05, ry: .20, rz: -.05 },
+  { u: .05, v: .62, uw: .35, uh: .35, w: 1.8, h: 1.9, ox: -1.3, oy: -1.8, oz: -.3, rx: .12, ry: .10, rz: .08 },
+  { u: .3, v: .02, uw: .28, uh: .2, w: 1.5, h: 1.1, ox: .3, oy: 2.1, oz: -1.0, rx: -.15, ry: .05, rz: -.10 },
+  { u: .6, v: .58, uw: .35, uh: .38, w: 1.7, h: 1.8, ox: 2.1, oy: -.2, oz: -1.5, rx: 0, ry: -.25, rz: .03 },
+  { u: .08, v: .75, uw: .55, uh: .22, w: 2.9, h: 1.2, ox: -.2, oy: -2.3, oz: -.7, rx: .20, ry: .05, rz: .02 },
+];
+const PANEL_LBLS: { tag: string; score: number }[] = [
+  { tag: 'Fibrous Mesh', score: 93 }, { tag: 'Translucent Edges', score: 76 },
+  { tag: 'Neural Density', score: 89 }, { tag: 'Surface Topology', score: 71 },
+  { tag: 'Chromatic Layer', score: 84 }, { tag: 'Organic Pattern', score: 67 },
+  { tag: 'Edge Detection', score: 91 }, { tag: 'Depth Channel', score: 78 },
+];
+const PANEL_VS = `varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`;
+const PANEL_FS = `uniform sampler2D map;uniform vec4 uvRect;uniform float opacity;uniform float mirrorU;varying vec2 vUv;void main(){float u=mirrorU>0.5?1.0-vUv.x:vUv.x;vec2 uv=uvRect.xy+vec2(u,vUv.y)*uvRect.zw;vec4 c=texture2D(map,uv);float vx=smoothstep(0.,.04,vUv.x)*smoothstep(1.,.96,vUv.x),vy=smoothstep(0.,.04,vUv.y)*smoothstep(1.,.96,vUv.y);c.a*=vx*vy*opacity;gl_FragColor=c;}`;
+
+/* SimplexNoise (standalone L2482-2484, seeded from Math.random per instance) —
+ * verbatim math; drives the per-panel float/rotation + the label score jitter. */
+class SimplexNoise {
+  private perm: number[] = [];
+  private grad3 = [[1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0], [1, 0, 1], [-1, 0, 1], [1, 0, -1], [-1, 0, -1], [0, 1, 1], [0, -1, 1], [0, 1, -1], [0, -1, -1]];
+  constructor() {
+    const p: number[] = [];
+    for (let i = 0; i < 256; i++) p[i] = Math.floor(Math.random() * 256);
+    for (let i = 0; i < 512; i++) this.perm[i] = p[i & 255];
+  }
+  private dot(g: number[], x: number, y: number, z: number): number { return g[0] * x + g[1] * y + g[2] * z; }
+  noise(xin: number, yin: number, zin: number): number {
+    const G3 = 1 / 6, F3 = 1 / 3;
+    const s = (xin + yin + zin) * F3;
+    const i = Math.floor(xin + s), j = Math.floor(yin + s), k = Math.floor(zin + s);
+    const t = (i + j + k) * G3;
+    const x0 = xin - (i - t), y0 = yin - (j - t), z0 = zin - (k - t);
+    let i1 = 0, j1 = 0, k1 = 0, i2 = 0, j2 = 0, k2 = 0;
+    if (x0 >= y0) {
+      if (y0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+      else if (x0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 0; k2 = 1; }
+      else { i1 = 0; j1 = 0; k1 = 1; i2 = 1; j2 = 0; k2 = 1; }
+    } else {
+      if (y0 < z0) { i1 = 0; j1 = 0; k1 = 1; i2 = 0; j2 = 1; k2 = 1; }
+      else if (x0 < z0) { i1 = 0; j1 = 1; k1 = 0; i2 = 0; j2 = 1; k2 = 1; }
+      else { i1 = 0; j1 = 1; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+    }
+    const x1 = x0 - i1 + G3, y1 = y0 - j1 + G3, z1 = z0 - k1 + G3;
+    const x2 = x0 - i2 + 2 * G3, y2 = y0 - j2 + 2 * G3, z2 = z0 - k2 + 2 * G3;
+    const x3 = x0 - 1 + 3 * G3, y3 = y0 - 1 + 3 * G3, z3 = z0 - 1 + 3 * G3;
+    const ii = i & 255, jj = j & 255, kk = k & 255;
+    const gi0 = this.perm[ii + this.perm[jj + this.perm[kk]]] % 12;
+    const gi1 = this.perm[ii + i1 + this.perm[jj + j1 + this.perm[kk + k1]]] % 12;
+    const gi2 = this.perm[ii + i2 + this.perm[jj + j2 + this.perm[kk + k2]]] % 12;
+    const gi3 = this.perm[ii + 1 + this.perm[jj + 1 + this.perm[kk + 1]]] % 12;
+    let n0 = 0, n1 = 0, n2 = 0, n3 = 0;
+    let t0 = 0.6 - x0 * x0 - y0 * y0 - z0 * z0; if (t0 < 0) n0 = 0; else { t0 *= t0; n0 = t0 * t0 * this.dot(this.grad3[gi0], x0, y0, z0); }
+    let t1 = 0.6 - x1 * x1 - y1 * y1 - z1 * z1; if (t1 < 0) n1 = 0; else { t1 *= t1; n1 = t1 * t1 * this.dot(this.grad3[gi1], x1, y1, z1); }
+    let t2 = 0.6 - x2 * x2 - y2 * y2 - z2 * z2; if (t2 < 0) n2 = 0; else { t2 *= t2; n2 = t2 * t2 * this.dot(this.grad3[gi2], x2, y2, z2); }
+    let t3 = 0.6 - x3 * x3 - y3 * y3 - z3 * z3; if (t3 < 0) n3 = 0; else { t3 *= t3; n3 = t3 * t3 * this.dot(this.grad3[gi3], x3, y3, z3); }
+    return 32 * (n0 + n1 + n2 + n3);
+  }
+}
 
 export class BlobTrackerNode implements EngineNode {
   readonly id = 'blob_tracker';
@@ -180,6 +267,20 @@ export class BlobTrackerNode implements EngineNode {
   private rForce = 0;
   private rTargetForce = 0;
   private rInited = false;
+  // L6 panels (three.js) — a SECOND offscreen THREE.WebGLRenderer (transparent)
+  private pRenderer: THREE.WebGLRenderer | null = null;
+  private pCanvas: HTMLCanvasElement | null = null;
+  private pCamera: THREE.PerspectiveCamera | null = null;
+  private pScene: THREE.Scene | null = null;
+  private pTex: THREE.Texture | null = null;
+  private pMeshes: { mesh: THREE.Mesh; bp: THREE.Vector3; br: THREE.Euler; no: THREE.Vector3; snOff: number; baseScore: number }[] = [];
+  private pInited = false;
+  private panelsT = 0;
+  private motionEnergy = 0;
+  private sn = new SimplexNoise();
+  private camT = { x: 0, y: 0 };
+  private camC = { x: 0, y: 0 };
+  private _pv = new THREE.Vector3(); // scratch for screen projection
 
   // fixed colours until L7 (ParamSchema can't hold colours)
   private trackerColor = '#ffffff';
@@ -605,6 +706,178 @@ export class BlobTrackerNode implements EngineNode {
     r.setRenderTarget(null); r.render(this.rDispScene, this.rCam);
   }
 
+  /* ── L6 panels scene (standalone initPanels/panelsAnimate, three.js). A FIXED
+   *    8-panel 3D montage of the video shown as floating planes. Rendered on its
+   *    own offscreen THREE.WebGLRenderer (transparent) and composited OVER dc in
+   *    2D; the labels + connector lines are drawn INTO dc via Canvas-2D at the
+   *    projected positions (operator decision — functionally equivalent to the
+   *    standalone's HTML p-lbl divs + SVG svg-lines, not pixel-identical). The
+   *    autoMode / AR / VR panel driving is deferred to L7 (non-auto branch only
+   *    here). ── */
+  private initPanels(): void {
+    if (this.pInited) return;
+    this.pInited = true;
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(2, this.w); cv.height = Math.max(2, this.h);
+    this.pCanvas = cv;
+    const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true, premultipliedAlpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(1); renderer.setSize(cv.width, cv.height, false); renderer.setClearColor(0x000000, 0);
+    this.pRenderer = renderer;
+    this.pScene = new THREE.Scene();
+    this.pCamera = new THREE.PerspectiveCamera(55, cv.width / cv.height, 0.1, 100);
+    this.pCamera.position.set(0, 0, this.v.panelCamZ);
+    // one THREE.Texture wraps ctx.source (updated per frame in render) — matches
+    // the standalone's THREE.VideoTexture(vidEl); NPOT-safe filters, no mipmaps
+    this.pTex = new THREE.Texture();
+    this.pTex.minFilter = THREE.LinearFilter; this.pTex.magFilter = THREE.LinearFilter; this.pTex.generateMipmaps = false;
+    PANEL_DEFS.forEach((d, i) => {
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { map: { value: this.pTex }, uvRect: { value: new THREE.Vector4(d.u, d.v, d.uw, d.uh) }, opacity: { value: 1 }, mirrorU: { value: 0 } },
+        vertexShader: PANEL_VS, fragmentShader: PANEL_FS, transparent: true, side: THREE.FrontSide, depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(d.w, d.h), mat);
+      mesh.position.set(d.ox, d.oy, d.oz); mesh.rotation.set(d.rx, d.ry, d.rz);
+      this.pScene!.add(mesh);
+      this.pMeshes.push({ mesh, bp: new THREE.Vector3(d.ox, d.oy, d.oz), br: new THREE.Euler(d.rx, d.ry, d.rz), no: new THREE.Vector3(i * 3.7, i * 2.1, i * 5.3), snOff: i * 7.31, baseScore: PANEL_LBLS[i].score });
+    });
+  }
+
+  private projScreen(p: THREE.Vector3): { x: number; y: number; v: boolean } {
+    this._pv.copy(p).project(this.pCamera!);
+    return { x: (this._pv.x * 0.5 + 0.5) * this.w, y: (-this._pv.y * 0.5 + 0.5) * this.h, v: this._pv.z < 1 };
+  }
+
+  private lAnchor(m: THREE.Mesh): { x: number; y: number; v: boolean } {
+    const geo = m.geometry as THREE.PlaneGeometry;
+    const c = new THREE.Vector3(geo.parameters.width * 0.35, geo.parameters.height * 0.4, 0);
+    c.applyMatrix4(m.matrixWorld);
+    return this.projScreen(c);
+  }
+
+  /* renders the 3D panels scene, then returns the per-panel world centres +
+   * projected label/connector screen positions (proc→dc space is 1:1 here) */
+  private panelsTick(): { centers: THREE.Vector3[]; pts: { lx: number; ly: number; cx: number; cy: number; v: boolean; score: number; tag: string; idx: number }[] } {
+    const r = this.pRenderer!, cam = this.pCamera!, scene = this.pScene!, sn = this.sn;
+    if (this.pCanvas && (this.pCanvas.width !== this.w || this.pCanvas.height !== this.h)) {
+      this.pCanvas.width = this.w; this.pCanvas.height = this.h; r.setSize(this.w, this.h, false);
+      cam.aspect = this.w / this.h; cam.updateProjectionMatrix();
+    }
+    // motion-energy smoothing (standalone panelsAnimate) — rawEnergy from computeMotion
+    this.motionEnergy += (this.rawEnergy - this.motionEnergy) * (this.rawEnergy > this.motionEnergy ? 0.25 : 0.04);
+    const padX = this.v.padX, padY = this.v.padThresh;
+    const chaosBoost = padX * padX, energyMult = 1 + this.motionEnergy * 7 + chaosBoost * 3;
+    const turb = this.v.panelTurb;
+    this.panelsT += 0.0012 * energyMult * turb;
+    const PA = (0.35 + this.motionEnergy * 1.65 + chaosBoost * 0.8) * turb;
+    const RA = (0.05 + this.motionEnergy * 0.12 + chaosBoost * 0.06) * turb;
+    const scaleV = this.v.panelScale, mir = this.v.mirrorPanels >= 0.5 ? 1.0 : 0.0;
+    for (const pm of this.pMeshes) {
+      const { mesh, bp, br, no } = pm;
+      mesh.position.set(
+        bp.x + sn.noise(this.panelsT + no.x, 0, 0) * PA,
+        bp.y + sn.noise(0, this.panelsT * 0.9 + no.y, 0) * PA * 0.8,
+        bp.z + sn.noise(0, 0, this.panelsT * 0.7 + no.z) * PA * 0.3,
+      );
+      mesh.rotation.set(
+        br.x + sn.noise(this.panelsT * 0.6 + no.x + 10, 0, 0) * RA,
+        br.y + sn.noise(0, this.panelsT * 0.6 + no.y + 10, 0) * RA,
+        br.z + sn.noise(0, 0, this.panelsT * 0.6 + no.z + 10) * RA * 0.5,
+      );
+      mesh.scale.setScalar(scaleV);
+      const u = (mesh.material as THREE.ShaderMaterial).uniforms;
+      u.opacity.value = padY; u.mirrorU.value = mir;
+    }
+    const targetZ = this.v.panelCamZ - chaosBoost * 4;
+    this.camT.x = sn.noise(this.panelsT * 0.28, 0, 0) * 0.6;
+    this.camT.y = sn.noise(0, this.panelsT * 0.22, 0) * 0.4;
+    const cLag = 0.018 + this.motionEnergy * 0.04;
+    this.camC.x += (this.camT.x - this.camC.x) * cLag; this.camC.y += (this.camT.y - this.camC.y) * cLag;
+    cam.position.set(this.camC.x, this.camC.y, targetZ); cam.lookAt(0, 0, 0); scene.updateMatrixWorld();
+    r.render(scene, cam);
+    // projections for labels/lines (v = label-anchor visibility, standalone)
+    const centers = this.pMeshes.map((pm) => new THREE.Vector3().applyMatrix4(pm.mesh.matrixWorld));
+    const pts = this.pMeshes.map((pm, i) => {
+      const anc = this.lAnchor(pm.mesh), ctr = this.projScreen(centers[i]);
+      const score = Math.round(Math.min(99, Math.max(1, pm.baseScore + sn.noise(this.panelsT * 0.4 + pm.snOff, 0, 0) * (12 + this.motionEnergy * 18))));
+      return { lx: anc.x, ly: anc.y, cx: ctr.x, cy: ctr.y, v: anc.v, score, tag: PANEL_LBLS[i].tag, idx: i };
+    });
+    return { centers, pts };
+  }
+
+  private rgba(hex: string, a: number): string {
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a)).toFixed(3)})`;
+  }
+
+  /* draw the panel labels + label-connector lines + panel-to-panel connections
+   * into dc (operator decision: into the texture, not HTML/SVG overlays) */
+  private drawPanelOverlay(pts: { lx: number; ly: number; cx: number; cy: number; v: boolean; score: number; tag: string; idx: number }[], centers: THREE.Vector3[]): void {
+    const ctx = this.dCtx;
+    const labelsOn = this.v.panelsLabels >= 0.5, connLinesOn = this.v.panelsConnLines >= 0.5, padY = this.v.padThresh;
+    ctx.save();
+    // label → panel connector lines (only when labels + conn-lines visible)
+    if (labelsOn && connLinesOn) {
+      ctx.strokeStyle = 'rgba(80,120,220,0.35)'; ctx.lineWidth = 0.7; ctx.setLineDash([]);
+      pts.forEach((sp) => { if (!sp.v) return; ctx.beginPath(); ctx.moveTo(sp.lx, sp.ly); ctx.lineTo(sp.cx, sp.cy); ctx.stroke(); });
+    }
+    // panel ↔ panel connections (always, when panels on) — reuse the tracker's
+    // connColor / connStyle / connWidth / connOpacity / connGlow, at panel scale
+    const cc = this.connColor, co = this.v.connOpacity, cw = this.v.connWidth * 0.08, glow = this.v.connGlow;
+    const arrows = CONN_STYLES[this.v.connStyle | 0] === 'arrows';
+    for (let a = 0; a < pts.length; a++) for (let b = a + 1; b < pts.length; b++) {
+      if (!pts[a].v || !pts[b].v) continue;
+      const d = centers[a].distanceTo(centers[b]);
+      const al = (1 - (d - 2.8) / 2.8) * 0.38 * padY;
+      if (al <= 0.02) continue;
+      const x1 = pts[a].cx, y1 = pts[a].cy, x2 = pts[b].cx, y2 = pts[b].cy;
+      ctx.save();
+      ctx.strokeStyle = this.rgba(cc, al); ctx.fillStyle = this.rgba(cc, al); ctx.lineWidth = Math.max(0.4, cw);
+      if (arrows) {
+        ctx.globalAlpha = 1; ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        const ang = Math.atan2(y2 - y1, x2 - x1), head = 8;
+        ctx.beginPath(); ctx.moveTo(x2, y2);
+        ctx.lineTo(x2 - head * Math.cos(ang - 0.4), y2 - head * Math.sin(ang - 0.4));
+        ctx.lineTo(x2 - head * Math.cos(ang + 0.4), y2 - head * Math.sin(ang + 0.4));
+        ctx.closePath(); ctx.fill();
+      } else {
+        ctx.globalAlpha = co;
+        switch (CONN_STYLES[this.v.connStyle | 0]) {
+          case 'dashed': ctx.setLineDash([12, 6]); break;
+          case 'dashdot': ctx.setLineDash([12, 4, 2, 4]); break;
+          default: ctx.setLineDash([]); break;
+        }
+        if (glow > 0) { ctx.shadowBlur = glow * 14; ctx.shadowColor = cc; }
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        if (glow > 0) {
+          ctx.shadowBlur = 0; ctx.strokeStyle = `rgba(255,255,255,${(glow * 0.7).toFixed(2)})`;
+          ctx.lineWidth = Math.max(0.4, cw * 0.18); ctx.setLineDash([]);
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+    // labels last, over everything
+    if (labelsOn) pts.forEach((sp) => { if (sp.v) this.drawPanelLabel(ctx, sp); });
+    ctx.restore();
+  }
+
+  private drawPanelLabel(ctx: CanvasRenderingContext2D, sp: { lx: number; ly: number; score: number; tag: string; idx: number }): void {
+    const label = `${sp.idx + 1} ${sp.tag}`, scoreTxt = `${sp.score}%`;
+    ctx.save();
+    ctx.font = '9px JetBrains Mono, monospace'; ctx.textBaseline = 'middle'; ctx.setLineDash([]);
+    const pad = 9, gap = 8, boxH = 15;
+    const labelW = ctx.measureText(label).width, scoreW = ctx.measureText(scoreTxt).width;
+    const boxW = pad * 2 + labelW + gap + scoreW;
+    const bx = sp.lx + 8, by = sp.ly - 18; // standalone p-lbl offset (left+8, top-18)
+    ctx.fillStyle = 'rgba(8,6,20,0.88)'; ctx.fillRect(bx, by, boxW, boxH);
+    ctx.strokeStyle = 'rgba(120,100,255,0.25)'; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, boxW - 1, boxH - 1);
+    const cy = by + boxH / 2;
+    ctx.fillStyle = '#a0b8ff'; ctx.fillText(label, bx + pad, cy);
+    ctx.fillStyle = '#70a0ff'; ctx.fillText(scoreTxt, bx + pad + labelW + gap, cy);
+    ctx.restore();
+  }
+
   private computeMotion(src: TexImageSource): void {
     try {
       this.motionCtx.drawImage(src as CanvasImageSource, 0, 0, 64, 36);
@@ -922,6 +1195,26 @@ export class BlobTrackerNode implements EngineNode {
     if (this.v.flowOn >= 0.5) this.drawFlowViz(sc, scX, scY);
     this.computeMotion(src);
 
+    // L6: panels — the fixed 8-panel 3D montage composited OVER dc (before the
+    // ripple samples dc). The scene renders on its own offscreen three canvas;
+    // labels + connector lines are drawn into dc at the projected positions.
+    if (this.v.panelsEnabled >= 0.5) {
+      if (!this.pInited) this.initPanels();
+      if (this.pInited && this.pTex && this.pCanvas) {
+        // dim the tracker composite behind the panels (standalone panels-mode
+        // #050302 backdrop bleeding through by 1-panelsBgOpacity)
+        const bgOp = this.v.panelsBgOpacity;
+        if (bgOp < 0.999) {
+          this.dCtx.save(); this.dCtx.globalAlpha = 1 - bgOp; this.dCtx.fillStyle = '#050302';
+          this.dCtx.fillRect(0, 0, dW, dH); this.dCtx.restore();
+        }
+        this.pTex.image = src as unknown as HTMLVideoElement; this.pTex.needsUpdate = true;
+        const { centers, pts } = this.panelsTick();
+        this.dCtx.drawImage(this.pCanvas, 0, 0, dW, dH);
+        this.drawPanelOverlay(pts, centers);
+      }
+    }
+
     // L5: ripple displaces the whole 2D composite (three.js, own GL context).
     // Its canvas becomes the node output when on; with force ~0 (no beat) the
     // wave field is flat and it is a clean passthrough of dc.
@@ -945,5 +1238,10 @@ export class BlobTrackerNode implements EngineNode {
     this.rRtA?.dispose(); this.rRtB?.dispose(); this.rSceneTex?.dispose();
     this.rRenderer?.dispose();
     this.rRenderer = null; this.rInited = false;
+    // L6 panels renderer
+    this.pMeshes.forEach((pm) => { pm.mesh.geometry.dispose(); (pm.mesh.material as THREE.Material).dispose(); });
+    this.pMeshes = [];
+    this.pTex?.dispose(); this.pRenderer?.dispose();
+    this.pRenderer = null; this.pTex = null; this.pScene = null; this.pCamera = null; this.pCanvas = null; this.pInited = false;
   }
 }
