@@ -93,6 +93,24 @@ the operator's Chrome uses H.264).
 
 ## Log
 
+### 2026-07-20 — Phase 10 IN PROGRESS (Assets & polish — search box)
+
+- **Functional effect search box (Phase 10 item 2) — DONE.** The right-sidebar
+  "Search systems…" placeholder (`<span>`) is now a real controlled `<input>`
+  (`systemSearch` state in `App.tsx`) that filters the effect cards by name or id
+  (case-insensitive), with a ✕ clear button and a "no systems match" empty state.
+  Testids: `effect-search`, `effect-search-clear`, `effect-search-empty`.
+- **Verified** (`tools/verify/verify-phase10-search.js`) **6/6 PASS**: input
+  present + all 5 cards; "blob" → blob_tracker+blob_reveal; "bok" → bokeh only;
+  no-match → empty state + 0 cards; clear → all 5 back; no page errors. `npm run
+  lint` clean.
+- **Phase 10 remaining** (in order): item 1 **6 operator images** (BLOCKED — see
+  notification); item 3 vendor CDN deps locally (needs an operator call — repointing
+  the effect HTMLs' CDN `<script>` srcs would edit them outside the bridge blocks,
+  which brushes against hard rule #1; the shell-side PersonMask/fonts CDN can be
+  vendored freely); item 4 perf pass (GPU-machine check); item 5 day-mode + stray
+  non-token colour sweep.
+
 ### 2026-07-20 — Phase 9 COMPLETE (Chain export — Master MP4)
 
 - **The ChainLab "Master MP4" button is real.** Two vendored files under
