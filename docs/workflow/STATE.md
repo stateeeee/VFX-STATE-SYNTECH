@@ -179,6 +179,19 @@ about the perf test at the end.
   vendored assets + the shell `<link>`); phase-10 **search box 6/6** after the
   card refactor. Standalone effects: the 19/19 offline load IS the regression
   (they now load in-sandbox for the first time).
+- **Full regression re-run (all green) — 2026-07-24, after the CDN/logo/card
+  edits:** **phase 1 21/21** (all 5 standalones load CLEAN + bridge silent — the
+  old sandbox CDN fails are gone), **phase 2 26/26** (AI Lab UX), **phase 3
+  14/14** (incl. **SEG reaches READY from the vendored PersonMask**, no CDN
+  mirror), **phase 8 chain 6/6** (the suite hard-*aborts* all CDN/font requests
+  and the full 5-node chain — three.js incl. — still renders: proof the app is
+  CDN-independent). fps 3 under SwiftShader (the ≥30fps criterion stays a
+  GPU-machine check, as always).
+- **Cover happy-path also proven** (`verify-phase10-covers.js` **7/7**): a
+  network-injected test image (no placeholder shipped) makes a card render the
+  cover — decoded, opaque, under the scrim, white label — while an un-injected
+  card falls back to the plain label. Confirms the operator's 5 covers will
+  drop in cleanly.
 
 ### 2026-07-20 — Phase 10 IN PROGRESS (Assets & polish — search box)
 
