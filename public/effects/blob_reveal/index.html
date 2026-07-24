@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>BLOB REVEAL — Rotoscope Engine</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Barlow+Condensed:wght@300;400;500;600;700;900&display=swap');
+@import url('../vendor/fonts/effects.css'); /* SYNTECH Phase-10: vendored fonts (offline) — was Google Fonts CDN */
 
 /* ═══════════════════════════════════════════════════════
    KEYFRAMES
@@ -671,7 +671,7 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 <canvas id="c-erode" style="display:none"></canvas>  <!-- eroded mask stage -->
 <canvas id="c-proc"  style="display:none"></canvas>  <!-- low-res blob detection -->
 
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+<script src="../vendor/mediapipe/selfie_segmentation/selfie_segmentation.js"></script><!-- SYNTECH Phase-10: vendored (offline) — was cdn.jsdelivr.net -->
 
 <!-- ═══════════════════════════════════════════════════════ HTML ═══ -->
 <div id="topbar">
@@ -956,7 +956,7 @@ function initSeg() {
   document.getElementById('seg-loading').classList.add('show');
   document.getElementById('bb-status').textContent = 'SEG: LOADING';
   segObj = new SelfieSegmentation({
-    locateFile: f=>`https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`
+    locateFile: f=>`../vendor/mediapipe/selfie_segmentation/${f}`
   });
   segObj.setOptions({modelSelection: P.modelHQ?1:0, selfieMode:false});
   segObj.onResults(r => {

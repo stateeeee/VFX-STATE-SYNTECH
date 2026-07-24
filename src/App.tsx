@@ -57,6 +57,43 @@ const readSession = (): SavedSession => {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) ?? '{}') ?? {}; } catch { return {}; }
 };
 
+/* Phase-10 (assets): right-sidebar effect-card cover art. Drops in a cover the
+   moment the operator delivers it at public/assets/covers/<ModuleId>.{webp,png,jpg}
+   — tried in that order. Until a file exists every request 404s and the card
+   falls back to its plain label look (unchanged); once a cover lands it fades in
+   under a legibility scrim with a white label. No cover === current behaviour. */
+const COVER_EXTS = ['webp', 'png', 'jpg'] as const;
+function EffectCardArt({ id, name, isDayMode }: { id: string; name: string; isDayMode: boolean }) {
+  const [extIdx, setExtIdx] = useState(0);
+  const [state, setState] = useState<'idle' | 'ok' | 'err'>('idle');
+  const hasCover = state === 'ok';
+  const src = `/assets/covers/${id}.${COVER_EXTS[extIdx]}`;
+  return (
+    <>
+      {state !== 'err' && (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          aria-hidden
+          draggable={false}
+          onLoad={() => setState('ok')}
+          onError={() => (extIdx < COVER_EXTS.length - 1 ? setExtIdx(extIdx + 1) : setState('err'))}
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${hasCover ? 'opacity-100' : 'opacity-0'}`}
+        />
+      )}
+      {hasCover && <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />}
+      <span
+        className={`text-sm font-bold z-10 relative ${
+          hasCover ? 'text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.85)]' : isDayMode ? 'text-neutral-900' : 'text-white'
+        }`}
+      >
+        {name}
+      </span>
+    </>
+  );
+}
+
 export default function App() {
   // App initialization & Stream engine active state
   const [isStreaming, setIsStreaming] = useState(false);
@@ -514,8 +551,16 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden gap-4">
         {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
         <nav className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} z-20 shadow-md`}>
-          <div className="w-11 h-11 border-2 border-violet-500 rotate-45 flex items-center justify-center shrink-0 mb-5 rounded-[10px] bg-violet-500/5 shadow-[0_0_16px_rgba(139,92,246,0.2)]">
-            <span className="text-violet-500 font-bold -rotate-45 text-xs tracking-wide">VS</span>
+          {/* Phase-10: operator brand logo (replaces the temporary "VS" diamond).
+              White mark on transparent bg — glows violet at night, inverts to
+              dark for day mode so it stays legible on the cream surface. */}
+          <div className="w-11 h-11 flex items-center justify-center shrink-0 mb-5" title="VFX Syntech — created by State">
+            <img
+              src="/assets/logo.png"
+              alt="VFX Syntech"
+              draggable={false}
+              className={`w-full h-full object-contain select-none ${isDayMode ? 'invert' : 'drop-shadow-[0_0_10px_rgba(139,92,246,0.4)]'}`}
+            />
           </div>
 
           <ul className="flex flex-col gap-5 w-full items-center">
@@ -797,9 +842,7 @@ export default function App() {
                             : isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-850'
                         }`}
                       >
-                        <span className={`text-sm font-bold z-10 ${isDayMode ? 'text-neutral-900' : 'text-white'}`}>
-                          {module.name}
-                        </span>
+                        <EffectCardArt id={module.id} name={module.name} isDayMode={isDayMode} />
                       </div>
                     );
                     });

@@ -1,17 +1,26 @@
-# HANDOFF — session continuation brief (updated 2026-07-20, Phases 0–9 done + Phase 10 IN PROGRESS)
+# HANDOFF — session continuation brief (updated 2026-07-24, Phase 10 near-complete)
 
-> For the next Claude session (the operator is switching chats). Read this AFTER
-> `CLAUDE.md` and `STATE.md`. **Continue EXACTLY from here: Phases 0–9 are
-> complete and Phase 10 (Assets & polish) is mid-flight — its search box (item 2)
-> is DONE; the remaining Phase-10 items are waiting on the operator** (see NEXT).
+> For the next Claude session. Read this AFTER `CLAUDE.md` and `STATE.md`.
+> **Phases 0–9 complete; Phase 10 (Assets & polish) is now substantially DONE**
+> — logo integrated, search box done, **CDN deps fully vendored + proven
+> offline**, colour/day-mode audited. **Only two items remain, both external:**
+> the **5 effect-card covers** (operator finishing them; drop-in wiring is live)
+> and the **≥30fps@720p perf pass** (a GPU-machine run — the operator asked to be
+> reminded). See NEXT.
 >
-> **Branch state:** all work through the search box is committed AND the operator
-> asked to MERGE `claude/vfx-syntech-layer-6-rgv14l` into `main` from the chat —
-> so by the time you read this that branch may already be merged. Per the branch
-> policy, if it shows merged, **restart the SAME branch name from the latest
-> `origin/main`** (`git fetch origin main && git checkout -B
-> claude/vfx-syntech-layer-6-rgv14l origin/main`) before any new Phase-10 work —
+> **Branch state (2026-07-24):** this session's work is on
+> `claude/vfx-syntech-fase-10-ofhpna` (level with `origin/main` at start). If by
+> the time you read this that branch shows MERGED into `main`, restart the SAME
+> branch name from the latest `origin/main` (`git fetch origin main && git
+> checkout -B claude/vfx-syntech-fase-10-ofhpna origin/main`) before new work —
 > do NOT stack new commits on merged history.
+>
+> **Covers drop-in (no code needed):** put each cover at
+> `public/assets/covers/<ModuleId>.webp` (or `.png`/`.jpg`) — ModuleIds
+> `analog`, `anamorphic_lab`, `blob_reveal`, `blob_tracker`, `bokeh` — and the
+> right-sidebar card renders it under a scrim automatically (`EffectCardArt` in
+> `App.tsx`). **Logo** lives at `public/assets/logo.{webp,png}`; to swap the exact
+> raster, replace `logo.png` (transparent, white mark) at the same path.
 
 ## Where we are — exactly
 
@@ -46,44 +55,34 @@
   - Panels-label colour override + cam-* hardware sliders: not ported (styling /
     source concerns).
 
-## NEXT — Phase 10: Assets & polish (the FINAL phase, IN PROGRESS)
+## NEXT — Phase 10: Assets & polish (the FINAL phase — 2 items left)
 
 Read `05-ROADMAP.md` Phase 10 + `06-VERIFICATION.md`. Status of the 5 items:
-1. **Integrate the 6 operator images** (logo top-left; 5 effect-card covers on
-   the right sidebar) — 🔴 **BLOCKED: waiting on the operator to upload them**
-   (prompt D in `08-PROMPTS.md`). When delivered: place under
-   `public/` (e.g. `public/assets/`), wire the logo slot in the top bar and the 5
-   card covers in the right sidebar (`App.tsx`, the `effect-card-<id>` cards +
-   `EFFECT_META`). Don't fabricate placeholders as if real.
-2. ✅ **Functional search box — DONE** (this session). `App.tsx` `systemSearch`
-   state filters the cards by name/id; testids `effect-search` /
-   `effect-search-clear` / `effect-search-empty`. Verified
-   `tools/verify/verify-phase10-search.js` 6/6.
-3. **Vendor CDN deps locally** — three.js, MediaPipe models, fonts — 🟡 **needs an
-   operator decision**: the effect HTMLs load these from CDNs, and repointing
-   their `<script src>` edits the five `public/effects/*/index.html` OUTSIDE the
-   bridge blocks, which brushes against hard rule #1 (never rewrite them). The
-   shell-side CDN use (PersonMask MediaPipe in `PersonMask.ts`, fonts) CAN be
-   vendored freely. Confirm scope with the operator before touching the HTMLs.
-4. **Perf pass** — 5-effect chain ≥30fps@720p or graceful adaptive-res — ⚪ a
-   GPU-machine check; unassessable under sandbox SwiftShader (~1–2fps). Runs on
-   the operator's machine.
-5. **Colour sweep / day-mode audit** — 🟡 the shell is largely token-compliant
-   (violet `#8b5cf6` accent + neutrals); the only off-palette hexes are 4 one-off
-   chromatic colours (`#e0913f` amber, `#e0554b` red, `#c65b9c` pink, `#6ea8e0`
-   blue) that look like intentional semantic colours — a subjective refinement to
-   confirm with the operator, not to change blindly.
+1. **Operator images** — **logo ✅ DONE** (recovered from the chat upload →
+   `public/assets/logo.{webp,png}`, wired sidebar top-left, theme-aware).
+   **5 effect-card covers 🟡 still pending** (operator finishing them). Drop-in
+   wiring is LIVE (`EffectCardArt` in `App.tsx`): drop
+   `public/assets/covers/<ModuleId>.{webp,png,jpg}` and the card renders it — no
+   code change. Don't fabricate the covers.
+2. ✅ **Functional search box — DONE.** `verify-phase10-search.js` 6/6 (re-ran
+   6/6 this session after the card refactor).
+3. ✅ **Vendor CDN deps — DONE + verified 100% offline** (operator authorised the
+   `<script>` edits). three.js r128 + all MediaPipe (SIMD wasm; pose lite only) +
+   self-hosted fonts under `public/effects/vendor/`; all five effect HTMLs +
+   `PersonMask.ts` repointed. `verify-phase10-vendor.js` **19/19** (zero CDN
+   requests, THREE/SelfieSegmentation from vendor, fonts render) + a wasm-init run
+   (5.6 MB simd wasm + tflite ran offline). Retires the old sandbox CDN gotcha.
+4. **Perf pass** — 5-effect chain ≥30fps@720p — ⚪ still a **GPU-machine check**
+   (~1–2 fps under sandbox SwiftShader). **The operator explicitly asked to be
+   reminded to run this when everything else is closed** — do so.
+5. ✅ **Colour / day-mode audit — DONE.** `src/` hex grep = violet accent family +
+   neutrals + intentional per-effect accents only. Operator chose to **keep** the
+   4 one-off colours ("lasciarli"). Day mode re-verified with the logo change.
 
-**Items 1, 3, 5 all need the operator; item 4 needs a GPU machine.** So Phase 10
-is effectively **paused pending the operator's images + a couple of decisions** —
-there is no further cleanly-autonomous Phase-10 work. The audio track in the MP4
-export (Phase 9 was video-only) is a reasonable optional follow-up the muxer
-already supports.
-5. **Colour sweep** — stray non-`--syn-*`/off-palette colours; day-mode audit.
-
-Items 2–5 can proceed WITHOUT the images; item 1 waits on the operator.
-Audio in the MP4 export is a reasonable follow-up too (the muxer supports an
-audio track; v1 is video-only). Persistence stays localStorage (hard rule #7).
+**Only items 1-covers (operator) and 4-perf (GPU machine) remain** — no further
+cleanly-autonomous Phase-10 work until the covers land. Optional follow-up: audio
+track in the MP4 export (Phase 9 was video-only; the muxer supports an audio
+track). Persistence stays localStorage (hard rule #7).
 
 ## Verification harness — operational playbook (this WILL bite you)
 

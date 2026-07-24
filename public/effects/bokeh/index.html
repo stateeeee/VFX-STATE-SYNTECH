@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="google" content="notranslate">
 <title>BOKEH STATE -- Cinematic Depth of Field</title>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+<script src="../vendor/mediapipe/selfie_segmentation/selfie_segmentation.js"></script><!-- SYNTECH Phase-10: vendored (offline) — was cdn.jsdelivr.net -->
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Barlow+Condensed:wght@300;400;500;600;700;900&display=swap');
+@import url('../vendor/fonts/effects.css'); /* SYNTECH Phase-10: vendored fonts (offline) — was Google Fonts CDN */
 
 /* ═══════════════════════════════════════════════════════
    KEYFRAMES
@@ -2575,7 +2575,7 @@ function initSegmenter(){
     return;
   }
 
-  segmenter=new SelfieSegmentation({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`});
+  segmenter=new SelfieSegmentation({locateFile:f=>`../vendor/mediapipe/selfie_segmentation/${f}`});
   segmenter.setOptions({
     modelSelection:1,   /* landscape model — better for full-body non-selfie */
     selfieMode:false,

@@ -8,32 +8,40 @@
 **Phases 0–9 COMPLETE** (2026-07-20). All five effects are real 1:1 SynEngine
 ports (Phase 8 blob_tracker was the last + hardest), and the ChainLab
 **Master MP4** export works end-to-end (Phase 9: WebCodecs frame-stepping →
-mp4-muxer, vendored under `public/effects/vendor/`). **Only Phase 10 (Assets &
-polish) remains — and it is BLOCKED on the operator delivering the 6 images**
-(logo + 5 effect-card covers). The rest of Phase 10 (functional search box,
-vendoring CDN deps locally, perf pass, day-mode colour sweep) can proceed
-without the images if desired.
+mp4-muxer, vendored under `public/effects/vendor/`). **Phase 10 (Assets &
+polish) is now substantially DONE** (2026-07-24): the operator **logo** is
+integrated top-left; the **search box** works (prior session); **CDN deps are
+fully vendored locally** (three.js, all MediaPipe, fonts) and proven to load
+**100% offline**; the **colour/day-mode sweep** is audited (operator chose to
+keep the one-off effect accents). The only outstanding Phase-10 items are
+**operator-/hardware-dependent**: the **5 effect-card covers** (operator still
+finishing them — drop-in wiring is ready) and the **≥30fps@720p perf pass** (a
+GPU-machine check). The checkbox stays unchecked until those two land.
 
 ## Next step
 
-**Phases 0–9 are COMPLETE. Only Phase 10 (Assets & polish) remains, and it is
-BLOCKED on the operator's 6 images** (logo top-left + 5 effect-card covers —
-prompt D in `08-PROMPTS.md`, not delivered yet). **⇒ Notify the operator to
-upload the 6 images before doing the image-integration part of Phase 10.** The
-non-image Phase-10 items can proceed meanwhile: functional effect **search box**;
-**vendor the CDN deps** locally (three.js, MediaPipe models, fonts) for offline
-resilience; **perf pass** (5-effect chain ≥30fps@720p or graceful adaptive-res —
-a GPU-machine check); **day-mode + stray non-token colour sweep**. Read
-`05-ROADMAP.md` Phase 10 + `06-VERIFICATION.md`.
-**Gotchas (still apply):** standalone HTMLs load THREE from cdnjs — a suite that
-opens a standalone AND blocks the CDN must serve the three.js r128 mirror or it
-aborts (this is why the Phase-1 regression showed 5 `THREE`/`SelfieSegmentation
-is not defined` fails — not real regressions; the effect HTMLs are untouched).
-Restart the flaky dev server (`fuser -k 3000/tcp` — `pkill -f 'tsx server.ts'`
-does NOT match the real cmdline) after every SOURCE edit (it serves STALE code
-otherwise); vendored `public/` files are static and need no restart. Headless
-Chromium has no H.264 WebCodecs encoder (export falls back to AV1/VP9 in-sandbox;
-the operator's Chrome uses H.264).
+**Phase 10 is substantially DONE; two operator-/hardware-dependent items remain.**
+(1) **5 effect-card covers** — the operator is still finishing them. Drop-in
+wiring is LIVE: place each cover at `public/assets/covers/<ModuleId>.webp` (or
+`.png`/`.jpg`; ModuleIds: `analog`, `anamorphic_lab`, `blob_reveal`,
+`blob_tracker`, `bokeh`) and the right-sidebar card renders it automatically
+under a scrim (no code change needed; until then the plain-label look shows).
+(2) **≥30fps@720p perf pass** — a GPU-machine check, unassessable under sandbox
+SwiftShader (~1–2fps); **⇒ remind the operator to run it on their PC when
+everything else is closed** (they explicitly asked to be reminded). Everything
+else in Phase 10 is done + verified this session (logo, CDN vendoring, colour/
+day-mode audit). Read `05-ROADMAP.md` Phase 10 + `06-VERIFICATION.md`.
+**Gotchas:** ~~standalone HTMLs load THREE from cdnjs~~ **RESOLVED (Phase 10,
+2026-07-24): all CDN deps are vendored** under `public/effects/vendor/` and the
+five effect HTMLs' `<script>`/`locateFile`/`import()` srcs now point there — the
+old `THREE`/`SelfieSegmentation is not defined` sandbox failures are GONE, the
+standalones load fully offline (proven 19/19 + a wasm-init run). No CDN mirror /
+route-interception is needed for verification any more. Restart the flaky dev
+server (`fuser -k 3000/tcp` — `pkill -f 'tsx server.ts'` does NOT match the real
+cmdline) after every SOURCE edit (it serves STALE code otherwise); vendored
+`public/` files are static and need no restart. Headless Chromium has no H.264
+WebCodecs encoder (export falls back to AV1/VP9 in-sandbox; the operator's Chrome
+uses H.264).
 
 ## Phase board
 
@@ -54,16 +62,20 @@ the operator's Chrome uses H.264).
 - **Phase 8 L5 ripple — operator decided (a) audio/beat force** (2026-07-19):
   the mouse force is replaced by the reactive `rippleForce` param pre-wired to
   the beat. Ported + verified (see log). Decision recorded here for the record.
-- Operator will deliver 6 images (logo + 5 effect covers) → Phase 10,
-  prompt D in 08-PROMPTS.md. Not delivered yet.
+- ~~Operator will deliver 6 images~~ — **logo DELIVERED + integrated**
+  (2026-07-24, recovered from the chat upload → `public/assets/logo.{webp,png}`,
+  wired top-left of the sidebar). **5 effect-card covers still pending** (operator
+  finishing them); drop-in wiring is live — see Next step for the path/naming.
 - ~~`ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
   not exist until Phase 9~~ — **RESOLVED (Phase 9)**: `mp4-muxer.min.js` +
   `syntech-export.js` vendored; the button exports a real MP4.
-- **Phase 10 is BLOCKED on the operator delivering 6 images** (logo + 5 effect
-  covers, prompt D in 08-PROMPTS.md). Notify the operator; the non-image
-  Phase-10 items can proceed meanwhile.
-- Effects load CDNs (three.js, MediaPipe, fonts) — network required at
-  runtime until Phase 10 vendors them.
+- **Phase 10 substantially done** — only the 5 covers (operator) + the
+  ≥30fps@720p perf pass (GPU machine) remain. See Current phase / Next step.
+- ~~Effects load CDNs (three.js, MediaPipe, fonts) — network required at
+  runtime~~ — **RESOLVED (Phase 10, 2026-07-24): fully vendored offline** under
+  `public/effects/vendor/` (three.min.js r128; MediaPipe selfie_segmentation +
+  pose + face_mesh + tasks-vision, SIMD wasm; self-hosted fonts). No runtime
+  network needed for any effect.
 - Claude remote sandbox only: `cdn.jsdelivr.net` and `cdnjs.cloudflare.com`
   are blocked by the environment's network policy (fonts.googleapis.com is
   reachable by tools but not by the un-proxied headless browser). Workaround
@@ -90,8 +102,71 @@ the operator's Chrome uses H.264).
 | 12 | blob_tracker L7b colours → **palette-enum indices** (ParamSchema can't hold hex); panels-label colour left at L6 styling (*Claude, operator away*) | 2026-07-20 |
 | 13 | blob_tracker L7c chaos points **auto-placed** (golden-angle scatter) since the chain has no mouse; autoMode per-panel onset choreography omitted (consolidated into L7a routes) (*Claude, operator away*) | 2026-07-20 |
 | 14 | Phase 9 export → preferred codec **universal H.264 (avc)** with **AV1/VP9 fallbacks** (headless has no H.264 encoder; robustness); video-only for v1, audio muxing a follow-up (*Claude, operator away*) | 2026-07-20 |
+| 15 | **Operator authorised editing the five effect HTMLs' `<script>`/`locateFile`/`import()` srcs** to vendored local paths (explicit deroga to hard rule #1, for CDN-offline) — the ONLY non-bridge edit allowed to those files | 2026-07-24 |
+| 16 | Vendoring scope: three.js r128 + MediaPipe (selfie_segmentation both simd+nosimd; pose/face_mesh/tasks-vision **SIMD-only**, modern-Chrome target, lazy features fall back gracefully) + **latin/latin-ext** font subsets only; pose **lite** model only (matches `modelComplexity:0`) — drops 34MB of unused pose models (*Claude, operator away*) | 2026-07-24 |
+| 17 | Logo presentation: keep the delivered mark 1:1 but **key the black field to transparent** (alpha=luminance) + tight crop → `logo.png`, so it floats on the UI and **inverts for day mode**; original kept as `logo.webp`. One-off effect accent colours **kept** (`#e0913f`/`#e0554b`/`#c65b9c`/`#6ea8e0`, operator: "lasciarli") | 2026-07-24 |
 
 ## Log
+
+### 2026-07-24 — Phase 10 near-complete (logo + CDN vendoring + colour audit)
+
+Autonomous session (operator at work: "usa tutti i token senza fermarti").
+Operator's chat answers drove it — 1 logo uploaded (covers still coming),
+2 authorised the HTML `<script>` edits, 3 keep the one-off colours, 4 remind me
+about the perf test at the end.
+
+- **CDN vendoring (item 3) — DONE + verified 100% offline.** Every external CDN
+  dep the shell + the five effect HTMLs used is now served from
+  `public/effects/vendor/` (~45 MB):
+  - **three.js r128** → `vendor/three.min.js` (from the `three@0.128.0` npm dep).
+  - **MediaPipe** → `vendor/mediapipe/{selfie_segmentation,pose,face_mesh,
+    tasks-vision}/` via `npm pack`. selfie_segmentation keeps both simd+nosimd
+    wasm (core: 3 effects + the shell PersonMask); pose/face_mesh/tasks-vision
+    are SIMD-only (lazy blob_tracker features, modern-Chrome target, graceful
+    fallback). pose ships the **lite** model only (`modelComplexity:0`) — dropped
+    the 27 MB heavy + 6.4 MB full. The tasks-vision `selfie_segmenter.tflite`
+    was fetched from storage.googleapis and vendored too.
+  - **Fonts** → `vendor/fonts/{effects,shell}.css` + 36 self-hosted woff2
+    (latin + latin-ext subsets of JetBrains Mono / Barlow Condensed / Space
+    Grotesk / Inter). Effect HTMLs `@import ../vendor/fonts/effects.css`; the
+    shell loads `vendor/fonts/shell.css` via a `<link>` in `index.html` (the
+    Google-Fonts `@import` in `src/index.css` removed).
+  - Edits (operator-authorised, decision #15): each effect HTML's font `@import`,
+    the selfie `<script src>` + `locateFile` (anamorphic/blob_reveal/bokeh),
+    blob_tracker's three.js `<script>` + pose/face_mesh `<script>`+`locateFile`
+    + tasks-vision `import()`/wasm dir/tflite path; `PersonMask.ts` `CDN_BASE`.
+  - **Verified** (`tools/verify/verify-phase10-vendor.js`) **19/19 PASS**: with
+    NO CDN access (the sandbox blocks them anyway) all 5 effects load, THREE +
+    SelfieSegmentation resolve from vendor, vendored fonts render, **zero
+    external-CDN requests**, no dep/page errors. Plus a wasm-init run: a fresh
+    `SelfieSegmentation` initialises the **5.6 MB simd wasm + tflite** and returns
+    a 256² mask, 0 CDN hits — the whole native pipeline runs offline. This also
+    **retires the long-standing sandbox gotcha** (`THREE is not defined`).
+- **Logo (item 1) — DONE.** The operator uploaded the logo in chat (not on disk);
+  recovered it from the session transcript (2000×1250 webp) → kept as
+  `public/assets/logo.webp`, and produced `public/assets/logo.png` (tight crop +
+  black field keyed transparent, alpha=luminance, decision #17). Wired into the
+  sidebar top-left (replaces the temp "VS" diamond): white mark + violet glow at
+  night, `invert` to dark for day mode. **Verified 7/7** (present, decoded
+  496×512, correct src, 5 cards intact, inverts in day mode, no errors) + night/
+  day screenshots eyeballed.
+- **Effect-card covers (item 1, rest) — wiring READY, awaiting operator's 5 files.**
+  New `EffectCardArt` in `App.tsx` tries `/assets/covers/<ModuleId>.{webp,png,jpg}`;
+  on load it fades the cover in under a scrim with a white label, on error it
+  falls back to today's plain-label card. Drop the files in → they appear, no
+  code change. (Not fabricated — the operator is finishing them.)
+- **Colour / day-mode sweep (item 5) — audited.** Grep of `src/` hexes: only the
+  violet accent family + standard neutrals/surfaces + the intentional per-effect
+  accents + blob_tracker's documented palette. Operator chose to **keep** the 4
+  one-off colours ("lasciarli"). No new stray colours introduced; day mode
+  re-verified with the logo change.
+- **Perf pass (item 4) — still a GPU-machine check** (~1–2 fps under sandbox
+  SwiftShader). **Operator asked to be reminded when everything else is done —
+  see Next step / the closing note to the operator.**
+- Regression: `npm run lint` clean; `npm run build` clean (dist carries the
+  vendored assets + the shell `<link>`); phase-10 **search box 6/6** after the
+  card refactor. Standalone effects: the 19/19 offline load IS the regression
+  (they now load in-sandbox for the first time).
 
 ### 2026-07-20 — Phase 10 IN PROGRESS (Assets & polish — search box)
 

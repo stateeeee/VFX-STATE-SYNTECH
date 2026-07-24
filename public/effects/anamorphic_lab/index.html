@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Anamorphic Lab v5</title>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+<script src="../vendor/mediapipe/selfie_segmentation/selfie_segmentation.js"></script><!-- SYNTECH Phase-10: vendored (offline) — was cdn.jsdelivr.net -->
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Barlow+Condensed:wght@300;400;500;600;700;900&display=swap');
+@import url('../vendor/fonts/effects.css'); /* SYNTECH Phase-10: vendored fonts (offline) — was Google Fonts CDN */
 
 /* ═══════════════════════════════════════════════════════
    KEYFRAMES
@@ -2015,7 +2015,7 @@ function ensureBkSegmenter(){
   }
   bkSegmenterLoading=true;
   bkSetStatus('Subject detection: loading…');
-  bkSegmenter=new SelfieSegmentation({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`});
+  bkSegmenter=new SelfieSegmentation({locateFile:f=>`../vendor/mediapipe/selfie_segmentation/${f}`});
   bkSegmenter.setOptions({modelSelection:1,selfieMode:false}); /* general model: best speed/accuracy balance, also for non-selfie framing */
   bkSegmenter.onResults(bkOnSegResults);
   bkSegmenter.initialize().then(()=>{

@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BLOB STATE TRACKER</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../vendor/three.min.js"></script><!-- SYNTECH Phase-10: vendored three.js r128 (offline) — was cdnjs -->
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Barlow+Condensed:wght@300;400;500;600;700;900&display=swap');
+@import url('../vendor/fonts/effects.css'); /* SYNTECH Phase-10: vendored fonts (offline) — was Google Fonts CDN */
 
 /* ═══════════════════════════════════════════════════════
    KEYFRAMES
@@ -4360,10 +4360,10 @@ function _vrLoadPose() {
   _vrPoseLoading = true;
   toast('POSE: caricamento MediaPipe Pose…');
   const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js';
+  script.src = '../vendor/mediapipe/pose/pose.js';
   script.onload = () => {
     const pose = new window.Pose({locateFile: f =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${f}`});
+      `../vendor/mediapipe/pose/${f}`});
     pose.setOptions({modelComplexity:0, smoothLandmarks:true, minDetectionConfidence:0.5, minTrackingConfidence:0.4});
     pose.onResults(results => {
       _vrPoseLM = results.poseLandmarks || null;
@@ -4382,10 +4382,10 @@ function _vrLoadFace() {
   _vrFaceLoading = true;
   toast('FACE: caricamento MediaPipe FaceMesh…');
   const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js';
+  script.src = '../vendor/mediapipe/face_mesh/face_mesh.js';
   script.onload = () => {
     const fm = new window.FaceMesh({locateFile: f =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}`});
+      `../vendor/mediapipe/face_mesh/${f}`});
     fm.setOptions({maxNumFaces:1, refineLandmarks:true, minDetectionConfidence:0.5, minTrackingConfidence:0.4});
     fm.onResults(results => {
       _vrFaceLM = (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0)
@@ -4857,14 +4857,14 @@ async function _loadMediaPipe() {
   toast('⟳ Loading MediaPipe selfie segmentation…', 6000);
   try {
     const {ImageSegmenter, FilesetResolver} = await import(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs'
+      '../vendor/mediapipe/tasks-vision/vision_bundle.mjs'
     );
     const vision = await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm'
+      '../vendor/mediapipe/tasks-vision/wasm'
     );
     _mpSeg = await ImageSegmenter.createFromOptions(vision, {
       baseOptions: {
-        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',
+        modelAssetPath: '../vendor/mediapipe/tasks-vision/selfie_segmenter.tflite',
         delegate: 'GPU'
       },
       outputCategoryMask: true, runningMode: 'VIDEO',

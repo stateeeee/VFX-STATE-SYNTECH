@@ -8,7 +8,9 @@
  * standalone effects use — vendored locally in Phase 10.
  */
 
-const CDN_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation';
+// Phase-10: vendored locally under public/ (served at /effects/vendor/...) for
+// offline resilience — was https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation
+const CDN_BASE = '/effects/vendor/mediapipe/selfie_segmentation';
 const TICK_MS = 66;
 const RETRY_COOLDOWN_MS = 5000;
 
