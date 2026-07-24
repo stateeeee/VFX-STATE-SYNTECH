@@ -192,6 +192,12 @@ about the perf test at the end.
   cover — decoded, opaque, under the scrim, white label — while an un-injected
   card falls back to the plain label. Confirms the operator's 5 covers will
   drop in cleanly.
+- **Production build verified too** (not just the Vite dev server): `npm run
+  build` → `NODE_ENV=production node dist/server.cjs` serves every vendored asset
+  (logo.png, three.min.js, fonts/shell.css, mediapipe tflite — all 200) and the
+  shell `<link>` is present; re-ran the vendor suite **19/19** + the shell logo/
+  card suite **7/7** against the prod server — all green. So the whole Phase-10
+  surface works in the deployed build the operator will ship, not only in dev.
 
 ### 2026-07-20 — Phase 10 IN PROGRESS (Assets & polish — search box)
 
