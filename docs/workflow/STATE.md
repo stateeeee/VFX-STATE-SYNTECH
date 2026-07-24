@@ -142,6 +142,12 @@ about the perf test at the end.
     `SelfieSegmentation` initialises the **5.6 MB simd wasm + tflite** and returns
     a 256² mask, 0 CDN hits — the whole native pipeline runs offline. This also
     **retires the long-standing sandbox gotcha** (`THREE is not defined`).
+  - **Lazy blob_tracker deps also proven offline** (`verify-phase10-vendor-lazy.js`
+    **6/6**): Pose (onResults from vendor, lite model), FaceMesh (onResults), and
+    the tasks-vision ImageSegmenter (categoryMask) each init + run from vendor
+    with zero CDN — each on its OWN fresh page (co-loading several Emscripten
+    runtimes in one document collides on the global `Module`; a test artefact,
+    never how blob_tracker loads them).
 - **Logo (item 1) — DONE.** The operator uploaded the logo in chat (not on disk);
   recovered it from the session transcript (2000×1250 webp) → kept as
   `public/assets/logo.webp`, and produced `public/assets/logo.png` (tight crop +
