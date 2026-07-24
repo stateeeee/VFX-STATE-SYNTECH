@@ -28,7 +28,13 @@ wiring is LIVE: place each cover at `public/assets/covers/<ModuleId>.webp` (or
 under a scrim (no code change needed; until then the plain-label look shows).
 (2) **≥30fps@720p perf pass** — a GPU-machine check, unassessable under sandbox
 SwiftShader (~1–2fps); **⇒ remind the operator to run it on their PC when
-everything else is closed** (they explicitly asked to be reminded). Everything
+everything else is closed** (they explicitly asked to be reminded). **It is
+self-serve — no tooling needed:** open **AI Lab**, wire the 5-effect chain, play
+a 720p clip, and read ChainLab's live **FPS** / **RES%** badges (`chain-fps` /
+`chain-res`). The engine already does **graceful adaptive-res** (auto-downscales
+when fps<45, upscales when fps>57), so RES% dropping below 100 (amber) IS the
+"graceful adaptive-res" acceptance — the pass condition is fps≥30 **or** a stable
+adaptive RES%. Everything
 else in Phase 10 is done + verified this session (logo, CDN vendoring, colour/
 day-mode audit). Read `05-ROADMAP.md` Phase 10 + `06-VERIFICATION.md`.
 **Gotchas:** ~~standalone HTMLs load THREE from cdnjs~~ **RESOLVED (Phase 10,

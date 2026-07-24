@@ -74,7 +74,11 @@ Read `05-ROADMAP.md` Phase 10 + `06-VERIFICATION.md`. Status of the 5 items:
    (5.6 MB simd wasm + tflite ran offline). Retires the old sandbox CDN gotcha.
 4. **Perf pass** — 5-effect chain ≥30fps@720p — ⚪ still a **GPU-machine check**
    (~1–2 fps under sandbox SwiftShader). **The operator explicitly asked to be
-   reminded to run this when everything else is closed** — do so.
+   reminded to run this when everything else is closed** — do so. Self-serve, no
+   tooling: AI Lab → wire the 5 nodes → play a 720p clip → read ChainLab's live
+   **FPS**/**RES%** badges. Graceful adaptive-res already ships (auto down/upscale
+   in `SynEngine.evalAdaptiveRes`), so an amber RES% <100 satisfies the "or
+   graceful adaptive-res" half of the acceptance.
 5. ✅ **Colour / day-mode audit — DONE.** `src/` hex grep = violet accent family +
    neutrals + intentional per-effect accents only. Operator chose to **keep** the
    4 one-off colours ("lasciarli"). Day mode re-verified with the logo change.
