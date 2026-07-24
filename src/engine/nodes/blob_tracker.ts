@@ -4,7 +4,7 @@ import { ParamSchema } from '../../bridge/types';
 
 /* ═══════════════════════════════════════════════════════════════
    BLOB TRACKER — 1:1 port of public/effects/blob_tracker/index.html
-   (Phase 8) — WORK IN PROGRESS, LAYER 1.
+   (Phase 8) — COMPLETE. All layers ported + verified.
 
    The standalone is the biggest effect (~6876 lines): a Canvas-2D
    contour tracker + TWO three.js renderers (a float ping-pong ripple
@@ -14,10 +14,11 @@ import { ParamSchema } from '../../bridge/types';
    canvases uploaded as the node texture — the blob_reveal
    offscreen-2D→GL-texture pattern extended to three.js.
 
-   ⚠️ NOT YET WIRED into nodes.ts — blob_tracker stays a DummyNode until
-   every layer below is ported and parity-verified. This file is a
-   clearly-labelled WIP foundation so the port can proceed in faithful,
-   testable layers without breaking the working app.
+   WIRED into nodes.ts (factory `blob_tracker: () => new BlobTrackerNode()`).
+   The full deterministic 2D pipeline (tracker core + FX + edge/smart contour +
+   flow + chaos) + BOTH three.js scenes (ripple + panels) are ported and
+   verified; reactivity is mapped to ParamBus routes (decision #1). See the
+   per-layer STATE.md logs (2026-07-20) for the parity numbers.
 
    PORT LAYERS (■ done here / □ remaining):
    ■ L1 — tracker core: base video draw (_drawSrc) → 320×180 detect
@@ -33,14 +34,18 @@ import { ParamSchema } from '../../bridge/types';
         exact); security/liquid/glitch1/glitch2/text are time/random-seeded
         (behavioural). Colours use the standalone's built-in FX colours
         (vfxColor override is an L7 TODO — ParamSchema has no colour type).
-   ◐ L3 — contour markers. EDGE DONE (radialContour ray-cast on the detection
-        binary → douglasPeucker → catmull-rom spline + optional fill;
-        drawBlobMarker delegates when ctMode≥1 and the contour has ≥6 pts —
-        deterministic, verifiable pixel-exact). SMART (ctMode=2) still □: a NEW
-        MediaPipe dep — the **Tasks-Vision ImageSegmenter** (selfie_segmenter
-        .tflite via storage.googleapis.com, L4731/4886 `_ctRunSmartSeg`), NOT
-        the SelfieSegmentation the shared PersonMask uses; decide per 04-SPEC
-        (shared-service map vs new dep). Until then ctMode=2 falls back to edge.
+   ■ L3 — contour markers DONE (edge + smart). EDGE: radialContour ray-cast on
+        the detection binary → douglasPeucker → catmull-rom spline + optional
+        fill; drawBlobMarker delegates when ctMode≥1 and the contour has ≥6 pts
+        (deterministic, pixel-exact). SMART (ctMode=2, L3b): the contour
+        ray-casts the shared PersonMask instead of the detection binary
+        (refreshSmartMask reads the mask ALPHA at PW×PH, per personMaskVersion),
+        falling back to edge until the mask arrives — the standalone's
+        `_ctSmartMask ?? _ctBinMask`. DECISION: mapped to the shared PersonMask
+        (SelfieSegmentation) rather than adding the standalone's distinct
+        Tasks-Vision ImageSegmenter dep — same 04-SPEC substitution as
+        blob_reveal/bokeh/anamorphic. segEnabled is derived from ctMode (smart
+        ⇒ the shell lazy-loads the segmenter), so there is no separate control.
    ◐ L4 — optical flow DONE (Lucas-Kanade 16×16 per blob → EMA 0.42 →
         arrows green→red + fading trails; flowUpdateGray on raw gray before
         processForDetect). Temporal ⇒ verified behaviourally. flowFeedAR
@@ -53,14 +58,45 @@ import { ParamSchema } from '../../bridge/types';
         `rippleForce` param, pre-wired to `beat` — the water pulses with the
         music. With force ~0 the field is flat ⇒ clean passthrough of dc.
         rippleDisp/Damp/Wave = the standalone RP + sDisp/sDamp/sWave.
-   □ L6 — three.js panels scene (panelsRenderer, panelMeshes, labels,
-        panelsBg) + the stack composite (dc→panels→fxOv→glC).
-   □ L7 — reactivity: audioReactiveFrame (ar-* gains → ParamBus routes,
-        Phase-4 pattern) + videoReactiveFrame (vr-* → VideoAnalyzer);
-        fixedPtsMode chaos engine; colours (trackerColor/connColor —
-        the number/boolean ParamSchema can't hold colours: design TODO).
-   □ L8 — full param table + parity suites (static/behavior/chain) +
-        regression, then swap the factory and mark Phase 8 done.
+   ■ L6 — three.js panels scene DONE. A FIXED 8-panel 3D montage (PANEL_DEFS/
+        PANEL_LBLS/PANEL_VS/PANEL_FS + SimplexNoise, verbatim) on the node's
+        OWN offscreen THREE.WebGLRenderer (transparent); composited OVER dc in
+        2D BEFORE the ripple samples dc. OPERATOR DECISION: the panel labels +
+        connector lines are drawn INTO dc via Canvas-2D at the projected
+        positions (functionally equivalent to the standalone's HTML p-lbl divs
+        + SVG svg-lines — an accepted, non-pixel-identical deviation). The
+        panels source is ctx.source (raw video, like the standalone). panelScale
+        (sScale)/panelTurb (sTurb)/panelCamZ (sCamZ)/panelsBgOpacity (sBgOp)/
+        panelsLabels (btn-plabels)/panelsConnLines (btn-pconnlines)/mirrorPanels
+        (btn-mirror-panels) are params; panelsBgOpacity dims the tracker behind
+        the panels (the standalone panels-mode #050302 backdrop). autoMode / AR /
+        VR panel driving (panelsAnimate's auto branch) is deferred to L7.
+   ■ L7 — reactivity + colours + chaos. L7a ROUTES DONE: the standalone's bespoke auto-driver
+        (audioReactiveFrame/applyAudioToParams/videoReactiveFrame — a 7-band
+        analyser modulating params) is mapped to ParamBus defaultRoutes on the
+        shared AudioEngine/VideoAnalyzer signals (decision #1, the analog
+        pattern). Seeded: connWidth←bass, connGlow←loud, datamosh←treble,
+        glitchAmt←beat, panelScale←bass, panelTurb←motion, rippleForce←beat
+        (L5). The ar-* and vr-* gain sliders + ar-on/auto + vr-on/auto/face/
+        pose/flow toggles are CONSOLIDATED — the shared engines + ParamBus amount
+        replace the built-in analyser (as blob_reveal consolidated beatSens/
+        beatGap). L7b COLOURS DONE: trackerColor/connColor/vfxColor become
+        palette-enum indices (PALETTE + pal()) — trackerColorIdx (markers/
+        contours/labels), connColorIdx (tracker + panel connections), vfxColorOn
+        + vfxColorIdx (FX text override); resolved into this.trackerColor/
+        connColor each render. L7c fixedPtsMode DONE: the chaos engine
+        (fpInitState/fpTick/fpBlobsForFrame, verbatim) replaces detection with a
+        set of AUTO-PLACED points (golden-angle scatter — the chain has no mouse),
+        each an animated jitter/size/shape/FX/alpha marker fed through the
+        existing draw pipeline via per-blob global swaps (fpRender). CONSOLIDATED
+        (decision #1): the autoMode panel driving (per-panel Z-thrust/kick from
+        the bespoke onset detector) IS the auto-driver replaced by the L7a routes
+        (panelTurb←motion, panelScale←bass) — the per-mesh onset choreography is
+        an accepted omission. Panel-label colour override left at L6 styling.
+   ■ L8 — DONE. Param table reconciled (added mirrorBg; connSat + ar-* / vr-*
+        gains + panels-label colour consolidated — see STATE.md). chain-sanity +
+        mirrorBg suite green; all L3b/L5/L6/L7 layer suites re-run 0-fail;
+        factory made permanent. Phase 8 complete.
 
    Standalone state defaults captured (index.html L1767-1788):
      P={threshold:127,brightness:31,contrast:2.15,minArea:100,
@@ -94,9 +130,9 @@ const PARAMS: ParamSchema[] = [
   // connections
   { key: 'connEnabled', label: 'Connections', type: 'boolean', value: 1, aiHint: '(on/off switch) Draw graph lines between nearby blobs (FX.conn)' },
   { key: 'connStyle', label: 'Conn Style', type: 'number', value: 0, min: 0, max: 3, step: 1, aiHint: '0 solid · 1 dashed · 2 dash-dot · 3 arrows' },
-  { key: 'connWidth', label: 'Line Width', type: 'number', value: 10, min: 1, max: 20, step: 1, reactive: true, aiHint: 'Connection line width' },
+  { key: 'connWidth', label: 'Line Width', type: 'number', value: 10, min: 1, max: 20, step: 1, reactive: true, defaultRoute: { source: 'bass', amount: 0.45 }, aiHint: 'Connection line width — pre-wired to bass so the graph lines pulse with the low end (standalone auto: bass pulses connWidth)' },
   { key: 'connOpacity', label: 'Conn Opacity', type: 'number', value: 1, min: 0, max: 1, step: 0.01, aiHint: 'Connection line opacity' },
-  { key: 'connGlow', label: 'Conn Glow', type: 'number', value: 0, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Neon glow halo on the connection lines' },
+  { key: 'connGlow', label: 'Conn Glow', type: 'number', value: 0, min: 0, max: 1, step: 0.01, reactive: true, defaultRoute: { source: 'loud', amount: 0.4 }, aiHint: 'Neon glow halo on the connection lines — pre-wired to overall loudness so the glow blooms with the mix' },
   // L2 — FX system
   { key: 'bgFxMode', label: 'BG FX Mode', type: 'boolean', value: 0, aiHint: '(on/off switch) On = FX fill the background (blobs stay clean video); off = FX only inside the blobs' },
   { key: 'fxOpacity', label: 'FX Opacity', type: 'number', value: 1, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Global blend of every active FX over the clean pixels' },
@@ -106,14 +142,14 @@ const PARAMS: ParamSchema[] = [
   { key: 'fxLiquid', label: 'FX Liquid', type: 'boolean', value: 0, aiHint: '(on/off switch) Travelling sine-wave row shift (time seeded)' },
   { key: 'fxData', label: 'FX Glitch 1', type: 'boolean', value: 0, aiHint: '(on/off switch) Datamosh block displacement (random seeded)' },
   { key: 'fxGlitch', label: 'FX Glitch 2', type: 'boolean', value: 0, aiHint: '(on/off switch) RGB-split screen smear + random slices' },
-  { key: 'datamosh', label: 'Glitch 1 Amt', type: 'number', value: 8, min: 0, max: 30, step: 1, reactive: true, aiHint: 'Datamosh (Glitch 1) displacement strength' },
-  { key: 'glitchAmt', label: 'Glitch 2 Amt', type: 'number', value: 6, min: 0, max: 20, step: 1, reactive: true, aiHint: 'Glitch 2 RGB-split smear strength' },
+  { key: 'datamosh', label: 'Glitch 1 Amt', type: 'number', value: 8, min: 0, max: 30, step: 1, reactive: true, defaultRoute: { source: 'treble', amount: 0.5 }, aiHint: 'Datamosh (Glitch 1) displacement strength — pre-wired to treble (standalone auto: treble drives datamosh)' },
+  { key: 'glitchAmt', label: 'Glitch 2 Amt', type: 'number', value: 6, min: 0, max: 20, step: 1, reactive: true, defaultRoute: { source: 'beat', amount: 0.5 }, aiHint: 'Glitch 2 RGB-split smear strength — pre-wired to the beat (standalone auto: onset transients spike glitch)' },
   { key: 'padX', label: 'FX Pad X', type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, aiHint: 'Background-mode glitch/datamosh strength modifier (standalone padX)' },
   { key: 'textMode', label: 'Text Fill', type: 'number', value: 0, min: 0, max: 3, step: 1, aiHint: '0 off · 1 numbers · 2 letters · 3 mixed — Matrix-style char fill (random seeded)' },
   { key: 'textPadX', label: 'Text Coverage X', type: 'number', value: 1, min: 0, max: 1, step: 0.01, aiHint: 'Text-fill block coverage, X axis' },
   { key: 'textPadY', label: 'Text Coverage Y', type: 'number', value: 1, min: 0, max: 1, step: 0.01, aiHint: 'Text-fill block coverage, Y axis' },
   // L3 — contour markers (edge mode; smart = a MediaPipe ImageSegmenter dep, L7)
-  { key: 'ctMode', label: 'Contour Mode', type: 'number', value: 0, min: 0, max: 2, step: 1, aiHint: '0 off (rectangle markers) · 1 edge (organic radial contour from the detection mask) · 2 smart (MediaPipe segmentation — not yet ported)' },
+  { key: 'ctMode', label: 'Contour Mode', type: 'number', value: 0, min: 0, max: 2, step: 1, aiHint: '0 off (rectangle markers) · 1 edge (organic radial contour from the detection mask) · 2 smart (contour follows the shared person-segmentation mask; loads on demand, falls back to edge until the mask arrives)' },
   { key: 'ctExpand', label: 'Contour Expand', type: 'number', value: 0, min: -20, max: 20, step: 1, aiHint: 'Grow/shrink the contour outline along its rays (proc-space px)' },
   { key: 'ctSmooth', label: 'Contour Smooth', type: 'number', value: 5, min: 0, max: 20, step: 1, aiHint: 'Douglas-Peucker simplification ε — higher = smoother, fewer points' },
   { key: 'ctFill', label: 'Contour Fill', type: 'boolean', value: 0, aiHint: '(on/off switch) Fill the contour interior at 15% opacity' },
@@ -131,6 +167,24 @@ const PARAMS: ParamSchema[] = [
   { key: 'rippleDisp', label: 'Ripple Displace', type: 'number', value: 0.013, min: 0.002, max: 0.04, step: 0.001, reactive: true, aiHint: 'How far the wave field bends the underlying image' },
   { key: 'rippleDamp', label: 'Ripple Damping', type: 'number', value: 0.988, min: 0.96, max: 0.999, step: 0.001, aiHint: 'Wave energy retention per step — higher = longer-lived ripples' },
   { key: 'rippleWave', label: 'Ripple Speed', type: 'number', value: 0.22, min: 0.05, max: 0.5, step: 0.01, aiHint: 'Wave propagation speed constant (c²)' },
+  // L6 — three.js panels scene (FIXED 8-panel 3D montage overlaid on the frame)
+  { key: 'panelsEnabled', label: 'Panels', type: 'boolean', value: 0, aiHint: '(on/off switch) Overlay the fixed 8-panel 3D "AI analysis" montage over the tracked frame (standalone FX.panels)' },
+  { key: 'panelScale', label: 'Panel Scale', type: 'number', value: 1, min: 0.2, max: 3, step: 0.05, reactive: true, defaultRoute: { source: 'bass', amount: 0.4 }, aiHint: 'Uniform size of every floating panel (standalone sScale) — pre-wired to bass so the panels swell with the low end (standalone auto: bass = panel size)' },
+  { key: 'panelTurb', label: 'Panel Turbulence', type: 'number', value: 1, min: 0, max: 3, step: 0.1, reactive: true, defaultRoute: { source: 'motion', amount: 0.6 }, aiHint: 'How strongly the panels drift and tumble (simplex-noise amplitude) — pre-wired to video motion so movement in the frame stirs the panels (standalone videoReactiveFrame: motion drives panelTurb)' },
+  { key: 'panelCamZ', label: 'Panel Camera Z', type: 'number', value: 7, min: 3, max: 14, step: 0.5, aiHint: 'Distance of the perspective camera from the panel cluster — lower = closer/wider' },
+  { key: 'panelsBgOpacity', label: 'Panel BG Opacity', type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, aiHint: 'How much of the tracker composite stays visible behind the panels (standalone sBgOp panels-mode backdrop); 1 = full tracker, 0 = near-black' },
+  { key: 'panelsLabels', label: 'Panel Labels', type: 'boolean', value: 1, aiHint: '(on/off switch) Draw the per-panel tag + score labels (standalone btn-plabels)' },
+  { key: 'panelsConnLines', label: 'Panel Label Lines', type: 'boolean', value: 1, aiHint: '(on/off switch) Draw the connector line from each label to its panel (standalone btn-pconnlines)' },
+  { key: 'mirrorPanels', label: 'Mirror Panels', type: 'boolean', value: 0, aiHint: '(on/off switch) Horizontally mirror the video sampled inside each panel (standalone btn-mirror-panels)' },
+  { key: 'mirrorBg', label: 'Mirror Video', type: 'boolean', value: 0, aiHint: '(on/off switch) Horizontally mirror the tracked video (base + detection stay aligned) — standalone btn-mirror-bg' },
+  // L7b — colours (palette-enum indices; ParamSchema can't hold hex)
+  { key: 'trackerColorIdx', label: 'Tracker Color', type: 'number', value: 0, min: 0, max: 9, step: 1, aiHint: 'Colour of the blob markers, contours + ID/A labels — palette: 0 white·1 blue·2 mint·3 violet·4 cyan·5 red·6 amber·7 green·8 magenta·9 black' },
+  { key: 'connColorIdx', label: 'Connection Color', type: 'number', value: 1, min: 0, max: 9, step: 1, aiHint: 'Colour of the connection lines (tracker graph + panel graph) — same palette; default 1 = blue (#0011ff)' },
+  { key: 'vfxColorOn', label: 'VFX Color Override', type: 'boolean', value: 0, aiHint: '(on/off switch) Override the built-in FX text-fill colour with the palette colour below (standalone vfxColorActive)' },
+  { key: 'vfxColorIdx', label: 'VFX Color', type: 'number', value: 2, min: 0, max: 9, step: 1, aiHint: 'Palette colour for the Text Fill FX when VFX Color Override is on; default 2 = mint (#00ff88)' },
+  // L7c — fixed-points chaos engine (replaces standard detection)
+  { key: 'fixedPtsMode', label: 'Chaos Points', type: 'boolean', value: 0, aiHint: '(on/off switch) Replace blob detection with a fixed set of auto-placed points, each an animated chaos marker (jittering size/shape, random per-point FX, alpha lifecycle) — the standalone fixedPtsMode' },
+  { key: 'fixedMaxPts', label: 'Chaos Point Count', type: 'number', value: 5, min: 1, max: 10, step: 1, aiHint: 'How many chaos points to animate when Chaos Points is on (standalone sFixedMax)' },
 ];
 
 /* ripple shaders — verbatim from the standalone (qV/sF/dF) */
@@ -140,6 +194,97 @@ const RIPPLE_DISP_FS = `precision highp float;uniform sampler2D uSc,uWv;uniform 
 const RIPPLE_SIM = 512;
 
 const TEXT_MODES = [null, 'nums', 'letters', 'tmix'] as const;
+
+/* L7b — colour palette. The number/boolean ParamSchema can't carry a hex, so
+ * the standalone's colour pickers (trackerColor/connColor/vfxColor) become enum
+ * indices into this curated palette. Index 0/1/2 are the standalone defaults
+ * (#ffffff tracker · #0011ff conn · #00ff88 vfx); 3 is the app accent violet. */
+const PALETTE = ['#ffffff', '#0011ff', '#00ff88', '#8b5cf6', '#22d3ee', '#ef4444', '#f59e0b', '#22c55e', '#e879f9', '#000000'] as const;
+const pal = (i: number): string => PALETTE[Math.max(0, Math.min(PALETTE.length - 1, i | 0))];
+
+/* L7c — fixed-points chaos engine per-point state (standalone _initFpState,
+ * L5482). Shapes 0-4 map to SHAPES with 4='mix' (per-index); styles 0-3. */
+interface FpState {
+  jx: number; jy: number; jvx: number; jvy: number;
+  w: number; h: number; wv: number; hv: number;
+  myShape: number; myConnStyle: number;
+  myFadeIn: number; myFadeOut: number; myJitterScale: number; myWobble: number;
+  myInvert: boolean; myThermal: boolean; mySecurity: boolean; myLiquid: boolean; myGlitch: boolean; myData: boolean;
+  alpha: number; alive: boolean; timer: number; lifeDur: number; fadeIn: number; fadeOut: number;
+  shapeTimer: number; fxTimer: number;
+}
+interface FpBlob {
+  cx: number; cy: number; x: number; y: number; w: number; h: number; area: number;
+  fpAlpha: number; myShape: number;
+  myInvert: boolean; myThermal: boolean; mySecurity: boolean; myLiquid: boolean; myGlitch: boolean; myData: boolean;
+}
+
+/* ═══ L6 — three.js PANELS scene (standalone DEFS/PLBLS/VS/FS/SimplexNoise,
+   L2482-2500). A FIXED 8-panel 3D montage of the video shown as floating
+   planes with fake "AI analysis" labels. Verbatim data + shaders. ═══ */
+interface PanelDef { u: number; v: number; uw: number; uh: number; w: number; h: number; ox: number; oy: number; oz: number; rx: number; ry: number; rz: number; }
+const PANEL_DEFS: PanelDef[] = [
+  { u: .15, v: .15, uw: .5, uh: .55, w: 2.8, h: 3.2, ox: .1, oy: .3, oz: 0, rx: -.06, ry: .08, rz: .03 },
+  { u: .55, v: .05, uw: .42, uh: .38, w: 2.2, h: 2.0, ox: 1.8, oy: 1.0, oz: -.6, rx: .10, ry: -.18, rz: -.04 },
+  { u: .5, v: .52, uw: .48, uh: .45, w: 2.4, h: 2.3, ox: 1.5, oy: -1.2, oz: -.8, rx: -.08, ry: -.15, rz: .06 },
+  { u: .02, v: .1, uw: .2, uh: .65, w: 1.1, h: 3.5, ox: -1.9, oy: 0, oz: -.5, rx: .05, ry: .20, rz: -.05 },
+  { u: .05, v: .62, uw: .35, uh: .35, w: 1.8, h: 1.9, ox: -1.3, oy: -1.8, oz: -.3, rx: .12, ry: .10, rz: .08 },
+  { u: .3, v: .02, uw: .28, uh: .2, w: 1.5, h: 1.1, ox: .3, oy: 2.1, oz: -1.0, rx: -.15, ry: .05, rz: -.10 },
+  { u: .6, v: .58, uw: .35, uh: .38, w: 1.7, h: 1.8, ox: 2.1, oy: -.2, oz: -1.5, rx: 0, ry: -.25, rz: .03 },
+  { u: .08, v: .75, uw: .55, uh: .22, w: 2.9, h: 1.2, ox: -.2, oy: -2.3, oz: -.7, rx: .20, ry: .05, rz: .02 },
+];
+const PANEL_LBLS: { tag: string; score: number }[] = [
+  { tag: 'Fibrous Mesh', score: 93 }, { tag: 'Translucent Edges', score: 76 },
+  { tag: 'Neural Density', score: 89 }, { tag: 'Surface Topology', score: 71 },
+  { tag: 'Chromatic Layer', score: 84 }, { tag: 'Organic Pattern', score: 67 },
+  { tag: 'Edge Detection', score: 91 }, { tag: 'Depth Channel', score: 78 },
+];
+const PANEL_VS = `varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`;
+const PANEL_FS = `uniform sampler2D map;uniform vec4 uvRect;uniform float opacity;uniform float mirrorU;varying vec2 vUv;void main(){float u=mirrorU>0.5?1.0-vUv.x:vUv.x;vec2 uv=uvRect.xy+vec2(u,vUv.y)*uvRect.zw;vec4 c=texture2D(map,uv);float vx=smoothstep(0.,.04,vUv.x)*smoothstep(1.,.96,vUv.x),vy=smoothstep(0.,.04,vUv.y)*smoothstep(1.,.96,vUv.y);c.a*=vx*vy*opacity;gl_FragColor=c;}`;
+
+/* SimplexNoise (standalone L2482-2484, seeded from Math.random per instance) —
+ * verbatim math; drives the per-panel float/rotation + the label score jitter. */
+class SimplexNoise {
+  private perm: number[] = [];
+  private grad3 = [[1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0], [1, 0, 1], [-1, 0, 1], [1, 0, -1], [-1, 0, -1], [0, 1, 1], [0, -1, 1], [0, 1, -1], [0, -1, -1]];
+  constructor() {
+    const p: number[] = [];
+    for (let i = 0; i < 256; i++) p[i] = Math.floor(Math.random() * 256);
+    for (let i = 0; i < 512; i++) this.perm[i] = p[i & 255];
+  }
+  private dot(g: number[], x: number, y: number, z: number): number { return g[0] * x + g[1] * y + g[2] * z; }
+  noise(xin: number, yin: number, zin: number): number {
+    const G3 = 1 / 6, F3 = 1 / 3;
+    const s = (xin + yin + zin) * F3;
+    const i = Math.floor(xin + s), j = Math.floor(yin + s), k = Math.floor(zin + s);
+    const t = (i + j + k) * G3;
+    const x0 = xin - (i - t), y0 = yin - (j - t), z0 = zin - (k - t);
+    let i1 = 0, j1 = 0, k1 = 0, i2 = 0, j2 = 0, k2 = 0;
+    if (x0 >= y0) {
+      if (y0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+      else if (x0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 0; k2 = 1; }
+      else { i1 = 0; j1 = 0; k1 = 1; i2 = 1; j2 = 0; k2 = 1; }
+    } else {
+      if (y0 < z0) { i1 = 0; j1 = 0; k1 = 1; i2 = 0; j2 = 1; k2 = 1; }
+      else if (x0 < z0) { i1 = 0; j1 = 1; k1 = 0; i2 = 0; j2 = 1; k2 = 1; }
+      else { i1 = 0; j1 = 1; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+    }
+    const x1 = x0 - i1 + G3, y1 = y0 - j1 + G3, z1 = z0 - k1 + G3;
+    const x2 = x0 - i2 + 2 * G3, y2 = y0 - j2 + 2 * G3, z2 = z0 - k2 + 2 * G3;
+    const x3 = x0 - 1 + 3 * G3, y3 = y0 - 1 + 3 * G3, z3 = z0 - 1 + 3 * G3;
+    const ii = i & 255, jj = j & 255, kk = k & 255;
+    const gi0 = this.perm[ii + this.perm[jj + this.perm[kk]]] % 12;
+    const gi1 = this.perm[ii + i1 + this.perm[jj + j1 + this.perm[kk + k1]]] % 12;
+    const gi2 = this.perm[ii + i2 + this.perm[jj + j2 + this.perm[kk + k2]]] % 12;
+    const gi3 = this.perm[ii + 1 + this.perm[jj + 1 + this.perm[kk + 1]]] % 12;
+    let n0 = 0, n1 = 0, n2 = 0, n3 = 0;
+    let t0 = 0.6 - x0 * x0 - y0 * y0 - z0 * z0; if (t0 < 0) n0 = 0; else { t0 *= t0; n0 = t0 * t0 * this.dot(this.grad3[gi0], x0, y0, z0); }
+    let t1 = 0.6 - x1 * x1 - y1 * y1 - z1 * z1; if (t1 < 0) n1 = 0; else { t1 *= t1; n1 = t1 * t1 * this.dot(this.grad3[gi1], x1, y1, z1); }
+    let t2 = 0.6 - x2 * x2 - y2 * y2 - z2 * z2; if (t2 < 0) n2 = 0; else { t2 *= t2; n2 = t2 * t2 * this.dot(this.grad3[gi2], x2, y2, z2); }
+    let t3 = 0.6 - x3 * x3 - y3 * y3 - z3 * z3; if (t3 < 0) n3 = 0; else { t3 *= t3; n3 = t3 * t3 * this.dot(this.grad3[gi3], x3, y3, z3); }
+    return 32 * (n0 + n1 + n2 + n3);
+  }
+}
 
 export class BlobTrackerNode implements EngineNode {
   readonly id = 'blob_tracker';
@@ -161,6 +306,16 @@ export class BlobTrackerNode implements EngineNode {
   private prevMotion: Uint8ClampedArray | null = null;
   private rawEnergy = 0;
   private ctContours: { x: number; y: number }[][] = []; // per-blob contour, proc coords
+  // L3b smart-contour mask (from the shared PersonMask, downscaled to PW×PH)
+  private ctSmartMask: Uint8Array | null = null;
+  private ctSmartMaskV = -1;
+  private smartMaskCv!: HTMLCanvasElement; private smartMaskCtx!: CanvasRenderingContext2D;
+  // L7c fixed-points chaos engine (points auto-placed in dc space)
+  private fpPoints: { x: number; y: number }[] = [];
+  private fpStates: FpState[] = [];
+  private fpOverlaps: { cx: number; cy: number; w: number; h: number; alpha: number; fadeOut: number; shape: number }[] = [];
+  private fpGlobalPhase = 0;
+  private fpW = 0; private fpH = 0;
   // L4 optical-flow state
   private flowCurrGray: Uint8Array | null = null;
   private flowPrevGray: Uint8Array | null = null;
@@ -180,8 +335,24 @@ export class BlobTrackerNode implements EngineNode {
   private rForce = 0;
   private rTargetForce = 0;
   private rInited = false;
+  // L6 panels (three.js) — a SECOND offscreen THREE.WebGLRenderer (transparent)
+  private pRenderer: THREE.WebGLRenderer | null = null;
+  private pCanvas: HTMLCanvasElement | null = null;
+  private pCamera: THREE.PerspectiveCamera | null = null;
+  private pScene: THREE.Scene | null = null;
+  private pTex: THREE.Texture | null = null;
+  private pMeshes: { mesh: THREE.Mesh; bp: THREE.Vector3; br: THREE.Euler; no: THREE.Vector3; snOff: number; baseScore: number }[] = [];
+  private pInited = false;
+  private panelsT = 0;
+  private motionEnergy = 0;
+  private sn = new SimplexNoise();
+  private camT = { x: 0, y: 0 };
+  private camC = { x: 0, y: 0 };
+  private _pv = new THREE.Vector3(); // scratch for screen projection
 
-  // fixed colours until L7 (ParamSchema can't hold colours)
+  // L7b: resolved each render() from the palette-enum params (trackerColorIdx /
+  // connColorIdx); the standalone defaults (#ffffff / #0011ff) are the initial
+  // values, used by every marker/contour/connection/panel overlay.
   private trackerColor = '#ffffff';
   private connColor = '#0011ff';
 
@@ -195,6 +366,11 @@ export class BlobTrackerNode implements EngineNode {
   }
 
   getParam(key: string): unknown {
+    // L3b: smart contour (ctMode=2) sources the shared PersonMask, so report
+    // segEnabled ON in smart mode — the shell lazy-loads the segmenter exactly
+    // as the standalone's ct-smart button triggers _loadMediaPipe. Not a
+    // visible param (the standalone has no separate seg-enable control).
+    if (key === 'segEnabled') return this.v.ctMode >= 1.5 ? 1 : 0;
     return this.v[key] ?? 0;
   }
 
@@ -207,8 +383,10 @@ export class BlobTrackerNode implements EngineNode {
     [this.dc, this.dCtx] = mk();
     [this.procCv, this.pCtx] = mk(true);
     [this.motionCv, this.motionCtx] = mk(true);
+    [this.smartMaskCv, this.smartMaskCtx] = mk(true);
     this.procCv.width = PW; this.procCv.height = PH;
     this.motionCv.width = 64; this.motionCv.height = 36;
+    this.smartMaskCv.width = PW; this.smartMaskCv.height = PH;
 
     this.outTex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, this.outTex);
@@ -401,6 +579,25 @@ export class BlobTrackerNode implements EngineNode {
       const cp2x = p2.x - (p3.x - p1.x) / 6, cp2y = p2.y - (p3.y - p1.y) / 6;
       ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
     }
+  }
+
+  /* L3b: rebuild the PW×PH smart-contour binary from the shared PersonMask
+   * (person confidence is in the mask ALPHA — the same channel bokeh/anamorphic
+   * read), refreshed once per new segmentation arrival (personMaskVersion),
+   * cached between arrivals like the standalone's send-every-N staleness.
+   * Returns the cached mask, or null if none has been built yet (→ edge). */
+  private refreshSmartMask(ctx: NodeRenderContext): Uint8Array | null {
+    if (ctx.personMask && ctx.personMaskVersion !== this.ctSmartMaskV) {
+      this.ctSmartMaskV = ctx.personMaskVersion;
+      if (!this.ctSmartMask) this.ctSmartMask = new Uint8Array(PW * PH);
+      try {
+        this.smartMaskCtx.clearRect(0, 0, PW, PH);
+        this.smartMaskCtx.drawImage(ctx.personMask as CanvasImageSource, 0, 0, PW, PH);
+        const d = this.smartMaskCtx.getImageData(0, 0, PW, PH).data, m = this.ctSmartMask;
+        for (let i = 0; i < PW * PH; i++) m[i] = d[i * 4 + 3] > 127 ? 1 : 0;
+      } catch { /* mask not ready */ }
+    }
+    return this.ctSmartMask;
   }
 
   private computeContours(blobs: { cx: number; cy: number; w: number; h: number }[], bin: Uint8Array): void {
@@ -605,6 +802,277 @@ export class BlobTrackerNode implements EngineNode {
     r.setRenderTarget(null); r.render(this.rDispScene, this.rCam);
   }
 
+  /* ── L6 panels scene (standalone initPanels/panelsAnimate, three.js). A FIXED
+   *    8-panel 3D montage of the video shown as floating planes. Rendered on its
+   *    own offscreen THREE.WebGLRenderer (transparent) and composited OVER dc in
+   *    2D; the labels + connector lines are drawn INTO dc via Canvas-2D at the
+   *    projected positions (operator decision — functionally equivalent to the
+   *    standalone's HTML p-lbl divs + SVG svg-lines, not pixel-identical). The
+   *    autoMode / AR / VR panel driving is deferred to L7 (non-auto branch only
+   *    here). ── */
+  private initPanels(): void {
+    if (this.pInited) return;
+    this.pInited = true;
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(2, this.w); cv.height = Math.max(2, this.h);
+    this.pCanvas = cv;
+    const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true, premultipliedAlpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(1); renderer.setSize(cv.width, cv.height, false); renderer.setClearColor(0x000000, 0);
+    this.pRenderer = renderer;
+    this.pScene = new THREE.Scene();
+    this.pCamera = new THREE.PerspectiveCamera(55, cv.width / cv.height, 0.1, 100);
+    this.pCamera.position.set(0, 0, this.v.panelCamZ);
+    // one THREE.Texture wraps ctx.source (updated per frame in render) — matches
+    // the standalone's THREE.VideoTexture(vidEl); NPOT-safe filters, no mipmaps
+    this.pTex = new THREE.Texture();
+    this.pTex.minFilter = THREE.LinearFilter; this.pTex.magFilter = THREE.LinearFilter; this.pTex.generateMipmaps = false;
+    PANEL_DEFS.forEach((d, i) => {
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { map: { value: this.pTex }, uvRect: { value: new THREE.Vector4(d.u, d.v, d.uw, d.uh) }, opacity: { value: 1 }, mirrorU: { value: 0 } },
+        vertexShader: PANEL_VS, fragmentShader: PANEL_FS, transparent: true, side: THREE.FrontSide, depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(d.w, d.h), mat);
+      mesh.position.set(d.ox, d.oy, d.oz); mesh.rotation.set(d.rx, d.ry, d.rz);
+      this.pScene!.add(mesh);
+      this.pMeshes.push({ mesh, bp: new THREE.Vector3(d.ox, d.oy, d.oz), br: new THREE.Euler(d.rx, d.ry, d.rz), no: new THREE.Vector3(i * 3.7, i * 2.1, i * 5.3), snOff: i * 7.31, baseScore: PANEL_LBLS[i].score });
+    });
+  }
+
+  private projScreen(p: THREE.Vector3): { x: number; y: number; v: boolean } {
+    this._pv.copy(p).project(this.pCamera!);
+    return { x: (this._pv.x * 0.5 + 0.5) * this.w, y: (-this._pv.y * 0.5 + 0.5) * this.h, v: this._pv.z < 1 };
+  }
+
+  private lAnchor(m: THREE.Mesh): { x: number; y: number; v: boolean } {
+    const geo = m.geometry as THREE.PlaneGeometry;
+    const c = new THREE.Vector3(geo.parameters.width * 0.35, geo.parameters.height * 0.4, 0);
+    c.applyMatrix4(m.matrixWorld);
+    return this.projScreen(c);
+  }
+
+  /* renders the 3D panels scene, then returns the per-panel world centres +
+   * projected label/connector screen positions (proc→dc space is 1:1 here) */
+  private panelsTick(): { centers: THREE.Vector3[]; pts: { lx: number; ly: number; cx: number; cy: number; v: boolean; score: number; tag: string; idx: number }[] } {
+    const r = this.pRenderer!, cam = this.pCamera!, scene = this.pScene!, sn = this.sn;
+    if (this.pCanvas && (this.pCanvas.width !== this.w || this.pCanvas.height !== this.h)) {
+      this.pCanvas.width = this.w; this.pCanvas.height = this.h; r.setSize(this.w, this.h, false);
+      cam.aspect = this.w / this.h; cam.updateProjectionMatrix();
+    }
+    // motion-energy smoothing (standalone panelsAnimate) — rawEnergy from computeMotion
+    this.motionEnergy += (this.rawEnergy - this.motionEnergy) * (this.rawEnergy > this.motionEnergy ? 0.25 : 0.04);
+    const padX = this.v.padX, padY = this.v.padThresh;
+    const chaosBoost = padX * padX, energyMult = 1 + this.motionEnergy * 7 + chaosBoost * 3;
+    const turb = this.v.panelTurb;
+    this.panelsT += 0.0012 * energyMult * turb;
+    const PA = (0.35 + this.motionEnergy * 1.65 + chaosBoost * 0.8) * turb;
+    const RA = (0.05 + this.motionEnergy * 0.12 + chaosBoost * 0.06) * turb;
+    const scaleV = this.v.panelScale, mir = this.v.mirrorPanels >= 0.5 ? 1.0 : 0.0;
+    for (const pm of this.pMeshes) {
+      const { mesh, bp, br, no } = pm;
+      mesh.position.set(
+        bp.x + sn.noise(this.panelsT + no.x, 0, 0) * PA,
+        bp.y + sn.noise(0, this.panelsT * 0.9 + no.y, 0) * PA * 0.8,
+        bp.z + sn.noise(0, 0, this.panelsT * 0.7 + no.z) * PA * 0.3,
+      );
+      mesh.rotation.set(
+        br.x + sn.noise(this.panelsT * 0.6 + no.x + 10, 0, 0) * RA,
+        br.y + sn.noise(0, this.panelsT * 0.6 + no.y + 10, 0) * RA,
+        br.z + sn.noise(0, 0, this.panelsT * 0.6 + no.z + 10) * RA * 0.5,
+      );
+      mesh.scale.setScalar(scaleV);
+      const u = (mesh.material as THREE.ShaderMaterial).uniforms;
+      u.opacity.value = padY; u.mirrorU.value = mir;
+    }
+    const targetZ = this.v.panelCamZ - chaosBoost * 4;
+    this.camT.x = sn.noise(this.panelsT * 0.28, 0, 0) * 0.6;
+    this.camT.y = sn.noise(0, this.panelsT * 0.22, 0) * 0.4;
+    const cLag = 0.018 + this.motionEnergy * 0.04;
+    this.camC.x += (this.camT.x - this.camC.x) * cLag; this.camC.y += (this.camT.y - this.camC.y) * cLag;
+    cam.position.set(this.camC.x, this.camC.y, targetZ); cam.lookAt(0, 0, 0); scene.updateMatrixWorld();
+    r.render(scene, cam);
+    // projections for labels/lines (v = label-anchor visibility, standalone)
+    const centers = this.pMeshes.map((pm) => new THREE.Vector3().applyMatrix4(pm.mesh.matrixWorld));
+    const pts = this.pMeshes.map((pm, i) => {
+      const anc = this.lAnchor(pm.mesh), ctr = this.projScreen(centers[i]);
+      const score = Math.round(Math.min(99, Math.max(1, pm.baseScore + sn.noise(this.panelsT * 0.4 + pm.snOff, 0, 0) * (12 + this.motionEnergy * 18))));
+      return { lx: anc.x, ly: anc.y, cx: ctr.x, cy: ctr.y, v: anc.v, score, tag: PANEL_LBLS[i].tag, idx: i };
+    });
+    return { centers, pts };
+  }
+
+  private rgba(hex: string, a: number): string {
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a)).toFixed(3)})`;
+  }
+
+  /* draw the panel labels + label-connector lines + panel-to-panel connections
+   * into dc (operator decision: into the texture, not HTML/SVG overlays) */
+  private drawPanelOverlay(pts: { lx: number; ly: number; cx: number; cy: number; v: boolean; score: number; tag: string; idx: number }[], centers: THREE.Vector3[]): void {
+    const ctx = this.dCtx;
+    const labelsOn = this.v.panelsLabels >= 0.5, connLinesOn = this.v.panelsConnLines >= 0.5, padY = this.v.padThresh;
+    ctx.save();
+    // label → panel connector lines (only when labels + conn-lines visible)
+    if (labelsOn && connLinesOn) {
+      ctx.strokeStyle = 'rgba(80,120,220,0.35)'; ctx.lineWidth = 0.7; ctx.setLineDash([]);
+      pts.forEach((sp) => { if (!sp.v) return; ctx.beginPath(); ctx.moveTo(sp.lx, sp.ly); ctx.lineTo(sp.cx, sp.cy); ctx.stroke(); });
+    }
+    // panel ↔ panel connections (always, when panels on) — reuse the tracker's
+    // connColor / connStyle / connWidth / connOpacity / connGlow, at panel scale
+    const cc = this.connColor, co = this.v.connOpacity, cw = this.v.connWidth * 0.08, glow = this.v.connGlow;
+    const arrows = CONN_STYLES[this.v.connStyle | 0] === 'arrows';
+    for (let a = 0; a < pts.length; a++) for (let b = a + 1; b < pts.length; b++) {
+      if (!pts[a].v || !pts[b].v) continue;
+      const d = centers[a].distanceTo(centers[b]);
+      const al = (1 - (d - 2.8) / 2.8) * 0.38 * padY;
+      if (al <= 0.02) continue;
+      const x1 = pts[a].cx, y1 = pts[a].cy, x2 = pts[b].cx, y2 = pts[b].cy;
+      ctx.save();
+      ctx.strokeStyle = this.rgba(cc, al); ctx.fillStyle = this.rgba(cc, al); ctx.lineWidth = Math.max(0.4, cw);
+      if (arrows) {
+        ctx.globalAlpha = 1; ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        const ang = Math.atan2(y2 - y1, x2 - x1), head = 8;
+        ctx.beginPath(); ctx.moveTo(x2, y2);
+        ctx.lineTo(x2 - head * Math.cos(ang - 0.4), y2 - head * Math.sin(ang - 0.4));
+        ctx.lineTo(x2 - head * Math.cos(ang + 0.4), y2 - head * Math.sin(ang + 0.4));
+        ctx.closePath(); ctx.fill();
+      } else {
+        ctx.globalAlpha = co;
+        switch (CONN_STYLES[this.v.connStyle | 0]) {
+          case 'dashed': ctx.setLineDash([12, 6]); break;
+          case 'dashdot': ctx.setLineDash([12, 4, 2, 4]); break;
+          default: ctx.setLineDash([]); break;
+        }
+        if (glow > 0) { ctx.shadowBlur = glow * 14; ctx.shadowColor = cc; }
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        if (glow > 0) {
+          ctx.shadowBlur = 0; ctx.strokeStyle = `rgba(255,255,255,${(glow * 0.7).toFixed(2)})`;
+          ctx.lineWidth = Math.max(0.4, cw * 0.18); ctx.setLineDash([]);
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+    // labels last, over everything
+    if (labelsOn) pts.forEach((sp) => { if (sp.v) this.drawPanelLabel(ctx, sp); });
+    ctx.restore();
+  }
+
+  private drawPanelLabel(ctx: CanvasRenderingContext2D, sp: { lx: number; ly: number; score: number; tag: string; idx: number }): void {
+    const label = `${sp.idx + 1} ${sp.tag}`, scoreTxt = `${sp.score}%`;
+    ctx.save();
+    ctx.font = '9px JetBrains Mono, monospace'; ctx.textBaseline = 'middle'; ctx.setLineDash([]);
+    const pad = 9, gap = 8, boxH = 15;
+    const labelW = ctx.measureText(label).width, scoreW = ctx.measureText(scoreTxt).width;
+    const boxW = pad * 2 + labelW + gap + scoreW;
+    const bx = sp.lx + 8, by = sp.ly - 18; // standalone p-lbl offset (left+8, top-18)
+    ctx.fillStyle = 'rgba(8,6,20,0.88)'; ctx.fillRect(bx, by, boxW, boxH);
+    ctx.strokeStyle = 'rgba(120,100,255,0.25)'; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, boxW - 1, boxH - 1);
+    const cy = by + boxH / 2;
+    ctx.fillStyle = '#a0b8ff'; ctx.fillText(label, bx + pad, cy);
+    ctx.fillStyle = '#70a0ff'; ctx.fillText(scoreTxt, bx + pad + labelW + gap, cy);
+    ctx.restore();
+  }
+
+  /* ── L7c fixed-points chaos engine (standalone _initFpState/_tickFpStates/
+   *    _fpBlobsForFrame, L5482-5554). Replaces detection with a fixed set of
+   *    animated points; the chain has no mouse, so the points are AUTO-PLACED on
+   *    a golden-angle scatter (stable). Each point animates its own jitter/size/
+   *    shape/FX/alpha lifecycle; the synthetic blobs feed the existing draw
+   *    pipeline via per-blob global swaps (like the standalone). Stochastic ⇒
+   *    behavioural. ── */
+  private fpInitState(): FpState {
+    const startAlive = Math.random() < 0.85;
+    return {
+      jx: 0, jy: 0, jvx: (Math.random() - .5) * 2, jvy: (Math.random() - .5) * 2,
+      w: 30 + Math.random() * 160, h: 25 + Math.random() * 140,
+      wv: (Math.random() - .5) * 3, hv: (Math.random() - .5) * 2,
+      myShape: Math.floor(Math.random() * 5), myConnStyle: Math.floor(Math.random() * 4),
+      myFadeIn: 0.012 + Math.random() * 0.020, myFadeOut: 0.001 + Math.random() * 0.003,
+      myJitterScale: 0.5 + Math.random() * 2.5, myWobble: 0.3 + Math.random() * 2.0,
+      myInvert: Math.random() < 0.15, myThermal: Math.random() < 0.12,
+      mySecurity: Math.random() < 0.10, myLiquid: Math.random() < 0.18,
+      myGlitch: Math.random() < 0.50, myData: Math.random() < 0.40,
+      alpha: startAlive ? (0.5 + Math.random() * 0.5) : 0, alive: startAlive,
+      timer: startAlive ? (900 + Math.round(Math.random() * 3000)) : (Math.round(Math.random() * 120)),
+      lifeDur: startAlive ? (900 + Math.round(Math.random() * 3000)) : 0,
+      fadeIn: 0.012 + Math.random() * 0.018, fadeOut: 0.001 + Math.random() * 0.003,
+      shapeTimer: 300 + Math.round(Math.random() * 1200), fxTimer: 200 + Math.round(Math.random() * 800),
+    };
+  }
+
+  private fpEnsurePoints(n: number): void {
+    if (this.fpPoints.length === n && this.fpW === this.w && this.fpH === this.h) return;
+    this.fpW = this.w; this.fpH = this.h;
+    const pts: { x: number; y: number }[] = [];
+    for (let i = 0; i < n; i++) {
+      const a = i * 2.399963, r = 0.14 + 0.34 * Math.sqrt((i + 0.5) / n); // golden-angle scatter
+      pts.push({ x: (0.5 + Math.cos(a) * r) * this.w, y: (0.5 + Math.sin(a) * r) * this.h });
+    }
+    this.fpPoints = pts;
+    while (this.fpStates.length < n) this.fpStates.push(this.fpInitState());
+    if (this.fpStates.length > n) this.fpStates.length = n;
+  }
+
+  private fpTick(): void {
+    this.fpGlobalPhase += 0.012;
+    // occasional global jolt on the shared reactive params (standalone)
+    if (Math.random() < 0.006) { this.v.connWidth = 1 + Math.random() * 3; this.v.datamosh = Math.random() * 22; this.v.glitchAmt = Math.random() * 15; }
+    this.v.connWidth = Math.max(1, Math.min(4, this.v.connWidth + (Math.random() - .5) * 1.5));
+    this.v.datamosh = Math.max(0, this.v.datamosh + (Math.random() - .5) * 1.0);
+    this.v.glitchAmt = Math.max(0, this.v.glitchAmt + (Math.random() - .5) * 0.8);
+    this.fpOverlaps = this.fpOverlaps.filter((o) => { o.alpha = Math.max(0, o.alpha - o.fadeOut); return o.alpha > 0.01; });
+    this.fpStates.forEach((s, i) => {
+      const js = s.myJitterScale;
+      s.jvx += (Math.random() - .5) * 2.0 * js; s.jvx *= 0.80; s.jvy += (Math.random() - .5) * 1.6 * js; s.jvy *= 0.80;
+      const maxJ = 10 * js; s.jx = Math.max(-maxJ, Math.min(maxJ, s.jx + s.jvx)); s.jy = Math.max(-maxJ, Math.min(maxJ, s.jy + s.jvy));
+      const wb = s.myWobble; s.wv += (Math.random() - .5) * 1.4 * wb; s.wv *= 0.86; s.hv += (Math.random() - .5) * 1.1 * wb; s.hv *= 0.86;
+      s.w = Math.max(28, Math.min(240, s.w + s.wv)); s.h = Math.max(22, Math.min(200, s.h + s.hv));
+      if (--s.shapeTimer <= 0) { s.shapeTimer = 400 + Math.round(Math.random() * 1400); s.myShape = Math.floor(Math.random() * 5); s.myConnStyle = Math.floor(Math.random() * 4); }
+      if (--s.fxTimer <= 0) { s.fxTimer = 300 + Math.round(Math.random() * 900); s.myInvert = Math.random() < 0.15; s.myThermal = Math.random() < 0.12; s.mySecurity = Math.random() < 0.10; s.myLiquid = Math.random() < 0.18; s.myGlitch = Math.random() < 0.50; s.myData = Math.random() < 0.40; s.myFadeIn = 0.012 + Math.random() * 0.020; s.myFadeOut = 0.001 + Math.random() * 0.003; }
+      if (--s.timer <= 0) {
+        s.alive = !s.alive;
+        if (s.alive) {
+          s.lifeDur = 900 + Math.round(Math.random() * 3000); s.fadeIn = s.myFadeIn; if (Math.random() < 0.06) s.alpha = 0.6;
+          if (Math.random() < 0.04 && this.fpPoints[i]) { const pt = this.fpPoints[i]; this.fpOverlaps.push({ cx: pt.x + (Math.random() - .5) * 20, cy: pt.y + (Math.random() - .5) * 16, w: s.w * (0.5 + Math.random() * 0.8), h: s.h * (0.5 + Math.random() * 0.8), alpha: 0.7 + Math.random() * 0.3, fadeOut: 0.003 + Math.random() * 0.006, shape: Math.floor(Math.random() * 5) }); }
+        } else { s.timer = 10 + Math.round(Math.random() * 60); s.fadeOut = s.myFadeOut; if (Math.random() < 0.08) s.alpha = 0; }
+      }
+      if (s.alive) { s.alpha = Math.min(1, s.alpha + s.fadeIn); if (--s.lifeDur <= 0) { s.alive = false; s.timer = 15 + Math.round(Math.random() * 60); } }
+      else s.alpha = Math.max(0, s.alpha - s.fadeOut);
+    });
+  }
+
+  private fpBlobsForFrame(): FpBlob[] {
+    const blobs: FpBlob[] = [];
+    this.fpStates.forEach((s, i) => {
+      if (s.alpha <= 0.001) return;
+      const pt = this.fpPoints[i]; if (!pt) return;
+      blobs.push({ cx: pt.x + s.jx, cy: pt.y + s.jy, x: pt.x + s.jx - s.w / 2, y: pt.y + s.jy - s.h / 2, w: s.w, h: s.h, area: Math.round(s.w * s.h * 0.78), fpAlpha: s.alpha, myShape: s.myShape, myInvert: s.myInvert, myThermal: s.myThermal, mySecurity: s.mySecurity, myLiquid: s.myLiquid, myGlitch: s.myGlitch, myData: s.myData });
+    });
+    this.fpOverlaps.forEach((o) => blobs.push({ cx: o.cx, cy: o.cy, x: o.cx - o.w / 2, y: o.cy - o.h / 2, w: o.w, h: o.h, area: Math.round(o.w * o.h * 0.78), fpAlpha: o.alpha, myShape: o.shape, myInvert: false, myThermal: false, mySecurity: false, myLiquid: false, myGlitch: true, myData: false }));
+    return blobs;
+  }
+
+  /* draws the chaos blobs through the existing pipeline via per-blob global
+   * swaps (standalone trackerFrame fixedPtsMode branch). */
+  private fpRender(src: TexImageSource): void {
+    this.fpEnsurePoints(Math.max(1, Math.min(10, this.v.fixedMaxPts | 0)));
+    this.fpTick();
+    this.ctContours = []; // no contours in chaos mode → markers stay rectangles
+    const fpBlobs = this.fpBlobsForFrame();
+    const bScale = this.v.blobScale, bShape = this.v.blobShape, bInv = this.v.fxInvert, bTh = this.v.fxThermal, bSec = this.v.fxSecurity, bLiq = this.v.fxLiquid, bGl = this.v.fxGlitch, bData = this.v.fxData;
+    fpBlobs.forEach((b, i) => {
+      this.v.blobShape = b.myShape; this.v.blobScale = bScale * b.fpAlpha;
+      this.v.fxInvert = b.myInvert ? 1 : 0; this.v.fxThermal = b.myThermal ? 1 : 0; this.v.fxSecurity = b.mySecurity ? 1 : 0;
+      this.v.fxLiquid = b.myLiquid ? 1 : 0; this.v.fxGlitch = b.myGlitch ? 1 : 0; this.v.fxData = b.myData ? 1 : 0;
+      this.drawFxInBlob(b, 1, 1, i); this.drawTextFill(b, 1, 1, i); this.drawBlobMarker(b, 1, 1, i);
+    });
+    this.v.blobShape = bShape; this.v.blobScale = bScale; this.v.fxInvert = bInv; this.v.fxThermal = bTh; this.v.fxSecurity = bSec; this.v.fxLiquid = bLiq; this.v.fxGlitch = bGl; this.v.fxData = bData;
+    const cw = this.v.connWidth; this.v.connWidth = Math.min(this.v.connWidth, 4);
+    this.drawConnections(fpBlobs); this.v.connWidth = cw;
+    this.computeMotion(src);
+  }
+
   private computeMotion(src: TexImageSource): void {
     try {
       this.motionCtx.drawImage(src as CanvasImageSource, 0, 0, 64, 36);
@@ -800,7 +1268,7 @@ export class BlobTrackerNode implements EngineNode {
     else dCtx.rect(x, y, bw, bh);
     dCtx.clip();
     dCtx.font = `bold ${fs}px JetBrains Mono,monospace`;
-    dCtx.fillStyle = colMap[textFillMode] || '#ffffff';
+    dCtx.fillStyle = this.v.vfxColorOn >= 0.5 ? pal(this.v.vfxColorIdx) : (colMap[textFillMode] || '#ffffff');
     dCtx.globalAlpha = 0.75 * fxOpacity;
     dCtx.globalCompositeOperation = 'screen';
     for (let bky = y; bky < y + bh; bky += blkH) {
@@ -866,7 +1334,7 @@ export class BlobTrackerNode implements EngineNode {
       const cw = fs * 0.62, cols = Math.ceil(dW / cw) + 2, rows = Math.ceil(dH / fs) + 2;
       dCtx.save();
       dCtx.font = `bold ${fs}px JetBrains Mono,monospace`;
-      dCtx.fillStyle = colMap[textFillMode] || '#ffffff';
+      dCtx.fillStyle = this.v.vfxColorOn >= 0.5 ? pal(this.v.vfxColorIdx) : (colMap[textFillMode] || '#ffffff');
       dCtx.globalAlpha = 0.6 * op; dCtx.globalCompositeOperation = 'screen';
       for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++)
         dCtx.fillText(chars[Math.floor(Math.random() * chars.length)], col * cw, (row + 1) * fs);
@@ -880,11 +1348,23 @@ export class BlobTrackerNode implements EngineNode {
     if (!src || !this.outTex || this.w < 2) return ctx.inputTex;
     const dW = this.w, dH = this.h;
 
-    // 1) raw colour video base
-    this.dCtx.drawImage(src as CanvasImageSource, 0, 0, dW, dH);
+    // L7b: resolve the palette-enum colours for every overlay this frame
+    this.trackerColor = pal(this.v.trackerColorIdx);
+    this.connColor = pal(this.v.connColorIdx);
 
-    // 2) detect on the 320×180 processing canvas
-    this.pCtx.drawImage(src as CanvasImageSource, 0, 0, PW, PH);
+    // 1) raw colour video base (mirrorBg flips it; detection is flipped to match)
+    const mir = this.v.mirrorBg >= 0.5;
+    if (mir) { this.dCtx.save(); this.dCtx.translate(dW, 0); this.dCtx.scale(-1, 1); this.dCtx.drawImage(src as CanvasImageSource, 0, 0, dW, dH); this.dCtx.restore(); }
+    else this.dCtx.drawImage(src as CanvasImageSource, 0, 0, dW, dH);
+
+    // L7c: chaos-points mode replaces detection entirely; else the normal
+    // detect → contour → FX → markers → flow pipeline (steps 2-4)
+    if (this.v.fixedPtsMode >= 0.5) {
+      this.fpRender(src);
+    } else {
+    // 2) detect on the 320×180 processing canvas (flipped to match mirrorBg)
+    if (mir) { this.pCtx.save(); this.pCtx.translate(PW, 0); this.pCtx.scale(-1, 1); this.pCtx.drawImage(src as CanvasImageSource, 0, 0, PW, PH); this.pCtx.restore(); }
+    else this.pCtx.drawImage(src as CanvasImageSource, 0, 0, PW, PH);
     const id = this.pCtx.getImageData(0, 0, PW, PH);
     if (this.v.flowOn >= 0.5) this.flowUpdateGray(id.data); // raw gray BEFORE processForDetect
     this.processForDetect(id.data);
@@ -894,9 +1374,18 @@ export class BlobTrackerNode implements EngineNode {
     const scX = dW / PW, scY = dH / PH;
     const sc = blobs.map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, cx: b.cx * scX, cy: b.cy * scY, area: b.area }));
 
-    // L3: compute contours from the detection binary (edge mode) — smart mode
-    // (MediaPipe ImageSegmenter) is not ported yet, treated as edge here
-    if (this.v.ctMode >= 0.5) this.computeContours(blobs, bin); else this.ctContours = [];
+    // L3: compute contours — edge (ctMode=1) ray-casts the detection binary;
+    // smart (ctMode=2, L3b) ray-casts the shared PersonMask (mapped to the
+    // standalone's _ctSmartMask), falling back to the binary until the mask
+    // arrives — exactly the standalone's `_ctSmartMask ?? _ctBinMask` choice.
+    if (this.v.ctMode >= 0.5) {
+      let mask = bin;
+      if (this.v.ctMode >= 1.5 && ctx.personMask) {
+        const sm = this.refreshSmartMask(ctx);
+        if (sm) mask = sm;
+      }
+      this.computeContours(blobs, mask);
+    } else this.ctContours = [];
 
     // 3) FX — bgFxMode ON: FX inside the blobs | OFF: FX on the background,
     //    blobs kept clean (patch save/restore around applyFxBg)
@@ -921,6 +1410,27 @@ export class BlobTrackerNode implements EngineNode {
     sc.forEach((b, i) => this.drawBlobMarker(b, scX, scY, i));
     if (this.v.flowOn >= 0.5) this.drawFlowViz(sc, scX, scY);
     this.computeMotion(src);
+    }
+
+    // L6: panels — the fixed 8-panel 3D montage composited OVER dc (before the
+    // ripple samples dc). The scene renders on its own offscreen three canvas;
+    // labels + connector lines are drawn into dc at the projected positions.
+    if (this.v.panelsEnabled >= 0.5) {
+      if (!this.pInited) this.initPanels();
+      if (this.pInited && this.pTex && this.pCanvas) {
+        // dim the tracker composite behind the panels (standalone panels-mode
+        // #050302 backdrop bleeding through by 1-panelsBgOpacity)
+        const bgOp = this.v.panelsBgOpacity;
+        if (bgOp < 0.999) {
+          this.dCtx.save(); this.dCtx.globalAlpha = 1 - bgOp; this.dCtx.fillStyle = '#050302';
+          this.dCtx.fillRect(0, 0, dW, dH); this.dCtx.restore();
+        }
+        this.pTex.image = src as unknown as HTMLVideoElement; this.pTex.needsUpdate = true;
+        const { centers, pts } = this.panelsTick();
+        this.dCtx.drawImage(this.pCanvas, 0, 0, dW, dH);
+        this.drawPanelOverlay(pts, centers);
+      }
+    }
 
     // L5: ripple displaces the whole 2D composite (three.js, own GL context).
     // Its canvas becomes the node output when on; with force ~0 (no beat) the
@@ -945,5 +1455,10 @@ export class BlobTrackerNode implements EngineNode {
     this.rRtA?.dispose(); this.rRtB?.dispose(); this.rSceneTex?.dispose();
     this.rRenderer?.dispose();
     this.rRenderer = null; this.rInited = false;
+    // L6 panels renderer
+    this.pMeshes.forEach((pm) => { pm.mesh.geometry.dispose(); (pm.mesh.material as THREE.Material).dispose(); });
+    this.pMeshes = [];
+    this.pTex?.dispose(); this.pRenderer?.dispose();
+    this.pRenderer = null; this.pTex = null; this.pScene = null; this.pCamera = null; this.pCanvas = null; this.pInited = false;
   }
 }

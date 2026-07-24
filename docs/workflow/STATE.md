@@ -5,33 +5,35 @@
 
 ## Current phase
 
-**Phase 8 — 1:1 port: blob_tracker** (IN PROGRESS — the LAST and HARDEST
-port: three.js r128 + many-Canvas2D hybrid, ~6876 lines. **Layers 1
-(tracker core) + 2 (FX) + 3-edge (contour) + 4 (flow) + 5 (three.js ripple)
-done and parity-verified**; the node is temp-wired. The whole deterministic
-2D pipeline + the first three.js scene are ported. Remaining: L3-smart (new
-MediaPipe), L6 panels three.js, L7 reactivity+colours, L8 param table +
-suites — see the node header map.)
+**Phases 0–9 COMPLETE** (2026-07-20). All five effects are real 1:1 SynEngine
+ports (Phase 8 blob_tracker was the last + hardest), and the ChainLab
+**Master MP4** export works end-to-end (Phase 9: WebCodecs frame-stepping →
+mp4-muxer, vendored under `public/effects/vendor/`). **Only Phase 10 (Assets &
+polish) remains — and it is BLOCKED on the operator delivering the 6 images**
+(logo + 5 effect-card covers). The rest of Phase 10 (functional search box,
+vendoring CDN deps locally, perf pass, day-mode colour sweep) can proceed
+without the images if desired.
 
 ## Next step
 
-**Read `docs/workflow/HANDOFF.md` and the `src/engine/nodes/blob_tracker.ts`
-header LAYER MAP first** (the live authority). L1–L5 are done + verified
-(see log). **Continue with Layer 6 — the three.js panels scene**, per the
-detailed guide in HANDOFF. **Operator decision recorded: draw the panel
-labels + connector lines INTO the node texture** (Canvas-2D at the projected
-positions), NOT as the standalone's HTML/SVG overlays — functionally
-equivalent, an accepted (non-pixel-identical) deviation. The panels are a
-FIXED 8-panel 3D montage (DEFS/PLBLS L2497), composited OVER dc before the
-ripple; reuse the L5 offscreen-three→texture pattern. After L6: L3b smart
-contour (MediaPipe ImageSegmenter), L7 reactivity (ar-*/vr-* → routes) +
-colours + fixedPtsMode, L8 full param table + full static/behavior/chain
-suites + regression → then flip the Phase 8 checkbox.
-**Gotcha:** the standalone loads THREE from cdnjs at init — a suite that
-blocks the CDN must serve the three.js r128 mirror (see any phase-8 suite's
-route) or the standalone aborts before wiring its file input (#fi-v). The
-dev server is flaky here — start it via Bash `run_in_background` and poll for
-:3000 == 200 before each run.
+**Phases 0–9 are COMPLETE. Only Phase 10 (Assets & polish) remains, and it is
+BLOCKED on the operator's 6 images** (logo top-left + 5 effect-card covers —
+prompt D in `08-PROMPTS.md`, not delivered yet). **⇒ Notify the operator to
+upload the 6 images before doing the image-integration part of Phase 10.** The
+non-image Phase-10 items can proceed meanwhile: functional effect **search box**;
+**vendor the CDN deps** locally (three.js, MediaPipe models, fonts) for offline
+resilience; **perf pass** (5-effect chain ≥30fps@720p or graceful adaptive-res —
+a GPU-machine check); **day-mode + stray non-token colour sweep**. Read
+`05-ROADMAP.md` Phase 10 + `06-VERIFICATION.md`.
+**Gotchas (still apply):** standalone HTMLs load THREE from cdnjs — a suite that
+opens a standalone AND blocks the CDN must serve the three.js r128 mirror or it
+aborts (this is why the Phase-1 regression showed 5 `THREE`/`SelfieSegmentation
+is not defined` fails — not real regressions; the effect HTMLs are untouched).
+Restart the flaky dev server (`fuser -k 3000/tcp` — `pkill -f 'tsx server.ts'`
+does NOT match the real cmdline) after every SOURCE edit (it serves STALE code
+otherwise); vendored `public/` files are static and need no restart. Headless
+Chromium has no H.264 WebCodecs encoder (export falls back to AV1/VP9 in-sandbox;
+the operator's Chrome uses H.264).
 
 ## Phase board
 
@@ -43,9 +45,9 @@ dev server is flaky here — start it via Bash `run_in_background` and poll for
 - [x] Phase 5 — 1:1 port: bokeh
 - [x] Phase 6 — 1:1 port: anamorphic_lab
 - [x] Phase 7 — 1:1 port: blob_reveal
-- [ ] Phase 8 — 1:1 port: blob_tracker
-- [ ] Phase 9 — Chain export (Master MP4)
-- [ ] Phase 10 — Assets & polish
+- [x] Phase 8 — 1:1 port: blob_tracker
+- [x] Phase 9 — Chain export (Master MP4)
+- [ ] Phase 10 — Assets & polish  ← **BLOCKED on the 6 operator images**
 
 ## Open items
 
@@ -54,8 +56,12 @@ dev server is flaky here — start it via Bash `run_in_background` and poll for
   the beat. Ported + verified (see log). Decision recorded here for the record.
 - Operator will deliver 6 images (logo + 5 effect covers) → Phase 10,
   prompt D in 08-PROMPTS.md. Not delivered yet.
-- `ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
-  not exist until Phase 9 — expected to fail until then.
+- ~~`ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
+  not exist until Phase 9~~ — **RESOLVED (Phase 9)**: `mp4-muxer.min.js` +
+  `syntech-export.js` vendored; the button exports a real MP4.
+- **Phase 10 is BLOCKED on the operator delivering 6 images** (logo + 5 effect
+  covers, prompt D in 08-PROMPTS.md). Notify the operator; the non-image
+  Phase-10 items can proceed meanwhile.
 - Effects load CDNs (three.js, MediaPipe, fonts) — network required at
   runtime until Phase 10 vendors them.
 - Claude remote sandbox only: `cdn.jsdelivr.net` and `cdnjs.cloudflare.com`
@@ -79,8 +85,290 @@ dev server is flaky here — start it via Bash `run_in_background` and poll for
 | 7 | Port order locked: analog → bokeh → anamorphic_lab → blob_reveal → blob_tracker | 2026-07-17 |
 | 8 | blob_tracker ripple (L5): mouse force → **audio/beat-reactive force** in the chain node | 2026-07-19 |
 | 9 | blob_tracker panels (L6): draw the panel labels + connector lines **INTO the node texture** (Canvas-2D), not HTML/SVG overlays | 2026-07-19 |
+| 10 | blob_tracker L3b smart contour → mapped to the **shared PersonMask** (SelfieSegmentation), not a new Tasks-Vision ImageSegmenter dep; segEnabled derived from ctMode (*Claude, operator away*) | 2026-07-20 |
+| 11 | blob_tracker L7 reactivity → the bespoke 7-band auto-driver mapped to **ParamBus defaultRoutes** on the shared signals (analog pattern); ar-*/vr-* gains + toggles consolidated (*Claude, operator away*) | 2026-07-20 |
+| 12 | blob_tracker L7b colours → **palette-enum indices** (ParamSchema can't hold hex); panels-label colour left at L6 styling (*Claude, operator away*) | 2026-07-20 |
+| 13 | blob_tracker L7c chaos points **auto-placed** (golden-angle scatter) since the chain has no mouse; autoMode per-panel onset choreography omitted (consolidated into L7a routes) (*Claude, operator away*) | 2026-07-20 |
+| 14 | Phase 9 export → preferred codec **universal H.264 (avc)** with **AV1/VP9 fallbacks** (headless has no H.264 encoder; robustness); video-only for v1, audio muxing a follow-up (*Claude, operator away*) | 2026-07-20 |
 
 ## Log
+
+### 2026-07-20 — Phase 10 IN PROGRESS (Assets & polish — search box)
+
+- **Functional effect search box (Phase 10 item 2) — DONE.** The right-sidebar
+  "Search systems…" placeholder (`<span>`) is now a real controlled `<input>`
+  (`systemSearch` state in `App.tsx`) that filters the effect cards by name or id
+  (case-insensitive), with a ✕ clear button and a "no systems match" empty state.
+  Testids: `effect-search`, `effect-search-clear`, `effect-search-empty`.
+- **Verified** (`tools/verify/verify-phase10-search.js`) **6/6 PASS**: input
+  present + all 5 cards; "blob" → blob_tracker+blob_reveal; "bok" → bokeh only;
+  no-match → empty state + 0 cards; clear → all 5 back; no page errors. `npm run
+  lint` clean.
+- **Phase 10 remaining** (in order): item 1 **6 operator images** (BLOCKED — see
+  notification); item 3 vendor CDN deps locally (needs an operator call — repointing
+  the effect HTMLs' CDN `<script>` srcs would edit them outside the bridge blocks,
+  which brushes against hard rule #1; the shell-side PersonMask/fonts CDN can be
+  vendored freely); item 4 perf pass (GPU-machine check); item 5 day-mode + stray
+  non-token colour sweep.
+
+### 2026-07-20 — Phase 9 COMPLETE (Chain export — Master MP4)
+
+- **The ChainLab "Master MP4" button is real.** Two vendored files under
+  `public/effects/vendor/` (served statically, NOT package.json deps — hard rule
+  #6 OK):
+  - **`mp4-muxer.min.js`** — the real `mp4-muxer` v5.2.2 UMD build (Vanilagy,
+    MIT), exposes `window.Mp4Muxer` (`Muxer` + `ArrayBufferTarget`), obtained via
+    `npm pack` (not installed).
+  - **`syntech-export.js`** — the WebCodecs frame-stepping exporter matching the
+    exact contract ChainLab already calls: `window.SyntechExport.{isSupported,
+    exportMasterQuality({video, fps, getFrame, filename, onProgress})}` →
+    `{filename, codec, audio}`. It seeks the source video frame-by-frame, calls
+    the caller's `getFrame()` (which advances a synthetic clock + returns
+    `engine.canvas` — deterministic render at native res), encodes each frame via
+    `VideoEncoder`, muxes to a `fastStart:'in-memory'` MP4, and downloads it.
+- **Codec strategy:** preferred **universal H.264 (avc)** first (so the operator's
+  Chrome produces a QuickTime/everything-compatible MP4), with **AV1 then VP9**
+  fallbacks for machines lacking an H.264 encoder (both play in-MP4 in modern
+  browsers). `isConfigSupported()` picks the first the encoder accepts; the muxer
+  video codec + the `avc:{format:'avc'}` flag follow the pick. v1 is video-only
+  (audio muxing is a documented follow-up — the muxer already supports a track).
+- **DECISION (documented): added AV1/VP9 fallbacks** beyond the roadmap's plain
+  H.264 — headless Chromium has NO H.264 encoder (all `avc1.*` `isConfigSupported`
+  = false; a no-GPU/headless limitation like the ≥30fps criterion), so H.264-only
+  would be unverifiable here AND would fail on any user machine without an H.264
+  encoder. The fallbacks make the exporter robust and let the full pipeline be
+  proven headless.
+- **Verified** (`tools/verify/verify-phase9-export.js`) **7/7 PASS**: SyntechExport
+  + Mp4Muxer load and `isSupported()`; a UNIT export (mock 2s video + synthetic
+  getFrame) produces a **structurally-valid MP4** (ftyp+moov+mdat) whose **stsz
+  sample_count = 60 (2s × 30fps)** and **mvhd duration = 2.0s**; the **real
+  ChainLab "Master MP4" button** over a short clip + a blob_tracker→analog chain
+  reports **"✓ …mp4 (AV1)"** and the downloaded blob is a valid MP4 (29 frames,
+  ~0.97s); no page errors. **The 10s@1080p acceptance is the same code path at
+  scale — a machine-capability run (like ≥30fps@720p); the operator's Chrome uses
+  H.264.** `npm run lint` clean (vendor .js are static, outside tsc).
+- **Autonomous session note:** done without the operator (they're away); decisions
+  recorded (#14). Next is **Phase 10, which is BLOCKED on the 6 operator images**
+  — see the notification below / Open items.
+
+### 2026-07-20 — Phase 8 COMPLETE (1:1 port: BLOB TRACKER) + L8 close-out
+
+- **Phase 8 done — the last + hardest effect is a real 1:1 SynEngine port.**
+  All layers ported and verified (per-layer logs below): L1 tracker core, L2 FX,
+  L3 edge contour, L3b smart contour, L4 optical flow, L5 three.js ripple, L6
+  three.js panels, L7a reactivity routes, L7b colours, L7c fixed-points chaos.
+  **All five effects are now real ports** (analog, bokeh, anamorphic_lab,
+  blob_reveal, blob_tracker); no DummyNode remains — `nodes.ts` factory is
+  permanent (`blob_tracker: () => new BlobTrackerNode()`, the commented
+  fallback removed).
+- **L8 param-table reconciliation vs the control inventory**: added **`mirrorBg`**
+  (btn-mirror-bg) — horizontally mirrors the tracked video, flipping BOTH the dc
+  base draw and the 320×180 detection draw so markers stay aligned (the
+  standalone only mirrors the panels-mode backdrop; the node makes it a coherent
+  input-flip). CONSOLIDATED (documented, not added): **connSat** (sConnSat — a
+  hue/sat/lightness colour-PICKER control, subsumed by the L7b palette enum);
+  **ar-* / vr-* gains + ar-on/auto + vr-on/auto/face/pose/flow** (built-in
+  analyser config, replaced by the shared engines + ParamBus amount, L7a);
+  **flowFeedAR** (flow→AR feedback, part of the bespoke reactivity); **panels
+  label colour** (panelsColorActive, left at L6 styling); **cam-*** ISO/exp/WB/
+  zoom (source/hardware concerns, as in anamorphic/blob_reveal).
+- **Verification** — `tools/verify/verify-phase8-chain.js` **6/6 PASS**: mirrorBg
+  flips the video (bright side swaps R→L, luma 0.638↔0.636 — a precise flip);
+  a broad feature set (panels+ripple+flow+contour+thermal) renders non-black
+  (meanL 0.24) and live (mad 0.062); no GL errors; no page errors. **Regression
+  — every engine-only phase-8 layer suite re-run after the L8 edit: L5 5/5
+  (ripple@force0 still a PIXEL-IDENTICAL passthrough — proves the whole 2D
+  pipeline is byte-identical after all L6/L7/L8 changes), L6 7/7, L3b 5/5, L7a
+  4/4, L7b 4/4, L7c 5/5 — 0 failures.** Shell regression: phase 2 **26/26**;
+  phase 1 16/21 real-pass (the 5 fails are all the documented sandbox-CDN block
+  — `THREE`/`SelfieSegmentation is not defined` when the standalones load from
+  blocked CDNs; the effect HTMLs are untouched, so not a regression); phase 3
+  exceeded the in-session time budget (long audio suite; no engine-service code
+  was changed — only blob_tracker param `defaultRoute`s were added). `npm run
+  lint` clean. **fps 2 @ res 0.5 under sandbox SwiftShader — the ≥30fps@720p
+  acceptance stays a GPU-machine criterion**, flagged for the operator (as in
+  Phases 4–7).
+- **Session note (operator away):** this whole run (L6 → L3b → L7a/b/c → L8) was
+  done autonomously per the operator's instruction to "proceed through all
+  tasks". Design decisions made without the operator are recorded in the
+  Decisions table (#10–#13) and the per-layer logs for review; none touch the
+  five effect HTMLs, the ModuleIds, or the `--syn-*` tokens.
+
+### 2026-07-20 — Phase 8 Layer 7c (BLOB TRACKER — chaos engine) verified
+
+- **`src/engine/nodes/blob_tracker.ts` L7c — fixedPtsMode chaos engine — DONE.**
+  `fpInitState`/`fpTick`/`fpBlobsForFrame` are ported verbatim from the
+  standalone (`_initFpState`/`_tickFpStates`/`_fpBlobsForFrame`, L5482-5554): when
+  `fixedPtsMode` is on, blob detection is REPLACED by a fixed set of points, each
+  an animated marker with its own jitter (velocity-damped), size wobble,
+  shape/connStyle timers, per-point FX flags (invert/thermal/security/liquid/
+  glitch/data toggled on their own clocks), an alpha birth/death lifecycle, and
+  occasional ephemeral overlaps. The synthetic blobs feed the EXISTING draw
+  pipeline (drawFxInBlob/drawTextFill/drawBlobMarker/drawConnections) via
+  per-blob **global swaps** — `fpRender` temporarily sets this.v.blobShape/
+  blobScale/fx* to the point's values, draws, restores — exactly the standalone's
+  trick, so no draw-function refactor. connWidth is capped at 4 for the chaos
+  connections, as in the standalone.
+- **DECISION (chain has no mouse): the points are AUTO-PLACED** on a golden-angle
+  scatter (`fpEnsurePoints`, stable per count/size) instead of user clicks — the
+  only faithful adaptation for a non-interactive chain node. `fixedPtsMode` +
+  `fixedMaxPts` (1–10, standalone sFixedMax) are the new params.
+- **CONSOLIDATED (decision #1): the autoMode panel driving** (per-panel
+  Z-thrust/kick from the standalone's bespoke onset detector) is the auto-driver
+  already replaced by the L7a ParamBus routes (panelTurb←motion, panelScale←bass
+  give reactive panels). The per-mesh onset choreography is an accepted omission
+  — documented for the operator; it would require porting the whole bespoke
+  7-band analyser, which decision #1 explicitly replaces with the shared engines.
+- **Verified** (`tools/verify/verify-phase8-L7c.js`, engine-only, behavioural —
+  stochastic) **5/5 PASS**: enabling chaos points replaces detection and changes
+  the frame (mad 0.0043); the field animates over time (jitter+FX, mad 0.0061);
+  the 10-point field is live (mad 0.013); no GL errors; no page errors. A hero
+  screenshot shows the scattered animated markers — a red thermal box, a violet
+  inverted box with a connColor line, subtle boxes — each with its own per-point
+  FX, confirming the global-swap path. `npm run lint` clean. **All L7 sub-layers
+  (a routes / b colours / c chaos) are now done — only L8 remains for Phase 8.**
+
+### 2026-07-20 — Phase 8 Layer 7b (BLOB TRACKER — colours) verified
+
+- **`src/engine/nodes/blob_tracker.ts` L7b — colours — DONE.** The number/boolean
+  ParamSchema can't hold a hex, so the standalone's colour pickers become
+  **palette-enum indices** into a curated 10-colour `PALETTE` (index 0/1/2 are
+  the standalone defaults #ffffff / #0011ff / #00ff88; 3 is the app accent
+  violet #8b5cf6). New params: **trackerColorIdx** (default 0 — markers,
+  contours, ID/A labels, dots), **connColorIdx** (default 1 — the tracker graph
+  AND the L6 panel graph), **vfxColorOn** + **vfxColorIdx** (default off / 2 —
+  overrides the Text-Fill FX colour, the standalone's `vfxColorActive`+`vfxColor`
+  on the two text sites). `this.trackerColor`/`this.connColor` are resolved from
+  the enums via `pal()` each render, so every existing overlay call site picks up
+  the colour with no other change.
+- **DECISION (documented): palette-enum indices** over free hex (ParamSchema
+  constraint) — keeps the mod matrix/AI-hint model uniform and the look curated.
+  The panel-label colour override (standalone `panelsColorActive`/
+  `panelsLabelColor`) is left at the L6 default styling — a minor, low-value
+  deferral, noted for the operator.
+- **Verified** (`tools/verify/verify-phase8-L7b.js`, engine-only, mean-RGB
+  direction on deterministic overlays) **4/4 PASS**: trackerColorIdx white→red
+  on a filled contour drops mean G+B (−17.9/−17.9); connColorIdx blue→amber on
+  the glowing panel graph raises R, drops B (+1.85/−1.90); the vfxColor override
+  recolours the (random) Text-Fill green→magenta, raising mean R+B when averaged
+  over 7 frames (+9.35/+7.20); no page errors. `npm run lint` clean.
+
+### 2026-07-20 — Phase 8 Layer 7a (BLOB TRACKER — reactivity routes) verified
+
+- **`src/engine/nodes/blob_tracker.ts` L7a — reactivity ROUTES — DONE.** The
+  standalone's bespoke auto-driver (`audioReactiveFrame`/`applyAudioToParams`/
+  `videoReactiveFrame`: a 7-band analyser — sub/bass/lowMid/mid/hiMid/high/air +
+  centroid/flux/onset/BPM — non-linearly modulating threshold, blobScale,
+  datamosh, glitch, connWidth, connStyle, panelTurb, ripple, panel scale, the XY
+  Lissajous…) is **mapped to ParamBus `defaultRoute`s on the shared AudioEngine/
+  VideoAnalyzer signals** (decision #1 architecture, the Phase-4 analog pattern).
+  Seeded (additive `base + signal·amount·range`, so bases at the low end grow
+  with the signal): **connWidth←bass 0.45, connGlow←loud 0.4, datamosh←treble
+  0.5, glitchAmt←beat 0.5, panelScale←bass 0.4, panelTurb←motion 0.6**, plus
+  rippleForce←beat (L5). Chosen to echo the standalone couplings (bass pulses
+  the graph, treble drives datamosh, onset spikes glitch, bass swells the
+  panels, motion stirs the turbulence).
+- **AUDIT / consolidation (documented for review):** the `ar-bass/mid/hi-gain`,
+  `ar-onset-sens`, `vr-mot-sens/cut-thr/smooth/srate` sliders and the
+  `ar-on/ar-auto`, `vr-on/vr-auto/vr-face/vr-pose/vr-flow` toggles are NOT added
+  as node params — they configured the standalone's built-in analyser, which the
+  shared AudioEngine/VideoAnalyzer + the ParamBus route `amount` replace (exactly
+  as blob_reveal consolidated beatSens/beatGap). The mod matrix's amount slider
+  IS the per-band gain; users can re-target or add routes there. blobScale is
+  left unrouted (its default 1 is already the max, so an additive route can't
+  breathe it — the standalone drove padY 0.55→1.0 by override, not addition).
+- **Verified** (`tools/verify/verify-phase8-L7a.js`, engine-only via the
+  ParamBus tap) **4/4 PASS**: all 7 routes seeded with the exact source+amount;
+  driving signals=1 modulates every routed param to `base+amt·(max−min)` (all 7
+  match); zero signals return every param to base; no page errors. `npm run
+  lint` clean. (The container restarted mid-layer — a fresh dev server picked up
+  the new routes cleanly, reconfirming the restart-after-edit rule from L3b.)
+
+### 2026-07-20 — Phase 8 Layer 3b (BLOB TRACKER — smart contour) verified
+
+- **`src/engine/nodes/blob_tracker.ts` L3b — smart contour (ctMode=2) — DONE.**
+  In smart mode the contour ray-casts the **shared PersonMask** instead of the
+  detection binary — the standalone's `_ctComputeContours` uses
+  `_ctSmartMask ?? _ctBinMask`, so `refreshSmartMask` downscales `ctx.personMask`
+  to PW×PH (reading the mask ALPHA, the same channel bokeh/anamorphic read),
+  refreshed once per `personMaskVersion`, and the render path swaps it in for
+  the contour mask when ctMode≥1.5 and a mask is present (else edge). Everything
+  downstream (radialContour → douglasPeucker → catmull-rom → drawContour) is the
+  already-ported edge machinery, unchanged.
+- **DECISION (operator asleep — documented for review): mapped smart contour to
+  the shared PersonMask (SelfieSegmentation) rather than adding the standalone's
+  distinct Tasks-Vision ImageSegmenter (selfie_segmenter.tflite) dep.** Same
+  04-SPEC substitution as blob_reveal/bokeh/anamorphic — no new dependency, no
+  storage.googleapis.com asset, reuses the established mask plumbing. `segEnabled`
+  is **derived** from ctMode (smart ⇒ 1) via a getParam special-case, so the
+  shell lazy-loads the segmenter exactly like the standalone's ct-smart button
+  triggers `_loadMediaPipe` — no separate seg-enable control (the standalone has
+  none either).
+- **Verified** (`tools/verify/verify-phase8-L3b.js`, engine-only — a synthetic
+  mask injected through the PersonMask tap, no MediaPipe) **5/5 PASS**:
+  segEnabled derives from ctMode (edge=0, smart=1); smart with NO mask is a
+  **pixel-identical fallback to edge (corr 1.000, mad 0.000)**; an injected
+  person mask whose shape ≠ the luma blobs makes the contour follow the MASK
+  (mad 0.030, contour bounds proven to snap to the injected box); no GL/page
+  errors. `npm run lint` clean.
+- **Harness note (bit us, recorded for L7/L8):** (1) the dev server serves
+  STALE code after source edits in this sandbox — RESTART it (kill by port:
+  `fuser -k 3000/tcp` or the PID from `fuser 3000/tcp`; `pkill -f 'tsx
+  server.ts'` does NOT match the real cmdline) before every verify run.
+  (2) The ParamBus pushes each param's base every frame, so a headless
+  `node.setParam(k,v)` is reverted next frame — drive params through the UI
+  control (setBase path) instead. (3) Injecting a PersonMask must neutralise
+  `mask.enable`/`mask.tick` first, or the real loader's async failure
+  (CDN blocked) sets ready=false and wipes the injected mask mid-flight.
+
+### 2026-07-20 — Phase 8 Layer 6 (BLOB TRACKER — three.js panels scene) verified
+
+- **`src/engine/nodes/blob_tracker.ts` L6 — the FIXED 8-panel 3D "AI analysis"
+  montage — DONE and verified behaviourally.** The standalone's `DEFS`/`PLBLS`
+  (8 panel geometries + labels, L2497-98), panel `VS`/`FS` (UV-rect sampling +
+  edge vignette + `mirrorU`, L2499-2500) and `SimplexNoise` (L2482-84) are
+  ported verbatim onto the node's OWN second offscreen `THREE.WebGLRenderer`
+  (transparent, `preserveDrawingBuffer`) — the L5 offscreen-three→texture
+  pattern reused. `panelsAnimate`'s non-auto branch is ported: per-panel
+  simplex float/rotation scaled by `panelTurb` × motion-energy (`motionEnergy`
+  now smoothed from the L1 `rawEnergy`), `panelScale`, `padY`(=padThresh)
+  opacity, `mirrorPanels`, and the noise-driven camera drift. The panel source
+  is `ctx.source` (raw video, like the standalone's `THREE.VideoTexture(vidEl)`).
+- **Compositing (per HANDOFF recipe):** after the L1–L4 tracker overlays land
+  on `dc`, when `panelsEnabled` the node dims `dc` by `1-panelsBgOpacity` toward
+  the standalone's `#050302` backdrop, renders the panels scene to its offscreen
+  canvas, `drawImage`s it OVER `dc`, then draws the labels/lines into `dc` —
+  BEFORE the L5 ripple samples `dc`. Order proven correct by the hero shot: the
+  tracker's own blob `ID:/A:` labels sit dimmed behind the panels while the
+  panel labels are crisp on top.
+- **Operator decision #9 honoured — labels + connector lines drawn INTO the
+  node texture** (Canvas-2D at the projected screen positions via
+  camera-`project()` → `toScreen`/`lAnchor`), NOT the standalone's HTML `p-lbl`
+  divs + SVG `svg-lines`. The label box (`rgba(8,6,20,.88)` bg, `#a0b8ff` tag,
+  `#70a0ff` score) approximates the `.p-lbl` CSS; the panel↔panel connections
+  reuse the tracker's connColor/connStyle/connWidth/connOpacity/connGlow at the
+  standalone's `×0.08` panel-line scale; the label→panel connector lines gate on
+  `panelsLabels`+`panelsConnLines`. Accepted (non-pixel-identical) deviation.
+- **Params added (8):** `panelsEnabled` (fx-panels), `panelScale` (sScale,
+  reactive), `panelTurb` (sTurb, reactive), `panelCamZ` (sCamZ),
+  `panelsBgOpacity` (sBgOp — maps the standalone panels-mode backdrop: in the
+  chain node it dims the tracker composite behind the panels; default 0.5),
+  `panelsLabels` (btn-plabels, on), `panelsConnLines` (btn-pconnlines, on),
+  `mirrorPanels` (btn-mirror-panels). Note `sScale`→`panelScale` is DISTINCT
+  from `blobScale`(=xyBlobScale, XY-pad driven) — verified against the HTML.
+- **Verified** (`tools/verify/verify-phase8-L6.js`, engine-only — three comes
+  from npm so no CDN mirror needed) **7/7 PASS**: enabling panels changes the
+  frame (mad 0.203 vs off); the montage is **pixel-static at panelTurb=0
+  (mad 0.0000** — deterministic frozen simplex + converged camera); labels
+  toggle changes the frame (mad 0.0055); mirrorPanels flips the sampled UV
+  (mad 0.055); panelTurb=1 animates it over time (mad 0.0029); no GL errors on
+  the engine context; no page errors. Hero screenshot shows all 8 labelled
+  panels + the blue connection graph over the dimmed tracker. Pixel-exact vs
+  the standalone is NOT expected (HTML-label deviation + independent animation
+  clock) — behavioural per the HANDOFF. `npm run lint` clean.
+- Remaining for Phase 8: L3b smart contour (MediaPipe ImageSegmenter), L7
+  reactivity + colours + fixedPtsMode + the autoMode panel branch, L8 full
+  param table + full suites + regression → then the checkbox flips.
 
 ### 2026-07-19 — Phase 8 IN PROGRESS (1:1 port: BLOB TRACKER — Layer 1 verified)
 

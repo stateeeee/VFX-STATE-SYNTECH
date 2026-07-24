@@ -75,6 +75,7 @@ export default function App() {
   const [savedFlash, setSavedFlash] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [chainPresetToOpen, setChainPresetToOpen] = useState<string | null>(null);
+  const [systemSearch, setSystemSearch] = useState(''); // Phase 10: filter the effect cards by name
   const effectHostRef = useRef<EffectHostHandle | null>(null);
   const flashSaved = () => {
     setSavedFlash(true);
@@ -754,13 +755,35 @@ export default function App() {
                 {/* Search box (positioned at the top) */}
                 <div className={`px-4 py-3 border-b shrink-0 ${isDayMode ? 'border-neutral-200' : 'border-ink-700/50'}`}>
                   <div className={`w-full border rounded-lg p-2.5 flex items-center gap-2 ${isDayMode ? 'bg-[#fcfbf9] border-neutral-200' : 'bg-[#0e0e0e] border-ink-700/70'}`}>
-                    <Search className="w-3.5 h-3.5 text-neutral-500" />
-                    <span className="text-[10px] font-mono text-neutral-600">Search systems...</span>
+                    <Search className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                    <input
+                      data-testid="effect-search"
+                      type="text"
+                      value={systemSearch}
+                      onChange={(e) => setSystemSearch(e.target.value)}
+                      placeholder="Search systems..."
+                      className={`w-full bg-transparent outline-none text-[10px] font-mono ${isDayMode ? 'text-neutral-900 placeholder:text-neutral-500' : 'text-white placeholder:text-neutral-600'}`}
+                    />
+                    {systemSearch && (
+                      <button
+                        type="button"
+                        data-testid="effect-search-clear"
+                        onClick={() => setSystemSearch('')}
+                        className="text-neutral-500 hover:text-violet-500 text-xs leading-none shrink-0"
+                        aria-label="Clear search"
+                      >×</button>
+                    )}
                   </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-3.5 space-y-2 custom-scrollbar">
-                  {modules.map((module, idx) => {
+                  {(() => {
+                    const q = systemSearch.trim().toLowerCase();
+                    const shown = q ? modules.filter((m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)) : modules;
+                    if (!shown.length) return (
+                      <div data-testid="effect-search-empty" className="text-[10px] font-mono text-neutral-500 text-center py-6">no systems match "{systemSearch}"</div>
+                    );
+                    return shown.map((module, idx) => {
                     const active = activeModule === module.id;
                     const meta = EFFECT_META[module.id];
                     return (
@@ -779,7 +802,8 @@ export default function App() {
                         </span>
                       </div>
                     );
-                  })}
+                    });
+                  })()}
                 </div>
 
               </div>
