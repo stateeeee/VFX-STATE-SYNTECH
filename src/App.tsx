@@ -487,7 +487,7 @@ export default function App() {
   const outputRes = compSource ? '1920x1080' : '1920x1080';
 
   return (
-    <div className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-4 gap-4`}>
+    <div className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-4 gap-4`}>
 
       {/* hidden source picker (shared INPUT) */}
       <input
@@ -519,7 +519,10 @@ export default function App() {
 
         {/* centered wordmark */}
         <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
-          <span className="font-display text-[15px] font-semibold tracking-tight -mt-0.5">VFX <span className="text-violet-500">Syntech</span></span>
+          {/* Brand unification: this wordmark's font (Space Grotesk semibold,
+              tracking-tight, Title Case) is now the shared title style, and it
+              carries the hero title's shimmer animation. Position/size unchanged. */}
+          <span className="font-display text-[15px] font-semibold tracking-tight -mt-0.5 hero-gradient">VFX Syntech</span>
           <span className="font-mono text-[7.5px] uppercase tracking-[0.15em] text-neutral-500/80 mt-0.5">Created by State</span>
         </div>
 
@@ -552,14 +555,16 @@ export default function App() {
         {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
         <nav className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} z-20 shadow-md`}>
           {/* Phase-10: operator brand logo (replaces the temporary "VS" diamond).
-              White mark on transparent bg — glows violet at night, inverts to
-              dark for day mode so it stays legible on the cream surface. */}
+              The definitive mark is iridescent multicolour on transparent bg, so
+              it is NEVER inverted (that would destroy the brand colours) — it
+              reads on both surfaces as delivered. Night gets a violet bloom;
+              day gets a soft shadow for definition on the cream panel. */}
           <div className="w-11 h-11 flex items-center justify-center shrink-0 mb-5" title="VFX Syntech — created by State">
             <img
               src="/assets/logo.png"
               alt="VFX Syntech"
               draggable={false}
-              className={`w-full h-full object-contain select-none ${isDayMode ? 'invert' : 'drop-shadow-[0_0_10px_rgba(139,92,246,0.4)]'}`}
+              className={`w-full h-full object-contain select-none ${isDayMode ? 'drop-shadow-[0_1px_3px_rgba(0,0,0,0.28)]' : 'drop-shadow-[0_0_10px_rgba(139,92,246,0.4)]'}`}
             />
           </div>
 
@@ -723,8 +728,12 @@ export default function App() {
 
                         {/* wordmark + subtitle + actions */}
                         <div className="absolute top-7 left-8 z-10 max-w-[70%]">
-                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tighter text-white leading-[0.92] drop-shadow-2xl">VFX</h1>
-                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tighter hero-gradient leading-[0.98] drop-shadow-2xl">SYNTECH</h1>
+                          {/* Brand unification: adopts the top-bar wordmark's font
+                              (semibold, tracking-tight, Title Case) and applies the
+                              shimmer to BOTH lines so the two titles read as one
+                              brand. Position, sizes and leading are unchanged. */}
+                          <h1 className="font-display text-5xl md:text-6xl font-semibold tracking-tight hero-gradient leading-[0.92] drop-shadow-2xl">VFX</h1>
+                          <h1 className="font-display text-5xl md:text-6xl font-semibold tracking-tight hero-gradient leading-[0.98] drop-shadow-2xl">Syntech</h1>
                           <p className="mt-3 text-[11px] md:text-[13px] tracking-[0.18em] font-medium text-neutral-200/90 drop-shadow-md">
                             AI-Powered. Node-Based. Limitless.
                           </p>
