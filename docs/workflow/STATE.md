@@ -68,10 +68,16 @@ uses H.264).
 - **Phase 8 L5 ripple — operator decided (a) audio/beat force** (2026-07-19):
   the mouse force is replaced by the reactive `rippleForce` param pre-wired to
   the beat. Ported + verified (see log). Decision recorded here for the record.
-- ~~Operator will deliver 6 images~~ — **logo DELIVERED + integrated**
-  (2026-07-24, recovered from the chat upload → `public/assets/logo.{webp,png}`,
-  wired top-left of the sidebar). **5 effect-card covers still pending** (operator
-  finishing them); drop-in wiring is live — see Next step for the path/naming.
+- ~~Operator will deliver 6 images~~ — **DEFINITIVE logo delivered + integrated**
+  (2026-07-25, the final iridescent mark → `public/assets/logo.{webp,png}`, wired
+  top-left of the sidebar, never inverted). **5 effect-card covers still pending**
+  (operator finishing them); drop-in wiring is live — see Next step for the
+  path/naming.
+- **Background-texture look — awaiting the operator's decision** (10 previews sent
+  2026-07-25). References + how to re-render: `docs/design/textures/README.md`.
+  If adopted, the token swap moves into `src/index.css` and the chosen texture
+  becomes a real `public/assets/` asset; if discarded, delete that folder + the
+  preview tool. Also pending their call on the day-mode gradient variant.
 - ~~`ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
   not exist until Phase 9~~ — **RESOLVED (Phase 9)**: `mp4-muxer.min.js` +
   `syntech-export.js` vendored; the button exports a real MP4.
@@ -113,6 +119,57 @@ uses H.264).
 | 17 | Logo presentation: keep the delivered mark 1:1 but **key the black field to transparent** (alpha=luminance) + tight crop → `logo.png`, so it floats on the UI and **inverts for day mode**; original kept as `logo.webp`. One-off effect accent colours **kept** (`#e0913f`/`#e0554b`/`#c65b9c`/`#6ea8e0`, operator: "lasciarli") | 2026-07-24 |
 
 ## Log
+
+### 2026-07-25 — Brand: definitive logo + unified titles; background experiment (10 previews)
+
+Operator asleep, three tasks handed over: (1) swap in the definitive logo,
+(2) unify the two "VFX Syntech" titles, (3) render background-texture previews
+to judge in the morning ("domattina ti diro se tenerla oppure no").
+
+- **Definitive logo — DONE.** The operator uploaded the final iridescent mark
+  (1306×816 webp); recovered from the session transcript → kept verbatim as
+  `public/assets/logo.webp`, processed into `public/assets/logo.png` (501×512).
+  Because the mark is MULTICOLOUR (unlike the old white one) the black field is
+  keyed to alpha with the **RGB untouched**: largest foreground component kept
+  (drops the Gemini sparkle watermark + 86 specks), **largest interior hole
+  preserved** (the design's central hole) and the 532 smaller dark-shading gaps
+  filled so they stay opaque in their original colour. The day-mode `invert` is
+  GONE (it would destroy the brand colours) — replaced by a soft shadow.
+- **Titles unified — DONE.** The top-bar wordmark and the hero title now share
+  one style: the **top-bar font** (Space Grotesk, semibold, tracking-tight, Title
+  Case) plus the **hero's shimmer animation** on both, each keeping its own
+  position/proportion/size (15px vs 60px, identical −0.025em tracking ratio). The
+  hero's white "VFX" + caps "SYNTECH" split is gone; both lines are the animated
+  "VFX" / "Syntech".
+- **Day-mode legibility fix this forced (documented judgement call):** with the
+  bright brand ramp the small wordmark measured **1.48:1** on the cream top bar
+  (unreadable; WCAG wants 4.5). Added `.syn-day .hero-gradient` — **same
+  animation, same hue family, deeper violet/amber stops** → ~3.8–4.6:1, while
+  night keeps the original bright ramp untouched. Theme hook: a `syn-day` class
+  on the app root. Flagged for the operator: if they prefer the identical bright
+  ramp in day mode, it is a one-block revert in `src/index.css`.
+- **Verified** (`tools/verify/verify-phase10-brand.js`) **13/13**: logo decoded +
+  chromatic (mean channel spread 57.8) + keyed (188k transparent px) + never
+  inverted in either theme; both titles animated by `gradient-shimmer` with
+  identical family/weight/tracking ratio and their own sizes; shimmer proven
+  advancing; no page errors. `npm run lint` clean.
+- **Background-texture experiment — 10 previews delivered, NOT applied to the app.**
+  The operator's two artworks are preserved as design references in
+  `docs/design/textures/` (+ README) and the look is rendered by the new
+  `tools/preview/bg-texture-preview.cjs`, which injects it into the RUNNING app
+  and screenshots it — no app file changes. The recipe: the texture replaces the
+  darkest blacks at **token level** (`--syn-bg`, `--syn-ink-950/900/850` →
+  translucent), one `background-attachment: fixed` texture on `<body>` shows
+  through every section (so the separate panels read as ONE continuous image with
+  the alpha doubling as the legibility scrim), and the hero brain-graph canvas is
+  **screen-blended** so its opaque black drops out and only the glowing nodes
+  float over the texture. Rotation is BAKED into the image (fixed backgrounds
+  can't be rotated, and transformed layers create blend groups that would break
+  the canvas trick). Deliverables: 4 rotations (0/45/90/135) per texture + one
+  **3D wrap** per texture (perspective shell flaps folding over the UI edges,
+  slightly translucent so the sections stay perceptible underneath = "encased").
+  Claude's picks for the 3D pass: **A at 45°** and **B at 90°**.
+  **Awaiting the operator's keep/discard decision.**
 
 ### 2026-07-24 — Phase 10 near-complete (logo + CDN vendoring + colour audit)
 

@@ -19,8 +19,20 @@
 > `public/assets/covers/<ModuleId>.webp` (or `.png`/`.jpg`) — ModuleIds
 > `analog`, `anamorphic_lab`, `blob_reveal`, `blob_tracker`, `bokeh` — and the
 > right-sidebar card renders it under a scrim automatically (`EffectCardArt` in
-> `App.tsx`). **Logo** lives at `public/assets/logo.{webp,png}`; to swap the exact
-> raster, replace `logo.png` (transparent, white mark) at the same path.
+> `App.tsx`).
+>
+> **Brand (done 2026-07-25):** the DEFINITIVE iridescent logo is in at
+> `public/assets/logo.{webp,png}` (multicolour → never inverted; keyed with the
+> central hole preserved). The two "VFX Syntech" titles are unified — top-bar font
+> + hero shimmer on both, each at its own size. A `.syn-day .hero-gradient`
+> variant (same animation, deeper stops) fixes day-mode legibility (was 1.48:1).
+>
+> **OPEN OPERATOR DECISIONS (asked 2026-07-25 night, answers due in the morning):**
+> 1. the **background-texture look** — 10 previews sent; references + re-render
+>    command in `docs/design/textures/README.md`. Keep → move the token swap into
+>    `src/index.css` + promote the chosen texture to `public/assets/`; discard →
+>    delete `docs/design/textures/` and `tools/preview/`.
+> 2. the **day-mode title gradient** (deeper stops vs the identical bright ramp).
 
 ## Where we are — exactly
 
