@@ -9,14 +9,19 @@
 ports (Phase 8 blob_tracker was the last + hardest), and the ChainLab
 **Master MP4** export works end-to-end (Phase 9: WebCodecs frame-stepping →
 mp4-muxer, vendored under `public/effects/vendor/`). **Phase 10 (Assets &
-polish) is now substantially DONE** (2026-07-24): the operator **logo** is
-integrated top-left; the **search box** works (prior session); **CDN deps are
-fully vendored locally** (three.js, all MediaPipe, fonts) and proven to load
-**100% offline**; the **colour/day-mode sweep** is audited (operator chose to
-keep the one-off effect accents). The only outstanding Phase-10 items are
-**operator-/hardware-dependent**: the **5 effect-card covers** (operator still
-finishing them — drop-in wiring is ready) and the **≥30fps@720p perf pass** (a
-GPU-machine check). The checkbox stays unchecked until those two land.
+polish) is DONE except two external items** (2026-07-25): the definitive
+**logo**, the **search box**, **CDN deps fully vendored** (proven 100% offline)
+and the **colour/day-mode audit** are all in. On top of the roadmap the operator
+drove a multi-round **visual pass** — gel slab in the gaps, gradient-riding logo,
+gel-cast hero wordmark, one 6s brand cadence, bare effect host, sidebar audio
+meter — all implemented and verified. Outstanding, both **operator-/hardware-
+dependent**: the **5 effect-card covers** (drop-in wiring is ready) and the
+**≥30fps@720p perf pass** (GPU machine). The checkbox stays unchecked until those
+two land.
+
+**⇒ A fresh session should read `docs/workflow/HANDOFF.md` — it was rewritten on
+2026-07-25 as a complete continuation brief** (visual system, file map, the
+frame-cost contract and the other traps, harness playbook, open operator items).
 
 ## Next step
 
