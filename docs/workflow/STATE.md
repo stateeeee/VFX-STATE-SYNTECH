@@ -8,32 +8,51 @@
 **Phases 0–9 COMPLETE** (2026-07-20). All five effects are real 1:1 SynEngine
 ports (Phase 8 blob_tracker was the last + hardest), and the ChainLab
 **Master MP4** export works end-to-end (Phase 9: WebCodecs frame-stepping →
-mp4-muxer, vendored under `public/effects/vendor/`). **Only Phase 10 (Assets &
-polish) remains — and it is BLOCKED on the operator delivering the 6 images**
-(logo + 5 effect-card covers). The rest of Phase 10 (functional search box,
-vendoring CDN deps locally, perf pass, day-mode colour sweep) can proceed
-without the images if desired.
+mp4-muxer, vendored under `public/effects/vendor/`). **Phase 10 (Assets &
+polish) is DONE except two external items** (2026-07-25): the definitive
+**logo**, the **search box**, **CDN deps fully vendored** (proven 100% offline)
+and the **colour/day-mode audit** are all in. On top of the roadmap the operator
+drove a multi-round **visual pass** — gel slab in the gaps, gradient-riding logo,
+gel-cast hero wordmark, one 6s brand cadence, bare effect host, sidebar audio
+meter — all implemented and verified. Outstanding, both **operator-/hardware-
+dependent**: the **5 effect-card covers** (drop-in wiring is ready) and the
+**≥30fps@720p perf pass** (GPU machine). The checkbox stays unchecked until those
+two land.
+
+**⇒ A fresh session should read `docs/workflow/HANDOFF.md` — it was rewritten on
+2026-07-25 as a complete continuation brief** (visual system, file map, the
+frame-cost contract and the other traps, harness playbook, open operator items).
 
 ## Next step
 
-**Phases 0–9 are COMPLETE. Only Phase 10 (Assets & polish) remains, and it is
-BLOCKED on the operator's 6 images** (logo top-left + 5 effect-card covers —
-prompt D in `08-PROMPTS.md`, not delivered yet). **⇒ Notify the operator to
-upload the 6 images before doing the image-integration part of Phase 10.** The
-non-image Phase-10 items can proceed meanwhile: functional effect **search box**;
-**vendor the CDN deps** locally (three.js, MediaPipe models, fonts) for offline
-resilience; **perf pass** (5-effect chain ≥30fps@720p or graceful adaptive-res —
-a GPU-machine check); **day-mode + stray non-token colour sweep**. Read
-`05-ROADMAP.md` Phase 10 + `06-VERIFICATION.md`.
-**Gotchas (still apply):** standalone HTMLs load THREE from cdnjs — a suite that
-opens a standalone AND blocks the CDN must serve the three.js r128 mirror or it
-aborts (this is why the Phase-1 regression showed 5 `THREE`/`SelfieSegmentation
-is not defined` fails — not real regressions; the effect HTMLs are untouched).
-Restart the flaky dev server (`fuser -k 3000/tcp` — `pkill -f 'tsx server.ts'`
-does NOT match the real cmdline) after every SOURCE edit (it serves STALE code
-otherwise); vendored `public/` files are static and need no restart. Headless
-Chromium has no H.264 WebCodecs encoder (export falls back to AV1/VP9 in-sandbox;
-the operator's Chrome uses H.264).
+**Phase 10 is substantially DONE; two operator-/hardware-dependent items remain.**
+(1) **5 effect-card covers** — the operator is still finishing them. Drop-in
+wiring is LIVE: place each cover at `public/assets/covers/<ModuleId>.webp` (or
+`.png`/`.jpg`; ModuleIds: `analog`, `anamorphic_lab`, `blob_reveal`,
+`blob_tracker`, `bokeh`) and the right-sidebar card renders it automatically
+under a scrim (no code change needed; until then the plain-label look shows).
+(2) **≥30fps@720p perf pass** — a GPU-machine check, unassessable under sandbox
+SwiftShader (~1–2fps); **⇒ remind the operator to run it on their PC when
+everything else is closed** (they explicitly asked to be reminded). **It is
+self-serve — no tooling needed:** open **AI Lab**, wire the 5-effect chain, play
+a 720p clip, and read ChainLab's live **FPS** / **RES%** badges (`chain-fps` /
+`chain-res`). The engine already does **graceful adaptive-res** (auto-downscales
+when fps<45, upscales when fps>57), so RES% dropping below 100 (amber) IS the
+"graceful adaptive-res" acceptance — the pass condition is fps≥30 **or** a stable
+adaptive RES%. Everything
+else in Phase 10 is done + verified this session (logo, CDN vendoring, colour/
+day-mode audit). Read `05-ROADMAP.md` Phase 10 + `06-VERIFICATION.md`.
+**Gotchas:** ~~standalone HTMLs load THREE from cdnjs~~ **RESOLVED (Phase 10,
+2026-07-24): all CDN deps are vendored** under `public/effects/vendor/` and the
+five effect HTMLs' `<script>`/`locateFile`/`import()` srcs now point there — the
+old `THREE`/`SelfieSegmentation is not defined` sandbox failures are GONE, the
+standalones load fully offline (proven 19/19 + a wasm-init run). No CDN mirror /
+route-interception is needed for verification any more. Restart the flaky dev
+server (`fuser -k 3000/tcp` — `pkill -f 'tsx server.ts'` does NOT match the real
+cmdline) after every SOURCE edit (it serves STALE code otherwise); vendored
+`public/` files are static and need no restart. Headless Chromium has no H.264
+WebCodecs encoder (export falls back to AV1/VP9 in-sandbox; the operator's Chrome
+uses H.264).
 
 ## Phase board
 
@@ -54,16 +73,26 @@ the operator's Chrome uses H.264).
 - **Phase 8 L5 ripple — operator decided (a) audio/beat force** (2026-07-19):
   the mouse force is replaced by the reactive `rippleForce` param pre-wired to
   the beat. Ported + verified (see log). Decision recorded here for the record.
-- Operator will deliver 6 images (logo + 5 effect covers) → Phase 10,
-  prompt D in 08-PROMPTS.md. Not delivered yet.
+- ~~Operator will deliver 6 images~~ — **DEFINITIVE logo delivered + integrated**
+  (2026-07-25, the final iridescent mark → `public/assets/logo.{webp,png}`, wired
+  top-left of the sidebar, never inverted). **5 effect-card covers still pending**
+  (operator finishing them); drop-in wiring is live — see Next step for the
+  path/naming.
+- ~~Background-texture look~~ — **superseded the same day by the animated gel
+  slab** (sections 100% black, violet→gold fluid in the gaps). The photographic
+  backdrop is no longer shipped; `docs/design/textures/` is reference only.
+- **Day-mode title gradient variant** — still pending the operator's call (deeper
+  stops for legibility vs the identical bright ramp).
 - ~~`ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
   not exist until Phase 9~~ — **RESOLVED (Phase 9)**: `mp4-muxer.min.js` +
   `syntech-export.js` vendored; the button exports a real MP4.
-- **Phase 10 is BLOCKED on the operator delivering 6 images** (logo + 5 effect
-  covers, prompt D in 08-PROMPTS.md). Notify the operator; the non-image
-  Phase-10 items can proceed meanwhile.
-- Effects load CDNs (three.js, MediaPipe, fonts) — network required at
-  runtime until Phase 10 vendors them.
+- **Phase 10 substantially done** — only the 5 covers (operator) + the
+  ≥30fps@720p perf pass (GPU machine) remain. See Current phase / Next step.
+- ~~Effects load CDNs (three.js, MediaPipe, fonts) — network required at
+  runtime~~ — **RESOLVED (Phase 10, 2026-07-24): fully vendored offline** under
+  `public/effects/vendor/` (three.min.js r128; MediaPipe selfie_segmentation +
+  pose + face_mesh + tasks-vision, SIMD wasm; self-hosted fonts). No runtime
+  network needed for any effect.
 - Claude remote sandbox only: `cdn.jsdelivr.net` and `cdnjs.cloudflare.com`
   are blocked by the environment's network policy (fonts.googleapis.com is
   reachable by tools but not by the un-proxied headless browser). Workaround
@@ -90,8 +119,299 @@ the operator's Chrome uses H.264).
 | 12 | blob_tracker L7b colours → **palette-enum indices** (ParamSchema can't hold hex); panels-label colour left at L6 styling (*Claude, operator away*) | 2026-07-20 |
 | 13 | blob_tracker L7c chaos points **auto-placed** (golden-angle scatter) since the chain has no mouse; autoMode per-panel onset choreography omitted (consolidated into L7a routes) (*Claude, operator away*) | 2026-07-20 |
 | 14 | Phase 9 export → preferred codec **universal H.264 (avc)** with **AV1/VP9 fallbacks** (headless has no H.264 encoder; robustness); video-only for v1, audio muxing a follow-up (*Claude, operator away*) | 2026-07-20 |
+| 15 | **Operator authorised editing the five effect HTMLs' `<script>`/`locateFile`/`import()` srcs** to vendored local paths (explicit deroga to hard rule #1, for CDN-offline) — the ONLY non-bridge edit allowed to those files | 2026-07-24 |
+| 16 | Vendoring scope: three.js r128 + MediaPipe (selfie_segmentation both simd+nosimd; pose/face_mesh/tasks-vision **SIMD-only**, modern-Chrome target, lazy features fall back gracefully) + **latin/latin-ext** font subsets only; pose **lite** model only (matches `modelComplexity:0`) — drops 34MB of unused pose models (*Claude, operator away*) | 2026-07-24 |
+| 17 | Logo presentation: keep the delivered mark 1:1 but **key the black field to transparent** (alpha=luminance) + tight crop → `logo.png`, so it floats on the UI and **inverts for day mode**; original kept as `logo.webp`. One-off effect accent colours **kept** (`#e0913f`/`#e0554b`/`#c65b9c`/`#6ea8e0`, operator: "lasciarli") | 2026-07-24 |
 
 ## Log
+
+### 2026-07-25 — One cadence for the brand; the hero wordmark cast in the gel
+
+Operator: animate the slab's gradient like the hero wordmark, and give that
+wordmark the logo's inflated 3D gel — same texture, same 3D mode. Both done,
+`verify-ui-gel-pass.js` **36/36**.
+
+- **One 6s cadence for the whole brand.** The slab's ramp was sliding on 26s and
+  the logo on 18s; both are now **6s**, the wordmark shimmer's own clock. Half the
+  slab's plate is two viewport widths and the wordmark shifts two of its own widths
+  per cycle, so slab, logo and both titles sweep at exactly the same rate — asserted
+  by the suite.
+- **The hero wordmark is now cast in the gel** (`.hero-gel-text`, applied only to
+  the big one — at 15px in the top bar the bubbles would be noise). Four background
+  layers on ONE element, clipped to the glyphs: the gel tile, a lit crown, a shaded
+  base, then the colour ramp, plus a hairline dark `-webkit-text-stroke` for the
+  moulded rim. Same texture and same idea as the logo — there the mark's own
+  luminance shapes it, here the tile's crowns and undersides do. The tile is
+  exposed to CSS as `--syn-gel-tex` / `--syn-gel-tex-text` on the app root, since
+  it is generated at runtime.
+- **Three real defects found and fixed while tuning** (each is now covered by an
+  assertion, since each was invisible in a still frame):
+  1. **The wordmark went BLACK for part of every cycle.** The ramp layer is 200%
+     wide and slides a full 200%, and I had set that layer to `no-repeat`, so it
+     scrolled clean out of the box — with `color: transparent`, the glyphs then had
+     nothing to show. Fixed by letting the ramp repeat (as the plain wordmark
+     always did). The suite now samples the wordmark's brightness across a whole
+     6s cycle and requires it to stay steady (was 84…197, now 176…188).
+  2. **Corner-placed lighting sank the tail of the word.** A specular dome at the
+     top-left plus a shadow at the bottom-right adds up to a left-to-right ramp, so
+     "ntech" crushed to near-black. Replaced with vertical lit-crown-over-shaded-
+     base, which inflates every letter equally.
+  3. **The text tile was being resampled every frame.** Drawing the 640² tile at
+     560px made the browser rescale it on each repaint of the animated wordmark —
+     BPM 133. Drawing it at its natural 640px restored **BPM 120** (twice in a row).
+     A `shade` option was also added to the generator: at letter scale a
+     full-strength bead shadow can swallow a whole stroke, so the text variant uses
+     softer undersides.
+- `verify-phase10-brand.js` updated: the hero lines legitimately run
+  `syn-gel-text-flow` now, so the "animated" check accepts either shimmer name.
+- Regression, all green: phase 1 **21/21**, phase 2 **26/26**, phase 3 **14/14**
+  (BPM 120), vendor **19/19**, brand **13/13**, search **6/6**, covers **7/7**;
+  lint + build clean.
+
+### 2026-07-25 — Gel material: glossier, with air bubbles and inflated 3D
+
+Operator note: the slab should read as *gel with reflections and air bubbles
+inside*, with the swollen 3D of the new logo. Reworked and verified
+(`verify-ui-gel-pass.js` **30/30**).
+
+- **The material is now painted, not gradient-guessed.** `src/lib/gelTexture.ts`
+  renders a **seamless 640px tile** on a canvas once: macro swell domes, a dense
+  field of bubbles (fine grain plus a scatter of big beads, each with a shaded
+  underside, a tight specular crown and a wet rim) and long gloss smears. Beads
+  that touch an edge are redrawn on the opposite side, so the tile wraps with no
+  seam. It is transparent — white crowns, dark undersides — so plain alpha
+  compositing embosses the beads onto the ramp beneath.
+- **Why a tile, and why only one layer:** only the ~16px gaps between the sections
+  show the slab, so the texture must be DENSE to read at all — CSS gradients tiled
+  at that scale looked like a mechanical polka-dot grid, and an SVG field dense
+  enough to read meant thousands of nodes. A 640px tile is cheap and its repeat is
+  invisible through narrow gaps.
+- **FRAME-COST FINDING (the important one, now a documented contract).** Anything
+  blended or filtered over the sliding ramp is re-composited every frame, and this
+  sandbox has no GPU, so it lands on the CPU. Measured against phase 3's BPM
+  estimate (beat detection reads spectral flux BETWEEN frames): **blur filter →
+  189 BPM; four blend layers → 171; one blend layer → 138; zero blends/filters →
+  124** (target 120). So the slab now carries **no `mix-blend-mode` and no
+  `filter` at all** — the whole material is baked into the one tile and everything
+  animates only `transform`. The suite asserts zero blended layers and zero
+  filters, so this cannot regress silently.
+- Tuning: the specular crown was tightened (a broad white haze bleached the ramp's
+  colour instead of glazing it) and the undersides deepened, which brought the
+  saturated violet/gold back while keeping the gloss.
+- Regression, all green: phase 1 **21/21**, phase 2 **26/26**, phase 3 **14/14**
+  (BPM 124), vendor **19/19**, brand **13/13**, search **6/6**, covers **7/7**;
+  lint + build clean.
+
+### 2026-07-25 — UI pass: gel slab, gradient logo, bare effect host, audio meter
+
+Six operator notes, all done and verified (`tools/verify/verify-ui-gel-pass.js`
+**27/27**; needs a clip with audio — `AUDIO_CLIP=<webm>`):
+
+1. **Sections back to 100% opaque black.** `--syn-ink-950/900/850` → `#000000`,
+   `--syn-ink-800` → `#1a1a1a`, `--syn-hero-canvas` → `opaque` (the hero fills
+   again). The photographic backdrop is gone: `public/assets/bg-texture.jpg`
+   removed, `docs/design/textures/` kept as reference only.
+2. **Animated "gel" LED slab in the gaps.** `--syn-bg` stays `transparent`, so the
+   new `.syn-bg-layer` shows only between the sections — they read as holes cut
+   over a colour-shifting sheet. It runs the SAME violet→gold ramp as the
+   wordmarks (`#8b5cf6 → #7c3aed → #ffda4d → #ffb31a`) with a screened layer of
+   soft pools/speculars drifting on a slower clock for the liquid, glossy read.
+3. **The logo rides that ramp while keeping its inflated glossy 3D:** a masked
+   gradient layer supplies the hue, the mark sits on top in `luminosity` blend so
+   it contributes only light and shade (`.syn-logo*`). Day mode gets the deeper
+   ramp, as the wordmarks do.
+4. **Effect host is bare.** `EffectHost` no longer renders the "← BACK TO GRAPH" +
+   module-name bar; the iframe fills the panel edge to edge (verified: 0px above,
+   0px below, single child). Each standalone HTML already has its own header and
+   status bar, so the shell was stacking a second set of chrome on a
+   self-sufficient UI. Closing is the sidebar HOME nav (03-SPEC §2). `onBack`
+   stays in the props contract.
+5. **Playback level meter in the sidebar** under OPTIMIZER (`AudioMeter.tsx`):
+   one column (channels summed, not a stereo pair), green low → amber → red hot,
+   scale ticks at −6/−12/−24 dB, white peak-hold, dB readout, RMS over a −54…0 dB
+   scale, "hot" above −6 dB. It taps the hero `<video>` through WebAudio — the
+   element ships `muted` (for autoplay) and a muted element analyses as silence,
+   so it is unmuted and routed through a **gain of 0**: real samples reach the
+   analyser while playback stays as silent as before, and both are restored on
+   unmount. One `MediaElementAudioSourceNode` per element is cached in a WeakMap
+   (a second one throws). Verified against a purpose-built clip whose level ramps
+   quiet→hot: fill 77→90 of 96px, hot state reached, readout live.
+6. **Wordmarks bolder** — both at **700**, the vendored Space Grotesk maximum
+   (they were 600). Anything heavier would need a different family.
+
+- **Real bug caught by the regression, worth recording:** the first gel used an
+  animated `background-position` plus a full-viewport `filter: blur(22px)`. That
+  cost enough frames to break **AudioEngine's BPM estimate (189 instead of 120)** —
+  beat detection reads spectral flux BETWEEN frames, so a hungry backdrop skews
+  it. Rebuilt to animate **only `transform`** (GPU-composited, zero repaint) with
+  no blur — the plate is 400% wide with the ramp laid twice so sliding it by half
+  its width loops seamlessly, and the radial falloffs are wide enough to look
+  molten unblurred. **BPM back to 124, phase 3 14/14.** The suite now asserts both
+  the transform animation and the absence of a blur filter, so this cannot
+  regress silently.
+- Regression, all green: phase 1 **21/21**, phase 2 **26/26**, phase 3 **14/14**,
+  vendor-offline **19/19**, brand **13/13**, search **6/6**, covers **7/7**;
+  `npm run lint` + `npm run build` clean.
+
+### 2026-07-25 — Brand: definitive logo + unified titles; background experiment (10 previews)
+
+Operator asleep, three tasks handed over: (1) swap in the definitive logo,
+(2) unify the two "VFX Syntech" titles, (3) render background-texture previews
+to judge in the morning ("domattina ti diro se tenerla oppure no").
+
+- **Definitive logo — DONE.** The operator uploaded the final iridescent mark
+  (1306×816 webp); recovered from the session transcript → kept verbatim as
+  `public/assets/logo.webp`, processed into `public/assets/logo.png` (501×512).
+  Because the mark is MULTICOLOUR (unlike the old white one) the black field is
+  keyed to alpha with the **RGB untouched**: largest foreground component kept
+  (drops the Gemini sparkle watermark + 86 specks), **largest interior hole
+  preserved** (the design's central hole) and the 532 smaller dark-shading gaps
+  filled so they stay opaque in their original colour. The day-mode `invert` is
+  GONE (it would destroy the brand colours) — replaced by a soft shadow.
+- **Titles unified — DONE.** The top-bar wordmark and the hero title now share
+  one style: the **top-bar font** (Space Grotesk, semibold, tracking-tight, Title
+  Case) plus the **hero's shimmer animation** on both, each keeping its own
+  position/proportion/size (15px vs 60px, identical −0.025em tracking ratio). The
+  hero's white "VFX" + caps "SYNTECH" split is gone; both lines are the animated
+  "VFX" / "Syntech".
+- **Day-mode legibility fix this forced (documented judgement call):** with the
+  bright brand ramp the small wordmark measured **1.48:1** on the cream top bar
+  (unreadable; WCAG wants 4.5). Added `.syn-day .hero-gradient` — **same
+  animation, same hue family, deeper violet/amber stops** → ~3.8–4.6:1, while
+  night keeps the original bright ramp untouched. Theme hook: a `syn-day` class
+  on the app root. Flagged for the operator: if they prefer the identical bright
+  ramp in day mode, it is a one-block revert in `src/index.css`.
+- **Verified** (`tools/verify/verify-phase10-brand.js`) **13/13**: logo decoded +
+  chromatic (mean channel spread 57.8) + keyed (188k transparent px) + never
+  inverted in either theme; both titles animated by `gradient-shimmer` with
+  identical family/weight/tracking ratio and their own sizes; shimmer proven
+  advancing; no page errors. `npm run lint` clean.
+- **Background-texture experiment — 10 previews delivered, NOT applied to the app.**
+  The operator's two artworks are preserved as design references in
+  `docs/design/textures/` (+ README) and the look is rendered by the new
+  `tools/preview/bg-texture-preview.cjs`, which injects it into the RUNNING app
+  and screenshots it — no app file changes. The recipe: the texture replaces the
+  darkest blacks at **token level** (`--syn-bg`, `--syn-ink-950/900/850` →
+  translucent), one `background-attachment: fixed` texture on `<body>` shows
+  through every section (so the separate panels read as ONE continuous image with
+  the alpha doubling as the legibility scrim), and the hero brain-graph canvas is
+  **screen-blended** so its opaque black drops out and only the glowing nodes
+  float over the texture. Rotation is BAKED into the image (fixed backgrounds
+  can't be rotated, and transformed layers create blend groups that would break
+  the canvas trick). Deliverables: 4 rotations (0/45/90/135) per texture + one
+  **3D wrap** per texture (perspective shell flaps folding over the UI edges,
+  slightly translucent so the sections stay perceptible underneath = "encased").
+  Claude's picks for the 3D pass: **A at 45°** and **B at 90°**.
+  **Awaiting the operator's keep/discard decision.**
+- **Background artwork CHOSEN + SHIPPED (operator, same night).** From the 10
+  previews the operator picked **texture A at rotation 0°**, with the correction:
+  **"the sections must be 90% opacity and cover the artwork, which is barely
+  visible"** (the previews ran the panels at 55%, which let the artwork dominate
+  and washed out the sidebar labels). Implemented for real, night mode only:
+  `public/assets/bg-texture.jpg` + `.syn-bg-layer` in `index.css` (fixed,
+  `inset:-10%` so `cover` crops the artwork's own black margin) + the night
+  surface tokens at **90%** (`--syn-ink-950/900/850`), `--syn-bg: transparent` so
+  the gaps between sections show it at full strength, and a new
+  `--syn-hero-canvas: transparent` token that makes **VfxCanvas clear instead of
+  fill** so the artwork also shows through the hero (a translucent fill would
+  accumulate to solid black frame after frame). Day mode renders no layer and
+  keeps its cream surfaces. The 3D wrap variant was not chosen.
+  **Verified** (`tools/verify/verify-phase10-bgtexture.js`) **12/12**, including
+  the quantitative spec: in the gaps the artwork is unattenuated (sd 61, peak 254)
+  while inside a section it is flattened to near-black (bright 20.5, sd 2.7) — a
+  22× local-contrast difference, i.e. the sections demonstrably cover it. Day-mode
+  gap stays cream (bright 252). Effect-open + AI Lab states checked visually.
+  Swapping in the full-resolution artwork is a one-file replace.
+- **Regression after the brand edits (App.tsx + index.css) — all green:** brand
+  **13/13**, phase-10 search **6/6**, covers **7/7**, vendor-offline **19/19**,
+  phase 2 **26/26**, phase 1 **21/21** (all 5 standalones still clean), phase 3
+  **14/14**. `npm run lint` + `npm run build` clean. No verify suite depends on
+  the hero title's text, so the Title-Case change is safe.
+
+### 2026-07-24 — Phase 10 near-complete (logo + CDN vendoring + colour audit)
+
+Autonomous session (operator at work: "usa tutti i token senza fermarti").
+Operator's chat answers drove it — 1 logo uploaded (covers still coming),
+2 authorised the HTML `<script>` edits, 3 keep the one-off colours, 4 remind me
+about the perf test at the end.
+
+- **CDN vendoring (item 3) — DONE + verified 100% offline.** Every external CDN
+  dep the shell + the five effect HTMLs used is now served from
+  `public/effects/vendor/` (~45 MB):
+  - **three.js r128** → `vendor/three.min.js` (from the `three@0.128.0` npm dep).
+  - **MediaPipe** → `vendor/mediapipe/{selfie_segmentation,pose,face_mesh,
+    tasks-vision}/` via `npm pack`. selfie_segmentation keeps both simd+nosimd
+    wasm (core: 3 effects + the shell PersonMask); pose/face_mesh/tasks-vision
+    are SIMD-only (lazy blob_tracker features, modern-Chrome target, graceful
+    fallback). pose ships the **lite** model only (`modelComplexity:0`) — dropped
+    the 27 MB heavy + 6.4 MB full. The tasks-vision `selfie_segmenter.tflite`
+    was fetched from storage.googleapis and vendored too.
+  - **Fonts** → `vendor/fonts/{effects,shell}.css` + 36 self-hosted woff2
+    (latin + latin-ext subsets of JetBrains Mono / Barlow Condensed / Space
+    Grotesk / Inter). Effect HTMLs `@import ../vendor/fonts/effects.css`; the
+    shell loads `vendor/fonts/shell.css` via a `<link>` in `index.html` (the
+    Google-Fonts `@import` in `src/index.css` removed).
+  - Edits (operator-authorised, decision #15): each effect HTML's font `@import`,
+    the selfie `<script src>` + `locateFile` (anamorphic/blob_reveal/bokeh),
+    blob_tracker's three.js `<script>` + pose/face_mesh `<script>`+`locateFile`
+    + tasks-vision `import()`/wasm dir/tflite path; `PersonMask.ts` `CDN_BASE`.
+  - **Verified** (`tools/verify/verify-phase10-vendor.js`) **19/19 PASS**: with
+    NO CDN access (the sandbox blocks them anyway) all 5 effects load, THREE +
+    SelfieSegmentation resolve from vendor, vendored fonts render, **zero
+    external-CDN requests**, no dep/page errors. Plus a wasm-init run: a fresh
+    `SelfieSegmentation` initialises the **5.6 MB simd wasm + tflite** and returns
+    a 256² mask, 0 CDN hits — the whole native pipeline runs offline. This also
+    **retires the long-standing sandbox gotcha** (`THREE is not defined`).
+  - **Lazy blob_tracker deps also proven offline** (`verify-phase10-vendor-lazy.js`
+    **6/6**): Pose (onResults from vendor, lite model), FaceMesh (onResults), and
+    the tasks-vision ImageSegmenter (categoryMask) each init + run from vendor
+    with zero CDN — each on its OWN fresh page (co-loading several Emscripten
+    runtimes in one document collides on the global `Module`; a test artefact,
+    never how blob_tracker loads them).
+- **Logo (item 1) — DONE.** The operator uploaded the logo in chat (not on disk);
+  recovered it from the session transcript (2000×1250 webp) → kept as
+  `public/assets/logo.webp`, and produced `public/assets/logo.png` (tight crop +
+  black field keyed transparent, alpha=luminance, decision #17). Wired into the
+  sidebar top-left (replaces the temp "VS" diamond): white mark + violet glow at
+  night, `invert` to dark for day mode. **Verified 7/7** (present, decoded
+  496×512, correct src, 5 cards intact, inverts in day mode, no errors) + night/
+  day screenshots eyeballed.
+- **Effect-card covers (item 1, rest) — wiring READY, awaiting operator's 5 files.**
+  New `EffectCardArt` in `App.tsx` tries `/assets/covers/<ModuleId>.{webp,png,jpg}`;
+  on load it fades the cover in under a scrim with a white label, on error it
+  falls back to today's plain-label card. Drop the files in → they appear, no
+  code change. (Not fabricated — the operator is finishing them.)
+- **Colour / day-mode sweep (item 5) — audited.** Grep of `src/` hexes: only the
+  violet accent family + standard neutrals/surfaces + the intentional per-effect
+  accents + blob_tracker's documented palette. Operator chose to **keep** the 4
+  one-off colours ("lasciarli"). No new stray colours introduced; day mode
+  re-verified with the logo change.
+- **Perf pass (item 4) — still a GPU-machine check** (~1–2 fps under sandbox
+  SwiftShader). **Operator asked to be reminded when everything else is done —
+  see Next step / the closing note to the operator.**
+- Regression: `npm run lint` clean; `npm run build` clean (dist carries the
+  vendored assets + the shell `<link>`); phase-10 **search box 6/6** after the
+  card refactor. Standalone effects: the 19/19 offline load IS the regression
+  (they now load in-sandbox for the first time).
+- **Full regression re-run (all green) — 2026-07-24, after the CDN/logo/card
+  edits:** **phase 1 21/21** (all 5 standalones load CLEAN + bridge silent — the
+  old sandbox CDN fails are gone), **phase 2 26/26** (AI Lab UX), **phase 3
+  14/14** (incl. **SEG reaches READY from the vendored PersonMask**, no CDN
+  mirror), **phase 8 chain 6/6** (the suite hard-*aborts* all CDN/font requests
+  and the full 5-node chain — three.js incl. — still renders: proof the app is
+  CDN-independent). fps 3 under SwiftShader (the ≥30fps criterion stays a
+  GPU-machine check, as always).
+- **Cover happy-path also proven** (`verify-phase10-covers.js` **7/7**): a
+  network-injected test image (no placeholder shipped) makes a card render the
+  cover — decoded, opaque, under the scrim, white label — while an un-injected
+  card falls back to the plain label. Confirms the operator's 5 covers will
+  drop in cleanly.
+- **Production build verified too** (not just the Vite dev server): `npm run
+  build` → `NODE_ENV=production node dist/server.cjs` serves every vendored asset
+  (logo.png, three.min.js, fonts/shell.css, mediapipe tflite — all 200) and the
+  shell `<link>` is present; re-ran the vendor suite **19/19** + the shell logo/
+  card suite **7/7** against the prod server — all green. So the whole Phase-10
+  surface works in the deployed build the operator will ship, not only in dev.
 
 ### 2026-07-20 — Phase 10 IN PROGRESS (Assets & polish — search box)
 

@@ -20,7 +20,9 @@ export interface EffectHostHandle {
 const settingsKey = (id: string) => `syntech.effectSettings.${id}`;
 
 const EffectHost = forwardRef<EffectHostHandle, EffectHostProps>(function EffectHost(
-  { module, iframeSrc, isDayMode, onBack },
+  // `onBack` stays in the props contract (App still passes it) but is no longer
+  // rendered as a button — closing happens through the sidebar HOME nav
+  { module, iframeSrc, isDayMode },
   ref
 ) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -72,26 +74,19 @@ const EffectHost = forwardRef<EffectHostHandle, EffectHostProps>(function Effect
       }),
   }));
 
+  /* Nothing is added above or below the effect: each standalone HTML already
+     carries its own header, status bar and controls, so the shell would only be
+     stacking a second set of chrome on top of a self-sufficient UI. The iframe
+     fills the whole hero panel; the sidebar HOME button closes it (03-SPEC §2). */
   return (
-    <div className={`w-full h-full flex flex-col ${isDayMode ? 'bg-white' : 'bg-black'}`}>
-      <div className={`flex items-center justify-between p-3 border-b ${isDayMode ? 'border-neutral-200' : 'border-ink-700/50'}`}>
-        <button onClick={onBack} className="text-sm font-mono text-violet-500 hover:text-violet-400">
-          ← BACK TO GRAPH
-        </button>
-        <div className="font-mono text-xs font-bold text-violet-500 uppercase tracking-widest">
-          {module?.name || 'EFFECT'}
-        </div>
-        <div className="w-16"></div>
-      </div>
-      <div className="flex-1 relative">
-        <iframe
-          ref={iframeRef}
-          src={iframeSrc + '/index.html'}
-          className="w-full h-full border-none"
-          title={module?.name || 'Effect'}
-          allow="camera; microphone"
-        />
-      </div>
+    <div className={`w-full h-full ${isDayMode ? 'bg-white' : 'bg-black'}`}>
+      <iframe
+        ref={iframeRef}
+        src={iframeSrc + '/index.html'}
+        className="w-full h-full border-none block"
+        title={module?.name || 'Effect'}
+        allow="camera; microphone"
+      />
     </div>
   );
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Layers,
   Play,
@@ -25,9 +25,12 @@ import EffectHost, { EffectHostHandle } from './components/EffectHost';
 import ChainLab from './components/ChainLab';
 import AiDirector from './components/AiDirector';
 import NodalComposition, { CompEffect, EFFECT_META, WireMap } from './components/NodalComposition';
+import AudioMeter from './components/AudioMeter';
+import { gelMaterialTile } from './lib/gelTexture';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 
 // explicit session snapshot for the SAVE nav action (decision #9: localStorage)
+const GEL_TILE = 640; // gel material tile edge (px) — also its background-size
 const SESSION_KEY = 'syntech.session';
 const COMP_KEY = 'syntech.composition.v3';
 const COMP_KEY_V2 = 'syntech.composition.v2';
@@ -56,6 +59,65 @@ interface SavedSession { activeModule?: ModuleId; isDayMode?: boolean; savedAt?:
 const readSession = (): SavedSession => {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) ?? '{}') ?? {}; } catch { return {}; }
 };
+
+
+/* Air bubbles rising through the gel (the moving ones, on top of the frozen
+   field). Fixed list so the look is stable; spread wide because the sections cover
+   most of the slab and only the gaps show it, so the visible strips need a few
+   bubbles passing at any time. Negative delays start them mid-rise. */
+const GEL_BUBBLES: Array<{ x: number; d: number; dur: number; delay: number }> = [
+  { x: 0.2, d: 11, dur: 30, delay: 2 }, { x: 1.4, d: 7, dur: 22, delay: 15 },
+  { x: 2.6, d: 15, dur: 38, delay: 27 }, { x: 4, d: 9, dur: 26, delay: 7 },
+  { x: 8, d: 13, dur: 34, delay: 19 }, { x: 12, d: 6, dur: 20, delay: 9 },
+  { x: 17, d: 17, dur: 42, delay: 31 }, { x: 22, d: 8, dur: 24, delay: 3 },
+  { x: 27, d: 12, dur: 32, delay: 22 }, { x: 32, d: 14, dur: 36, delay: 11 },
+  { x: 37, d: 7, dur: 21, delay: 17 }, { x: 42, d: 16, dur: 40, delay: 5 },
+  { x: 47, d: 10, dur: 28, delay: 25 }, { x: 50.5, d: 13, dur: 33, delay: 13 },
+  { x: 54, d: 8, dur: 23, delay: 29 }, { x: 59, d: 15, dur: 37, delay: 8 },
+  { x: 64, d: 11, dur: 29, delay: 20 }, { x: 69, d: 9, dur: 25, delay: 34 },
+  { x: 74, d: 14, dur: 35, delay: 6 }, { x: 79, d: 7, dur: 22, delay: 24 },
+  { x: 84, d: 16, dur: 41, delay: 12 }, { x: 88, d: 10, dur: 27, delay: 30 },
+  { x: 92, d: 13, dur: 31, delay: 4 }, { x: 95, d: 8, dur: 23, delay: 18 },
+  { x: 97, d: 15, dur: 39, delay: 26 }, { x: 98.6, d: 6, dur: 20, delay: 10 },
+  { x: 99.4, d: 12, dur: 33, delay: 21 }, { x: 0.8, d: 9, dur: 24, delay: 32 },
+];
+
+/* Phase-10 (assets): right-sidebar effect-card cover art. Drops in a cover the
+   moment the operator delivers it at public/assets/covers/<ModuleId>.{webp,png,jpg}
+   — tried in that order. Until a file exists every request 404s and the card
+   falls back to its plain label look (unchanged); once a cover lands it fades in
+   under a legibility scrim with a white label. No cover === current behaviour. */
+const COVER_EXTS = ['webp', 'png', 'jpg'] as const;
+function EffectCardArt({ id, name, isDayMode }: { id: string; name: string; isDayMode: boolean }) {
+  const [extIdx, setExtIdx] = useState(0);
+  const [state, setState] = useState<'idle' | 'ok' | 'err'>('idle');
+  const hasCover = state === 'ok';
+  const src = `/assets/covers/${id}.${COVER_EXTS[extIdx]}`;
+  return (
+    <>
+      {state !== 'err' && (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          aria-hidden
+          draggable={false}
+          onLoad={() => setState('ok')}
+          onError={() => (extIdx < COVER_EXTS.length - 1 ? setExtIdx(extIdx + 1) : setState('err'))}
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${hasCover ? 'opacity-100' : 'opacity-0'}`}
+        />
+      )}
+      {hasCover && <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />}
+      <span
+        className={`text-sm font-bold z-10 relative ${
+          hasCover ? 'text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.85)]' : isDayMode ? 'text-neutral-900' : 'text-white'
+        }`}
+      >
+        {name}
+      </span>
+    </>
+  );
+}
 
 export default function App() {
   // App initialization & Stream engine active state
@@ -205,6 +267,15 @@ export default function App() {
   // ── SHARED SOURCE VIDEO (video + audio): the INPUT node ──
   const [compSource, setCompSource] = useState<{ url: string; name: string } | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
+  // the hero clip — the sidebar level meter taps this element
+  const heroVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  /* the gel material: painted once on a canvas, then tiled. One image, one blend
+     layer — see the note in gelTexture.ts about why this must not be split up. */
+  const gelMaterial = useMemo(() => gelMaterialTile({ size: GEL_TILE, count: 300, seed: 0x5f3a7c1d }), []);
+  /* the same material, softer undersides, for the hero wordmark: at letter scale a
+     full-strength bead shadow can swallow a whole stroke (see gelTexture.ts) */
+  const gelTextMaterial = useMemo(() => gelMaterialTile({ size: GEL_TILE, count: 300, seed: 0x5f3a7c1d, shade: 0.4 }), []);
   const pickSource = () => sourceInputRef.current?.click();
   const onSourceFile = (file: File | null) => {
     if (!file) return;
@@ -450,7 +521,44 @@ export default function App() {
   const outputRes = compSource ? '1920x1080' : '1920x1080';
 
   return (
-    <div className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-4 gap-4`}>
+    <div
+      className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-4 gap-4`}
+      /* the gel tile is generated at runtime, so it reaches CSS as a variable —
+         the slab and the hero wordmark both read it from here */
+      style={{
+        '--syn-gel-tex': gelMaterial ? `url(${gelMaterial})` : 'none',
+        '--syn-gel-tex-text': gelTextMaterial ? `url(${gelTextMaterial})` : 'none',
+        '--syn-gel-tile': `${GEL_TILE}px`,
+      } as React.CSSProperties}
+    >
+
+      {/* Gel slab behind the whole UI (night mode only). The sections are solid
+          black, so it reads through the gaps between them: a violet→gold LED sheet
+          under a poured, glossy gel with air bubbles rising through it. Layers are
+          transform-animated only — see the note in index.css. */}
+      {!isDayMode && (
+        <div className="syn-bg-layer" aria-hidden data-testid="bg-layer">
+          <span className="syn-gel-sheet" />
+
+          {/* the whole material — swell, bubbles and gloss — in ONE overlay layer */}
+          <span className="syn-gel-material" data-testid="bg-relief" />
+          <span className="syn-gel-bubbles" data-testid="bg-bubbles">
+            {GEL_BUBBLES.map((b, i) => (
+              <span
+                key={i}
+                className="syn-bubble"
+                style={{
+                  left: `${b.x}%`,
+                  width: b.d,
+                  height: b.d,
+                  animationDuration: `${b.dur}s`,
+                  animationDelay: `-${b.delay}s`, // negative: the field is already in motion at load
+                }}
+              />
+            ))}
+          </span>
+        </div>
+      )}
 
       {/* hidden source picker (shared INPUT) */}
       <input
@@ -482,7 +590,10 @@ export default function App() {
 
         {/* centered wordmark */}
         <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
-          <span className="font-display text-[15px] font-semibold tracking-tight -mt-0.5">VFX <span className="text-violet-500">Syntech</span></span>
+          {/* Brand unification: this wordmark's font (Space Grotesk semibold,
+              tracking-tight, Title Case) is now the shared title style, and it
+              carries the hero title's shimmer animation. Position/size unchanged. */}
+          <span className="font-display text-[15px] font-bold tracking-tight -mt-0.5 hero-gradient">VFX Syntech</span>
           <span className="font-mono text-[7.5px] uppercase tracking-[0.15em] text-neutral-500/80 mt-0.5">Created by State</span>
         </div>
 
@@ -514,8 +625,18 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden gap-4">
         {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
         <nav className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} z-20 shadow-md`}>
-          <div className="w-11 h-11 border-2 border-violet-500 rotate-45 flex items-center justify-center shrink-0 mb-5 rounded-[10px] bg-violet-500/5 shadow-[0_0_16px_rgba(139,92,246,0.2)]">
-            <span className="text-violet-500 font-bold -rotate-45 text-xs tracking-wide">VS</span>
+          {/* Brand logo. The mark keeps its inflated glossy 3D shading but takes its
+              colour from the same violet→gold ramp as the gel slab and the titles:
+              a masked gradient layer underneath, the mark on top in `luminosity`
+              blend (see .syn-logo in index.css). Never inverted. */}
+          <div className="syn-logo w-11 h-11 shrink-0 mb-5" title="VFX Syntech — created by State">
+            <span className="syn-logo-color" aria-hidden />
+            <img
+              src="/assets/logo.png"
+              alt="VFX Syntech"
+              draggable={false}
+              className={`syn-logo-shade select-none ${isDayMode ? '' : 'drop-shadow-[0_0_10px_rgba(139,92,246,0.35)]'}`}
+            />
           </div>
 
           <ul className="flex flex-col gap-5 w-full items-center">
@@ -563,6 +684,10 @@ export default function App() {
               </li>
             ))}
           </ul>
+
+          {/* playback level of the loaded clip — the space under OPTIMIZER */}
+          <div className={`w-8 h-px mt-5 mb-3 shrink-0 ${isDayMode ? 'bg-neutral-300' : 'bg-ink-700'}`} />
+          <AudioMeter isDayMode={isDayMode} videoRef={heroVideoRef} sourceKey={compSource?.url ?? null} />
         </nav>
 
         {/* ═══════════════ MAIN CONTENT ═══════════════ */}
@@ -649,6 +774,7 @@ export default function App() {
                         {compSource ? (
                           <video
                             key={compSource.url}
+                            ref={heroVideoRef}
                             src={compSource.url}
                             autoPlay
                             muted
@@ -678,8 +804,13 @@ export default function App() {
 
                         {/* wordmark + subtitle + actions */}
                         <div className="absolute top-7 left-8 z-10 max-w-[70%]">
-                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tighter text-white leading-[0.92] drop-shadow-2xl">VFX</h1>
-                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tighter hero-gradient leading-[0.98] drop-shadow-2xl">SYNTECH</h1>
+                          {/* Brand unification: the top-bar wordmark's font, the shared
+                              shimmer, and — on this large one only — the gel material with
+                              the logo's inflated 3D (`hero-gel-text`; at 15px in the top bar
+                              the bubbles would just be noise). Position, sizes, leading
+                              unchanged. */}
+                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient hero-gel-text leading-[0.92] drop-shadow-2xl">VFX</h1>
+                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient hero-gel-text leading-[0.98] drop-shadow-2xl">Syntech</h1>
                           <p className="mt-3 text-[11px] md:text-[13px] tracking-[0.18em] font-medium text-neutral-200/90 drop-shadow-md">
                             AI-Powered. Node-Based. Limitless.
                           </p>
@@ -797,9 +928,7 @@ export default function App() {
                             : isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-850'
                         }`}
                       >
-                        <span className={`text-sm font-bold z-10 ${isDayMode ? 'text-neutral-900' : 'text-white'}`}>
-                          {module.name}
-                        </span>
+                        <EffectCardArt id={module.id} name={module.name} isDayMode={isDayMode} />
                       </div>
                     );
                     });
