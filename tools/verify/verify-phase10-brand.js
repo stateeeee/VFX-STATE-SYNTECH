@@ -48,7 +48,13 @@ const step = (n, c, d = '') => { c ? pass++ : fail++; console.log(`${c ? 'PASS' 
   });
   const s = t.small, B = t.big;
   step('small top title exists + animated', !!s && s.anim === 'gradient-shimmer', s ? `"${s.text}" anim=${s.anim} ${s.dur}` : 'missing');
-  step('big hero title: BOTH lines animated', B.length === 2 && B.every((x) => x.anim === 'gradient-shimmer'), B.map((x) => `"${x.text}"`).join(' + '));
+  /* the hero lines run `syn-gel-text-flow` since they gained the gel material — it
+     sweeps the same ramp on the same 6s clock as the plain `gradient-shimmer`, so
+     either name counts as "animated"; the shared cadence is asserted in
+     verify-ui-gel-pass.js */
+  const SHIMMER = ['gradient-shimmer', 'syn-gel-text-flow'];
+  step('big hero title: BOTH lines animated', B.length === 2 && B.every((x) => SHIMMER.includes(x.anim)),
+    B.map((x) => `"${x.text}" (${x.anim} ${x.dur})`).join(' + '));
   step('same font family on both titles', !!s && B.length > 0 && B.every((x) => x.family === s.family), s && s.family);
   step('same font weight on both titles', !!s && B.every((x) => x.weight === s.weight), `small=${s && s.weight} big=${B.map((x) => x.weight).join('/')}`);
   step('same tracking ratio (tracking-tight) on both', !!s && B.every((x) => {

@@ -273,6 +273,9 @@ export default function App() {
   /* the gel material: painted once on a canvas, then tiled. One image, one blend
      layer — see the note in gelTexture.ts about why this must not be split up. */
   const gelMaterial = useMemo(() => gelMaterialTile({ size: GEL_TILE, count: 300, seed: 0x5f3a7c1d }), []);
+  /* the same material, softer undersides, for the hero wordmark: at letter scale a
+     full-strength bead shadow can swallow a whole stroke (see gelTexture.ts) */
+  const gelTextMaterial = useMemo(() => gelMaterialTile({ size: GEL_TILE, count: 300, seed: 0x5f3a7c1d, shade: 0.4 }), []);
   const pickSource = () => sourceInputRef.current?.click();
   const onSourceFile = (file: File | null) => {
     if (!file) return;
@@ -518,7 +521,16 @@ export default function App() {
   const outputRes = compSource ? '1920x1080' : '1920x1080';
 
   return (
-    <div className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-4 gap-4`}>
+    <div
+      className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-4 gap-4`}
+      /* the gel tile is generated at runtime, so it reaches CSS as a variable —
+         the slab and the hero wordmark both read it from here */
+      style={{
+        '--syn-gel-tex': gelMaterial ? `url(${gelMaterial})` : 'none',
+        '--syn-gel-tex-text': gelTextMaterial ? `url(${gelTextMaterial})` : 'none',
+        '--syn-gel-tile': `${GEL_TILE}px`,
+      } as React.CSSProperties}
+    >
 
       {/* Gel slab behind the whole UI (night mode only). The sections are solid
           black, so it reads through the gaps between them: a violet→gold LED sheet
@@ -529,11 +541,7 @@ export default function App() {
           <span className="syn-gel-sheet" />
 
           {/* the whole material — swell, bubbles and gloss — in ONE overlay layer */}
-          <span
-            className="syn-gel-material"
-            data-testid="bg-relief"
-            style={{ backgroundImage: gelMaterial ? `url(${gelMaterial})` : undefined, backgroundSize: `${GEL_TILE}px ${GEL_TILE}px` }}
-          />
+          <span className="syn-gel-material" data-testid="bg-relief" />
           <span className="syn-gel-bubbles" data-testid="bg-bubbles">
             {GEL_BUBBLES.map((b, i) => (
               <span
@@ -796,12 +804,13 @@ export default function App() {
 
                         {/* wordmark + subtitle + actions */}
                         <div className="absolute top-7 left-8 z-10 max-w-[70%]">
-                          {/* Brand unification: adopts the top-bar wordmark's font
-                              (semibold, tracking-tight, Title Case) and applies the
-                              shimmer to BOTH lines so the two titles read as one
-                              brand. Position, sizes and leading are unchanged. */}
-                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient leading-[0.92] drop-shadow-2xl">VFX</h1>
-                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient leading-[0.98] drop-shadow-2xl">Syntech</h1>
+                          {/* Brand unification: the top-bar wordmark's font, the shared
+                              shimmer, and — on this large one only — the gel material with
+                              the logo's inflated 3D (`hero-gel-text`; at 15px in the top bar
+                              the bubbles would just be noise). Position, sizes, leading
+                              unchanged. */}
+                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient hero-gel-text leading-[0.92] drop-shadow-2xl">VFX</h1>
+                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient hero-gel-text leading-[0.98] drop-shadow-2xl">Syntech</h1>
                           <p className="mt-3 text-[11px] md:text-[13px] tracking-[0.18em] font-medium text-neutral-200/90 drop-shadow-md">
                             AI-Powered. Node-Based. Limitless.
                           </p>

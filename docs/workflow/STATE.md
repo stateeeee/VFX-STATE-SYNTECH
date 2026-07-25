@@ -120,6 +120,49 @@ uses H.264).
 
 ## Log
 
+### 2026-07-25 — One cadence for the brand; the hero wordmark cast in the gel
+
+Operator: animate the slab's gradient like the hero wordmark, and give that
+wordmark the logo's inflated 3D gel — same texture, same 3D mode. Both done,
+`verify-ui-gel-pass.js` **36/36**.
+
+- **One 6s cadence for the whole brand.** The slab's ramp was sliding on 26s and
+  the logo on 18s; both are now **6s**, the wordmark shimmer's own clock. Half the
+  slab's plate is two viewport widths and the wordmark shifts two of its own widths
+  per cycle, so slab, logo and both titles sweep at exactly the same rate — asserted
+  by the suite.
+- **The hero wordmark is now cast in the gel** (`.hero-gel-text`, applied only to
+  the big one — at 15px in the top bar the bubbles would be noise). Four background
+  layers on ONE element, clipped to the glyphs: the gel tile, a lit crown, a shaded
+  base, then the colour ramp, plus a hairline dark `-webkit-text-stroke` for the
+  moulded rim. Same texture and same idea as the logo — there the mark's own
+  luminance shapes it, here the tile's crowns and undersides do. The tile is
+  exposed to CSS as `--syn-gel-tex` / `--syn-gel-tex-text` on the app root, since
+  it is generated at runtime.
+- **Three real defects found and fixed while tuning** (each is now covered by an
+  assertion, since each was invisible in a still frame):
+  1. **The wordmark went BLACK for part of every cycle.** The ramp layer is 200%
+     wide and slides a full 200%, and I had set that layer to `no-repeat`, so it
+     scrolled clean out of the box — with `color: transparent`, the glyphs then had
+     nothing to show. Fixed by letting the ramp repeat (as the plain wordmark
+     always did). The suite now samples the wordmark's brightness across a whole
+     6s cycle and requires it to stay steady (was 84…197, now 176…188).
+  2. **Corner-placed lighting sank the tail of the word.** A specular dome at the
+     top-left plus a shadow at the bottom-right adds up to a left-to-right ramp, so
+     "ntech" crushed to near-black. Replaced with vertical lit-crown-over-shaded-
+     base, which inflates every letter equally.
+  3. **The text tile was being resampled every frame.** Drawing the 640² tile at
+     560px made the browser rescale it on each repaint of the animated wordmark —
+     BPM 133. Drawing it at its natural 640px restored **BPM 120** (twice in a row).
+     A `shade` option was also added to the generator: at letter scale a
+     full-strength bead shadow can swallow a whole stroke, so the text variant uses
+     softer undersides.
+- `verify-phase10-brand.js` updated: the hero lines legitimately run
+  `syn-gel-text-flow` now, so the "animated" check accepts either shimmer name.
+- Regression, all green: phase 1 **21/21**, phase 2 **26/26**, phase 3 **14/14**
+  (BPM 120), vendor **19/19**, brand **13/13**, search **6/6**, covers **7/7**;
+  lint + build clean.
+
 ### 2026-07-25 — Gel material: glossier, with air bubbles and inflated 3D
 
 Operator note: the slab should read as *gel with reflections and air bubbles

@@ -38,7 +38,19 @@
 >
 > The gel's material (swell, air bubbles, gloss) is a seamless 640px tile painted
 > once on a canvas by `src/lib/gelTexture.ts` and tiled as a single unblended
-> layer; only the rising bubbles and the sliding ramp move.
+> layer; only the rising bubbles and the sliding ramp move. **The hero wordmark is
+> cast in that same gel** (`.hero-gel-text`: tile + lit crown + shaded base + ramp,
+> clipped to the glyphs, with a hairline dark text-stroke), and **slab, logo and
+> both wordmarks share one 6s cadence**. The tile reaches CSS as `--syn-gel-tex` /
+> `--syn-gel-tex-text` on the app root because it is generated at runtime.
+>
+> Three traps in that wordmark, all now asserted — they were invisible in a still
+> frame: the ramp layer **must repeat** (it is 200% wide and slides 200%, so
+> `no-repeat` scrolls it out of the box and the transparent glyphs go black for part
+> of every cycle); the lighting must be **vertical**, since a top-left dome plus a
+> bottom-right shadow becomes a left-to-right ramp that sinks the end of the word;
+> and the tile must be drawn at its **natural 640px**, or the browser resamples it
+> on every repaint (BPM 133 vs 120).
 >
 > ⚠️ **FRAME-COST CONTRACT for the backdrop: no blend modes, no filters, animate
 > `transform` only.** Anything blended or filtered over the sliding ramp is

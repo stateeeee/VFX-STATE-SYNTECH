@@ -127,7 +127,10 @@ body {
   background-image: linear-gradient(100deg,
     #8b5cf6 0%, #7c3aed 11%, #ffda4d 25%, #ffb31a 36%, #8b5cf6 50%,
     #7c3aed 61%, #ffda4d 75%, #ffb31a 86%, #8b5cf6 100%);
-  animation: syn-gel-flow 26s linear infinite;
+  /* 6s — the wordmark shimmer's own cadence. Half the plate is two viewport
+     widths, and the title shifts two of its own widths in 6s, so the slab and the
+     titles sweep at exactly the same rate. */
+  animation: syn-gel-flow 6s linear infinite;
 }
 
 /* 2. THE GEL MATERIAL — one single layer, and NO blend mode.
@@ -140,7 +143,9 @@ body {
    frames). Keep this layer unblended and keep it to one. */
 .syn-gel-material {
   inset: -7%;
+  background-image: var(--syn-gel-tex, none); /* set on the app root by App.tsx */
   background-repeat: repeat;
+  background-size: var(--syn-gel-tile, 640px) var(--syn-gel-tile, 640px);
   opacity: 0.92;
   animation: syn-gel-drift 34s ease-in-out infinite alternate;
 }
@@ -221,8 +226,9 @@ body {
   background-image: linear-gradient(100deg, #8b5cf6 0%, #7c3aed 22%, #ffda4d 50%, #ffb31a 72%, #8b5cf6 100%);
   background-size: 220% 220%;
   /* its own keyframes: the slab slides by transform, which would MOVE the mark.
-     At 44px a background-position shift costs nothing. */
-  animation: syn-logo-flow 18s linear infinite;
+     At 44px a background-position shift costs nothing. Timed to the wordmark
+     shimmer (6s) so logo, titles and slab all shift together. */
+  animation: syn-logo-flow 6s linear infinite;
   -webkit-mask-image: url('/assets/logo.png');
   mask-image: url('/assets/logo.png');
   -webkit-mask-size: contain;
@@ -243,6 +249,8 @@ body {
   from { background-position: 0% 50%; }
   to { background-position: 220% 50%; }
 }
+
+
 
 /* day mode: the deeper ramp (same as the wordmarks) so the mark stays legible
    on the cream sidebar */
@@ -288,6 +296,57 @@ body {
    the light hero. Night keeps the bright brand ramp untouched. */
 .syn-day .hero-gradient {
   background-image: linear-gradient(100deg, #6d28d9 0%, #5b21b6 25%, #a16207 50%, #92400e 75%, #6d28d9 100%);
+}
+
+/* ── Hero wordmark in the same gel as the slab and the logo ────────
+   Same texture, same 3D idea. On the logo the mark's own luminance does the
+   shaping; text has no such map, so the relief comes from the gel tile itself:
+   inside the glyphs the tile's lit crowns and dark undersides sit over the colour
+   ramp, with a top-light pass so each letter reads as inflated rather than
+   printed. Three background layers on ONE element (topmost first) — no extra
+   blended layers, per the slab's frame-cost contract. Used together with
+   `.hero-gradient`, which supplies the text clipping. */
+.hero-gel-text {
+  background-image:
+    /* 1. the gel's own bubbles — the text variant of the same tile (softer
+          undersides), near native scale so a bead reads as a dome inside a 60px
+          letter rather than as noise, at its natural size so nothing resamples */
+    var(--syn-gel-tex-text, none),
+    /* 2+3. lit crown over shaded base — VERTICAL, so every letter is inflated the
+       same way. (Corner-placed radials were tried first and are wrong here: a dome
+       at the top-left plus a shadow at the bottom-right becomes a left-to-right
+       ramp that sinks the tail of the word into black.) */
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.46) 0%, rgba(255, 255, 255, 0.08) 38%, transparent 54%),
+    linear-gradient(to top, rgba(0, 0, 0, 0.34) 0%, rgba(0, 0, 0, 0.07) 30%, transparent 46%),
+    /* 4. the colour ramp — one step lighter than the flat wordmark's (violet-400
+          into violet-500) so the relief has headroom to shade without going black */
+    linear-gradient(100deg, #a78bfa 0%, #8b5cf6 25%, #ffda4d 50%, #ffb31a 75%, #a78bfa 100%);
+  /* the tile is drawn at its NATURAL 640px: any other size makes the browser
+     resample a 640² image on every repaint of the animated wordmark */
+  background-size: 640px 640px, 100% 100%, 100% 100%, 200% auto;
+  /* the ramp MUST repeat: it is 200% wide and slides a full 200%, so with
+     `no-repeat` it scrolls clean out of the box and the glyphs — being
+     `color: transparent` — drop to black for part of every cycle. */
+  background-repeat: repeat, no-repeat, no-repeat, repeat;
+  /* a dark edge gives the letters the defined rim of a moulded object */
+  -webkit-text-stroke: 0.6px rgba(10, 4, 20, 0.45);
+  animation: syn-gel-text-flow 6s linear infinite;
+}
+
+/* day mode: the deeper ramp, as the plain wordmark gets */
+.syn-day .hero-gel-text {
+  background-image:
+    var(--syn-gel-tex-text, none),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.36) 0%, rgba(255, 255, 255, 0.06) 38%, transparent 54%),
+    linear-gradient(to top, rgba(0, 0, 0, 0.26) 0%, rgba(0, 0, 0, 0.05) 30%, transparent 46%),
+    /* day: one step lighter than the flat day wordmark, same headroom reasoning */
+    linear-gradient(100deg, #7c3aed 0%, #6d28d9 25%, #c67c0a 50%, #a16207 75%, #7c3aed 100%);
+}
+
+/* the ramp sweeps exactly like the plain wordmark; the gel drifts gently with it */
+@keyframes syn-gel-text-flow {
+  from { background-position: 0 0, 0 0, 0 0, 200% center; }
+  to { background-position: -80px -20px, 0 0, 0 0, 0% center; }
 }
 
 @keyframes gradient-shimmer {

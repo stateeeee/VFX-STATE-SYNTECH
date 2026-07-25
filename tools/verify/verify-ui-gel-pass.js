@@ -144,6 +144,69 @@ const skipped = (n, why) => { skip++; console.log(`SKIP  ${n} — ${why}`); };
   });
   step('both wordmarks at weight 700', w.small === '700' && w.hero === '700', `small=${w.small} hero=${w.hero}`);
 
+  /* the hero wordmark wears the gel: the SAME tile as the slab plus a specular
+     dome and a shaded underside inside the glyphs, so it reads as one inflated
+     glossy object like the logo. And slab, logo and wordmarks all share the 6s
+     cadence, so the whole brand shifts colour together. */
+  const heroGel = await page.evaluate(() => {
+    const h = document.querySelector('h1.hero-gel-text');
+    if (!h) return null;
+    const c = getComputedStyle(h);
+    const root = document.querySelector('#root > div');
+    return {
+      usesTile: /data:image/.test(c.backgroundImage),
+      layers: c.backgroundSize.split(',').length,
+      clip: c.webkitBackgroundClip || c.backgroundClip,
+      colour: c.color,
+      stroke: c.webkitTextStrokeWidth,
+      anim: c.animationName,
+      tileVar: getComputedStyle(root).getPropertyValue('--syn-gel-tex').slice(0, 18),
+    };
+  });
+  step('hero wordmark filled with the gel tile', !!heroGel && heroGel.usesTile && heroGel.layers === 4,
+    heroGel && `${heroGel.layers} layers, tile=${heroGel.usesTile}`);
+  step('hero wordmark still clipped to the glyphs', !!heroGel && /text/.test(heroGel.clip) && /rgba\(0, 0, 0, 0\)|transparent/.test(heroGel.colour),
+    heroGel && `${heroGel.clip} / ${heroGel.colour}`);
+  step('hero wordmark has the moulded rim', !!heroGel && parseFloat(heroGel.stroke) > 0, heroGel && heroGel.stroke);
+  step('the tile reaches CSS as a variable', !!heroGel && heroGel.tileVar.includes('url(data:image'), heroGel && heroGel.tileVar + '…');
+
+  const cadence = await page.evaluate(() => {
+    const d = (sel) => { const el = document.querySelector(sel); return el ? getComputedStyle(el).animationDuration : null; };
+    return {
+      slab: d('.syn-gel-sheet'), logo: d('.syn-logo-color'),
+      small: d('header span.hero-gradient'), hero: d('h1.hero-gel-text'),
+    };
+  });
+  step('slab, logo and both wordmarks share one 6s cadence',
+    ['slab', 'logo', 'small', 'hero'].every((k) => cadence[k] === '6s'), JSON.stringify(cadence));
+
+  /* Guard for a real bug: the ramp layer is 200% wide and slides a full 200%, so
+     with `no-repeat` it scrolls clean out of the box and the glyphs — which are
+     `color: transparent` — drop to BLACK for part of every cycle. Sample the whole
+     6s cycle and require the wordmark's brightness to stay steady. */
+  const heroBox = await page.evaluate(() => {
+    const h = document.querySelectorAll('h1.hero-gel-text')[1];
+    const r = h.getBoundingClientRect();
+    return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
+  });
+  const bright = [];
+  for (let k = 0; k < 8; k++) {
+    const png = (await page.screenshot({ clip: heroBox })).toString('base64');
+    bright.push(await page.evaluate(async (d) => {
+      const im = new Image(); im.src = 'data:image/png;base64,' + d; await im.decode();
+      const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+      c.getContext('2d').drawImage(im, 0, 0);
+      const q = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let s = 0, n = 0;
+      for (let i = 0; i < q.length; i += 4) { const mx = Math.max(q[i], q[i + 1], q[i + 2]); if (mx > 18) { s += mx; n++; } }
+      return n ? +(s / n).toFixed(1) : 0;
+    }, png));
+    await page.waitForTimeout(700);
+  }
+  const lo = Math.min(...bright), hi = Math.max(...bright);
+  step('hero wordmark never dims out over a full colour cycle', lo > 120 && lo / hi > 0.7,
+    `brightness ${lo}…${hi} (ratio ${(lo / hi).toFixed(2)})`);
+
   // ── 5. the level meter ────────────────────────────────────────────────────
   step('meter present in the sidebar', !!(await page.$('[data-testid="audio-meter"]')));
   const idle = await page.evaluate(() => {

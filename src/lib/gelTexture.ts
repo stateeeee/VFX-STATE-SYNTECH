@@ -29,9 +29,13 @@ export interface GelMaterialOptions {
   count?: number;
   /** deterministic, so the material is identical on every reload */
   seed?: number;
+  /** scales the beads' dark undersides. 1 is right over a large surface; the text
+   *  variant needs less, because at letter scale one bead's shadow can cover a
+   *  whole stroke and crush the brand violet (a mid-dark hue) toward black. */
+  shade?: number;
 }
 
-export function gelMaterialTile({ size = 640, count = 300, seed = 0x5f3a7c1d }: GelMaterialOptions = {}): string {
+export function gelMaterialTile({ size = 640, count = 300, seed = 0x5f3a7c1d, shade = 1 }: GelMaterialOptions = {}): string {
   if (typeof document === 'undefined') return '';
   const cv = document.createElement('canvas');
   cv.width = size;
@@ -60,8 +64,8 @@ export function gelMaterialTile({ size = 640, count = 300, seed = 0x5f3a7c1d }: 
   /** one bubble: shaded underside, lit crown, wet rim */
   const dome = (x: number, y: number, r: number, strength: number) => {
     const sh = cx.createRadialGradient(x + r * 0.24, y + r * 0.28, r * 0.05, x + r * 0.24, y + r * 0.28, r * 1.08);
-    sh.addColorStop(0, `rgba(0,0,0,${0.58 * strength})`);
-    sh.addColorStop(0.55, `rgba(0,0,0,${0.26 * strength})`);
+    sh.addColorStop(0, `rgba(0,0,0,${0.58 * strength * shade})`);
+    sh.addColorStop(0.55, `rgba(0,0,0,${0.26 * strength * shade})`);
     sh.addColorStop(1, 'rgba(0,0,0,0)');
     cx.fillStyle = sh;
     cx.beginPath(); cx.arc(x, y, r * 1.12, 0, Math.PI * 2); cx.fill();
