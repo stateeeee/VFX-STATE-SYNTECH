@@ -170,6 +170,11 @@ to judge in the morning ("domattina ti diro se tenerla oppure no").
   slightly translucent so the sections stay perceptible underneath = "encased").
   Claude's picks for the 3D pass: **A at 45°** and **B at 90°**.
   **Awaiting the operator's keep/discard decision.**
+- **Regression after the brand edits (App.tsx + index.css) — all green:** brand
+  **13/13**, phase-10 search **6/6**, covers **7/7**, vendor-offline **19/19**,
+  phase 2 **26/26**, phase 1 **21/21** (all 5 standalones still clean), phase 3
+  **14/14**. `npm run lint` + `npm run build` clean. No verify suite depends on
+  the hero title's text, so the Title-Case change is safe.
 
 ### 2026-07-24 — Phase 10 near-complete (logo + CDN vendoring + colour audit)
 
