@@ -106,16 +106,20 @@ body {
   background-color: #120a1e;    /* deep base so the gaps never read as flat black */
 }
 
-/* The LED sheet: the wordmark ramp, slowly flowing.
-   Both layers animate ONLY `transform`, so they are GPU-composited and repaint
-   nothing per frame — an animated `background-position` or a full-viewport
-   `filter: blur()` here costs real frames, and this app's beat detection reads
-   spectral flux BETWEEN frames, so a hungry backdrop skews its BPM estimate.
-   The plate is twice the viewport with the ramp laid down twice, so sliding it
-   by exactly half its width loops seamlessly. */
-.syn-bg-layer::before {
-  content: '';
+/* Every layer of the slab animates ONLY `transform`, so each is GPU-composited
+   and repaints nothing per frame. This is load-bearing, not a micro-optimisation:
+   an animated `background-position` or a full-viewport `filter: blur()` here costs
+   enough frames to skew AudioEngine's BPM estimate, because beat detection reads
+   spectral flux BETWEEN frames. Keep the gloss in gradients and blend modes. */
+.syn-bg-layer > * {
   position: absolute;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* 1. the LED sheet: the wordmark ramp. The plate is 4× wide with the ramp laid
+   twice, so sliding it by half its width loops seamlessly. */
+.syn-gel-sheet {
   top: -25%;
   bottom: -25%;
   left: 0;
@@ -123,26 +127,49 @@ body {
   background-image: linear-gradient(100deg,
     #8b5cf6 0%, #7c3aed 11%, #ffda4d 25%, #ffb31a 36%, #8b5cf6 50%,
     #7c3aed 61%, #ffda4d 75%, #ffb31a 86%, #8b5cf6 100%);
-  will-change: transform;
   animation: syn-gel-flow 26s linear infinite;
 }
 
-/* The gel body: soft pools and wet speculars drifting on their own slower clock,
-   screened over the sheet so it reads liquid rather than printed. The radial
-   falloffs are wide enough to look molten without a blur filter. */
-.syn-bg-layer::after {
-  content: '';
-  position: absolute;
-  inset: -30%;
-  background:
-    radial-gradient(38% 30% at 22% 26%, rgba(255, 255, 255, 0.42), transparent 78%),
-    radial-gradient(34% 36% at 76% 60%, rgba(255, 218, 77, 0.55), transparent 80%),
-    radial-gradient(44% 34% at 48% 88%, rgba(139, 92, 246, 0.60), transparent 82%),
-    radial-gradient(28% 24% at 66% 10%, rgba(255, 255, 255, 0.26), transparent 76%),
-    radial-gradient(32% 28% at 8% 70%, rgba(124, 58, 237, 0.48), transparent 80%);
-  mix-blend-mode: screen;
-  will-change: transform;
+/* 2. THE GEL MATERIAL — one single layer, and NO blend mode.
+   Swell, bubbles and wet gloss are baked into one seamless canvas tile
+   (src/lib/gelTexture.ts): transparent, with white crowns and dark undersides, so
+   plain alpha compositing embosses inflated 3D beads onto the ramp beneath.
+   Blend modes are avoided ON PURPOSE — anything blended over the sliding ramp is
+   re-composited every frame, which on a GPU-less machine costs enough frames to
+   skew AudioEngine's BPM estimate (beat detection reads spectral flux between
+   frames). Keep this layer unblended and keep it to one. */
+.syn-gel-material {
+  inset: -7%;
+  background-repeat: repeat;
+  opacity: 0.92;
   animation: syn-gel-drift 34s ease-in-out infinite alternate;
+}
+
+/* 4. air bubbles suspended in the gel, rising slowly. Each is a little glass
+   dome: offset specular, faint rim, inset shading — screened so it reads as
+   trapped light rather than paint. */
+.syn-gel-bubbles {
+  inset: 0;
+  overflow: hidden;
+}
+
+/* Small and crisp on purpose: a bubble has to read inside a ~16px gap, so the
+   specular is tight, the rim is bright and the glass edge is a hard 1px. */
+.syn-bubble {
+  position: absolute;
+  bottom: -14%;
+  border-radius: 50%;
+  background-image:
+    radial-gradient(circle at 33% 27%, rgba(255, 255, 255, 0.98) 0 16%, rgba(255, 255, 255, 0.30) 32%, transparent 52%),
+    radial-gradient(circle at 50% 50%, transparent 0 52%, rgba(255, 255, 255, 0.55) 74%, rgba(255, 255, 255, 0.12) 88%, transparent 100%);
+  box-shadow:
+    inset -1px -1px 3px rgba(255, 255, 255, 0.45),
+    0 0 5px rgba(255, 255, 255, 0.22);
+  opacity: 0.85;
+  will-change: transform;
+  animation-name: syn-bubble-rise;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
 }
 
 /* slide exactly half the plate: the ramp repeats, so the loop is seamless */
@@ -151,10 +178,24 @@ body {
   to { transform: translate3d(-50%, 0, 0); }
 }
 
+@keyframes syn-gel-sheen {
+  from { transform: translate3d(-40%, 0, 0); }
+  to { transform: translate3d(0%, 0, 0); }
+}
+
 @keyframes syn-gel-drift {
-  0% { transform: translate3d(-2%, -1%, 0) scale(1.04); }
-  50% { transform: translate3d(2.5%, 2%, 0) scale(1.12); }
-  100% { transform: translate3d(-1%, 2.5%, 0) scale(1.06); }
+  0% { transform: translate3d(-1.5%, -1%, 0) scale(1.03); }
+  50% { transform: translate3d(2%, 1.5%, 0) scale(1.07); }
+  100% { transform: translate3d(-1%, 2%, 0) scale(1.04); }
+}
+
+/* rise the full height with a slow lateral wobble, as gel resists the bubble */
+@keyframes syn-bubble-rise {
+  0% { transform: translate3d(0, 0, 0) scale(0.92); }
+  25% { transform: translate3d(7px, -32vh, 0) scale(1); }
+  50% { transform: translate3d(-6px, -62vh, 0) scale(1.04); }
+  75% { transform: translate3d(5px, -92vh, 0) scale(1); }
+  100% { transform: translate3d(0, -124vh, 0) scale(0.94); }
 }
 
 /* ── Brand logo riding the same ramp ──────────────────────────────

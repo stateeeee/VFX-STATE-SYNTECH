@@ -120,6 +120,40 @@ uses H.264).
 
 ## Log
 
+### 2026-07-25 — Gel material: glossier, with air bubbles and inflated 3D
+
+Operator note: the slab should read as *gel with reflections and air bubbles
+inside*, with the swollen 3D of the new logo. Reworked and verified
+(`verify-ui-gel-pass.js` **30/30**).
+
+- **The material is now painted, not gradient-guessed.** `src/lib/gelTexture.ts`
+  renders a **seamless 640px tile** on a canvas once: macro swell domes, a dense
+  field of bubbles (fine grain plus a scatter of big beads, each with a shaded
+  underside, a tight specular crown and a wet rim) and long gloss smears. Beads
+  that touch an edge are redrawn on the opposite side, so the tile wraps with no
+  seam. It is transparent — white crowns, dark undersides — so plain alpha
+  compositing embosses the beads onto the ramp beneath.
+- **Why a tile, and why only one layer:** only the ~16px gaps between the sections
+  show the slab, so the texture must be DENSE to read at all — CSS gradients tiled
+  at that scale looked like a mechanical polka-dot grid, and an SVG field dense
+  enough to read meant thousands of nodes. A 640px tile is cheap and its repeat is
+  invisible through narrow gaps.
+- **FRAME-COST FINDING (the important one, now a documented contract).** Anything
+  blended or filtered over the sliding ramp is re-composited every frame, and this
+  sandbox has no GPU, so it lands on the CPU. Measured against phase 3's BPM
+  estimate (beat detection reads spectral flux BETWEEN frames): **blur filter →
+  189 BPM; four blend layers → 171; one blend layer → 138; zero blends/filters →
+  124** (target 120). So the slab now carries **no `mix-blend-mode` and no
+  `filter` at all** — the whole material is baked into the one tile and everything
+  animates only `transform`. The suite asserts zero blended layers and zero
+  filters, so this cannot regress silently.
+- Tuning: the specular crown was tightened (a broad white haze bleached the ramp's
+  colour instead of glazing it) and the undersides deepened, which brought the
+  saturated violet/gold back while keeping the gloss.
+- Regression, all green: phase 1 **21/21**, phase 2 **26/26**, phase 3 **14/14**
+  (BPM 124), vendor **19/19**, brand **13/13**, search **6/6**, covers **7/7**;
+  lint + build clean.
+
 ### 2026-07-25 — UI pass: gel slab, gradient logo, bare effect host, audio meter
 
 Six operator notes, all done and verified (`tools/verify/verify-ui-gel-pass.js`

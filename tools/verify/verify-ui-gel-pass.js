@@ -51,23 +51,46 @@ const skipped = (n, why) => { skip++; console.log(`SKIP  ${n} — ${why}`); };
 
   // ── 2. the gel slab: present, animated, and only in the gaps ──────────────
   step('gel slab mounted in night mode', !!(await page.$('[data-testid="bg-layer"]')));
-  // the slab slides by TRANSFORM (GPU, no per-frame repaint — an animated
+  // the sheet slides by TRANSFORM (GPU, no per-frame repaint — an animated
   // background-position or a full-screen blur here costs frames, and the beat
   // detector reads spectral flux between frames)
   const flow = async () => page.evaluate(() => {
-    const el = document.querySelector('[data-testid="bg-layer"]');
-    const b = getComputedStyle(el, '::before');
+    const b = getComputedStyle(document.querySelector('.syn-gel-sheet'));
     return { tf: b.transform, anim: b.animationName, img: b.backgroundImage };
   });
   const f1 = await flow(); await page.waitForTimeout(1200); const f2 = await flow();
   const hasViolet = /8b5cf6|139, 92, 246/.test(f1.img), hasGold = /ffda4d|255, 218, 77/.test(f1.img);
   step('slab runs the violet→gold ramp', hasViolet && hasGold, `violet=${hasViolet} gold=${hasGold}`);
   step('slab slides (GPU transform advances)', f1.anim === 'syn-gel-flow' && f1.tf !== f2.tf, `${f1.tf} → ${f2.tf}`);
-  const noBlur = await page.evaluate(() => {
-    const el = document.querySelector('[data-testid="bg-layer"]');
-    return !/blur/.test(getComputedStyle(el, '::after').filter || '') && !/blur/.test(getComputedStyle(el, '::before').filter || '');
+
+  /* The gel material: one baked tile carrying the swell, the bubbles and the gloss,
+     plus the rising bubbles. FRAME-COST CONTRACT — the slab must contain no blend
+     modes and no filters: anything blended or filtered over the sliding ramp is
+     re-composited every frame, and on a GPU-less machine that skews AudioEngine's
+     BPM estimate (measured: 189 with a blur, 171 with four blend layers, 138 with
+     one, 124 with none). Both are asserted so it cannot regress silently. */
+  const mat = await page.evaluate(() => {
+    const relief = document.querySelector('[data-testid="bg-relief"]');
+    const bubbles = [...document.querySelectorAll('.syn-bubble')];
+    const layers = [...document.querySelectorAll('.syn-bg-layer > *')];
+    const r = relief ? getComputedStyle(relief) : null;
+    const blended = layers.filter((el) => {
+      const m = getComputedStyle(el).mixBlendMode;
+      return m && m !== 'normal';
+    }).length;
+    return {
+      reliefImg: r ? r.backgroundImage.slice(0, 22) : '',
+      reliefSize: r && r.backgroundSize,
+      bubbles: bubbles.length,
+      blended,
+      anyFilter: layers.some((el) => /blur|drop-shadow/.test(getComputedStyle(el).filter || '')),
+    };
   });
-  step('slab costs no per-frame blur filter', noBlur);
+  step('gel material baked into one tiling texture', mat.reliefImg.startsWith('url("data:image'),
+    `${mat.reliefImg}… tile=${mat.reliefSize}`);
+  step('air bubbles rising inside the gel', mat.bubbles >= 20, `${mat.bubbles} bubbles`);
+  step('no blend modes in the slab (frame-cost contract)', mat.blended === 0, `${mat.blended} blended layer(s)`);
+  step('no filters in the slab (frame-cost contract)', !mat.anyFilter);
 
   // pixels: a gap must be colourful, a section must be black
   const px = async (clip) => {

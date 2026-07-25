@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Layers,
   Play,
@@ -26,9 +26,11 @@ import ChainLab from './components/ChainLab';
 import AiDirector from './components/AiDirector';
 import NodalComposition, { CompEffect, EFFECT_META, WireMap } from './components/NodalComposition';
 import AudioMeter from './components/AudioMeter';
+import { gelMaterialTile } from './lib/gelTexture';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 
 // explicit session snapshot for the SAVE nav action (decision #9: localStorage)
+const GEL_TILE = 640; // gel material tile edge (px) — also its background-size
 const SESSION_KEY = 'syntech.session';
 const COMP_KEY = 'syntech.composition.v3';
 const COMP_KEY_V2 = 'syntech.composition.v2';
@@ -57,6 +59,28 @@ interface SavedSession { activeModule?: ModuleId; isDayMode?: boolean; savedAt?:
 const readSession = (): SavedSession => {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) ?? '{}') ?? {}; } catch { return {}; }
 };
+
+
+/* Air bubbles rising through the gel (the moving ones, on top of the frozen
+   field). Fixed list so the look is stable; spread wide because the sections cover
+   most of the slab and only the gaps show it, so the visible strips need a few
+   bubbles passing at any time. Negative delays start them mid-rise. */
+const GEL_BUBBLES: Array<{ x: number; d: number; dur: number; delay: number }> = [
+  { x: 0.2, d: 11, dur: 30, delay: 2 }, { x: 1.4, d: 7, dur: 22, delay: 15 },
+  { x: 2.6, d: 15, dur: 38, delay: 27 }, { x: 4, d: 9, dur: 26, delay: 7 },
+  { x: 8, d: 13, dur: 34, delay: 19 }, { x: 12, d: 6, dur: 20, delay: 9 },
+  { x: 17, d: 17, dur: 42, delay: 31 }, { x: 22, d: 8, dur: 24, delay: 3 },
+  { x: 27, d: 12, dur: 32, delay: 22 }, { x: 32, d: 14, dur: 36, delay: 11 },
+  { x: 37, d: 7, dur: 21, delay: 17 }, { x: 42, d: 16, dur: 40, delay: 5 },
+  { x: 47, d: 10, dur: 28, delay: 25 }, { x: 50.5, d: 13, dur: 33, delay: 13 },
+  { x: 54, d: 8, dur: 23, delay: 29 }, { x: 59, d: 15, dur: 37, delay: 8 },
+  { x: 64, d: 11, dur: 29, delay: 20 }, { x: 69, d: 9, dur: 25, delay: 34 },
+  { x: 74, d: 14, dur: 35, delay: 6 }, { x: 79, d: 7, dur: 22, delay: 24 },
+  { x: 84, d: 16, dur: 41, delay: 12 }, { x: 88, d: 10, dur: 27, delay: 30 },
+  { x: 92, d: 13, dur: 31, delay: 4 }, { x: 95, d: 8, dur: 23, delay: 18 },
+  { x: 97, d: 15, dur: 39, delay: 26 }, { x: 98.6, d: 6, dur: 20, delay: 10 },
+  { x: 99.4, d: 12, dur: 33, delay: 21 }, { x: 0.8, d: 9, dur: 24, delay: 32 },
+];
 
 /* Phase-10 (assets): right-sidebar effect-card cover art. Drops in a cover the
    moment the operator delivers it at public/assets/covers/<ModuleId>.{webp,png,jpg}
@@ -245,6 +269,10 @@ export default function App() {
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
   // the hero clip — the sidebar level meter taps this element
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  /* the gel material: painted once on a canvas, then tiled. One image, one blend
+     layer — see the note in gelTexture.ts about why this must not be split up. */
+  const gelMaterial = useMemo(() => gelMaterialTile({ size: GEL_TILE, count: 300, seed: 0x5f3a7c1d }), []);
   const pickSource = () => sourceInputRef.current?.click();
   const onSourceFile = (file: File | null) => {
     if (!file) return;
@@ -492,10 +520,37 @@ export default function App() {
   return (
     <div className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-4 gap-4`}>
 
-      {/* Background artwork behind the whole UI (night mode only): the sections
-          sit on it at 90% opacity, so it stays just perceptible through them and
-          reads fully only in the gaps between them. */}
-      {!isDayMode && <div className="syn-bg-layer" aria-hidden data-testid="bg-layer" />}
+      {/* Gel slab behind the whole UI (night mode only). The sections are solid
+          black, so it reads through the gaps between them: a violet→gold LED sheet
+          under a poured, glossy gel with air bubbles rising through it. Layers are
+          transform-animated only — see the note in index.css. */}
+      {!isDayMode && (
+        <div className="syn-bg-layer" aria-hidden data-testid="bg-layer">
+          <span className="syn-gel-sheet" />
+
+          {/* the whole material — swell, bubbles and gloss — in ONE overlay layer */}
+          <span
+            className="syn-gel-material"
+            data-testid="bg-relief"
+            style={{ backgroundImage: gelMaterial ? `url(${gelMaterial})` : undefined, backgroundSize: `${GEL_TILE}px ${GEL_TILE}px` }}
+          />
+          <span className="syn-gel-bubbles" data-testid="bg-bubbles">
+            {GEL_BUBBLES.map((b, i) => (
+              <span
+                key={i}
+                className="syn-bubble"
+                style={{
+                  left: `${b.x}%`,
+                  width: b.d,
+                  height: b.d,
+                  animationDuration: `${b.dur}s`,
+                  animationDelay: `-${b.delay}s`, // negative: the field is already in motion at load
+                }}
+              />
+            ))}
+          </span>
+        </div>
+      )}
 
       {/* hidden source picker (shared INPUT) */}
       <input

@@ -36,11 +36,17 @@
 > taps the hero video through WebAudio at gain 0). Wordmarks are at weight 700.
 > Verified by `verify-ui-gel-pass.js` (27/27, pass `AUDIO_CLIP=<webm with audio>`).
 >
-> ⚠️ **Keep the backdrop transform-only.** The first gel animated
-> `background-position` with a full-screen `filter: blur()`, which ate enough
-> frames to skew AudioEngine's BPM estimate (189 vs 120) — beat detection reads
-> spectral flux between frames. The suite asserts the transform animation AND the
-> absence of a blur filter; don't reintroduce either.
+> The gel's material (swell, air bubbles, gloss) is a seamless 640px tile painted
+> once on a canvas by `src/lib/gelTexture.ts` and tiled as a single unblended
+> layer; only the rising bubbles and the sliding ramp move.
+>
+> ⚠️ **FRAME-COST CONTRACT for the backdrop: no blend modes, no filters, animate
+> `transform` only.** Anything blended or filtered over the sliding ramp is
+> re-composited every frame — on a GPU-less machine that lands on the CPU and skews
+> AudioEngine's BPM estimate, because beat detection reads spectral flux between
+> frames. Measured: **blur → 189 BPM, four blend layers → 171, one → 138, none →
+> 124** (target 120). `verify-ui-gel-pass.js` asserts zero blended layers and zero
+> filters in the slab; phase 3's BPM check is the canary. Don't reintroduce either.
 >
 > **OPEN OPERATOR ITEM:** the **day-mode title gradient** (deeper stops for
 > legibility vs the identical bright ramp).
