@@ -27,11 +27,17 @@
 > + hero shimmer on both, each at its own size. A `.syn-day .hero-gradient`
 > variant (same animation, deeper stops) fixes day-mode legibility (was 1.48:1).
 >
-> **OPEN OPERATOR DECISIONS (asked 2026-07-25 night, answers due in the morning):**
-> 1. the **background-texture look** — 10 previews sent; references + re-render
->    command in `docs/design/textures/README.md`. Keep → move the token swap into
->    `src/index.css` + promote the chosen texture to `public/assets/`; discard →
->    delete `docs/design/textures/` and `tools/preview/`.
+> **Background artwork (decided + SHIPPED 2026-07-25):** texture A @ 0°, **night
+> mode only**, with the sections at **90% opacity covering it** so it is only just
+> perceptible through them and full-strength in the gaps between sections. Lives
+> in `public/assets/bg-texture.jpg` + `.syn-bg-layer`/tokens in `src/index.css` +
+> the `--syn-hero-canvas: transparent` path in `VfxCanvas.tsx`. Verified 12/12
+> (`verify-phase10-bgtexture.js`). Full details + revert recipe:
+> `docs/design/textures/README.md`.
+>
+> **OPEN OPERATOR ITEMS:**
+> 1. the **full-resolution artwork** — the shipped file is the chat-downscaled
+>    736px version; replacing `public/assets/bg-texture.jpg` is all it takes.
 > 2. the **day-mode title gradient** (deeper stops vs the identical bright ramp).
 
 ## Where we are — exactly

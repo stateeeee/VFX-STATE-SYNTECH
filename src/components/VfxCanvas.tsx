@@ -186,6 +186,10 @@ export default function VfxCanvas({
     let ACCENT_DEEP = '#5b21b6';
     let ACCENT_NIGHT = '#2e1065';
     let BG = '#050505';
+    // when the background artwork is active this canvas must CLEAR rather than
+    // fill, so the hero panel's 10% transparency lets the artwork through (a
+    // translucent fill would build up to solid black frame after frame)
+    let HERO_CLEAR = false;
     const readTokens = (): boolean => {
       const cs = getComputedStyle(document.documentElement);
       const g = (n: string, fb: string) => cs.getPropertyValue(n).trim() || fb;
@@ -197,6 +201,7 @@ export default function VfxCanvas({
       ACCENT_DEEP = g('--syn-accent-900', ACCENT_DEEP);
       ACCENT_NIGHT = g('--syn-accent-950', ACCENT_NIGHT);
       BG = g('--syn-ink-900', BG);
+      HERO_CLEAR = g('--syn-hero-canvas', 'opaque') === 'transparent';
       return ACCENT !== prev;
     };
     readTokens();
@@ -423,8 +428,13 @@ export default function VfxCanvas({
       }
 
       // Clear with absolute deep pitch obsidian background or clean light warm cream background
-      ctx.fillStyle = isDayMode ? '#fbfaf7' : BG;
-      ctx.fillRect(0, 0, w, h);
+      // (night + background artwork: clear to transparent so the artwork shows through)
+      if (!isDayMode && HERO_CLEAR) {
+        ctx.clearRect(0, 0, w, h);
+      } else {
+        ctx.fillStyle = isDayMode ? '#fbfaf7' : BG;
+        ctx.fillRect(0, 0, w, h);
+      }
 
       // Render fine tech grid background to reinforce system blueprints
       ctx.strokeStyle = isDayMode ? '#f0ede6' : '#0d0d0d'; // extremely faint

@@ -489,6 +489,11 @@ export default function App() {
   return (
     <div className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-4 gap-4`}>
 
+      {/* Background artwork behind the whole UI (night mode only): the sections
+          sit on it at 90% opacity, so it stays just perceptible through them and
+          reads fully only in the gaps between them. */}
+      {!isDayMode && <div className="syn-bg-layer" aria-hidden data-testid="bg-layer" />}
+
       {/* hidden source picker (shared INPUT) */}
       <input
         ref={sourceInputRef}

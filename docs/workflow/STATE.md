@@ -73,11 +73,13 @@ uses H.264).
   top-left of the sidebar, never inverted). **5 effect-card covers still pending**
   (operator finishing them); drop-in wiring is live — see Next step for the
   path/naming.
-- **Background-texture look — awaiting the operator's decision** (10 previews sent
-  2026-07-25). References + how to re-render: `docs/design/textures/README.md`.
-  If adopted, the token swap moves into `src/index.css` and the chosen texture
-  becomes a real `public/assets/` asset; if discarded, delete that folder + the
-  preview tool. Also pending their call on the day-mode gradient variant.
+- ~~Background-texture look — awaiting decision~~ — **DECIDED + SHIPPED**
+  (2026-07-25): texture A @ 0°, sections at 90%, night mode only. See the log and
+  `docs/design/textures/README.md`. Open sub-item: the operator may want to send
+  the **full-resolution artwork** (the shipped file is the chat-downscaled 736px
+  version; it is a one-file replace at `public/assets/bg-texture.jpg`).
+- **Day-mode title gradient variant** — still pending the operator's call (deeper
+  stops for legibility vs the identical bright ramp).
 - ~~`ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
   not exist until Phase 9~~ — **RESOLVED (Phase 9)**: `mp4-muxer.min.js` +
   `syntech-export.js` vendored; the button exports a real MP4.
@@ -170,6 +172,25 @@ to judge in the morning ("domattina ti diro se tenerla oppure no").
   slightly translucent so the sections stay perceptible underneath = "encased").
   Claude's picks for the 3D pass: **A at 45°** and **B at 90°**.
   **Awaiting the operator's keep/discard decision.**
+- **Background artwork CHOSEN + SHIPPED (operator, same night).** From the 10
+  previews the operator picked **texture A at rotation 0°**, with the correction:
+  **"the sections must be 90% opacity and cover the artwork, which is barely
+  visible"** (the previews ran the panels at 55%, which let the artwork dominate
+  and washed out the sidebar labels). Implemented for real, night mode only:
+  `public/assets/bg-texture.jpg` + `.syn-bg-layer` in `index.css` (fixed,
+  `inset:-10%` so `cover` crops the artwork's own black margin) + the night
+  surface tokens at **90%** (`--syn-ink-950/900/850`), `--syn-bg: transparent` so
+  the gaps between sections show it at full strength, and a new
+  `--syn-hero-canvas: transparent` token that makes **VfxCanvas clear instead of
+  fill** so the artwork also shows through the hero (a translucent fill would
+  accumulate to solid black frame after frame). Day mode renders no layer and
+  keeps its cream surfaces. The 3D wrap variant was not chosen.
+  **Verified** (`tools/verify/verify-phase10-bgtexture.js`) **12/12**, including
+  the quantitative spec: in the gaps the artwork is unattenuated (sd 61, peak 254)
+  while inside a section it is flattened to near-black (bright 20.5, sd 2.7) — a
+  22× local-contrast difference, i.e. the sections demonstrably cover it. Day-mode
+  gap stays cream (bright 252). Effect-open + AI Lab states checked visually.
+  Swapping in the full-resolution artwork is a one-file replace.
 - **Regression after the brand edits (App.tsx + index.css) — all green:** brand
   **13/13**, phase-10 search **6/6**, covers **7/7**, vendor-offline **19/19**,
   phase 2 **26/26**, phase 1 **21/21** (all 5 standalones still clean), phase 3

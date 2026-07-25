@@ -29,12 +29,20 @@
   --syn-violet: #8b5cf6;
   --syn-violet-rgb: 139, 92, 246;
 
-  /* pure black surfaces */
-  --syn-bg: #0e0e0e;         /* app canvas / space between sections (matte black) */
-  --syn-ink-950: #000000;    /* sidebar / top bar */
-  --syn-ink-900: #000000;    /* deep panel */
-  --syn-ink-850: #000000;    /* panel */
-  --syn-ink-800: #1a1a1a;    /* elevated / card */
+  /* Night surfaces — laid over the background artwork (.syn-bg-layer).
+     Operator direction (2026-07-25): the sections keep 90% opacity and cover the
+     artwork, which stays only just perceptible; it reads at full strength solely
+     in the gaps between sections. Previous flat values kept in the comments so
+     the look is one swap away from reverting. */
+  --syn-bg: transparent;             /* space between sections — shows the artwork (was #0e0e0e) */
+  --syn-ink-950: rgba(0,0,0,0.90);   /* sidebar / top bar   (was #000000) */
+  --syn-ink-900: rgba(0,0,0,0.90);   /* deep panel + hero   (was #000000) */
+  --syn-ink-850: rgba(0,0,0,0.90);   /* panel               (was #000000) */
+  --syn-ink-800: rgba(26,26,26,0.92);/* elevated / card     (was #1a1a1a) */
+  /* VfxCanvas reads this: `transparent` makes it CLEAR each frame instead of
+     filling, so the hero panel's 10% lets the artwork through. A translucent
+     fill would instead accumulate to solid black over frames. */
+  --syn-hero-canvas: transparent;
   --syn-ink-700: #2e2e2e;    /* node fill */
   --syn-line: rgba(139, 92, 246, 0.10); /* hairline border */
   --syn-text: #f4f2ee;
@@ -71,10 +79,30 @@
   --color-ink-700: var(--syn-ink-700);
 }
 
+/* --syn-bg is transparent now, so html carries the base colour under the artwork */
+html {
+  background-color: #05050a;
+}
+
 body {
   background-color: var(--syn-bg);
   color: var(--syn-text);
   font-family: var(--font-sans);
+}
+
+/* Background artwork layer (night mode only — App.tsx renders it when the dark
+   theme is active; day mode keeps its cream surfaces). The -10% inset makes the
+   box 120% of the viewport so `cover` crops the artwork's own black margin
+   instead of letting it show at the screen edges. */
+.syn-bg-layer {
+  position: fixed;
+  inset: -10%;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url('/assets/bg-texture.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 /* Accent glow effects — follow the accent token */
