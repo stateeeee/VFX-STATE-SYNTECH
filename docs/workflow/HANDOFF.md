@@ -27,18 +27,23 @@
 > + hero shimmer on both, each at its own size. A `.syn-day .hero-gradient`
 > variant (same animation, deeper stops) fixes day-mode legibility (was 1.48:1).
 >
-> **Background artwork (decided + SHIPPED 2026-07-25):** texture A @ 0°, **night
-> mode only**, with the sections at **90% opacity covering it** so it is only just
-> perceptible through them and full-strength in the gaps between sections. Lives
-> in `public/assets/bg-texture.jpg` + `.syn-bg-layer`/tokens in `src/index.css` +
-> the `--syn-hero-canvas: transparent` path in `VfxCanvas.tsx`. Verified 12/12
-> (`verify-phase10-bgtexture.js`). Full details + revert recipe:
-> `docs/design/textures/README.md`.
+> **Current look (2026-07-25, latest operator pass):** sections are **100% opaque
+> black**; the gaps between them show `.syn-bg-layer`, an animated violet→gold
+> **"gel" LED slab** on the same ramp as the wordmarks. The logo rides that ramp
+> too while keeping its glossy 3D (masked gradient + `luminosity` blend). The
+> effect host adds **no chrome** above or below an open effect. A single-column
+> **playback level meter** sits in the sidebar under OPTIMIZER (`AudioMeter.tsx`,
+> taps the hero video through WebAudio at gain 0). Wordmarks are at weight 700.
+> Verified by `verify-ui-gel-pass.js` (27/27, pass `AUDIO_CLIP=<webm with audio>`).
 >
-> **OPEN OPERATOR ITEMS:**
-> 1. the **full-resolution artwork** — the shipped file is the chat-downscaled
->    736px version; replacing `public/assets/bg-texture.jpg` is all it takes.
-> 2. the **day-mode title gradient** (deeper stops vs the identical bright ramp).
+> ⚠️ **Keep the backdrop transform-only.** The first gel animated
+> `background-position` with a full-screen `filter: blur()`, which ate enough
+> frames to skew AudioEngine's BPM estimate (189 vs 120) — beat detection reads
+> spectral flux between frames. The suite asserts the transform animation AND the
+> absence of a blur filter; don't reintroduce either.
+>
+> **OPEN OPERATOR ITEM:** the **day-mode title gradient** (deeper stops for
+> legibility vs the identical bright ramp).
 
 ## Where we are — exactly
 

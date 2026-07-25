@@ -29,20 +29,19 @@
   --syn-violet: #8b5cf6;
   --syn-violet-rgb: 139, 92, 246;
 
-  /* Night surfaces — laid over the background artwork (.syn-bg-layer).
-     Operator direction (2026-07-25): the sections keep 90% opacity and cover the
-     artwork, which stays only just perceptible; it reads at full strength solely
-     in the gaps between sections. Previous flat values kept in the comments so
-     the look is one swap away from reverting. */
-  --syn-bg: transparent;             /* space between sections — shows the artwork (was #0e0e0e) */
-  --syn-ink-950: rgba(0,0,0,0.90);   /* sidebar / top bar   (was #000000) */
-  --syn-ink-900: rgba(0,0,0,0.90);   /* deep panel + hero   (was #000000) */
-  --syn-ink-850: rgba(0,0,0,0.90);   /* panel               (was #000000) */
-  --syn-ink-800: rgba(26,26,26,0.92);/* elevated / card     (was #1a1a1a) */
-  /* VfxCanvas reads this: `transparent` makes it CLEAR each frame instead of
-     filling, so the hero panel's 10% lets the artwork through. A translucent
-     fill would instead accumulate to solid black over frames. */
-  --syn-hero-canvas: transparent;
+  /* Night surfaces — FULLY OPAQUE black (operator direction 2026-07-25): the
+     sections are solid, and the animated gel slab (.syn-bg-layer) shows only in
+     the gaps between them, as if the sections were holes cut over an LED sheet. */
+  --syn-bg: transparent;      /* space between sections — the gel shows here (was #0e0e0e) */
+  --syn-ink-950: #000000;     /* sidebar / top bar */
+  --syn-ink-900: #000000;     /* deep panel + hero */
+  --syn-ink-850: #000000;     /* panel */
+  --syn-ink-800: #1a1a1a;     /* elevated / card */
+  /* VfxCanvas reads this: `opaque` = fill as usual (the hero is solid black).
+     Set it to `transparent` and the canvas CLEARS instead, which is what a
+     translucent-surface theme needs — a translucent fill would accumulate to
+     solid black frame after frame. */
+  --syn-hero-canvas: opaque;
   --syn-ink-700: #2e2e2e;    /* node fill */
   --syn-line: rgba(139, 92, 246, 0.10); /* hairline border */
   --syn-text: #f4f2ee;
@@ -90,19 +89,124 @@ body {
   font-family: var(--font-sans);
 }
 
-/* Background artwork layer (night mode only — App.tsx renders it when the dark
-   theme is active; day mode keeps its cream surfaces). The -10% inset makes the
-   box 120% of the viewport so `cover` crops the artwork's own black margin
-   instead of letting it show at the screen edges. */
+/* ═══════════════════════════════════════════════════════════════
+   GEL SLAB (night mode only — App.tsx mounts it for the dark theme)
+   The sections are solid black "holes" and this animated sheet lives underneath,
+   so it reads only in the gaps between them: a colour-shifting LED slab under a
+   layer of gel. It flows through the SAME violet→gold ramp as the wordmarks, so
+   background, logo and titles all shift together.
+   ═══════════════════════════════════════════════════════════════ */
 .syn-bg-layer {
   position: fixed;
-  inset: -10%;
+  inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: url('/assets/bg-texture.jpg');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+  overflow: hidden;
+  isolation: isolate;           /* keeps the gel's screen blend inside this layer */
+  background-color: #120a1e;    /* deep base so the gaps never read as flat black */
+}
+
+/* The LED sheet: the wordmark ramp, slowly flowing.
+   Both layers animate ONLY `transform`, so they are GPU-composited and repaint
+   nothing per frame — an animated `background-position` or a full-viewport
+   `filter: blur()` here costs real frames, and this app's beat detection reads
+   spectral flux BETWEEN frames, so a hungry backdrop skews its BPM estimate.
+   The plate is twice the viewport with the ramp laid down twice, so sliding it
+   by exactly half its width loops seamlessly. */
+.syn-bg-layer::before {
+  content: '';
+  position: absolute;
+  top: -25%;
+  bottom: -25%;
+  left: 0;
+  width: 400%;
+  background-image: linear-gradient(100deg,
+    #8b5cf6 0%, #7c3aed 11%, #ffda4d 25%, #ffb31a 36%, #8b5cf6 50%,
+    #7c3aed 61%, #ffda4d 75%, #ffb31a 86%, #8b5cf6 100%);
+  will-change: transform;
+  animation: syn-gel-flow 26s linear infinite;
+}
+
+/* The gel body: soft pools and wet speculars drifting on their own slower clock,
+   screened over the sheet so it reads liquid rather than printed. The radial
+   falloffs are wide enough to look molten without a blur filter. */
+.syn-bg-layer::after {
+  content: '';
+  position: absolute;
+  inset: -30%;
+  background:
+    radial-gradient(38% 30% at 22% 26%, rgba(255, 255, 255, 0.42), transparent 78%),
+    radial-gradient(34% 36% at 76% 60%, rgba(255, 218, 77, 0.55), transparent 80%),
+    radial-gradient(44% 34% at 48% 88%, rgba(139, 92, 246, 0.60), transparent 82%),
+    radial-gradient(28% 24% at 66% 10%, rgba(255, 255, 255, 0.26), transparent 76%),
+    radial-gradient(32% 28% at 8% 70%, rgba(124, 58, 237, 0.48), transparent 80%);
+  mix-blend-mode: screen;
+  will-change: transform;
+  animation: syn-gel-drift 34s ease-in-out infinite alternate;
+}
+
+/* slide exactly half the plate: the ramp repeats, so the loop is seamless */
+@keyframes syn-gel-flow {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+@keyframes syn-gel-drift {
+  0% { transform: translate3d(-2%, -1%, 0) scale(1.04); }
+  50% { transform: translate3d(2.5%, 2%, 0) scale(1.12); }
+  100% { transform: translate3d(-1%, 2.5%, 0) scale(1.06); }
+}
+
+/* ── Brand logo riding the same ramp ──────────────────────────────
+   The delivered mark keeps its inflated, glossy 3D read: the colour layer is the
+   flowing ramp masked to the mark's silhouette, and the mark itself sits on top
+   in `luminosity` blend, so it contributes only its light and shade while the
+   hue comes from the ramp. Result: the logo shifts colour with the slab and the
+   titles, without flattening into a silhouette. */
+.syn-logo {
+  position: relative;
+  isolation: isolate;
+}
+
+.syn-logo-color,
+.syn-logo-shade {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.syn-logo-color {
+  background-image: linear-gradient(100deg, #8b5cf6 0%, #7c3aed 22%, #ffda4d 50%, #ffb31a 72%, #8b5cf6 100%);
+  background-size: 220% 220%;
+  /* its own keyframes: the slab slides by transform, which would MOVE the mark.
+     At 44px a background-position shift costs nothing. */
+  animation: syn-logo-flow 18s linear infinite;
+  -webkit-mask-image: url('/assets/logo.png');
+  mask-image: url('/assets/logo.png');
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.syn-logo-shade {
+  object-fit: contain;
+  filter: grayscale(1) contrast(1.25) brightness(1.05);
+  mix-blend-mode: luminosity;
+}
+
+@keyframes syn-logo-flow {
+  from { background-position: 0% 50%; }
+  to { background-position: 220% 50%; }
+}
+
+/* day mode: the deeper ramp (same as the wordmarks) so the mark stays legible
+   on the cream sidebar */
+.syn-day .syn-logo-color {
+  background-image: linear-gradient(100deg, #6d28d9 0%, #5b21b6 22%, #a16207 50%, #92400e 72%, #6d28d9 100%);
 }
 
 /* Accent glow effects — follow the accent token */

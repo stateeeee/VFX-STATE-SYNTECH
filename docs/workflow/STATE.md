@@ -73,11 +73,9 @@ uses H.264).
   top-left of the sidebar, never inverted). **5 effect-card covers still pending**
   (operator finishing them); drop-in wiring is live — see Next step for the
   path/naming.
-- ~~Background-texture look — awaiting decision~~ — **DECIDED + SHIPPED**
-  (2026-07-25): texture A @ 0°, sections at 90%, night mode only. See the log and
-  `docs/design/textures/README.md`. Open sub-item: the operator may want to send
-  the **full-resolution artwork** (the shipped file is the chat-downscaled 736px
-  version; it is a one-file replace at `public/assets/bg-texture.jpg`).
+- ~~Background-texture look~~ — **superseded the same day by the animated gel
+  slab** (sections 100% black, violet→gold fluid in the gaps). The photographic
+  backdrop is no longer shipped; `docs/design/textures/` is reference only.
 - **Day-mode title gradient variant** — still pending the operator's call (deeper
   stops for legibility vs the identical bright ramp).
 - ~~`ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
@@ -121,6 +119,57 @@ uses H.264).
 | 17 | Logo presentation: keep the delivered mark 1:1 but **key the black field to transparent** (alpha=luminance) + tight crop → `logo.png`, so it floats on the UI and **inverts for day mode**; original kept as `logo.webp`. One-off effect accent colours **kept** (`#e0913f`/`#e0554b`/`#c65b9c`/`#6ea8e0`, operator: "lasciarli") | 2026-07-24 |
 
 ## Log
+
+### 2026-07-25 — UI pass: gel slab, gradient logo, bare effect host, audio meter
+
+Six operator notes, all done and verified (`tools/verify/verify-ui-gel-pass.js`
+**27/27**; needs a clip with audio — `AUDIO_CLIP=<webm>`):
+
+1. **Sections back to 100% opaque black.** `--syn-ink-950/900/850` → `#000000`,
+   `--syn-ink-800` → `#1a1a1a`, `--syn-hero-canvas` → `opaque` (the hero fills
+   again). The photographic backdrop is gone: `public/assets/bg-texture.jpg`
+   removed, `docs/design/textures/` kept as reference only.
+2. **Animated "gel" LED slab in the gaps.** `--syn-bg` stays `transparent`, so the
+   new `.syn-bg-layer` shows only between the sections — they read as holes cut
+   over a colour-shifting sheet. It runs the SAME violet→gold ramp as the
+   wordmarks (`#8b5cf6 → #7c3aed → #ffda4d → #ffb31a`) with a screened layer of
+   soft pools/speculars drifting on a slower clock for the liquid, glossy read.
+3. **The logo rides that ramp while keeping its inflated glossy 3D:** a masked
+   gradient layer supplies the hue, the mark sits on top in `luminosity` blend so
+   it contributes only light and shade (`.syn-logo*`). Day mode gets the deeper
+   ramp, as the wordmarks do.
+4. **Effect host is bare.** `EffectHost` no longer renders the "← BACK TO GRAPH" +
+   module-name bar; the iframe fills the panel edge to edge (verified: 0px above,
+   0px below, single child). Each standalone HTML already has its own header and
+   status bar, so the shell was stacking a second set of chrome on a
+   self-sufficient UI. Closing is the sidebar HOME nav (03-SPEC §2). `onBack`
+   stays in the props contract.
+5. **Playback level meter in the sidebar** under OPTIMIZER (`AudioMeter.tsx`):
+   one column (channels summed, not a stereo pair), green low → amber → red hot,
+   scale ticks at −6/−12/−24 dB, white peak-hold, dB readout, RMS over a −54…0 dB
+   scale, "hot" above −6 dB. It taps the hero `<video>` through WebAudio — the
+   element ships `muted` (for autoplay) and a muted element analyses as silence,
+   so it is unmuted and routed through a **gain of 0**: real samples reach the
+   analyser while playback stays as silent as before, and both are restored on
+   unmount. One `MediaElementAudioSourceNode` per element is cached in a WeakMap
+   (a second one throws). Verified against a purpose-built clip whose level ramps
+   quiet→hot: fill 77→90 of 96px, hot state reached, readout live.
+6. **Wordmarks bolder** — both at **700**, the vendored Space Grotesk maximum
+   (they were 600). Anything heavier would need a different family.
+
+- **Real bug caught by the regression, worth recording:** the first gel used an
+  animated `background-position` plus a full-viewport `filter: blur(22px)`. That
+  cost enough frames to break **AudioEngine's BPM estimate (189 instead of 120)** —
+  beat detection reads spectral flux BETWEEN frames, so a hungry backdrop skews
+  it. Rebuilt to animate **only `transform`** (GPU-composited, zero repaint) with
+  no blur — the plate is 400% wide with the ramp laid twice so sliding it by half
+  its width loops seamlessly, and the radial falloffs are wide enough to look
+  molten unblurred. **BPM back to 124, phase 3 14/14.** The suite now asserts both
+  the transform animation and the absence of a blur filter, so this cannot
+  regress silently.
+- Regression, all green: phase 1 **21/21**, phase 2 **26/26**, phase 3 **14/14**,
+  vendor-offline **19/19**, brand **13/13**, search **6/6**, covers **7/7**;
+  `npm run lint` + `npm run build` clean.
 
 ### 2026-07-25 — Brand: definitive logo + unified titles; background experiment (10 previews)
 

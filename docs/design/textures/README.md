@@ -21,7 +21,19 @@ NODE_PATH=/opt/node22/lib/node_modules node tools/preview/bg-texture-preview.cjs
 # --mode wrap adds the 3D cover that folds over the UI edges
 ```
 
-## DECIDED (2026-07-25): texture A at 0°, sections at 90% — SHIPPED
+## SUPERSEDED (2026-07-25, later the same day)
+
+The photographic backdrop was tried and then **replaced by an animated "gel" LED
+slab** (`.syn-bg-layer` in `src/index.css`): the operator wanted the sections back
+to **100% black** with a colour-shifting violet→gold fluid in the gaps between
+them — same ramp as the wordmarks — rather than an image behind translucent
+panels. `public/assets/bg-texture.jpg` was therefore removed from the app; the two
+artworks below stay only as design references, and the preview tool still renders
+the image variant if it is ever wanted again.
+
+The section below describes that earlier (now replaced) step, kept for the record.
+
+## Earlier step — texture A at 0°, sections at 90% (replaced by the gel)
 
 10 previews were delivered (4 rotations × 2 textures + one 3D wrap each). The
 operator chose **texture A, rotation 0°**, with the correction that **the sections

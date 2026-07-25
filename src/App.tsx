@@ -25,6 +25,7 @@ import EffectHost, { EffectHostHandle } from './components/EffectHost';
 import ChainLab from './components/ChainLab';
 import AiDirector from './components/AiDirector';
 import NodalComposition, { CompEffect, EFFECT_META, WireMap } from './components/NodalComposition';
+import AudioMeter from './components/AudioMeter';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 
 // explicit session snapshot for the SAVE nav action (decision #9: localStorage)
@@ -242,6 +243,8 @@ export default function App() {
   // ── SHARED SOURCE VIDEO (video + audio): the INPUT node ──
   const [compSource, setCompSource] = useState<{ url: string; name: string } | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
+  // the hero clip — the sidebar level meter taps this element
+  const heroVideoRef = useRef<HTMLVideoElement | null>(null);
   const pickSource = () => sourceInputRef.current?.click();
   const onSourceFile = (file: File | null) => {
     if (!file) return;
@@ -527,7 +530,7 @@ export default function App() {
           {/* Brand unification: this wordmark's font (Space Grotesk semibold,
               tracking-tight, Title Case) is now the shared title style, and it
               carries the hero title's shimmer animation. Position/size unchanged. */}
-          <span className="font-display text-[15px] font-semibold tracking-tight -mt-0.5 hero-gradient">VFX Syntech</span>
+          <span className="font-display text-[15px] font-bold tracking-tight -mt-0.5 hero-gradient">VFX Syntech</span>
           <span className="font-mono text-[7.5px] uppercase tracking-[0.15em] text-neutral-500/80 mt-0.5">Created by State</span>
         </div>
 
@@ -559,17 +562,17 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden gap-4">
         {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
         <nav className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} z-20 shadow-md`}>
-          {/* Phase-10: operator brand logo (replaces the temporary "VS" diamond).
-              The definitive mark is iridescent multicolour on transparent bg, so
-              it is NEVER inverted (that would destroy the brand colours) — it
-              reads on both surfaces as delivered. Night gets a violet bloom;
-              day gets a soft shadow for definition on the cream panel. */}
-          <div className="w-11 h-11 flex items-center justify-center shrink-0 mb-5" title="VFX Syntech — created by State">
+          {/* Brand logo. The mark keeps its inflated glossy 3D shading but takes its
+              colour from the same violet→gold ramp as the gel slab and the titles:
+              a masked gradient layer underneath, the mark on top in `luminosity`
+              blend (see .syn-logo in index.css). Never inverted. */}
+          <div className="syn-logo w-11 h-11 shrink-0 mb-5" title="VFX Syntech — created by State">
+            <span className="syn-logo-color" aria-hidden />
             <img
               src="/assets/logo.png"
               alt="VFX Syntech"
               draggable={false}
-              className={`w-full h-full object-contain select-none ${isDayMode ? 'drop-shadow-[0_1px_3px_rgba(0,0,0,0.28)]' : 'drop-shadow-[0_0_10px_rgba(139,92,246,0.4)]'}`}
+              className={`syn-logo-shade select-none ${isDayMode ? '' : 'drop-shadow-[0_0_10px_rgba(139,92,246,0.35)]'}`}
             />
           </div>
 
@@ -618,6 +621,10 @@ export default function App() {
               </li>
             ))}
           </ul>
+
+          {/* playback level of the loaded clip — the space under OPTIMIZER */}
+          <div className={`w-8 h-px mt-5 mb-3 shrink-0 ${isDayMode ? 'bg-neutral-300' : 'bg-ink-700'}`} />
+          <AudioMeter isDayMode={isDayMode} videoRef={heroVideoRef} sourceKey={compSource?.url ?? null} />
         </nav>
 
         {/* ═══════════════ MAIN CONTENT ═══════════════ */}
@@ -704,6 +711,7 @@ export default function App() {
                         {compSource ? (
                           <video
                             key={compSource.url}
+                            ref={heroVideoRef}
                             src={compSource.url}
                             autoPlay
                             muted
@@ -737,8 +745,8 @@ export default function App() {
                               (semibold, tracking-tight, Title Case) and applies the
                               shimmer to BOTH lines so the two titles read as one
                               brand. Position, sizes and leading are unchanged. */}
-                          <h1 className="font-display text-5xl md:text-6xl font-semibold tracking-tight hero-gradient leading-[0.92] drop-shadow-2xl">VFX</h1>
-                          <h1 className="font-display text-5xl md:text-6xl font-semibold tracking-tight hero-gradient leading-[0.98] drop-shadow-2xl">Syntech</h1>
+                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient leading-[0.92] drop-shadow-2xl">VFX</h1>
+                          <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient leading-[0.98] drop-shadow-2xl">Syntech</h1>
                           <p className="mt-3 text-[11px] md:text-[13px] tracking-[0.18em] font-medium text-neutral-200/90 drop-shadow-md">
                             AI-Powered. Node-Based. Limitless.
                           </p>
