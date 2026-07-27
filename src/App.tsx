@@ -846,10 +846,10 @@ export default function App() {
 
             {/* RIGHT SIDEBAR: Effects Library */}
             <Panel defaultSize={26} minSize={16} maxSize={40}>
-              <div data-crust className={`w-full h-full rounded-2xl border flex flex-col overflow-hidden shadow-lg ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-transparent bg-ink-900'}`}>
+              <div data-crust className={`w-full h-full rounded-[20px] border flex flex-col overflow-hidden shadow-lg syn-surface ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-transparent bg-ink-900'}`}>
                 {/* Search box (positioned at the top) */}
                 <div className={`px-4 py-3 border-b shrink-0 ${isDayMode ? 'border-neutral-200' : 'border-ink-700/50'}`}>
-                  <div className={`w-full border rounded-lg p-2.5 flex items-center gap-2 ${isDayMode ? 'bg-[#fcfbf9] border-neutral-200' : 'bg-[#0e0e0e] border-ink-700/70'}`}>
+                  <div className={`w-full border rounded-xl p-2.5 flex items-center gap-2 syn-inset ${isDayMode ? 'bg-[#fcfbf9] border-neutral-200' : 'bg-[#0b0b0f] border-white/[0.07]'}`}>
                     <Search className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
                     <input
                       data-testid="effect-search"
@@ -886,10 +886,10 @@ export default function App() {
                         key={module.id}
                         data-testid={`effect-card-${module.id}`}
                         onClick={() => handleModuleOpen(module.id)}
-                        className={`h-20 p-2.5 rounded-lg border transition-all flex items-center justify-center relative overflow-hidden cursor-pointer ${
+                        className={`h-20 p-2.5 rounded-2xl border transition-all flex items-center justify-center relative overflow-hidden cursor-pointer ${
                           active
-                            ? isDayMode ? 'border-violet-500/50 bg-violet-500/5 shadow-sm' : 'border-violet-500/45 bg-violet-500/[0.07] shadow-[0_0_10px_rgba(139,92,246,0.06)]'
-                            : isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-850'
+                            ? isDayMode ? 'border-violet-500/50 bg-violet-500/5 shadow-sm' : 'border-violet-500/45 bg-violet-500/[0.07] shadow-[0_0_18px_rgba(139,92,246,0.10)]'
+                            : isDayMode ? 'border-neutral-200 bg-white hover:border-neutral-300' : 'border-white/[0.06] bg-ink-850 syn-card hover:border-white/[0.12]'
                         }`}
                       >
                         <EffectCardArt id={module.id} name={module.name} isDayMode={isDayMode} />

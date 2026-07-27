@@ -214,6 +214,30 @@ body {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
+/* a card is a small plane under the same key: top hairline, base fall-off */
+.syn-card {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    inset 0 -14px 20px -18px rgba(0, 0, 0, 0.9);
+  transition: box-shadow 180ms ease, border-color 180ms ease;
+}
+.syn-card:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 6px 18px -10px rgba(0, 0, 0, 0.85);
+}
+
+/* recessed fields (search): the opposite key — dark at the top, so it reads sunk */
+.syn-inset {
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.75),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.045);
+}
+.syn-day .syn-card,
+.syn-day .syn-inset {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
 /* Accent glow effects — follow the accent token */
 @keyframes pulse-glow {
   0%, 100% {
