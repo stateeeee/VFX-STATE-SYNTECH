@@ -207,6 +207,11 @@ export function paintStone(
     cx.restore();
   };
 
+  /* Where the rock ended up, so the light key can be applied over ALL of it at the
+     end — shading each ridge as it is painted would leave the next ridge's beads
+     unlit wherever they overlap. */
+  const lit: Array<[number, number, number]> = [];
+
   const ridge = (r: Rect, radius: number, band: number, gemChance: number, biasPx: number) => {
     const pts = outline(r, radius, band * 0.62);
 
@@ -245,6 +250,7 @@ export function paintStone(
       // turns its key light with it
       stamp(pick(VEIN), px + nx * off, py + ny * off, ang + (rnd() - 0.5) * 0.16,
         band * swell, zoom * (0.92 + rnd() * 0.20));
+      lit.push([px + nx * off, py + ny * off, band * swell]);
 
       // a sparse big cabochon nested into the ridge
       if (rnd() < 0.09) {
@@ -283,7 +289,35 @@ export function paintStone(
     ridge(h, slim ? 16 : 26, slim ? thickSlim : thick, slim ? 0.0015 : 0.005, slim ? 16 : 18);
   }
 
-  // 3. the brass rivets, one per outer corner, as the slab has
+  /* 3. FORM SHADING — one light key, from above, over the whole rock.
+     A cast shadow was tried first and is a no-op here: the panels are pure #000, so
+     black-on-black shows nothing. What gives a ridge volume against black is its
+     own form shading — the crown catching the key, the underside falling away.
+     Painted `source-atop`, so it only touches pixels the rock already occupies and
+     never darkens a panel; painted LAST, so every bead gets the same key whatever
+     order the ridges were laid in; and painted per PLACEMENT, because a single
+     tiled gradient across the viewport draws a hard seam straight through the UI
+     wherever its tiles meet (tried it — a bright rule across the whole screen). */
+  cx.save();
+  cx.globalCompositeOperation = 'source-atop';
+  for (const [px, py, band] of lit) {
+    const g = cx.createLinearGradient(0, py - band * 0.85, 0, py + band * 0.85);
+    // low per-placement values ON PURPOSE: placements overlap about three deep, so
+    // whatever is set here lands roughly tripled. At 0.17 white the ridge went milky
+    // and lost the piece's colour entirely.
+    g.addColorStop(0, 'rgba(255,255,255,0.055)');
+    g.addColorStop(0.3, 'rgba(255,255,255,0.015)');
+    g.addColorStop(0.52, 'rgba(0,0,0,0)');
+    g.addColorStop(0.8, 'rgba(0,0,0,0.1)');
+    g.addColorStop(1, 'rgba(0,0,0,0.2)');
+    cx.fillStyle = g;
+    cx.beginPath();
+    cx.ellipse(px, py, band * 1.5, band * 0.95, 0, 0, Math.PI * 2);
+    cx.fill();
+  }
+  cx.restore();
+
+  // 4. the brass rivets, one per outer corner, as the slab has
   const c = thickFrame * 0.62;
   const corners: Array<[number, number]> = [[c, c], [vw - c, c], [c, vh - c], [vw - c, vh - c]];
   corners.forEach(([px, py]) => stamp(RIVETS[0], px, py, rnd() * Math.PI * 2, thickFrame * 0.5, 0.9));
