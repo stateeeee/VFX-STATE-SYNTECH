@@ -30,7 +30,9 @@ import { gelMaterialTile } from './lib/gelTexture';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 
 // explicit session snapshot for the SAVE nav action (decision #9: localStorage)
-const GEL_TILE = 640; // gel material tile edge (px) — also its background-size
+// gel material tile edge (px) — the hero wordmark's fill; the backdrop itself is
+// the operator's artwork now, not this tile (see .syn-gel-photo in index.css)
+const GEL_TILE = 640;
 const SESSION_KEY = 'syntech.session';
 const COMP_KEY = 'syntech.composition.v3';
 const COMP_KEY_V2 = 'syntech.composition.v2';
@@ -61,26 +63,6 @@ const readSession = (): SavedSession => {
 };
 
 
-/* Air bubbles rising through the gel (the moving ones, on top of the frozen
-   field). Fixed list so the look is stable; spread wide because the sections cover
-   most of the slab and only the gaps show it, so the visible strips need a few
-   bubbles passing at any time. Negative delays start them mid-rise. */
-const GEL_BUBBLES: Array<{ x: number; d: number; dur: number; delay: number }> = [
-  { x: 0.2, d: 11, dur: 30, delay: 2 }, { x: 1.4, d: 7, dur: 22, delay: 15 },
-  { x: 2.6, d: 15, dur: 38, delay: 27 }, { x: 4, d: 9, dur: 26, delay: 7 },
-  { x: 8, d: 13, dur: 34, delay: 19 }, { x: 12, d: 6, dur: 20, delay: 9 },
-  { x: 17, d: 17, dur: 42, delay: 31 }, { x: 22, d: 8, dur: 24, delay: 3 },
-  { x: 27, d: 12, dur: 32, delay: 22 }, { x: 32, d: 14, dur: 36, delay: 11 },
-  { x: 37, d: 7, dur: 21, delay: 17 }, { x: 42, d: 16, dur: 40, delay: 5 },
-  { x: 47, d: 10, dur: 28, delay: 25 }, { x: 50.5, d: 13, dur: 33, delay: 13 },
-  { x: 54, d: 8, dur: 23, delay: 29 }, { x: 59, d: 15, dur: 37, delay: 8 },
-  { x: 64, d: 11, dur: 29, delay: 20 }, { x: 69, d: 9, dur: 25, delay: 34 },
-  { x: 74, d: 14, dur: 35, delay: 6 }, { x: 79, d: 7, dur: 22, delay: 24 },
-  { x: 84, d: 16, dur: 41, delay: 12 }, { x: 88, d: 10, dur: 27, delay: 30 },
-  { x: 92, d: 13, dur: 31, delay: 4 }, { x: 95, d: 8, dur: 23, delay: 18 },
-  { x: 97, d: 15, dur: 39, delay: 26 }, { x: 98.6, d: 6, dur: 20, delay: 10 },
-  { x: 99.4, d: 12, dur: 33, delay: 21 }, { x: 0.8, d: 9, dur: 24, delay: 32 },
-];
 
 /* Phase-10 (assets): right-sidebar effect-card cover art. Drops in a cover the
    moment the operator delivers it at public/assets/covers/<ModuleId>.{webp,png,jpg}
@@ -270,11 +252,9 @@ export default function App() {
   // the hero clip — the sidebar level meter taps this element
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  /* the gel material: painted once on a canvas, then tiled. One image, one blend
-     layer — see the note in gelTexture.ts about why this must not be split up. */
-  const gelMaterial = useMemo(() => gelMaterialTile({ size: GEL_TILE, count: 300, seed: 0x5f3a7c1d }), []);
-  /* the same material, softer undersides, for the hero wordmark: at letter scale a
-     full-strength bead shadow can swallow a whole stroke (see gelTexture.ts) */
+  /* the gel material for the hero wordmark, painted once on a canvas: softer
+     undersides than the slab variant, because at letter scale a full-strength bead
+     shadow can swallow a whole stroke (see gelTexture.ts) */
   const gelTextMaterial = useMemo(() => gelMaterialTile({ size: GEL_TILE, count: 300, seed: 0x5f3a7c1d, shade: 0.4 }), []);
   const pickSource = () => sourceInputRef.current?.click();
   const onSourceFile = (file: File | null) => {
@@ -522,41 +502,24 @@ export default function App() {
 
   return (
     <div
-      className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-4 gap-4`}
+      /* The frame is wider than the gaps between sections (p-7 vs gap-4): in the
+         operator's reference the artwork reads as a slab the UI is cut out of, and
+         that only works if there is a real border of material around everything. */
+      className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-7 gap-4`}
       /* the gel tile is generated at runtime, so it reaches CSS as a variable —
-         the slab and the hero wordmark both read it from here */
+         the hero wordmark reads it from here */
       style={{
-        '--syn-gel-tex': gelMaterial ? `url(${gelMaterial})` : 'none',
         '--syn-gel-tex-text': gelTextMaterial ? `url(${gelTextMaterial})` : 'none',
-        '--syn-gel-tile': `${GEL_TILE}px`,
       } as React.CSSProperties}
     >
 
-      {/* Gel slab behind the whole UI (night mode only). The sections are solid
-          black, so it reads through the gaps between them: a violet→gold LED sheet
-          under a poured, glossy gel with air bubbles rising through it. Layers are
-          transform-animated only — see the note in index.css. */}
+      {/* The gel slab behind the whole UI (night mode only): the operator's own
+          artwork, one layer, no blend mode and no filter — the sections are solid
+          black, so it reads only in the frame and the gaps between them, as if the
+          panels were cut out of the slab. Transform-animated only (index.css). */}
       {!isDayMode && (
         <div className="syn-bg-layer" aria-hidden data-testid="bg-layer">
-          <span className="syn-gel-sheet" />
-
-          {/* the whole material — swell, bubbles and gloss — in ONE overlay layer */}
-          <span className="syn-gel-material" data-testid="bg-relief" />
-          <span className="syn-gel-bubbles" data-testid="bg-bubbles">
-            {GEL_BUBBLES.map((b, i) => (
-              <span
-                key={i}
-                className="syn-bubble"
-                style={{
-                  left: `${b.x}%`,
-                  width: b.d,
-                  height: b.d,
-                  animationDuration: `${b.dur}s`,
-                  animationDelay: `-${b.delay}s`, // negative: the field is already in motion at load
-                }}
-              />
-            ))}
-          </span>
+          <span className="syn-gel-photo" data-testid="bg-relief" />
         </div>
       )}
 
@@ -625,18 +588,18 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden gap-4">
         {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
         <nav className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} z-20 shadow-md`}>
-          {/* Brand logo. The mark keeps its inflated glossy 3D shading but takes its
-              colour from the same violet→gold ramp as the gel slab and the titles:
-              a masked gradient layer underneath, the mark on top in `luminosity`
-              blend (see .syn-logo in index.css). Never inverted. */}
-          <div className="syn-logo w-11 h-11 shrink-0 mb-5" title="VFX Syntech — created by State">
-            <span className="syn-logo-color" aria-hidden />
+          {/* Brand logo, top-left — the operator's delivered mark in its OWN
+              iridescence (violet, gold, teal, red), which is what pairs with the
+              gel artwork behind the UI. A narrow sheen sweeps across it on the
+              brand's 6s cadence (.syn-logo in index.css). Never inverted. */}
+          <div className="syn-logo w-14 h-14 shrink-0 mb-5" data-testid="brand-logo" title="VFX Syntech — created by State">
             <img
               src="/assets/logo.png"
               alt="VFX Syntech"
               draggable={false}
-              className={`syn-logo-shade select-none ${isDayMode ? '' : 'drop-shadow-[0_0_10px_rgba(139,92,246,0.35)]'}`}
+              className={`syn-logo-mark select-none ${isDayMode ? 'drop-shadow-[0_1px_3px_rgba(0,0,0,0.35)]' : 'drop-shadow-[0_0_10px_rgba(139,92,246,0.35)]'}`}
             />
+            <span className="syn-logo-gloss" aria-hidden />
           </div>
 
           <ul className="flex flex-col gap-5 w-full items-center">
@@ -802,8 +765,12 @@ export default function App() {
                         {/* legibility gradient */}
                         <div className="absolute inset-0 pointer-events-none bg-gradient-to-br from-black/70 via-black/25 to-transparent" />
 
-                        {/* wordmark + subtitle + actions */}
-                        <div className="absolute top-7 left-8 z-10 max-w-[70%]">
+                        {/* Wordmark + subtitle. Pushed hard to the LEFT edge of the
+                            hero (operator, 2026-07-27): the brain graph's mass sits
+                            around and right of centre, so a title indented into the
+                            panel leaves the left half plain black — flush left, the
+                            wordmark is the counterweight to the graph. */}
+                        <div className="absolute top-6 left-3 z-10 max-w-[70%]" data-testid="hero-wordmark">
                           {/* Brand unification: the top-bar wordmark's font, the shared
                               shimmer, and — on this large one only — the gel material with
                               the logo's inflated 3D (`hero-gel-text`; at 15px in the top bar

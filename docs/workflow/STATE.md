@@ -25,6 +25,12 @@ frame-cost contract and the other traps, harness playbook, open operator items).
 
 ## Next step
 
+**Awaiting the operator's read on the 2026-07-27 UI pass** (backdrop = their own
+artwork, logo shown in its own iridescence, wordmark hard left — see the top log
+entry). Two things there are one-block reverts if they disagree: the logo's
+native colours vs the old violet→gold ramp (`.syn-logo` in `src/index.css`), and
+the frame width (`p-7` on the app root in `App.tsx`).
+
 **Phase 10 is substantially DONE; two operator-/hardware-dependent items remain.**
 (1) **5 effect-card covers** — the operator is still finishing them. Drop-in
 wiring is LIVE: place each cover at `public/assets/covers/<ModuleId>.webp` (or
@@ -78,9 +84,11 @@ uses H.264).
   top-left of the sidebar, never inverted). **5 effect-card covers still pending**
   (operator finishing them); drop-in wiring is live — see Next step for the
   path/naming.
-- ~~Background-texture look~~ — **superseded the same day by the animated gel
-  slab** (sections 100% black, violet→gold fluid in the gaps). The photographic
-  backdrop is no longer shipped; `docs/design/textures/` is reference only.
+- ~~Background-texture look~~ — ~~superseded the same day by the animated gel
+  slab~~ — **RE-ADOPTED and shipped 2026-07-27** on the operator's reference: the
+  backdrop is texture A itself (`public/assets/bg-texture.jpg`), stretched whole so
+  its crusted border frames the UI. The procedural violet→gold ramp + canvas bead
+  tile are gone from the backdrop (the tile still fills the hero wordmark).
 - **Day-mode title gradient variant** — still pending the operator's call (deeper
   stops for legibility vs the identical bright ramp).
 - ~~`ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
@@ -122,8 +130,64 @@ uses H.264).
 | 15 | **Operator authorised editing the five effect HTMLs' `<script>`/`locateFile`/`import()` srcs** to vendored local paths (explicit deroga to hard rule #1, for CDN-offline) — the ONLY non-bridge edit allowed to those files | 2026-07-24 |
 | 16 | Vendoring scope: three.js r128 + MediaPipe (selfie_segmentation both simd+nosimd; pose/face_mesh/tasks-vision **SIMD-only**, modern-Chrome target, lazy features fall back gracefully) + **latin/latin-ext** font subsets only; pose **lite** model only (matches `modelComplexity:0`) — drops 34MB of unused pose models (*Claude, operator away*) | 2026-07-24 |
 | 17 | Logo presentation: keep the delivered mark 1:1 but **key the black field to transparent** (alpha=luminance) + tight crop → `logo.png`, so it floats on the UI and **inverts for day mode**; original kept as `logo.webp`. One-off effect accent colours **kept** (`#e0913f`/`#e0554b`/`#c65b9c`/`#6ea8e0`, operator: "lasciarli") | 2026-07-24 |
+| 18 | Backdrop = the operator's **artwork itself** (texture A), stretched WHOLE (`100% 100%`, not `cover`) so its crusted border frames the UI; the procedural ramp + bead tile are retired from the backdrop. Frame widened to `p-7` so the material reads as a slab the panels are cut out of (*Claude, from the operator's reference image*) | 2026-07-27 |
+| 19 | The sidebar logo shows the mark's **own iridescence** — the masked violet→gold ramp + `luminosity` blend are dropped (they existed to tie it to the procedural slab, which is gone), leaving a sheen on the 6s cadence. **Flagged for the operator: one-block revert if they preferred the ramp** (*Claude, from the operator's reference image*) | 2026-07-27 |
 
 ## Log
+
+### 2026-07-27 — The backdrop IS the artwork; logo restored in its own colours
+
+Operator sent four images: the app as it is, the look they want, the texture they
+used for that mockup, and the logo. Three notes, all done
+(`verify-ui-gel-pass.js` **36/36**).
+
+- **The backdrop is now the operator's own artwork.** `public/assets/bg-texture.jpg`
+  (= `docs/design/textures/texture-A-jewel-mosaic.jpg`, the very file they sent,
+  736², rotation 0°) replaces the procedural violet→gold ramp + canvas bead tile in
+  `.syn-bg-layer`. The sections stay solid black, so it reads only in the frame and
+  the gaps — panels cut out of a slab of jewelled gel.
+- **Stretched WHOLE (`100% 100%`), not `cover` — this is the whole trick.** The
+  piece is a slab with its own crusted bead border and corner rivets, and in the
+  reference that border is what frames the UI. `cover` on a square artwork in a 16:9
+  window zooms ~2.5× into the middle and throws the border off screen (tried it
+  first: it looked like blurry wallpaper). The horizontal stretch is invisible on
+  material this abstract.
+- **The black field is bled off screen by measurement, not by eye.** The artwork's
+  own margin was measured from the pixels — 8.42% left/right, 7.61/7.47% top/bottom
+  — so `inset: -9.5%` lands the crusted edge ~8px inside the viewport with a hair of
+  black rim around it. `p-4` → **`p-7`** on the app root (gaps stay `gap-4`): the
+  frame has to be wider than the gaps or there is no border of material to read.
+- **Logo restored top-left, in its OWN iridescence.** It was never actually missing
+  from the app — it is missing from the operator's *mockup* — but it was being
+  recoloured: a violet→gold ramp masked to the mark plus a `luminosity` blend, which
+  existed only to tie it to the procedural slab. That slab is gone and the backdrop
+  is now iridescent itself, so the delivered mark is shown untouched (44px → **56px**
+  for presence) with just a narrow sheen sweeping across it on the 6s cadence.
+  **Operator: if you preferred the ramp-tinted logo, it is a one-block revert in
+  `.syn-logo` — say the word.**
+- **Hero wordmark pushed hard left** (`left-8` → `left-3`, 13px from the panel edge):
+  the brain graph masses around and right of centre, so an indented title leaves the
+  left half plain black. Asserted now, so it cannot drift back.
+- **Frame cost went DOWN, which matters here.** The old slab was three layers (ramp
+  plate + a 640² canvas tile + 28 animated bubble elements); it is now ONE image
+  layer drifting by transform, still with zero blend modes and zero filters. Phase 3
+  re-run: **BPM = 120, exactly on target** (the contract's whole point — beat
+  detection reads spectral flux BETWEEN frames).
+- Suite rewritten to match: the artwork is asserted by URL, by `100% 100%`, by
+  decoding, by being a single unblended unfiltered layer, and by pixels (frame
+  bright 143.8; gap bright 166.8 / colour 76.4; panel interior 0.2 / 0.0 — the
+  sections demonstrably cover it). Logo: present top-left, never recoloured, sheen
+  masked + sweeping, and renders chromatic (spread 19.8) rather than as a silhouette.
+- Regression, all green: gel/UI **36/36**, brand **13/13**, search **6/6**, covers
+  **7/7**, phase 2 **26/26**, phase 3 **14/14** (BPM 120), phase 1 **21/21**;
+  `npm run lint` + `npm run build` clean. Day mode unchanged (no slab, cream
+  surfaces, logo legible on cream).
+- **Harness note for the next session:** the verify scripts are CommonJS but
+  `package.json` is `"type": "module"`, so `node tools/verify/x.js` throws
+  `require is not defined` — copy to `<scratch>/x.cjs` and run that. `verify-phase3`
+  also needs `beat120.wav` + `test.webm` in its `__SCRATCH__` dir; generate them
+  with `tools/verify/make-beat-wav.js` and `tools/verify/gen1080.js` (sed the
+  `__SCRATCH__` placeholder to a real path first).
 
 ### 2026-07-25 — One cadence for the brand; the hero wordmark cast in the gel
 
