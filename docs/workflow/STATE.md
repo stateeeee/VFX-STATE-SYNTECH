@@ -145,6 +145,53 @@ uses H.264).
 
 ## Log
 
+### 2026-07-27 (5th pass) — FASE 4 executed: the restyle, 7 commits
+
+Operator: *"vai, fermati solo quando hai finito tutto il lavoro"* — plan approved,
+run all of it. Done, one commit per area per `CODEX_WORKFLOW.md`.
+
+| Commit | Area | What it fixed |
+|---|---|---|
+| `82ca0a1` | material + lighting | bead scale hierarchy; one light key |
+| `5afea00` | depth | form shading over the whole rock |
+| `2b2b714` | forms | junction pools, outer seam, rarer bigger gems |
+| `a6bfa63` | top bar + rail | lit-plane inset treatment |
+| `19e3679` | right panel + cards | card/field key light, radii, borders |
+| `2b60fd7` | bottom panels | same treatment; hero shell left bare |
+
+Findings worth keeping:
+
+- **Ridge width and bead size were the same number, and that was the whole bug.**
+  The patch was scaled so its HEIGHT became the ridge width, squashing a 96px
+  window 3× into a 34px ridge and taking every bead down with it — the material
+  read as gravel. They are separate now: the patch is drawn at its own scale
+  (real 12–18px beads) and the ALPHA is squeezed to the band, an ellipse as wide
+  as the stamp but only as tall as the ridge.
+- **Bead size must be held for a RUN of stamps.** Rerolled per stamp it averages
+  straight back to one size; the reference varies it in zones.
+- **Vertical flips destroy the lighting.** The key is baked into the piece, so a
+  flip puts specular crowns under the beads. Horizontal only, rotation ≤0.16 rad.
+- **A cast shadow is a no-op on #000 panels** — black on black shows nothing. What
+  gives a ridge volume against black is its own form shading, painted
+  `source-atop` per placement. NOT as one tiled gradient: that drew a hard bright
+  rule straight across the whole UI where its tiles met.
+- **Overlapping placements triple whatever you set.** 0.17 white per placement
+  came out milky and killed the piece's colour; 0.055 is right.
+- **Junction pools only between BROAD sections** — a pool at a corner of the 78px
+  icon rail is wider than the rail and lands on its labels.
+- **An inset box-shadow on the HERO shell costs frames.** It has to be composited
+  over the animating canvas: phase 3 went 124 → 138 the moment it went on, back to
+  124/129 when removed. Every other panel takes it happily. Noted inline in
+  `App.tsx` so it does not get tidied back in.
+
+Regression at the end: stone/UI **40/40**, brand 13/13, search 6/6, covers 7/7,
+phase 1 21/21, phase 2 26/26, phase 3 14/14 (**BPM 124**); lint + build clean;
+day mode unchanged (no rock, cream surfaces, plain white top hairline).
+
+Still deliberately NOT matching the reference: its translucent rail/right column
+(operator chose **option 2 — sections stay solid opaque black**).
+
+
 ### 2026-07-27 (4th pass) — Operator locks the process: CODEX_WORKFLOW
 
 Operator decisions this round:
