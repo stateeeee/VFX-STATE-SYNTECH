@@ -27,34 +27,33 @@
 
 export interface Rect { x: number; y: number; w: number; h: number }
 
-/* Source patches, in the 736² artwork's own coordinates. Picked off a coordinate
-   grid of the piece (tools note: docs/design/textures/README.md) — every one of
-   these is a stretch of the crusted bead vein, chosen for a different bead size
-   and colour so the montage never reads as one repeated tile. */
-const CRUST: Rect[] = [
-  // Picked by measurement, not by eye: a sliding window over the piece scored for
-  // small-scale edge energy (beads are busy) against saturation (beads are pale
-  // and grey-blue), rejecting anything with the artwork's black field in it. These
-  // are the top-scoring, non-overlapping windows — every one is dense bead vein.
-  // The first attempt was hand-picked off a coordinate grid and landed mostly on
-  // smooth membrane, which montaged into pastel mush.
-  // the blue/teal veins are listed twice: an even pick across all of them came out
-  // mauve-grey, where the reference ridge reads blue
-  { x: 160, y: 192, w: 60, h: 112 },
+/* Source patches, in the 736² artwork's own coordinates. */
+const VEIN: Rect[] = [
+  // Bead vein, picked by measurement: a sliding window scored for small-scale edge
+  // energy (beads are busy) against saturation (beads are pale grey-blue), rejecting
+  // any window holding the artwork's black field. Deliberately TIGHT windows — the
+  // larger ones tried first swept in green and magenta membrane, and the ridge came
+  // out mottled where the reference is silver-blue.
   { x: 160, y: 192, w: 60, h: 112 },
   { x: 64, y: 224, w: 112, h: 60 },
-  { x: 64, y: 224, w: 112, h: 60 },
   { x: 128, y: 64, w: 60, h: 112 },
-  { x: 128, y: 64, w: 60, h: 112 },
-  { x: 144, y: 256, w: 112, h: 60 },
+  { x: 400, y: 432, w: 112, h: 60 },
   { x: 144, y: 256, w: 112, h: 60 },
   { x: 64, y: 112, w: 112, h: 60 },
+  { x: 512, y: 480, w: 112, h: 60 },
+  { x: 224, y: 272, w: 112, h: 60 },
+  { x: 112, y: 176, w: 60, h: 112 },
   { x: 560, y: 448, w: 60, h: 112 },
   { x: 304, y: 272, w: 60, h: 112 },
   { x: 208, y: 192, w: 60, h: 112 },
-  { x: 400, y: 432, w: 112, h: 60 },
-  { x: 512, y: 480, w: 112, h: 60 },
-  { x: 224, y: 272, w: 112, h: 60 },
+];
+
+/** single clusters of the piece's LARGEST beads, for the sparse big cabochons */
+const CABOCHON: Rect[] = [
+  { x: 166, y: 292, w: 44, h: 44 },
+  { x: 152, y: 330, w: 44, h: 44 },
+  { x: 250, y: 250, w: 44, h: 44 },
+  { x: 196, y: 238, w: 40, h: 40 },
 ];
 
 /** red gem cabochons set into the ridge at intervals, as in the reference */
@@ -128,7 +127,7 @@ export function paintStone(
   vw: number,
   vh: number,
   holes: Rect[],
-  { thick = 30, thickSlim = 15, slimBelow = 140, thickFrame = 34, seed = 0x51a7e3 }: StoneOptions = {},
+  { thick = 30, thickSlim = 13, slimBelow = 140, thickFrame = 34, seed = 0x51a7e3 }: StoneOptions = {},
 ): HTMLCanvasElement {
   const cv = document.createElement('canvas');
   cv.width = vw; cv.height = vh;
@@ -138,37 +137,47 @@ export function paintStone(
   const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 0x100000000);
   const pick = <T,>(a: T[]) => a[Math.floor(rnd() * a.length)];
 
-  // one scratch canvas, reused: a stamp is the patch drawn into it and then
-  // feathered to an ellipse, so the beads fade out instead of ending on a seam
   const tmp = document.createElement('canvas');
   const tc = tmp.getContext('2d')!;
 
-  const stamp = (src: Rect, px: number, py: number, ang: number, thickness: number, alpha = 1) => {
-    const scale = (thickness / src.h) * (1.02 + rnd() * 0.35);
-    const w = Math.max(8, Math.round(src.w * scale));
-    const h = Math.max(8, Math.round(src.h * scale));
-    const flipX = rnd() < 0.5, flipY = rnd() < 0.5;
+  /**
+   * One piece of vein, laid on the ridge.
+   *
+   * `band` and `zoom` are SEPARATE, and that separation is the whole point. The
+   * first montage tied them together — the patch was scaled so its height became
+   * the ridge width — which meant a 96px-tall window was squashed 3× to fit a 34px
+   * ridge, and every bead in the piece came out at 3–6px. The material read as
+   * gravel. Here the patch is drawn at its own scale (`zoom` ≈ 1 keeps the piece's
+   * real bead size, 12–18px) and it is the ALPHA that is squeezed to `band`: an
+   * ellipse as wide as the stamp but only as tall as the ridge. Big beads, narrow
+   * ridge, which is what the reference has.
+   */
+  const stamp = (src: Rect, px: number, py: number, ang: number, band: number, zoom: number, alpha = 1) => {
+    const w = Math.max(8, Math.round(src.w * zoom));
+    const h = Math.max(8, Math.round(src.h * zoom));
+    // Horizontal flips only. A vertical flip turns the piece's baked lighting
+    // upside down, so specular crowns end up underneath the beads and the ridge
+    // stops reading as one lit object — the single worst lighting error of the
+    // previous pass.
+    const flipX = rnd() < 0.5;
     tmp.width = w; tmp.height = h;
     tc.clearRect(0, 0, w, h);
     tc.save();
-    // random flips so a repeated patch never reads as a repeat
-    tc.translate(flipX ? w : 0, flipY ? h : 0);
-    tc.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+    tc.translate(flipX ? w : 0, 0);
+    tc.scale(flipX ? -1 : 1, 1);
     tc.drawImage(img, src.x, src.y, src.w, src.h, 0, 0, w, h);
     tc.restore();
 
-    /* Feather ONLY the last fifth. Beads are a high-contrast material — lit crowns
-       against near-black pits — and a wide feather over many overlapping stamps
-       averages all of that into pastel mush (tried it; it looked like wet paper).
-       Keep the middle fully opaque so the newest stamp wins outright. */
     tc.globalCompositeOperation = 'destination-in';
     tc.save();
     tc.translate(w / 2, h / 2);
-    tc.scale(w / 2, h / 2);
+    tc.scale(w / 2, Math.max(4, Math.min(h / 2, band * 0.62)));
     const fade = tc.createRadialGradient(0, 0, 0, 0, 0, 1);
+    // opaque in the middle so the newest stamp wins outright; a wide feather over
+    // many overlapping stamps averages the beads into pastel mush
     fade.addColorStop(0, 'rgba(0,0,0,1)');
-    fade.addColorStop(0.6, 'rgba(0,0,0,1)');
-    fade.addColorStop(0.85, 'rgba(0,0,0,0.78)');
+    fade.addColorStop(0.55, 'rgba(0,0,0,1)');
+    fade.addColorStop(0.84, 'rgba(0,0,0,0.72)');
     fade.addColorStop(1, 'rgba(0,0,0,0)');
     tc.fillStyle = fade;
     tc.fillRect(-1, -1, 2, 2);
@@ -183,75 +192,101 @@ export function paintStone(
     cx.restore();
   };
 
-  /** lay a ridge of beads along a rounded-rect outline */
-  const ridge = (r: Rect, radius: number, thickness: number, gemChance: number, biasPx: number) => {
-    // ~0.62 of a patch length between stamps: enough overlap to hide every seam,
-    // little enough that each stamp still shows its own beads
-    const step = thickness * 0.62;
-    const pts = outline(r, radius, step);
-    pts.forEach(([px, py, ang], t) => {
-      const nx = Math.cos(ang + Math.PI / 2), ny = Math.sin(ang + Math.PI / 2);
+  /** the dark bed the beads sit in: without it they float instead of nesting */
+  const grout = (px: number, py: number, ang: number, band: number) => {
+    cx.save();
+    cx.translate(px, py);
+    cx.rotate(ang);
+    cx.scale(band * 1.1, band * 0.66);
+    const g = cx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    g.addColorStop(0, 'rgba(5,9,20,0.92)');
+    g.addColorStop(0.6, 'rgba(5,9,20,0.78)');
+    g.addColorStop(1, 'rgba(5,9,20,0)');
+    cx.fillStyle = g;
+    cx.beginPath(); cx.arc(0, 0, 1, 0, Math.PI * 2); cx.fill();
+    cx.restore();
+  };
 
-      /* Two slow waves plus jitter. Without the waves the ridge comes out as a
-         band of even thickness with two near-straight sides — which is what the
-         first montage did, and it read as a printed strip. The reference ridge
-         swells and thins over 10–30 stamps at a time, so the silhouette has to
-         carry a low-frequency term, not just per-stamp noise. */
-      const wave = Math.sin(t * 0.21) * thickness * 0.12 + Math.sin(t * 0.079 + 1.3) * thickness * 0.1;
-      /* Biased OUTWARD by an ABSOLUTE number of pixels, not a fraction of the
-         ridge's own thickness: what the bias has to clear is half the layout gap
-         between two sections, which has nothing to do with how fat the beads are.
-         As a fraction it under-shot, both facing ridges sat astride their edges,
-         and the two together ate ~100px — swallowing "Add Node" and the GEMINI PRO
-         header. The reference spills about 10px onto each panel and no more. */
-      const off = wave - biasPx + (rnd() - 0.5) * thickness * 0.26;
-      // the ridge straddles the edge, spilling over the section — that spill is
-      // what covers the panel's straight edge and makes a plain rectangle read as
-      // an irregular hole
-      // wide swing: the reference ridge runs from a thin neck to a fat bulge and
-      // back, where an even thickness reads as knitted rope
-      const swell = 0.7 + Math.pow(Math.abs(Math.sin(t * 0.11 + 0.7)), 0.7) * 0.3;
-      stamp(pick(CRUST), px + nx * off, py + ny * off, ang + (rnd() - 0.5) * 0.55, thickness * swell);
+  const ridge = (r: Rect, radius: number, band: number, gemChance: number, biasPx: number) => {
+    const pts = outline(r, radius, band * 0.62);
+
+    // 1. the bed, laid first along the whole ridge
+    pts.forEach(([px, py, ang], t) => {
+      const wave = Math.sin(t * 0.21) * band * 0.12 + Math.sin(t * 0.079 + 1.3) * band * 0.1;
+      const nx = Math.cos(ang + Math.PI / 2), ny = Math.sin(ang + Math.PI / 2);
+      const off = wave - biasPx;
+      grout(px + nx * off, py + ny * off, ang, band * 1.15);
+    });
+
+    // 2. the beads. The zoom is held for a RUN of stamps, not rerolled per stamp:
+    //    the reference varies bead size in zones along the ridge, and rerolling
+    //    every stamp just averages back to one size.
+    let zoom = 0.9, zoneLeft = 0;
+    pts.forEach(([px, py, ang], t) => {
+      if (zoneLeft <= 0) {
+        zoom = [0.62, 0.9, 1.32][Math.floor(rnd() * 3)];
+        zoneLeft = 5 + Math.floor(rnd() * 9);
+      }
+      zoneLeft--;
+
+      const wave = Math.sin(t * 0.21) * band * 0.12 + Math.sin(t * 0.079 + 1.3) * band * 0.1;
+      /* Biased OUTWARD by an ABSOLUTE number of pixels: what the bias has to clear
+         is half the layout gap between two sections, which has nothing to do with
+         how fat the beads are. As a fraction of the ridge it under-shot, both
+         facing ridges sat astride their edges, and together they ate ~100px —
+         swallowing "Add Node" and the GEMINI PRO header. */
+      const off = wave - biasPx + (rnd() - 0.5) * band * 0.5;
+      const nx = Math.cos(ang + Math.PI / 2), ny = Math.sin(ang + Math.PI / 2);
+      // swell carries the slow zone-scale swelling; the random term breaks the
+      // straight filed edge that a purely periodic band comes out with
+      const swell = (0.72 + Math.pow(Math.abs(Math.sin(t * 0.11 + 0.7)), 0.7) * 0.5) * (0.78 + rnd() * 0.45);
+
+      // rotation stays tiny: the light is baked into the piece, so turning a stamp
+      // turns its key light with it
+      stamp(pick(VEIN), px + nx * off, py + ny * off, ang + (rnd() - 0.5) * 0.16,
+        band * swell, zoom * (0.92 + rnd() * 0.20));
+
+      // a sparse big cabochon nested into the ridge
+      if (rnd() < 0.09) {
+        stamp(pick(CABOCHON), px + nx * (off + (rnd() - 0.5) * band * 0.3), py + ny * (off + (rnd() - 0.5) * band * 0.3),
+          (rnd() - 0.5) * 0.2, band * 0.9, 0.85 + rnd() * 0.5);
+      }
 
       // loose clusters thrown clear of the ridge: the reference has beads sitting
       // on their own out on the black, and they are most of what sells it as rock
-      // rather than as a border
       if (rnd() < 0.2) {
-        // mostly thrown outward, into the gap; a quarter of them land on the panel,
-        // which is what stops the edge reading as a drawn line
-        const far = off + (rnd() < 0.25 ? 1 : -1) * thickness * (0.25 + rnd() * 0.5);
-        const along = (rnd() - 0.5) * thickness;
-        stamp(pick(CRUST),
+        const far = off + (rnd() < 0.25 ? 1 : -1) * band * (0.25 + rnd() * 0.5);
+        const along = (rnd() - 0.5) * band;
+        stamp(pick(CABOCHON),
           px + nx * far + Math.cos(ang) * along,
           py + ny * far + Math.sin(ang) * along,
-          rnd() * Math.PI * 2, thickness * (0.22 + rnd() * 0.3), 0.92);
+          (rnd() - 0.5) * 0.3, band * (0.3 + rnd() * 0.3), 0.6 + rnd() * 0.4, 0.92);
       }
 
       if (rnd() < gemChance) {
-        stamp(pick(GEMS), px + nx * (off + (rnd() - 0.5) * thickness * 0.3), py + ny * (off + (rnd() - 0.5) * thickness * 0.3),
-          rnd() * Math.PI * 2, thickness * (0.42 + rnd() * 0.22));
+        stamp(pick(GEMS), px + nx * (off + (rnd() - 0.5) * band * 0.3), py + ny * (off + (rnd() - 0.5) * band * 0.3),
+          rnd() * Math.PI * 2, band * 0.7, 0.5 + rnd() * 0.3);
       }
     });
   };
 
-  // 1. the outer bezel, hugging the viewport
-  // leaning hard outward, so the bezel spills off screen instead of over the top
-  // bar's text
+  // 1. the outer bezel, leaning outward so it spills off screen rather than over
+  //    the top bar's text
   const inset = 16;
-  ridge({ x: inset, y: inset, w: vw - inset * 2, h: vh - inset * 2 }, thickFrame * 0.9, thickFrame, 0.004, 10);
+  ridge({ x: inset, y: inset, w: vw - inset * 2, h: vh - inset * 2 }, thickFrame * 0.9, thickFrame, 0.004, 14);
 
   // 2. a ridge around every section, thinner on the slim ones (a bite that is
   //    texture on the hero is a third of a 48px top bar)
   for (const h of holes) {
     const slim = Math.min(h.w, h.h) < slimBelow;
     // half the 28px layout gap, so the ridge fills it and leans only ~12px in
-    ridge(h, slim ? 16 : 26, slim ? thickSlim : thick, slim ? 0.0015 : 0.005, slim ? 12 : 15);
+    ridge(h, slim ? 16 : 26, slim ? thickSlim : thick, slim ? 0.0015 : 0.005, slim ? 16 : 18);
   }
 
   // 3. the brass rivets, one per outer corner, as the slab has
   const c = thickFrame * 0.62;
   const corners: Array<[number, number]> = [[c, c], [vw - c, c], [c, vh - c], [vw - c, vh - c]];
-  corners.forEach(([px, py]) => stamp(RIVETS[0], px, py, rnd() * Math.PI * 2, thickFrame * 0.5));
+  corners.forEach(([px, py]) => stamp(RIVETS[0], px, py, rnd() * Math.PI * 2, thickFrame * 0.5, 0.9));
 
   return cv;
 }
