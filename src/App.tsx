@@ -704,7 +704,11 @@ export default function App() {
 
                 {/* TOP: Hero (brain graph / video) OR AI Lab OR Effect */}
                 <Panel defaultSize={62} minSize={20}>
-                  <div data-crust className={`w-full h-full relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-transparent bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
+                  {/* NO `syn-surface` here, deliberately: this shell holds the hero canvas, which
+                      repaints every frame, and an inset box-shadow on it has to be composited
+                      over that canvas every frame. Phase 3's BPM estimate went 124 -> 138 with
+                      it. The rock already gives this panel its lit edge. */}
+                  <div data-crust className={`w-full h-full relative rounded-[20px] border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-transparent bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
                     {/* armed AI Lab stays mounted under an open effect so its
                         composition (nodes, wiring, params) survives navigation */}
                     {chainOpen && (
@@ -812,7 +816,7 @@ export default function App() {
                     </PanelResizeHandle>
 
                     <Panel defaultSize={45} minSize={20}>
-                      <div data-crust className={`w-full h-full rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-transparent bg-ink-900'} flex flex-col relative shadow-lg overflow-hidden`}>
+                      <div data-crust className={`w-full h-full rounded-[20px] border syn-surface ${isDayMode ? 'border-neutral-200 bg-white' : 'border-transparent bg-ink-900'} flex flex-col relative shadow-lg overflow-hidden`}>
                         <AiDirector
                           isDayMode={isDayMode}
                           activeGeminiMode={activeGeminiMode}
