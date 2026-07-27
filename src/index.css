@@ -90,44 +90,48 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   THE CRUST (night mode only — App.tsx mounts it for the dark theme)
+   THE STONE (night mode only — App.tsx mounts it for the dark theme)
 
-   The operator's gel artwork DIVIDES the sections instead of lying behind them:
-   it is drawn OVER the panels and masked down to the skeleton between them, so
-   every division is irregular rock rather than a machined straight gap. The
-   geometry and the mask live in src/components/GelCrust.tsx — the long note at
-   the top of that file is the one worth reading.
+   The 3D rock that divides the sections, laid OVER them: the panels stay plain
+   rectangles and the rock covers their edges, so they LOOK irregular without
+   being irregular. The montage is cut from the operator's artwork in
+   src/lib/stoneMontage.ts and placed by src/components/GelCrust.tsx — the notes
+   at the top of those two files are the ones worth reading.
 
    Two rules for this layer:
 
-   1. It never animates and it is never filtered from CSS. The SVG's own
-      displacement filter runs ONCE, when the panel geometry changes; anything
-      that made this layer repaint per frame would skew AudioEngine's BPM estimate,
-      because beat detection reads spectral flux BETWEEN frames (measured: 189 BPM
-      with a full-screen blur, 171 with four blend layers, 138 with one, 124 with
-      none — target 120).
+   1. It never animates and it is never filtered from CSS. The montage is painted
+      once per geometry into a canvas; anything that made this layer repaint per
+      frame would skew AudioEngine's BPM estimate, because beat detection reads
+      spectral flux BETWEEN frames (measured: 189 BPM with a full-screen blur, 171
+      with four blend layers, 138 with one, 124 with none — target 120).
    2. `will-change: transform` is load-bearing, not a micro-optimisation: it keeps
-      the crust on its own compositor layer, above a hero canvas that DOES repaint
+      each strip on its own compositor layer, above a hero canvas that DOES repaint
       every frame, so compositing the two stays a GPU blit.
    ═══════════════════════════════════════════════════════════════ */
 .syn-gel-crust {
   position: fixed;
-  /* above the panels (nav is z-20, top bar z-30) and below the modals (z-50).
-     Each strip positions itself; only the shared <defs> element is zero-sized. */
+  /* above the panels (nav is z-20, top bar z-30) and below the modals (z-50) */
   z-index: 40;
   pointer-events: none;
   will-change: transform;
+  background-repeat: no-repeat;
 }
 
-/* The defs carrier holds the filters and the mask and paints nothing: a 0×0 SVG
-   renders nothing, and its <defs> stay referenceable from the strips.
-   NOT `visibility: hidden` — visibility inherits into the mask's own content, the
-   mask then resolves to zero luminance, and every strip masks itself away. */
-.syn-gel-crust-defs {
+/* A zero-sized marker that owns the strips; the strips are `fixed`, so they place
+   themselves against the viewport and this never needs a size of its own.
+   It MUST carry the z-index itself: Chrome makes every `position: fixed` element a
+   stacking context, so the strips' own `z-index: 40` is resolved INSIDE this one,
+   and with `z-index: auto` here the whole rock painted in DOM order — behind the
+   panels, leaving the stone trapped in the 28px gaps with two straight edges. */
+.syn-gel-crust-root {
+  position: fixed;
   left: 0;
   top: 0;
   width: 0;
   height: 0;
+  z-index: 40;
+  pointer-events: none;
 }
 
 /* ── Brand logo, top-left of the sidebar ──────────────────────────

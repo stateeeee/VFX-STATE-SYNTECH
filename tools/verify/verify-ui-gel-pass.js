@@ -53,25 +53,21 @@ const skipped = (n, why) => { skip++; console.log(`SKIP  ${n} — ${why}`); };
   step('hero canvas back to filling (opaque theme)', surf.hero === 'opaque', surf.hero);
   step('the gaps stay transparent so the slab shows', surf.bg === 'transparent', surf.bg);
 
-  /* ── 2. the crust: the operator's artwork DIVIDING the sections ────────────
-     (operator, 2026-07-27: "vorrei che la texture non fosse sotto alle sezioni ma
-     che le dividesse"). The artwork is drawn OVER the panels and masked to the
-     skeleton between them, with the sections punched out as noise-eroded holes. */
-  step('crust mounted in night mode', !!(await page.$('[data-testid="bg-layer"]')));
+  /* ── 2. the stone: a MONTAGE of the artwork, dividing the sections ─────────
+     (operator, 2026-07-27: "queste rocce colorate che delimitano le sezioni è una
+     rielaborazione della texture … prendere dei pezzi e montarli"; and: the panels
+     must stay rectangles, with the rock ON TOP giving them their irregular look.)
+     So: no mask, no erosion of the panels — pieces of bead vein cut from the piece
+     and stamped along every section's outline, painted once into a bitmap. */
+  step('stone mounted in night mode', !!(await page.$('[data-testid="bg-layer"]')));
   const crust = await page.evaluate(async () => {
-    // the filters + mask live once, in a 0×0 carrier; the artwork is painted by
-    // the strips that reference them
-    const defs = document.querySelector('.syn-gel-crust-defs');
-    const strips = [...document.querySelectorAll('.syn-gel-crust:not(.syn-gel-crust-defs)')];
-    if (!defs || !strips.length) return null;
-    const svg = strips[0];
-    const img = svg.querySelector('image');
-    const cs = getComputedStyle(svg);
-    const sections = document.querySelectorAll('[data-crust]').length;
-    const holes = defs.querySelectorAll('mask rect[rx]').length;
-    /* the strips must cover the skeleton ONLY — never the interior of a section.
-       A full-viewport sheet, even transparent over the panels, still has to be
-       blended over the hero's canvas every frame. */
+    const strips = [...document.querySelectorAll('.syn-gel-crust')];
+    if (!strips.length) return null;
+    const cs = getComputedStyle(strips[0]);
+    const root = document.querySelector('.syn-gel-crust-root');
+    /* the strips must cover the divisions ONLY — never the middle of a section.
+       An overlay over the hero still has to be blended over its canvas every
+       frame, which is what the frame-cost contract is about. */
     const hero = [...document.querySelectorAll('[data-crust]')]
       .map((e) => e.getBoundingClientRect())
       .sort((a, b) => b.width * b.height - a.width * a.height)[0];
@@ -81,9 +77,8 @@ const skipped = (n, why) => { skip++; console.log(`SKIP  ${n} — ${why}`); };
     }, 0) / (window.innerWidth * window.innerHeight);
     const overCanvas = strips.some((s) => {
       const r = s.getBoundingClientRect();
-      // the hero's untouched middle: anything reaching it would sit on the canvas
-      return r.left < hero.right - 40 && r.right > hero.left + 40
-        && r.top < hero.bottom - 40 && r.bottom > hero.top + 40;
+      return r.left < hero.right - 60 && r.right > hero.left + 60
+        && r.top < hero.bottom - 60 && r.bottom > hero.top + 60;
     });
     let decoded = null;
     try {
@@ -91,48 +86,49 @@ const skipped = (n, why) => { skip++; console.log(`SKIP  ${n} — ${why}`); };
       decoded = `${im.naturalWidth}x${im.naturalHeight}`;
     } catch { /* decoded stays null */ }
     return {
-      href: img && img.getAttribute('href'),
-      masked: !!(img && img.getAttribute('mask')),
-      eroded: defs.querySelectorAll('feDisplacementMap').length,
+      // a montage painted at runtime reaches the page as a Blob, never as the
+      // source file: seeing bg-texture.jpg here would mean the artwork went back
+      // to being shown whole instead of being cut up
+      painted: /^url\("blob:/.test(cs.backgroundImage),
+      rawPhoto: /bg-texture/.test(cs.backgroundImage),
       strips: strips.length,
       coverage: +(coverage * 100).toFixed(1),
       overCanvas,
-      // the artwork is stretched, not cropped: the piece's crusted bead border is
-      // what frames the UI, and `cover`-style cropping would throw it off screen
-      stretched: img && img.getAttribute('preserveAspectRatio') === 'none',
-      bleeds: img && parseFloat(img.getAttribute('x')) < 0 && parseFloat(img.getAttribute('width')) > window.innerWidth,
-      sections,
-      holes,
+      sections: document.querySelectorAll('[data-crust]').length,
       decoded,
+      // the panels stay plain rectangles — nothing may mask or deform them
+      deformed: [...document.querySelectorAll('[data-crust]')].some((e) => {
+        const st = getComputedStyle(e);
+        return (st.maskImage && st.maskImage !== 'none') || (st.clipPath && st.clipPath !== 'none');
+      }),
       // FRAME-COST CONTRACT — see the note below
       anim: cs.animationName,
       cssFilter: cs.filter,
       blend: cs.mixBlendMode,
-      overPanels: parseInt(cs.zIndex, 10) >= 40,
+      overPanels: root ? parseInt(getComputedStyle(root).zIndex, 10) >= 40 : false,
       clickThrough: cs.pointerEvents === 'none',
     };
   });
-  step('crust is the operator artwork', !!crust && /bg-texture\.jpg/.test(crust.href || ''), crust && crust.href);
   step('artwork actually decodes', !!crust && !!crust.decoded, (crust && crust.decoded) || 'failed to decode');
-  step('artwork stretched whole (its border frames the UI)', !!crust && crust.stretched && crust.bleeds);
-  step('crust masked to the skeleton between the sections', !!crust && crust.masked);
-  step('every section is punched out as a hole', !!crust && crust.holes === crust.sections && crust.sections >= 6,
-    crust && `${crust.holes} holes / ${crust.sections} sections`);
-  step('hole edges are eroded by noise', !!crust && crust.eroded >= 1, crust && `${crust.eroded} displacement pass(es)`);
-  step('crust sits over the panels and stays click-through', !!crust && crust.overPanels && crust.clickThrough,
-    crust && `z=${crust.overPanels} pointer-events=${crust.clickThrough}`);
-
-  /* FRAME-COST CONTRACT — the crust must never animate and must carry no CSS
-     filter or blend mode. Its SVG displacement filter runs once, when the panel
-     geometry changes; anything that made this layer repaint per frame would skew
-     AudioEngine's BPM estimate, because beat detection reads spectral flux BETWEEN
-     frames (measured: 189 BPM with a full-screen blur, 171 with four blend layers,
-     138 with one, 124 with none — target 120). verify-phase3 is the live guard. */
-  step('crust is cut into skeleton strips, not one sheet', !!crust && crust.strips > 1 && crust.coverage < 60,
+  step('stone is a montage painted at runtime, not the photo', !!crust && crust.painted && !crust.rawPhoto);
+  step('a ridge is laid for every section', !!crust && crust.sections >= 6, crust && `${crust.sections} sections`);
+  /* the operator was explicit: "non devono essere i pannelli con forme non
+     regolari" — the irregularity is the rock's, never the panel's */
+  step('the panels stay plain rectangles (never masked or clipped)', !!crust && !crust.deformed);
+  step('stone sits over the panels and stays click-through', !!crust && crust.overPanels && crust.clickThrough,
+    crust && `z\u226540=${crust.overPanels} pointer-events=${crust.clickThrough}`);
+  step('stone is cut into skeleton strips, not one sheet', !!crust && crust.strips > 1 && crust.coverage < 65,
     crust && `${crust.strips} strips over ${crust.coverage}% of the viewport`);
-  step('no crust strip sits over the hero canvas', !!crust && !crust.overCanvas);
-  step('crust never animates (frame-cost contract)', !!crust && crust.anim === 'none', crust && crust.anim);
-  step('no CSS filter or blend on the crust (frame-cost contract)',
+  step('no stone strip sits over the hero canvas', !!crust && !crust.overCanvas);
+
+  /* FRAME-COST CONTRACT — the stone must never animate and must carry no CSS
+     filter or blend mode. The montage is painted once per geometry; anything that
+     made this layer repaint per frame would skew AudioEngine's BPM estimate,
+     because beat detection reads spectral flux BETWEEN frames (measured: 189 BPM
+     with a full-screen blur, 171 with four blend layers, 138 with one, 124 with
+     none — target 120). verify-phase3 is the live guard. */
+  step('stone never animates (frame-cost contract)', !!crust && crust.anim === 'none', crust && crust.anim);
+  step('no CSS filter or blend on the stone (frame-cost contract)',
     !!crust && crust.cssFilter === 'none' && crust.blend === 'normal', crust && `${crust.cssFilter} / ${crust.blend}`);
 
   // pixels: a gap must be colourful, a section must be black
@@ -155,9 +151,13 @@ const skipped = (n, why) => { skip++; console.log(`SKIP  ${n} — ${why}`); };
   const vDiv = await px({ x: 1178, y: 150, width: 22, height: 400 });   // divider: hero ↔ right sidebar
   const hDiv = await px({ x: 300, y: 622, width: 600, height: 26 });    // divider: hero ↔ node panel
   const panel = await px({ x: 300, y: 880, width: 200, height: 40 });   // inside the node panel
-  step('artwork fills the frame around the UI', frame.bright > 60, `frame bright=${frame.bright} colour=${frame.colour}`);
-  step('vertical divider is the artwork, bright + colourful', vDiv.bright > 90 && vDiv.colour > 35, `bright=${vDiv.bright} colour=${vDiv.colour}`);
-  step('horizontal divider is the artwork too', hDiv.bright > 70 && hDiv.colour > 30, `bright=${hDiv.bright} colour=${hDiv.colour}`);
+  /* Thresholds are the MONTAGE's, not the photo's. The stretched-photo pass scored
+     colour ~75 in the gaps because it landed on smooth magenta membrane; bead crust
+     is pale and grey-blue by nature and scores ~28, which is the material the
+     reference is actually made of. Bright stays high — the beads are lit. */
+  step('stone fills the frame around the UI', frame.bright > 60, `frame bright=${frame.bright} colour=${frame.colour}`);
+  step('vertical divider is stone, lit and tinted', vDiv.bright > 70 && vDiv.colour > 14, `bright=${vDiv.bright} colour=${vDiv.colour}`);
+  step('horizontal divider is stone too', hDiv.bright > 70 && hDiv.colour > 14, `bright=${hDiv.bright} colour=${hDiv.colour}`);
   step('sections stay solid black inside', panel.bright < 12 && panel.colour < 6, `panel bright=${panel.bright} colour=${panel.colour}`);
 
   /* The point of the whole pass: the boundary between a section and the material
@@ -193,7 +193,7 @@ const skipped = (n, why) => { skip++; console.log(`SKIP  ${n} — ${why}`); };
       };
     }, png);
   })();
-  step('the section edge wanders (eroded, not a straight gap)', wander.range >= 8 && wander.sd >= 1.5,
+  step('the section edge wanders (rock, not a straight gap)', wander.range >= 8 && wander.sd >= 1.5,
     `range ${wander.range}px, sd ${wander.sd}px`);
 
   // ── 3. the logo: present top-left, in its own iridescence ─────────────────

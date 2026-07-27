@@ -506,7 +506,7 @@ export default function App() {
       /* The frame is wider than the gaps between sections (p-7 vs gap-4): in the
          operator's reference the artwork reads as a slab the UI is cut out of, and
          that only works if there is a real border of material around everything. */
-      className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-8 gap-7`}
+      className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-10 gap-7`}
       /* the gel tile is generated at runtime, so it reaches CSS as a variable —
          the hero wordmark reads it from here */
       style={{

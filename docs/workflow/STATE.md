@@ -25,13 +25,18 @@ frame-cost contract and the other traps, harness playbook, open operator items).
 
 ## Next step
 
-**Awaiting the operator's read on the 2026-07-27 UI passes** — the artwork now
-DIVIDES the sections as irregular rock (`GelCrust.tsx`), the logo shows its own
-iridescence, the wordmark sits hard left. Four dials, all cheap to turn if they
-disagree: how much rock (`BROAD`/`SLIM` in `GelCrust.tsx`), how wide the dividers
-(`gap-7` / `p-8` in `App.tsx`), the logo's native colours vs the old violet→gold
-ramp (`.syn-logo` in `src/index.css`), and whether the artwork's "COSMOGEL
-REACTOR X" label stays painted out (re-copy the source texture to restore it).
+**One known gap to the reference, waiting on the operator's call:** in their
+reference the left rail and the right column are TRANSLUCENT over the artwork and
+the right sidebar has no black panel — its cards float on the texture. Our
+sections are solid black (2026-07-25 direction). That is the last structural
+difference; everything else is matched.
+
+Dials on the stone, all cheap to turn: ridge thickness and bias
+(`paintStone`'s `thick`/`thickSlim`/`thickFrame` and the `biasPx` at the call
+sites in `stoneMontage.ts`), divider width (`gap-7` / `p-10` in `App.tsx`), the
+logo's native colours vs the old violet→gold ramp (`.syn-logo` in
+`src/index.css`), and whether the artwork's "COSMOGEL REACTOR X" label stays
+painted out (re-copy the source texture to restore it).
 
 **Phase 10 is substantially DONE; two operator-/hardware-dependent items remain.**
 (1) **5 effect-card covers** — the operator is still finishing them. Drop-in
@@ -134,10 +139,70 @@ uses H.264).
 | 17 | Logo presentation: keep the delivered mark 1:1 but **key the black field to transparent** (alpha=luminance) + tight crop → `logo.png`, so it floats on the UI and **inverts for day mode**; original kept as `logo.webp`. One-off effect accent colours **kept** (`#e0913f`/`#e0554b`/`#c65b9c`/`#6ea8e0`, operator: "lasciarli") | 2026-07-24 |
 | 18 | Backdrop = the operator's **artwork itself** (texture A), stretched WHOLE (`100% 100%`, not `cover`) so its crusted border frames the UI; the procedural ramp + bead tile are retired from the backdrop. Frame widened to `p-7` so the material reads as a slab the panels are cut out of (*Claude, from the operator's reference image*) | 2026-07-27 |
 | 19 | The sidebar logo shows the mark's **own iridescence** — the masked violet→gold ramp + `luminosity` blend are dropped (they existed to tie it to the procedural slab, which is gone), leaving a sheen on the 6s cadence. **Flagged for the operator: one-block revert if they preferred the ramp** (*Claude, from the operator's reference image*) | 2026-07-27 |
-| 20 | The artwork **divides** the sections instead of lying behind them: drawn OVER the panels, masked to the skeleton, section holes eroded by `feTurbulence`+`feDisplacementMap` (`GelCrust.tsx`). Consequences that are load-bearing, not cosmetic: night-mode panel **hairlines removed** (an outward bulge would frame a rectangle inside an irregular hole), dividers widened to 28px (at 20px the bulges closed them), and the layer is cut into **strips** so nothing overlays the hero canvas | 2026-07-27 |
+| 20 | The artwork **divides** the sections instead of lying behind them: drawn OVER the panels. ~~masked to the skeleton, holes eroded by `feTurbulence`~~ — **superseded the same day (see #22)**: the operator ruled that the panels must stay rectangles. Still load-bearing from this pass: night-mode panel **hairlines removed**, dividers widened to 28px, and the layer cut into **strips** so nothing overlays the hero canvas | 2026-07-27 |
+| 22 | The rock is a **MONTAGE** (`src/lib/stoneMontage.ts`): pieces of bead vein cut from the artwork and stamped along each section's outline, laid OVER the panels. **The panels stay plain rectangles — never masked, never clipped** (operator: "non devono essere i pannelli con forme non regolari"); the irregularity is the rock's alone, and the suite asserts no `[data-crust]` section carries a mask or clip-path. Source patches are chosen by an edge-energy-vs-saturation score, not by eye | 2026-07-27 |
 | 21 | `public/assets/bg-texture.jpg` is a **derived** asset: the artwork's "COSMOGEL REACTOR X" label is cloned out, because the crust exposes it over the top bar where it reads as a UI glitch. Source untouched in `docs/design/textures/`. **Flagged for the operator** (*Claude*) | 2026-07-27 |
 
 ## Log
+
+### 2026-07-27 (3rd pass) — The alien stone: a MONTAGE, laid over the panels
+
+Operator, twice: the rocks in the reference are *"una rielaborazione della
+texture … prendere dei pezzi e montarli"*, and — decisively — *"i pannelli
+fossero come prima, ma che la forma gliela dia la roccia come se fosse sopra ai
+pannelli … non devono essere i pannelli con forme non regolari."*
+
+That killed the previous pass's whole idea. Both earlier attempts shaped the
+PANELS (a mask with `feTurbulence` eroding the holes). The panels must stay plain
+rectangles; the rock goes on top and covers their edges, and *that* is what makes
+them look irregular. `verify-ui-gel-pass.js` **40/40**, phase 3 **BPM 120**.
+
+- **New `src/lib/stoneMontage.ts`.** Pieces of bead vein are cut from the artwork
+  and stamped along every section's outline, rotated to follow the edge, with red
+  gem cabochons set into the ridge and the brass rivets at the four outer corners.
+  `GelCrust.tsx` now owns only the geometry; the erosion mask is gone entirely.
+- **The source patches are chosen by measurement, and this was the whole ball
+  game.** Hand-picking off a coordinate grid put most windows on smooth membrane,
+  and the montage came out as pastel mush — the material was wrong, not the
+  technique. A sliding window now scores every candidate for small-scale edge
+  energy (beads are busy) against saturation (beads are pale grey-blue), rejecting
+  anything containing the artwork's black field; the top non-overlapping windows
+  are all dense bead vein. The bluest are listed twice, because an even pick came
+  out mauve where the reference reads blue.
+- **The ridge's silhouette needs a low-frequency term.** Per-stamp jitter alone
+  gives a band of even thickness — knitted rope. Two slow sine waves on the offset
+  plus a swell term on the size, and loose clusters thrown clear of the line, give
+  the reference's swell-and-neck with beads sitting on their own out on the black.
+- **The outward bias must be ABSOLUTE PIXELS, not a fraction of the ridge.** What
+  the bias has to clear is half the layout gap, which has nothing to do with how
+  fat the beads are. As a fraction it under-shot, both facing ridges sat astride
+  their edges, and together they ate ~100px — swallowing "Add Node" and the GEMINI
+  PRO header. At `biasPx = 15` (half the 28px gap) the ridge fills the gap and
+  leans ~12px onto each panel, which is what the reference does.
+- **A `position: fixed` wrapper is a stacking context in Chrome.** The strips'
+  own `z-index: 40` was being resolved *inside* a wrapper with `z-index: auto`, so
+  the whole rock painted in DOM order — behind the panels, trapped in the 28px gaps
+  with two dead-straight edges. The wrapper carries the z-index now. (Cost an hour;
+  the symptom looks exactly like "the ridge is too thin".)
+- Outer frame widened to `p-10` so the bezel has room to sit without covering the
+  top bar's text.
+- Suite rewritten for the montage: the stone must reach the page as a **Blob URL**
+  (seeing `bg-texture.jpg` in a strip's `background-image` would mean the artwork
+  went back to being shown whole instead of cut up), a ridge per section, strips
+  not one sheet, none over the hero canvas, never animating, no CSS filter/blend —
+  **and, per the operator's direction, an assertion that no `[data-crust]` section
+  carries a `mask-image` or `clip-path`.** The panels must stay rectangles.
+  Divider thresholds were re-based on the montage's real character: bead crust
+  scores colour ~28, where the stretched photo scored ~75 by landing on smooth
+  magenta membrane.
+- Regression, all green: stone/UI **40/40**, brand 13/13, search 6/6, covers 7/7,
+  phase 1 21/21, phase 2 26/26, phase 3 14/14 (**BPM 120**); lint + build clean.
+- **Still NOT matching the reference, deliberately — needs the operator's call:**
+  in the reference the left rail and the right column are TRANSLUCENT over the
+  artwork (the nebula reads through them) and the right sidebar has no black panel
+  at all — its cards float directly on the texture. Our sections are all solid
+  black, per the 2026-07-25 direction. The operator said this pass was only about
+  the rock, so it was left alone.
 
 ### 2026-07-27 (later) — The artwork DIVIDES the sections: the crust
 
