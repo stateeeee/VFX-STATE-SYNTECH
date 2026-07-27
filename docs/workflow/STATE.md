@@ -145,6 +145,34 @@ uses H.264).
 
 ## Log
 
+### 2026-07-27 (4th pass) — Operator locks the process: CODEX_WORKFLOW
+
+Operator decisions this round:
+- **Option 2 confirmed: sections stay solid opaque black.** The reference's
+  translucent rail/right column is explicitly out of scope now.
+- The stone is still "troppo diversa" from the reference, and the operator has
+  imposed a phased ART-DIRECTION workflow (`CODEX_WORKFLOW.md`, checked in at
+  repo root, verbatim): analyse → design-compare → plan → implement one area
+  per commit, WAITING for their review between phases. Priorities in order:
+  material, lighting, depth, forms, texture, colours. RESTYLE, not redesign.
+  Only CSS/Tailwind/decorative layers may change; logic/canvas/shaders frozen.
+
+Produced this session (FASE 1–3, no code touched):
+- `ANALISI.md` — component/CSS/layout inventory, allowed surfaces, risks.
+- `DESIGN_ANALYSIS.md` — app vs reference: the six measured gaps (bead scale
+  and grout, single light key broken by stamp rotation, missing contact
+  shadow, missing junction pools/outer seam, stamp repetition, mauve mud).
+- `IMPLEMENTATION_PLAN.md` — 7 commits: 1 material (bead scale/hierarchy),
+  2 lighting (one key, no vertical flips, rotation ±0.12), 3 depth (baked
+  drop shadow + panel inset), 4 forms (junction pools, corner clusters, outer
+  seam, fewer/larger gems), 5 top bar + sidebar chrome, 6 right panel + cards,
+  7 bottom panels + buttons. Guard-rails per commit: lint, gel suite,
+  phase-3 BPM after montage steps, night+day screenshots.
+
+**STOPPED before FASE 4 by design — the workflow requires the operator to
+approve/correct `IMPLEMENTATION_PLAN.md` before any implementation commit.**
+
+
 ### 2026-07-27 (3rd pass) — The alien stone: a MONTAGE, laid over the panels
 
 Operator, twice: the rocks in the reference are *"una rielaborazione della
