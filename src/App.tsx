@@ -531,7 +531,7 @@ export default function App() {
       />
 
       {/* ═══════════════ TOP BAR ═══════════════ */}
-      <header data-crust className={`h-12 shrink-0 flex items-center justify-between px-4 rounded-2xl border relative z-30 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-transparent bg-ink-950'} shadow-md`}>
+      <header data-crust className={`h-12 shrink-0 flex items-center justify-between px-4 rounded-[20px] border relative z-30 syn-surface-slim ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-transparent bg-ink-950'} shadow-md`}>
         <div className="flex items-center gap-3 w-56">
           <div className="flex items-center gap-1.5 font-mono text-[10px] text-neutral-500 uppercase tracking-widest">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -584,7 +584,7 @@ export default function App() {
 
       <div className="flex-1 flex overflow-hidden gap-7">
         {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
-        <nav data-crust className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-transparent bg-ink-950'} z-20 shadow-md`}>
+        <nav data-crust className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-[20px] border transition-colors duration-300 syn-surface-slim ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-transparent bg-ink-950'} z-20 shadow-md`}>
           {/* Brand logo, top-left — the operator's delivered mark in its OWN
               iridescence (violet, gold, teal, red), which is what pairs with the
               gel artwork behind the UI. A narrow sheen sweeps across it on the

@@ -189,6 +189,31 @@ body {
   opacity: 0.35;
 }
 
+/* ── Chrome surfaces (night) ───────────────────────────────────────
+   The panels are pure black by direction, which next to the rock reads as a hole
+   punched in card. These give each surface the barest sense of being a lit plane
+   without lifting it off black: a hairline of the key light along the top edge
+   (same key as the rock's — from above), and a fall-off toward the bottom. Both
+   are inset shadows, so nothing changes size or position and no layout moves. */
+.syn-surface {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 14px 26px -20px rgba(255, 255, 255, 0.10),
+    inset 0 -18px 30px -24px rgba(0, 0, 0, 0.9);
+}
+
+/* the rail and the top bar are narrower, so the same treatment at half strength */
+.syn-surface-slim {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 10px 18px -16px rgba(255, 255, 255, 0.08);
+}
+
+.syn-day .syn-surface,
+.syn-day .syn-surface-slim {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
 /* Accent glow effects — follow the accent token */
 @keyframes pulse-glow {
   0%, 100% {
