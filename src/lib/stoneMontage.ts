@@ -270,8 +270,10 @@ export function paintStone(
       }
 
       if (rnd() < gemChance) {
-        stamp(pick(GEMS), px + nx * (off + (rnd() - 0.5) * band * 0.3), py + ny * (off + (rnd() - 0.5) * band * 0.3),
-          rnd() * Math.PI * 2, band * 0.7, 0.5 + rnd() * 0.3);
+        // rare and large, set into the ridge like a cabochon in a bezel — the
+        // reference carries maybe half a dozen on the whole screen
+        stamp(pick(GEMS), px + nx * (off + (rnd() - 0.5) * band * 0.25), py + ny * (off + (rnd() - 0.5) * band * 0.25),
+          rnd() * Math.PI * 2, band * 0.85, 0.62 + rnd() * 0.28);
       }
     });
   };
@@ -286,7 +288,50 @@ export function paintStone(
   for (const h of holes) {
     const slim = Math.min(h.w, h.h) < slimBelow;
     // half the 28px layout gap, so the ridge fills it and leans only ~12px in
-    ridge(h, slim ? 16 : 26, slim ? thickSlim : thick, slim ? 0.0015 : 0.005, slim ? 16 : 18);
+    ridge(h, slim ? 16 : 26, slim ? thickSlim : thick, slim ? 0.0008 : 0.0028, slim ? 16 : 18);
+  }
+
+  /* 2b. THE JUNCTION POOLS. Where three sections meet, the reference swells into a
+     knot two or three times the width of a plain run — those knots are the
+     composition's anchors, and without them every division reads at the same
+     weight. A junction is found geometrically: a corner of one section that sits
+     within a gap's width of a corner of another. */
+  const corners4 = (r: Rect): Array<[number, number]> =>
+    [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]] as Array<[number, number]>;
+  const seenPool: Array<[number, number]> = [];
+  // Only between BROAD sections. A pool at a corner of the 78px icon rail is wider
+  // than the rail itself and lands straight on its labels.
+  const broad = holes.filter((h) => Math.min(h.w, h.h) >= slimBelow);
+  for (let i = 0; i < broad.length; i++) {
+    for (let j = i + 1; j < broad.length; j++) {
+      for (const [ax, ay] of corners4(broad[i])) {
+        for (const [bx, by] of corners4(broad[j])) {
+          if (Math.hypot(ax - bx, ay - by) > thick * 2.2) continue;
+          const px = (ax + bx) / 2, py = (ay + by) / 2;
+          if (seenPool.some(([sx, sy]) => Math.hypot(sx - px, sy - py) < thick)) continue;
+          seenPool.push([px, py]);
+          for (let k = 0; k < 6; k++) {
+            const a = rnd() * Math.PI * 2, d = rnd() * thick * 0.68;
+            const cxp = px + Math.cos(a) * d, cyp = py + Math.sin(a) * d;
+            stamp(pick(k % 3 === 0 ? CABOCHON : VEIN), cxp, cyp, (rnd() - 0.5) * 0.16,
+              thick * (0.85 + rnd() * 0.5), 0.8 + rnd() * 0.6);
+            lit.push([cxp, cyp, thick * 1.05]);
+          }
+        }
+      }
+    }
+  }
+
+  /* 2c. THE OUTER SEAM. The piece has a fine, almost continuous line of micro
+     beads running along its own outer edge; in the reference that seam runs right
+     on the screen's edge and is what makes the bezel read as a made object rather
+     than as a border. Fine grain, tight spacing, no swell. */
+  {
+    const seam = 15;
+    for (const [px, py, ang] of outline({ x: 6, y: 6, w: vw - 12, h: vh - 12 }, 26, seam * 0.55)) {
+      stamp(pick(VEIN), px, py, ang + (rnd() - 0.5) * 0.12, seam, 0.42 + rnd() * 0.16, 0.85);
+      lit.push([px, py, seam]);
+    }
   }
 
   /* 3. FORM SHADING — one light key, from above, over the whole rock.
