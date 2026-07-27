@@ -26,6 +26,7 @@ import ChainLab from './components/ChainLab';
 import AiDirector from './components/AiDirector';
 import NodalComposition, { CompEffect, EFFECT_META, WireMap } from './components/NodalComposition';
 import AudioMeter from './components/AudioMeter';
+import GelCrust from './components/GelCrust';
 import { gelMaterialTile } from './lib/gelTexture';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 
@@ -505,7 +506,7 @@ export default function App() {
       /* The frame is wider than the gaps between sections (p-7 vs gap-4): in the
          operator's reference the artwork reads as a slab the UI is cut out of, and
          that only works if there is a real border of material around everything. */
-      className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-7 gap-4`}
+      className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-8 gap-7`}
       /* the gel tile is generated at runtime, so it reaches CSS as a variable —
          the hero wordmark reads it from here */
       style={{
@@ -513,15 +514,11 @@ export default function App() {
       } as React.CSSProperties}
     >
 
-      {/* The gel slab behind the whole UI (night mode only): the operator's own
-          artwork, one layer, no blend mode and no filter — the sections are solid
-          black, so it reads only in the frame and the gaps between them, as if the
-          panels were cut out of the slab. Transform-animated only (index.css). */}
-      {!isDayMode && (
-        <div className="syn-bg-layer" aria-hidden data-testid="bg-layer">
-          <span className="syn-gel-photo" data-testid="bg-relief" />
-        </div>
-      )}
+      {/* The crust (night mode only): the operator's artwork drawn OVER the panels
+          and masked to the skeleton between them, so the material DIVIDES the
+          sections — irregular rock, with the panels as holes eroded through it.
+          Every section shell carries `data-crust`; see GelCrust.tsx. */}
+      {!isDayMode && <GelCrust layoutKey={`${openEffectId ?? ''}|${chainOpen}|${projectsOpen}`} />}
 
       {/* hidden source picker (shared INPUT) */}
       <input
@@ -534,7 +531,7 @@ export default function App() {
       />
 
       {/* ═══════════════ TOP BAR ═══════════════ */}
-      <header className={`h-12 shrink-0 flex items-center justify-between px-4 rounded-2xl border relative z-30 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} shadow-md`}>
+      <header data-crust className={`h-12 shrink-0 flex items-center justify-between px-4 rounded-2xl border relative z-30 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-transparent bg-ink-950'} shadow-md`}>
         <div className="flex items-center gap-3 w-56">
           <div className="flex items-center gap-1.5 font-mono text-[10px] text-neutral-500 uppercase tracking-widest">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -585,9 +582,9 @@ export default function App() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden gap-4">
+      <div className="flex-1 flex overflow-hidden gap-7">
         {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
-        <nav className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} z-20 shadow-md`}>
+        <nav data-crust className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-transparent bg-ink-950'} z-20 shadow-md`}>
           {/* Brand logo, top-left — the operator's delivered mark in its OWN
               iridescence (violet, gold, teal, red), which is what pairs with the
               gel artwork behind the UI. A narrow sheen sweeps across it on the
@@ -654,7 +651,7 @@ export default function App() {
         </nav>
 
         {/* ═══════════════ MAIN CONTENT ═══════════════ */}
-        <div className="flex-1 flex flex-col gap-4 overflow-hidden relative">
+        <div className="flex-1 flex flex-col gap-7 overflow-hidden relative">
 
           {/* PROJECTS MODAL */}
           {projectsOpen && (
@@ -707,7 +704,7 @@ export default function App() {
 
                 {/* TOP: Hero (brain graph / video) OR AI Lab OR Effect */}
                 <Panel defaultSize={62} minSize={20}>
-                  <div className={`w-full h-full relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
+                  <div data-crust className={`w-full h-full relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-transparent bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
                     {/* armed AI Lab stays mounted under an open effect so its
                         composition (nodes, wiring, params) survives navigation */}
                     {chainOpen && (
@@ -770,7 +767,7 @@ export default function App() {
                             around and right of centre, so a title indented into the
                             panel leaves the left half plain black — flush left, the
                             wordmark is the counterweight to the graph. */}
-                        <div className="absolute top-6 left-3 z-10 max-w-[70%]" data-testid="hero-wordmark">
+                        <div className="absolute top-6 left-4 z-10 max-w-[70%]" data-testid="hero-wordmark">
                           {/* Brand unification: the top-bar wordmark's font, the shared
                               shimmer, and — on this large one only — the gel material with
                               the logo's inflated 3D (`hero-gel-text`; at 15px in the top bar
@@ -787,7 +784,7 @@ export default function App() {
                   </div>
                 </Panel>
 
-                <PanelResizeHandle className="h-4 flex items-center justify-center cursor-row-resize group relative z-10 shrink-0">
+                <PanelResizeHandle className="h-7 flex items-center justify-center cursor-row-resize group relative z-10 shrink-0">
                   <div className={`w-12 h-[3px] rounded-full transition-colors ${isDayMode ? 'bg-neutral-300 group-hover:bg-violet-500' : 'bg-ink-700 group-hover:bg-violet-500'}`} />
                 </PanelResizeHandle>
 
@@ -810,12 +807,12 @@ export default function App() {
                       />
                     </Panel>
 
-                    <PanelResizeHandle className="w-4 flex items-center justify-center cursor-col-resize group shrink-0">
+                    <PanelResizeHandle className="w-7 flex items-center justify-center cursor-col-resize group shrink-0">
                       <div className={`w-[3px] h-12 rounded-full transition-colors ${isDayMode ? 'bg-neutral-300 group-hover:bg-violet-500' : 'bg-ink-700 group-hover:bg-violet-500'}`} />
                     </PanelResizeHandle>
 
                     <Panel defaultSize={45} minSize={20}>
-                      <div className={`w-full h-full rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} flex flex-col relative shadow-lg overflow-hidden`}>
+                      <div data-crust className={`w-full h-full rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-transparent bg-ink-900'} flex flex-col relative shadow-lg overflow-hidden`}>
                         <AiDirector
                           isDayMode={isDayMode}
                           activeGeminiMode={activeGeminiMode}
@@ -843,13 +840,13 @@ export default function App() {
               </PanelGroup>
             </Panel>
 
-            <PanelResizeHandle className="w-4 flex items-center justify-center cursor-col-resize group shrink-0">
+            <PanelResizeHandle className="w-7 flex items-center justify-center cursor-col-resize group shrink-0">
               <div className={`w-[3px] h-12 rounded-full transition-colors ${isDayMode ? 'bg-neutral-300 group-hover:bg-violet-500' : 'bg-ink-700 group-hover:bg-violet-500'}`} />
             </PanelResizeHandle>
 
             {/* RIGHT SIDEBAR: Effects Library */}
             <Panel defaultSize={26} minSize={16} maxSize={40}>
-              <div className={`w-full h-full rounded-2xl border flex flex-col overflow-hidden shadow-lg ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-ink-700/60 bg-ink-900'}`}>
+              <div data-crust className={`w-full h-full rounded-2xl border flex flex-col overflow-hidden shadow-lg ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-transparent bg-ink-900'}`}>
                 {/* Search box (positioned at the top) */}
                 <div className={`px-4 py-3 border-b shrink-0 ${isDayMode ? 'border-neutral-200' : 'border-ink-700/50'}`}>
                   <div className={`w-full border rounded-lg p-2.5 flex items-center gap-2 ${isDayMode ? 'bg-[#fcfbf9] border-neutral-200' : 'bg-[#0e0e0e] border-ink-700/70'}`}>

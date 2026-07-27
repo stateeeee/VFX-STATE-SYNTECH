@@ -90,66 +90,44 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   GEL SLAB (night mode only — App.tsx mounts it for the dark theme)
-   The sections are solid black "holes" and the operator's own gel artwork lives
-   underneath, so it reads only in the gaps between them: the UI looks like panels
-   cut out of a slab of jewelled gel.
+   THE CRUST (night mode only — App.tsx mounts it for the dark theme)
 
-   2026-07-27 (operator reference): the procedural violet→gold ramp + canvas bead
-   tile that used to fill this layer are replaced by the real artwork
-   (`/assets/bg-texture.jpg` = docs/design/textures/texture-A-jewel-mosaic.jpg,
-   rotation 0°). Its own bubbles, gloss and nebula colour are far richer than
-   anything the tile could paint, so the slab is now ONE photographic layer.
+   The operator's gel artwork DIVIDES the sections instead of lying behind them:
+   it is drawn OVER the panels and masked down to the skeleton between them, so
+   every division is irregular rock rather than a machined straight gap. The
+   geometry and the mask live in src/components/GelCrust.tsx — the long note at
+   the top of that file is the one worth reading.
+
+   Two rules for this layer:
+
+   1. It never animates and it is never filtered from CSS. The SVG's own
+      displacement filter runs ONCE, when the panel geometry changes; anything
+      that made this layer repaint per frame would skew AudioEngine's BPM estimate,
+      because beat detection reads spectral flux BETWEEN frames (measured: 189 BPM
+      with a full-screen blur, 171 with four blend layers, 138 with one, 124 with
+      none — target 120).
+   2. `will-change: transform` is load-bearing, not a micro-optimisation: it keeps
+      the crust on its own compositor layer, above a hero canvas that DOES repaint
+      every frame, so compositing the two stays a GPU blit.
    ═══════════════════════════════════════════════════════════════ */
-.syn-bg-layer {
+.syn-gel-crust {
   position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  overflow: hidden;
-  isolation: isolate;
-  background-color: #05050a;    /* deep base under the artwork's own dark areas */
-}
-
-/* Every layer of the slab animates ONLY `transform`, so each is GPU-composited
-   and repaints nothing per frame. This is load-bearing, not a micro-optimisation:
-   an animated `background-position` or a full-viewport `filter: blur()` here costs
-   enough frames to skew AudioEngine's BPM estimate, because beat detection reads
-   spectral flux BETWEEN frames (measured: 189 BPM with a blur, 171 with four blend
-   layers, 138 with one, 124 with none — target 120). */
-.syn-bg-layer > * {
-  position: absolute;
+  /* above the panels (nav is z-20, top bar z-30) and below the modals (z-50).
+     Each strip positions itself; only the shared <defs> element is zero-sized. */
+  z-index: 40;
   pointer-events: none;
   will-change: transform;
 }
 
-/* THE SLAB — the operator's gel artwork, one layer, no blend mode, no filter.
-   The WHOLE artwork is stretched to the viewport (`100% 100%`, not `cover`) on
-   purpose: the piece is a slab with its own crusted bead border and corner rivets,
-   and in the reference that border is what frames the UI. `cover` on a square
-   artwork in a 16:9 window would zoom ~2.5× into the middle and throw the border —
-   the very thing that makes it read as a physical slab — off screen. The
-   horizontal stretch is invisible on material this abstract.
-   The drift is deliberately tiny and never scales below 1, so the artwork always
-   covers the viewport and its border stays put; it is a pure transform, so the
-   slab still repaints nothing per frame. */
-.syn-gel-photo {
-  /* -9.5%: the artwork carries its own black field, measured at 8.4% left/right
-     and 7.5% top/bottom. Bleeding the layer out by 9.5% pushes almost all of that
-     off screen, so the slab's crusted edge lands ~8px inside the viewport with a
-     hair of black rim around it — exactly how the reference frames the UI. */
-  inset: -9.5%;
-  background-image: url('/assets/bg-texture.jpg');
-  background-size: 100% 100%;
-  background-position: center;
-  background-repeat: no-repeat;
-  animation: syn-gel-drift 60s ease-in-out infinite alternate;
-}
-
-@keyframes syn-gel-drift {
-  0% { transform: translate3d(-0.3%, -0.2%, 0) scale(1); }
-  50% { transform: translate3d(0.35%, 0.3%, 0) scale(1.01); }
-  100% { transform: translate3d(-0.2%, 0.35%, 0) scale(1.005); }
+/* The defs carrier holds the filters and the mask and paints nothing: a 0×0 SVG
+   renders nothing, and its <defs> stay referenceable from the strips.
+   NOT `visibility: hidden` — visibility inherits into the mask's own content, the
+   mask then resolves to zero luminance, and every strip masks itself away. */
+.syn-gel-crust-defs {
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
 }
 
 /* ── Brand logo, top-left of the sidebar ──────────────────────────

@@ -25,11 +25,13 @@ frame-cost contract and the other traps, harness playbook, open operator items).
 
 ## Next step
 
-**Awaiting the operator's read on the 2026-07-27 UI pass** (backdrop = their own
-artwork, logo shown in its own iridescence, wordmark hard left — see the top log
-entry). Two things there are one-block reverts if they disagree: the logo's
-native colours vs the old violet→gold ramp (`.syn-logo` in `src/index.css`), and
-the frame width (`p-7` on the app root in `App.tsx`).
+**Awaiting the operator's read on the 2026-07-27 UI passes** — the artwork now
+DIVIDES the sections as irregular rock (`GelCrust.tsx`), the logo shows its own
+iridescence, the wordmark sits hard left. Four dials, all cheap to turn if they
+disagree: how much rock (`BROAD`/`SLIM` in `GelCrust.tsx`), how wide the dividers
+(`gap-7` / `p-8` in `App.tsx`), the logo's native colours vs the old violet→gold
+ramp (`.syn-logo` in `src/index.css`), and whether the artwork's "COSMOGEL
+REACTOR X" label stays painted out (re-copy the source texture to restore it).
 
 **Phase 10 is substantially DONE; two operator-/hardware-dependent items remain.**
 (1) **5 effect-card covers** — the operator is still finishing them. Drop-in
@@ -132,8 +134,69 @@ uses H.264).
 | 17 | Logo presentation: keep the delivered mark 1:1 but **key the black field to transparent** (alpha=luminance) + tight crop → `logo.png`, so it floats on the UI and **inverts for day mode**; original kept as `logo.webp`. One-off effect accent colours **kept** (`#e0913f`/`#e0554b`/`#c65b9c`/`#6ea8e0`, operator: "lasciarli") | 2026-07-24 |
 | 18 | Backdrop = the operator's **artwork itself** (texture A), stretched WHOLE (`100% 100%`, not `cover`) so its crusted border frames the UI; the procedural ramp + bead tile are retired from the backdrop. Frame widened to `p-7` so the material reads as a slab the panels are cut out of (*Claude, from the operator's reference image*) | 2026-07-27 |
 | 19 | The sidebar logo shows the mark's **own iridescence** — the masked violet→gold ramp + `luminosity` blend are dropped (they existed to tie it to the procedural slab, which is gone), leaving a sheen on the 6s cadence. **Flagged for the operator: one-block revert if they preferred the ramp** (*Claude, from the operator's reference image*) | 2026-07-27 |
+| 20 | The artwork **divides** the sections instead of lying behind them: drawn OVER the panels, masked to the skeleton, section holes eroded by `feTurbulence`+`feDisplacementMap` (`GelCrust.tsx`). Consequences that are load-bearing, not cosmetic: night-mode panel **hairlines removed** (an outward bulge would frame a rectangle inside an irregular hole), dividers widened to 28px (at 20px the bulges closed them), and the layer is cut into **strips** so nothing overlays the hero canvas | 2026-07-27 |
+| 21 | `public/assets/bg-texture.jpg` is a **derived** asset: the artwork's "COSMOGEL REACTOR X" label is cloned out, because the crust exposes it over the top bar where it reads as a UI glitch. Source untouched in `docs/design/textures/`. **Flagged for the operator** (*Claude*) | 2026-07-27 |
 
 ## Log
+
+### 2026-07-27 (later) — The artwork DIVIDES the sections: the crust
+
+Operator: *"vorrei che la texture non fosse sotto alle sezioni ma che le
+dividesse. mi piace questa roccia irregolare che divide le sezioni dell app."*
+Done — `verify-ui-gel-pass.js` **42/42**.
+
+- **New `src/components/GelCrust.tsx`.** The artwork moved from *behind* the
+  panels (`z-index: -1`) to *over* them (`z-index: 40`, `pointer-events: none`),
+  masked down to the skeleton between them: an SVG `<mask>` that is white
+  everywhere and punches each section out as a hole. The holes' edges run through
+  `feTurbulence` + `feDisplacementMap`, so the material reads as irregular rock
+  and the sections as holes eroded through it — not as a machined 16px gap.
+- **Sections announce themselves with `data-crust`** (top bar, icon rail, hero
+  shell, node panel, Gemini panel, right sidebar). Geometry is measured live and
+  re-measured by a `ResizeObserver`, so the holes track panel drags and window
+  resizes; verified by dragging a handle and diffing the mask rects.
+- **Two erosion strengths, because one does not fit both.** A ±8px bite is texture
+  on the hero and a third of a 48px top bar. Sections are sorted by short side:
+  broad ones `inset 5 / erode 16`, slim ones `inset 2 / erode 8`, each its own
+  `<g filter>`.
+- **Night-mode panel hairlines are gone** (`border-ink-700/60` → `border-transparent`
+  on the six shells). This is load-bearing, not tidying: the noise pushes each hole
+  a few px OUT as well as in, and every outward bulge would otherwise frame a
+  rounded rectangle floating inside an irregular hole. Day mode keeps its borders —
+  there is no crust there.
+- **Dividers widened to 28px** (`gap-7`, resize handles `w-7`/`h-7`) and the frame
+  to 32px (`p-8`). At 20px the two facing holes' outward bulges met and closed the
+  divider in places; 28px keeps it open at ≥18px and lets it open to ~50px where
+  both sides bite inward. Hero wordmark nudged `left-3` → `left-4` to clear the bite.
+- **The artist's label is painted out of the shipped texture.** The piece carries a
+  "COSMOGEL REACTOR X" barcode block at 736²(79,90)–(155,178); behind the panels it
+  never showed, but the crust exposes it right over the top bar, where it reads as a
+  UI glitch. `public/assets/bg-texture.jpg` is now a derived asset with that block
+  cloned over from the gel below it (mirrored + feathered). **The original is
+  untouched at `docs/design/textures/texture-A-jewel-mosaic.jpg` — operator, say the
+  word and the label goes back.**
+- **Painted as 13 strips covering ~32% of the viewport, never one full sheet**, so
+  no crust layer overlaps the hero's animating canvas. A scanline over the section
+  rows yields the skeleton; every strip shares one `<defs>` and one page-coordinate
+  `viewBox`, so the material and the noise run continuously and the seams are
+  invisible. **Do not give the defs carrier `visibility: hidden`** — visibility
+  inherits into the mask content, the mask resolves to zero luminance, and every
+  strip masks itself away (cost an hour).
+- **On the frame-cost contract, honestly:** the strips are insurance, not a measured
+  fix. Phase 3's BPM estimate under sandbox SwiftShader is too noisy to resolve
+  this — three runs with NO crust at all gave **120 / 144 / 129**, and the crust
+  (one sheet or strips) lands in the same band. Final run: **BPM 124, 14/14**. The
+  real check remains the ≥30fps GPU pass the operator still owes.
+- Suite rewritten again: artwork by URL, stretched + bleeding, masked, one hole per
+  section (6/6), erosion present, over the panels and click-through, strips <60%
+  coverage, none over the canvas, never animating, no CSS filter/blend. Plus a real
+  pixel test — walk the hero's bottom edge column by column and require the boundary
+  to **wander** (measured: range 20–34px, sd ~4px), which is what separates eroded
+  rock from a straight gap.
+- Regression, all green: crust/UI **42/42**, brand 13/13, search 6/6, covers 7/7,
+  phase 1 21/21, phase 2 26/26, phase 3 14/14; lint + build clean; day mode
+  unchanged (no crust, borders intact); an open effect sits correctly inside its
+  eroded hole.
 
 ### 2026-07-27 — The backdrop IS the artwork; logo restored in its own colours
 

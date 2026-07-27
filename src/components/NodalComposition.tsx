@@ -276,8 +276,11 @@ export default function NodalComposition({
 
   return (
     <div
+      data-crust
       className={`w-full h-full rounded-2xl border flex flex-col relative overflow-hidden ${
-        isDayMode ? 'border-neutral-200' : 'border-ink-700/60'
+        // night: the gel crust IS this panel's border now (GelCrust.tsx), so a
+        // hairline here would show as a rectangle floating inside an eroded hole
+        isDayMode ? 'border-neutral-200' : 'border-transparent'
       }`}
       style={{ background: panel }}
     >
