@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# verify scripts write screenshots here when SCRATCH is left unset
+__SCRATCH__/

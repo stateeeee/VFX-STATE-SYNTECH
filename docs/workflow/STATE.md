@@ -19,111 +19,337 @@ dependent**: the **5 effect-card covers** (drop-in wiring is ready) and the
 **≥30fps@720p perf pass** (GPU machine). The checkbox stays unchecked until those
 two land.
 
-**⇒ A fresh session should read `docs/workflow/HANDOFF.md` — it was rewritten on
-2026-07-25 as a complete continuation brief** (visual system, file map, the
-frame-cost contract and the other traps, harness playbook, open operator items).
+**⇒ A fresh session should read `docs/workflow/HANDOFF.md` — rewritten
+2026-07-28 as a complete continuation brief** (current visual state after the
+revert, the operator's mandatory process, everything measured about material,
+lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
-**Phase 10 is substantially DONE; two operator-/hardware-dependent items remain.**
-(1) **5 effect-card covers** — the operator is still finishing them. Drop-in
-wiring is LIVE: place each cover at `public/assets/covers/<ModuleId>.webp` (or
-`.png`/`.jpg`; ModuleIds: `analog`, `anamorphic_lab`, `blob_reveal`,
-`blob_tracker`, `bokeh`) and the right-sidebar card renders it automatically
-under a scrim (no code change needed; until then the plain-label look shows).
-(2) **≥30fps@720p perf pass** — a GPU-machine check, unassessable under sandbox
-SwiftShader (~1–2fps); **⇒ remind the operator to run it on their PC when
-everything else is closed** (they explicitly asked to be reminded). **It is
-self-serve — no tooling needed:** open **AI Lab**, wire the 5-effect chain, play
-a 720p clip, and read ChainLab's live **FPS** / **RES%** badges (`chain-fps` /
-`chain-res`). The engine already does **graceful adaptive-res** (auto-downscales
-when fps<45, upscales when fps>57), so RES% dropping below 100 (amber) IS the
-"graceful adaptive-res" acceptance — the pass condition is fps≥30 **or** a stable
-adaptive RES%. Everything
-else in Phase 10 is done + verified this session (logo, CDN vendoring, colour/
-day-mode audit). Read `05-ROADMAP.md` Phase 10 + `06-VERIFICATION.md`.
-**Gotchas:** ~~standalone HTMLs load THREE from cdnjs~~ **RESOLVED (Phase 10,
-2026-07-24): all CDN deps are vendored** under `public/effects/vendor/` and the
-five effect HTMLs' `<script>`/`locateFile`/`import()` srcs now point there — the
-old `THREE`/`SelfieSegmentation is not defined` sandbox failures are GONE, the
-standalones load fully offline (proven 19/19 + a wasm-init run). No CDN mirror /
-route-interception is needed for verification any more. Restart the flaky dev
-server (`fuser -k 3000/tcp` — `pkill -f 'tsx server.ts'` does NOT match the real
-cmdline) after every SOURCE edit (it serves STALE code otherwise); vendored
-`public/` files are static and need no restart. Headless Chromium has no H.264
-WebCodecs encoder (export falls back to AV1/VP9 in-sandbox; the operator's Chrome
-uses H.264).
+**La UI è allo stato approvato dall'operatore (revert del 2026-07-28).** Non
+toccare l'estetica senza una direzione approvata: leggi `CODEX_WORKFLOW.md` e
+fermati dopo il piano, come chiede.
 
-## Phase board
-
-- [x] Phase 0 — Baseline & housekeeping
-- [x] Phase 1 — Single-effect mode + settings save (bridge v1)
-- [x] Phase 2 — AI Lab UX (armed mode + drag wiring)
-- [x] Phase 3 — Engine services (AudioEngine, VideoAnalyzer, ParamBus, PersonMask)
-- [x] Phase 4 — 1:1 port: analog
-- [x] Phase 5 — 1:1 port: bokeh
-- [x] Phase 6 — 1:1 port: anamorphic_lab
-- [x] Phase 7 — 1:1 port: blob_reveal
-- [x] Phase 8 — 1:1 port: blob_tracker
-- [x] Phase 9 — Chain export (Master MP4)
-- [ ] Phase 10 — Assets & polish  ← **BLOCKED on the 6 operator images**
-
-## Open items
-
-- **Phase 8 L5 ripple — operator decided (a) audio/beat force** (2026-07-19):
-  the mouse force is replaced by the reactive `rippleForce` param pre-wired to
-  the beat. Ported + verified (see log). Decision recorded here for the record.
-- ~~Operator will deliver 6 images~~ — **DEFINITIVE logo delivered + integrated**
-  (2026-07-25, the final iridescent mark → `public/assets/logo.{webp,png}`, wired
-  top-left of the sidebar, never inverted). **5 effect-card covers still pending**
-  (operator finishing them); drop-in wiring is live — see Next step for the
-  path/naming.
-- ~~Background-texture look~~ — **superseded the same day by the animated gel
-  slab** (sections 100% black, violet→gold fluid in the gaps). The photographic
-  backdrop is no longer shipped; `docs/design/textures/` is reference only.
-- **Day-mode title gradient variant** — still pending the operator's call (deeper
-  stops for legibility vs the identical bright ramp).
-- ~~`ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
-  not exist until Phase 9~~ — **RESOLVED (Phase 9)**: `mp4-muxer.min.js` +
-  `syntech-export.js` vendored; the button exports a real MP4.
-- **Phase 10 substantially done** — only the 5 covers (operator) + the
-  ≥30fps@720p perf pass (GPU machine) remain. See Current phase / Next step.
-- ~~Effects load CDNs (three.js, MediaPipe, fonts) — network required at
-  runtime~~ — **RESOLVED (Phase 10, 2026-07-24): fully vendored offline** under
-  `public/effects/vendor/` (three.min.js r128; MediaPipe selfie_segmentation +
-  pose + face_mesh + tasks-vision, SIMD wasm; self-hosted fonts). No runtime
-  network needed for any effect.
-- Claude remote sandbox only: `cdn.jsdelivr.net` and `cdnjs.cloudflare.com`
-  are blocked by the environment's network policy (fonts.googleapis.com is
-  reachable by tools but not by the un-proxied headless browser). Workaround
-  used for verification (reuse in Phases 4–8): download the same packages
-  from npm (`three@0.128.0`, `@mediapipe/*`) into the scratchpad and serve
-  them via Playwright route interception — see the Phase 0 log. Not a
-  problem on the operator's machine, where CDNs load normally.
-
-## Decisions record (operator-confirmed)
-
-| # | Decision | Date |
-|---|---|---|
-| 1 | AI Lab chaining via SynEngine native ports; iframes stay for single-effect mode | 2026-07-17 |
-| 2 | Ports must be **1:1 full fidelity** (operator chose over "core look") | 2026-07-17 |
-| 3 | Save in single-effect mode = **settings/preset only**, no video export | 2026-07-17 |
-| 4 | Workflow docs in English; operator communication in Italian | 2026-07-17 |
-| 5 | The 5 uploaded HTMLs (2026-07-17) are the official effect builds; old `blob_tracker` replaced | 2026-07-17 |
-| 6 | Add Node menu alphabetical: ANALOG, ANAMORPHIC LAB, BLOB REVEAL, BLOB TRACKER, BOKEH | 2026-07-17 |
-| 7 | Port order locked: analog → bokeh → anamorphic_lab → blob_reveal → blob_tracker | 2026-07-17 |
-| 8 | blob_tracker ripple (L5): mouse force → **audio/beat-reactive force** in the chain node | 2026-07-19 |
-| 9 | blob_tracker panels (L6): draw the panel labels + connector lines **INTO the node texture** (Canvas-2D), not HTML/SVG overlays | 2026-07-19 |
-| 10 | blob_tracker L3b smart contour → mapped to the **shared PersonMask** (SelfieSegmentation), not a new Tasks-Vision ImageSegmenter dep; segEnabled derived from ctMode (*Claude, operator away*) | 2026-07-20 |
-| 11 | blob_tracker L7 reactivity → the bespoke 7-band auto-driver mapped to **ParamBus defaultRoutes** on the shared signals (analog pattern); ar-*/vr-* gains + toggles consolidated (*Claude, operator away*) | 2026-07-20 |
-| 12 | blob_tracker L7b colours → **palette-enum indices** (ParamSchema can't hold hex); panels-label colour left at L6 styling (*Claude, operator away*) | 2026-07-20 |
-| 13 | blob_tracker L7c chaos points **auto-placed** (golden-angle scatter) since the chain has no mouse; autoMode per-panel onset choreography omitted (consolidated into L7a routes) (*Claude, operator away*) | 2026-07-20 |
-| 14 | Phase 9 export → preferred codec **universal H.264 (avc)** with **AV1/VP9 fallbacks** (headless has no H.264 encoder; robustness); video-only for v1, audio muxing a follow-up (*Claude, operator away*) | 2026-07-20 |
-| 15 | **Operator authorised editing the five effect HTMLs' `<script>`/`locateFile`/`import()` srcs** to vendored local paths (explicit deroga to hard rule #1, for CDN-offline) — the ONLY non-bridge edit allowed to those files | 2026-07-24 |
-| 16 | Vendoring scope: three.js r128 + MediaPipe (selfie_segmentation both simd+nosimd; pose/face_mesh/tasks-vision **SIMD-only**, modern-Chrome target, lazy features fall back gracefully) + **latin/latin-ext** font subsets only; pose **lite** model only (matches `modelComplexity:0`) — drops 34MB of unused pose models (*Claude, operator away*) | 2026-07-24 |
-| 17 | Logo presentation: keep the delivered mark 1:1 but **key the black field to transparent** (alpha=luminance) + tight crop → `logo.png`, so it floats on the UI and **inverts for day mode**; original kept as `logo.webp`. One-off effect accent colours **kept** (`#e0913f`/`#e0554b`/`#c65b9c`/`#6ea8e0`, operator: "lasciarli") | 2026-07-24 |
+Restano le due voci di Phase 10 che dipendono dall'operatore:
+(1) **5 cover degli effetti** — le sta finendo; il wiring è già live, basta
+mettere il file in `public/assets/covers/<ModuleId>.{webp,png,jpg}`.
+(2) **Pass ≥30fps@720p su macchina con GPU** — non valutabile in sandbox
+(SwiftShader, 1–2fps); **ricordarglielo**, è self-service dai badge FPS/RES%
+dell'AI Lab. Dettagli completi in `docs/workflow/HANDOFF.md`.
 
 ## Log
+
+### 2026-07-28 (fine) — REVERT: la UI torna allo stato approvato
+
+Operatore: *"non mi piace il risultato. torniamo a quando l'ui era come nella
+foto caricata."* Fatto.
+
+- `src/App.tsx`, `src/index.css`, `src/components/NodalComposition.tsx` e
+  `tools/verify/verify-ui-gel-pass.js` riportati a `eb74197` (lo stato prima
+  della sessione). Cancellati `GelCrust.tsx`, `PanelClips.tsx`,
+  `stoneMontage.ts`, `panelClips.ts`, `public/assets/bg-texture.jpg`.
+- La UI è di nuovo la lastra gel procedurale violetto→oro, logo ricolorato dalla
+  rampa, wordmark a `left-8`, cornice `p-4` / solchi `gap-4`.
+- Verificato sullo stato ripristinato: **gel 32/32**, brand 13/13, search 6/6,
+  covers 7/7, phase 2 26/26, phase 3 14/14 (BPM 124), lint + build puliti.
+- **Conservati** (sono la parte di valore della sessione): `CODEX_WORKFLOW.md`,
+  `ANALISI.md`, `DESIGN_ANALYSIS.md`, `IMPLEMENTATION_PLAN.md`, e
+  `docs/workflow/HANDOFF.md` riscritto con tutto ciò che è stato misurato.
+- Il codice annullato resta raggiungibile: `02a6922` è l'ultimo stato completo
+  "roccia + clip-path".
+
+**Lezione, per chi legge dopo.** Le decisioni #18–#23 descrivono cinque
+direzioni estetiche diverse in due giorni, tutte con le suite verdi, tutte
+annullate. Il problema non era tecnico: si è implementato prima di far approvare
+una direzione. `CODEX_WORKFLOW.md` esiste per questo — va rispettata anche la
+parte che dice **"Wait"**.
+
+
+### 2026-07-28 — Red-lined geometry: the containers take the operator's curves
+
+Operator delivered an annotated screenshot (red curves = "la nuova geometria
+esatta dei bordi dei container") plus a 3-phase workflow. **This reverses the
+2026-07-27 rule** that panels must stay rectangles: the containers themselves are
+now clipped to the traced curves. Decision #22 is superseded by #23.
+
+- **The curves are TRACED, not eyeballed** (`src/lib/panelClips.ts`): the red
+  stroke was thresholded out of the annotation, dilated to close its antialiasing,
+  and regions were flood-filled from OUTSIDE the frame, so a region is whatever
+  the operator's line actually encloses. Contours were walked, box-smoothed,
+  Douglas-Peucker simplified and turned into Catmull-Rom cubics.
+- **Trap:** the annotation's LABELS and ARROWHEADS are red too and acted as walls
+  inside the fill — the arrow beside "CORREZIONE CURVATURA" bit a notch out of the
+  hero's left edge. Only red components with a bounding diagonal over 200px (the
+  boundary strokes) are kept.
+- **The left rail is NOT clipped**: its red outline is genuinely open — filling
+  from inside escapes to the page border at every dilation up to 8px. Nothing
+  closed to trace. Flagged for the operator.
+- Paths are `clipPathUnits="objectBoundingBox"` (0..1 of each element's own box),
+  so the curvature survives every panel drag and window resize **with no JS**.
+- **The cosmic field** (`.syn-field`) is back full-screen behind everything; the
+  panels are cut out of it, which is what the reference does.
+- **The stone follows the same curves.** `paintStone` takes `Section = { rect,
+  pts? }` and walks the traced outline when there is one, so ridge and clip edge
+  coincide instead of the rock floating beside its own edge.
+- **Phase 3 (video engine) verified, not assumed:** `clip-path` does not change an
+  element's box, so the hero panel still measures 1026×506 and its canvas still
+  sizes to 1024×504 with a matching buffer — no offscreen rendering, no
+  ResizeObserver change. And Chrome clips HIT TESTING to the path: the centre of
+  the hero resolves to the CANVAS, a clipped-away corner does not resolve to the
+  hero at all, so the field behind is un-clickable while the modules stay live.
+- Suite updated: the "panels stay plain rectangles" assertion is replaced by one
+  requiring every `[data-clip]` section to carry an applied objectBoundingBox
+  clip with a non-zero box.
+- Regression all green: stone/UI **40/40**, brand 13/13, search 6/6, covers 7/7,
+  phase 1 21/21, phase 2 26/26, phase 3 14/14 (**BPM 120**); lint + build clean.
+
+
+### 2026-07-27 (5th pass) — FASE 4 executed: the restyle, 7 commits
+
+Operator: *"vai, fermati solo quando hai finito tutto il lavoro"* — plan approved,
+run all of it. Done, one commit per area per `CODEX_WORKFLOW.md`.
+
+| Commit | Area | What it fixed |
+|---|---|---|
+| `82ca0a1` | material + lighting | bead scale hierarchy; one light key |
+| `5afea00` | depth | form shading over the whole rock |
+| `2b2b714` | forms | junction pools, outer seam, rarer bigger gems |
+| `a6bfa63` | top bar + rail | lit-plane inset treatment |
+| `19e3679` | right panel + cards | card/field key light, radii, borders |
+| `2b60fd7` | bottom panels | same treatment; hero shell left bare |
+
+Findings worth keeping:
+
+- **Ridge width and bead size were the same number, and that was the whole bug.**
+  The patch was scaled so its HEIGHT became the ridge width, squashing a 96px
+  window 3× into a 34px ridge and taking every bead down with it — the material
+  read as gravel. They are separate now: the patch is drawn at its own scale
+  (real 12–18px beads) and the ALPHA is squeezed to the band, an ellipse as wide
+  as the stamp but only as tall as the ridge.
+- **Bead size must be held for a RUN of stamps.** Rerolled per stamp it averages
+  straight back to one size; the reference varies it in zones.
+- **Vertical flips destroy the lighting.** The key is baked into the piece, so a
+  flip puts specular crowns under the beads. Horizontal only, rotation ≤0.16 rad.
+- **A cast shadow is a no-op on #000 panels** — black on black shows nothing. What
+  gives a ridge volume against black is its own form shading, painted
+  `source-atop` per placement. NOT as one tiled gradient: that drew a hard bright
+  rule straight across the whole UI where its tiles met.
+- **Overlapping placements triple whatever you set.** 0.17 white per placement
+  came out milky and killed the piece's colour; 0.055 is right.
+- **Junction pools only between BROAD sections** — a pool at a corner of the 78px
+  icon rail is wider than the rail and lands on its labels.
+- **An inset box-shadow on the HERO shell costs frames.** It has to be composited
+  over the animating canvas: phase 3 went 124 → 138 the moment it went on, back to
+  124/129 when removed. Every other panel takes it happily. Noted inline in
+  `App.tsx` so it does not get tidied back in.
+
+Regression at the end: stone/UI **40/40**, brand 13/13, search 6/6, covers 7/7,
+phase 1 21/21, phase 2 26/26, phase 3 14/14 (**BPM 124**); lint + build clean;
+day mode unchanged (no rock, cream surfaces, plain white top hairline).
+
+Still deliberately NOT matching the reference: its translucent rail/right column
+(operator chose **option 2 — sections stay solid opaque black**).
+
+
+### 2026-07-27 (4th pass) — Operator locks the process: CODEX_WORKFLOW
+
+Operator decisions this round:
+- **Option 2 confirmed: sections stay solid opaque black.** The reference's
+  translucent rail/right column is explicitly out of scope now.
+- The stone is still "troppo diversa" from the reference, and the operator has
+  imposed a phased ART-DIRECTION workflow (`CODEX_WORKFLOW.md`, checked in at
+  repo root, verbatim): analyse → design-compare → plan → implement one area
+  per commit, WAITING for their review between phases. Priorities in order:
+  material, lighting, depth, forms, texture, colours. RESTYLE, not redesign.
+  Only CSS/Tailwind/decorative layers may change; logic/canvas/shaders frozen.
+
+Produced this session (FASE 1–3, no code touched):
+- `ANALISI.md` — component/CSS/layout inventory, allowed surfaces, risks.
+- `DESIGN_ANALYSIS.md` — app vs reference: the six measured gaps (bead scale
+  and grout, single light key broken by stamp rotation, missing contact
+  shadow, missing junction pools/outer seam, stamp repetition, mauve mud).
+- `IMPLEMENTATION_PLAN.md` — 7 commits: 1 material (bead scale/hierarchy),
+  2 lighting (one key, no vertical flips, rotation ±0.12), 3 depth (baked
+  drop shadow + panel inset), 4 forms (junction pools, corner clusters, outer
+  seam, fewer/larger gems), 5 top bar + sidebar chrome, 6 right panel + cards,
+  7 bottom panels + buttons. Guard-rails per commit: lint, gel suite,
+  phase-3 BPM after montage steps, night+day screenshots.
+
+**STOPPED before FASE 4 by design — the workflow requires the operator to
+approve/correct `IMPLEMENTATION_PLAN.md` before any implementation commit.**
+
+
+### 2026-07-27 (3rd pass) — The alien stone: a MONTAGE, laid over the panels
+
+Operator, twice: the rocks in the reference are *"una rielaborazione della
+texture … prendere dei pezzi e montarli"*, and — decisively — *"i pannelli
+fossero come prima, ma che la forma gliela dia la roccia come se fosse sopra ai
+pannelli … non devono essere i pannelli con forme non regolari."*
+
+That killed the previous pass's whole idea. Both earlier attempts shaped the
+PANELS (a mask with `feTurbulence` eroding the holes). The panels must stay plain
+rectangles; the rock goes on top and covers their edges, and *that* is what makes
+them look irregular. `verify-ui-gel-pass.js` **40/40**, phase 3 **BPM 120**.
+
+- **New `src/lib/stoneMontage.ts`.** Pieces of bead vein are cut from the artwork
+  and stamped along every section's outline, rotated to follow the edge, with red
+  gem cabochons set into the ridge and the brass rivets at the four outer corners.
+  `GelCrust.tsx` now owns only the geometry; the erosion mask is gone entirely.
+- **The source patches are chosen by measurement, and this was the whole ball
+  game.** Hand-picking off a coordinate grid put most windows on smooth membrane,
+  and the montage came out as pastel mush — the material was wrong, not the
+  technique. A sliding window now scores every candidate for small-scale edge
+  energy (beads are busy) against saturation (beads are pale grey-blue), rejecting
+  anything containing the artwork's black field; the top non-overlapping windows
+  are all dense bead vein. The bluest are listed twice, because an even pick came
+  out mauve where the reference reads blue.
+- **The ridge's silhouette needs a low-frequency term.** Per-stamp jitter alone
+  gives a band of even thickness — knitted rope. Two slow sine waves on the offset
+  plus a swell term on the size, and loose clusters thrown clear of the line, give
+  the reference's swell-and-neck with beads sitting on their own out on the black.
+- **The outward bias must be ABSOLUTE PIXELS, not a fraction of the ridge.** What
+  the bias has to clear is half the layout gap, which has nothing to do with how
+  fat the beads are. As a fraction it under-shot, both facing ridges sat astride
+  their edges, and together they ate ~100px — swallowing "Add Node" and the GEMINI
+  PRO header. At `biasPx = 15` (half the 28px gap) the ridge fills the gap and
+  leans ~12px onto each panel, which is what the reference does.
+- **A `position: fixed` wrapper is a stacking context in Chrome.** The strips'
+  own `z-index: 40` was being resolved *inside* a wrapper with `z-index: auto`, so
+  the whole rock painted in DOM order — behind the panels, trapped in the 28px gaps
+  with two dead-straight edges. The wrapper carries the z-index now. (Cost an hour;
+  the symptom looks exactly like "the ridge is too thin".)
+- Outer frame widened to `p-10` so the bezel has room to sit without covering the
+  top bar's text.
+- Suite rewritten for the montage: the stone must reach the page as a **Blob URL**
+  (seeing `bg-texture.jpg` in a strip's `background-image` would mean the artwork
+  went back to being shown whole instead of cut up), a ridge per section, strips
+  not one sheet, none over the hero canvas, never animating, no CSS filter/blend —
+  **and, per the operator's direction, an assertion that no `[data-crust]` section
+  carries a `mask-image` or `clip-path`.** The panels must stay rectangles.
+  Divider thresholds were re-based on the montage's real character: bead crust
+  scores colour ~28, where the stretched photo scored ~75 by landing on smooth
+  magenta membrane.
+- Regression, all green: stone/UI **40/40**, brand 13/13, search 6/6, covers 7/7,
+  phase 1 21/21, phase 2 26/26, phase 3 14/14 (**BPM 120**); lint + build clean.
+- **Still NOT matching the reference, deliberately — needs the operator's call:**
+  in the reference the left rail and the right column are TRANSLUCENT over the
+  artwork (the nebula reads through them) and the right sidebar has no black panel
+  at all — its cards float directly on the texture. Our sections are all solid
+  black, per the 2026-07-25 direction. The operator said this pass was only about
+  the rock, so it was left alone.
+
+### 2026-07-27 (later) — The artwork DIVIDES the sections: the crust
+
+Operator: *"vorrei che la texture non fosse sotto alle sezioni ma che le
+dividesse. mi piace questa roccia irregolare che divide le sezioni dell app."*
+Done — `verify-ui-gel-pass.js` **42/42**.
+
+- **New `src/components/GelCrust.tsx`.** The artwork moved from *behind* the
+  panels (`z-index: -1`) to *over* them (`z-index: 40`, `pointer-events: none`),
+  masked down to the skeleton between them: an SVG `<mask>` that is white
+  everywhere and punches each section out as a hole. The holes' edges run through
+  `feTurbulence` + `feDisplacementMap`, so the material reads as irregular rock
+  and the sections as holes eroded through it — not as a machined 16px gap.
+- **Sections announce themselves with `data-crust`** (top bar, icon rail, hero
+  shell, node panel, Gemini panel, right sidebar). Geometry is measured live and
+  re-measured by a `ResizeObserver`, so the holes track panel drags and window
+  resizes; verified by dragging a handle and diffing the mask rects.
+- **Two erosion strengths, because one does not fit both.** A ±8px bite is texture
+  on the hero and a third of a 48px top bar. Sections are sorted by short side:
+  broad ones `inset 5 / erode 16`, slim ones `inset 2 / erode 8`, each its own
+  `<g filter>`.
+- **Night-mode panel hairlines are gone** (`border-ink-700/60` → `border-transparent`
+  on the six shells). This is load-bearing, not tidying: the noise pushes each hole
+  a few px OUT as well as in, and every outward bulge would otherwise frame a
+  rounded rectangle floating inside an irregular hole. Day mode keeps its borders —
+  there is no crust there.
+- **Dividers widened to 28px** (`gap-7`, resize handles `w-7`/`h-7`) and the frame
+  to 32px (`p-8`). At 20px the two facing holes' outward bulges met and closed the
+  divider in places; 28px keeps it open at ≥18px and lets it open to ~50px where
+  both sides bite inward. Hero wordmark nudged `left-3` → `left-4` to clear the bite.
+- **The artist's label is painted out of the shipped texture.** The piece carries a
+  "COSMOGEL REACTOR X" barcode block at 736²(79,90)–(155,178); behind the panels it
+  never showed, but the crust exposes it right over the top bar, where it reads as a
+  UI glitch. `public/assets/bg-texture.jpg` is now a derived asset with that block
+  cloned over from the gel below it (mirrored + feathered). **The original is
+  untouched at `docs/design/textures/texture-A-jewel-mosaic.jpg` — operator, say the
+  word and the label goes back.**
+- **Painted as 13 strips covering ~32% of the viewport, never one full sheet**, so
+  no crust layer overlaps the hero's animating canvas. A scanline over the section
+  rows yields the skeleton; every strip shares one `<defs>` and one page-coordinate
+  `viewBox`, so the material and the noise run continuously and the seams are
+  invisible. **Do not give the defs carrier `visibility: hidden`** — visibility
+  inherits into the mask content, the mask resolves to zero luminance, and every
+  strip masks itself away (cost an hour).
+- **On the frame-cost contract, honestly:** the strips are insurance, not a measured
+  fix. Phase 3's BPM estimate under sandbox SwiftShader is too noisy to resolve
+  this — three runs with NO crust at all gave **120 / 144 / 129**, and the crust
+  (one sheet or strips) lands in the same band. Final run: **BPM 124, 14/14**. The
+  real check remains the ≥30fps GPU pass the operator still owes.
+- Suite rewritten again: artwork by URL, stretched + bleeding, masked, one hole per
+  section (6/6), erosion present, over the panels and click-through, strips <60%
+  coverage, none over the canvas, never animating, no CSS filter/blend. Plus a real
+  pixel test — walk the hero's bottom edge column by column and require the boundary
+  to **wander** (measured: range 20–34px, sd ~4px), which is what separates eroded
+  rock from a straight gap.
+- Regression, all green: crust/UI **42/42**, brand 13/13, search 6/6, covers 7/7,
+  phase 1 21/21, phase 2 26/26, phase 3 14/14; lint + build clean; day mode
+  unchanged (no crust, borders intact); an open effect sits correctly inside its
+  eroded hole.
+
+### 2026-07-27 — The backdrop IS the artwork; logo restored in its own colours
+
+Operator sent four images: the app as it is, the look they want, the texture they
+used for that mockup, and the logo. Three notes, all done
+(`verify-ui-gel-pass.js` **36/36**).
+
+- **The backdrop is now the operator's own artwork.** `public/assets/bg-texture.jpg`
+  (= `docs/design/textures/texture-A-jewel-mosaic.jpg`, the very file they sent,
+  736², rotation 0°) replaces the procedural violet→gold ramp + canvas bead tile in
+  `.syn-bg-layer`. The sections stay solid black, so it reads only in the frame and
+  the gaps — panels cut out of a slab of jewelled gel.
+- **Stretched WHOLE (`100% 100%`), not `cover` — this is the whole trick.** The
+  piece is a slab with its own crusted bead border and corner rivets, and in the
+  reference that border is what frames the UI. `cover` on a square artwork in a 16:9
+  window zooms ~2.5× into the middle and throws the border off screen (tried it
+  first: it looked like blurry wallpaper). The horizontal stretch is invisible on
+  material this abstract.
+- **The black field is bled off screen by measurement, not by eye.** The artwork's
+  own margin was measured from the pixels — 8.42% left/right, 7.61/7.47% top/bottom
+  — so `inset: -9.5%` lands the crusted edge ~8px inside the viewport with a hair of
+  black rim around it. `p-4` → **`p-7`** on the app root (gaps stay `gap-4`): the
+  frame has to be wider than the gaps or there is no border of material to read.
+- **Logo restored top-left, in its OWN iridescence.** It was never actually missing
+  from the app — it is missing from the operator's *mockup* — but it was being
+  recoloured: a violet→gold ramp masked to the mark plus a `luminosity` blend, which
+  existed only to tie it to the procedural slab. That slab is gone and the backdrop
+  is now iridescent itself, so the delivered mark is shown untouched (44px → **56px**
+  for presence) with just a narrow sheen sweeping across it on the 6s cadence.
+  **Operator: if you preferred the ramp-tinted logo, it is a one-block revert in
+  `.syn-logo` — say the word.**
+- **Hero wordmark pushed hard left** (`left-8` → `left-3`, 13px from the panel edge):
+  the brain graph masses around and right of centre, so an indented title leaves the
+  left half plain black. Asserted now, so it cannot drift back.
+- **Frame cost went DOWN, which matters here.** The old slab was three layers (ramp
+  plate + a 640² canvas tile + 28 animated bubble elements); it is now ONE image
+  layer drifting by transform, still with zero blend modes and zero filters. Phase 3
+  re-run: **BPM = 120, exactly on target** (the contract's whole point — beat
+  detection reads spectral flux BETWEEN frames).
+- Suite rewritten to match: the artwork is asserted by URL, by `100% 100%`, by
+  decoding, by being a single unblended unfiltered layer, and by pixels (frame
+  bright 143.8; gap bright 166.8 / colour 76.4; panel interior 0.2 / 0.0 — the
+  sections demonstrably cover it). Logo: present top-left, never recoloured, sheen
+  masked + sweeping, and renders chromatic (spread 19.8) rather than as a silhouette.
+- Regression, all green: gel/UI **36/36**, brand **13/13**, search **6/6**, covers
+  **7/7**, phase 2 **26/26**, phase 3 **14/14** (BPM 120), phase 1 **21/21**;
+  `npm run lint` + `npm run build` clean. Day mode unchanged (no slab, cream
+  surfaces, logo legible on cream).
+- **Harness note for the next session:** the verify scripts are CommonJS but
+  `package.json` is `"type": "module"`, so `node tools/verify/x.js` throws
+  `require is not defined` — copy to `<scratch>/x.cjs` and run that. `verify-phase3`
+  also needs `beat120.wav` + `test.webm` in its `__SCRATCH__` dir; generate them
+  with `tools/verify/make-beat-wav.js` and `tools/verify/gen1080.js` (sed the
+  `__SCRATCH__` placeholder to a real path first).
 
 ### 2026-07-25 — One cadence for the brand; the hero wordmark cast in the gel
 
