@@ -26,9 +26,10 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
-**La UI è allo stato approvato dall'operatore (revert del 2026-07-28).** Non
-toccare l'estetica senza una direzione approvata: leggi `CODEX_WORKFLOW.md` e
-fermati dopo il piano, come chiede.
+**La UI è allo stato approvato dall'operatore (revert del 2026-07-28), più il
+meter audio a due colonne chiesto subito dopo.** Non toccare l'estetica senza una
+direzione approvata: leggi `CODEX_WORKFLOW.md` e fermati dopo il piano, come
+chiede.
 
 Restano le due voci di Phase 10 che dipendono dall'operatore:
 (1) **5 cover degli effetti** — le sta finendo; il wiring è già live, basta
@@ -38,6 +39,43 @@ mettere il file in `public/assets/covers/<ModuleId>.{webp,png,jpg}`.
 dell'AI Lab. Dettagli completi in `docs/workflow/HANDOFF.md`.
 
 ## Log
+
+### 2026-07-28 (dopo il revert) — Il meter audio: due colonne, a tutta altezza
+
+Operatore: *"nella sezione di sinistra verticale, l'audio fallo arrivare fino in
+fondo occupando tutto lo spazio restante e la scritta audio mettila sotto non
+sopra. aggiungi una seconda colonnina che stia di fianco a quella che ce gia, al
+centro."* Fatto, solo `AudioMeter.tsx` (+ un commento in `App.tsx`) — nessun
+altro pezzo dell'estetica approvata è stato toccato.
+
+- **Il meter riempie tutto lo spazio che resta** sotto OPTIMIZER: la sua radice è
+  `flex-1 min-h-0` e le colonne sono `h-full`, quindi arrivano fino al piede del
+  rail (misurato: **236px** a 1000px di viewport, contro i 96px fissi di prima;
+  1px residuo sotto la caption).
+- **L'altezza non è più una costante, quindi va MISURATA.** `TRACK_PX` è sparito:
+  un `ResizeObserver` sulla prima colonna alimenta `trackPx`, e fill / tacche /
+  peak-hold continuano a fare i loro conti in pixel veri. Il gradiente resta
+  ancorato con `backgroundSize: 100% ${trackPx}px`, così i colori non si stirano
+  quando il livello sale.
+- **Seconda colonna = il canale destro, non un clone.** `tap → upmix → splitter`,
+  un analyser per canale, `→ merger → gain(0) → destination` (la catena resta
+  agganciata alla destination, come prima, e la riproduzione resta muta).
+  **Trap:** un `ChannelSplitter` è `discrete`, quindi una clip **mono** darebbe
+  silenzio alla colonna destra — prima dello splitter c'è un gain
+  `explicit`/`speakers` che duplica il mono su L e R, come fa un meter hardware.
+- **La caption "Audio" è sotto**, in fondo: colonne → readout dB → "AUDIO". Il
+  readout mostra il canale più alto dei due.
+- Sotto pressione (finestra bassa) **cedono le colonne, non la nav**: a 1280×620
+  l'overflow del rail passa da **220px a 124px** rispetto a prima (l'overflow a
+  quelle altezze è preesistente — logo + nav + blocco GEMINI da soli superano il
+  rail — ma ora il meter si comprime invece di aggiungersi).
+- `verify-ui-gel-pass.js` esteso con la nuova direzione (coppia stereo, pariglia
+  centrata nel rail, caption sotto le colonne, colonne fino al piede, colonna
+  destra viva) e la soglia "hot" ri-basata sull'altezza misurata invece che sui
+  96px ormai obsoleti. **41/41**, con una clip di test stereo (L che sale fino a
+  hot, R basso: maxL 220px vs maxR 90px — le due colonne sono indipendenti).
+- Regressione: **gel/UI 41/41**, **phase 2 26/26**, **phase 3 14/14 (BPM 120,
+  esatto)**; `npm run lint` + `npm run build` puliti; day mode verificato.
 
 ### 2026-07-28 (fine) — REVERT: la UI torna allo stato approvato
 

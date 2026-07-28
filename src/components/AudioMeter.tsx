@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-/* Single-channel playback level meter for the left sidebar (Premiere-style):
- * green at the bottom, amber through the middle, red at the top when the clip is
- * running hot. One column, not a stereo pair — the two channels are summed.
+/* Stereo playback level meter for the left sidebar (Premiere-style): green at the
+ * bottom, amber through the middle, red at the top when the clip is running hot.
+ * TWO columns side by side — left channel and right channel — centred in the rail,
+ * and the pair fills whatever height is left under the GEMINI PRO block, with the
+ * "Audio" caption sitting UNDER the columns.
  *
  * It taps the shell's hero <video> through WebAudio. The element ships muted (so
  * it can autoplay), and a muted element feeds silence to an analyser, so we
@@ -10,8 +12,7 @@ import React, { useEffect, useRef, useState } from 'react';
  * samples while playback stays as silent as before. Restored on unmount.
  */
 
-const TRACK_PX = 96;         // bar height; the gradient is pinned to this, so the
-                             // colours don't stretch as the level moves
+const MIN_TRACK_PX = 48;     // never smaller than this, whatever the window height
 const DB_FLOOR = -54;        // bottom of the scale
 const DB_HOT = -6;           // above this the meter reads "hot"
 const PEAK_FALL = 0.35;      // peak-hold decay per second
@@ -31,16 +32,34 @@ interface AudioMeterProps {
 }
 
 export default function AudioMeter({ isDayMode, videoRef, sourceKey }: AudioMeterProps) {
-  const [level, setLevel] = useState(0);   // 0..1 of the scale
-  const [peak, setPeak] = useState(0);     // 0..1, decaying peak hold
-  const [live, setLive] = useState(false); // a tap is attached and running
+  const [levels, setLevels] = useState<[number, number]>([0, 0]); // 0..1 of the scale, per channel
+  const [peaks, setPeaks] = useState<[number, number]>([0, 0]);   // 0..1, decaying peak hold
+  const [live, setLive] = useState(false);   // a tap is attached and running
+  const [trackPx, setTrackPx] = useState(MIN_TRACK_PX);
   const rafRef = useRef<number | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
+
+  /* The columns are stretched by the flex column above them, so their height is a
+     layout result, not a constant: measure it and let the fill / ticks / peak use
+     real pixels as before. */
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const read = () => setTrackPx(Math.max(MIN_TRACK_PX, el.clientHeight || MIN_TRACK_PX));
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = videoRef.current;
-    if (!sourceKey || !el) { setLive(false); setLevel(0); setPeak(0); return; }
+    if (!sourceKey || !el) { setLive(false); setLevels([0, 0]); setPeaks([0, 0]); return; }
 
-    let analyser: AnalyserNode | null = null;
+    let analysers: AnalyserNode[] = [];
+    let upmix: GainNode | null = null;
+    let splitter: ChannelSplitterNode | null = null;
+    let merger: ChannelMergerNode | null = null;
     let gain: GainNode | null = null;
     let cancelled = false;
     const wasMuted = el.muted;
@@ -50,13 +69,35 @@ export default function AudioMeter({ isDayMode, videoRef, sourceKey }: AudioMete
       const ctx = sharedCtx;
       let tap = taps.get(el);
       if (!tap) { tap = ctx.createMediaElementSource(el); taps.set(el, tap); }
-      analyser = ctx.createAnalyser();
-      analyser.fftSize = 1024;
-      analyser.smoothingTimeConstant = 0.6;
+
+      /* A ChannelSplitter is `discrete`, so a MONO clip would hand the second
+         column pure silence. Up-mix through a `speakers` node first: that
+         duplicates a mono channel into L and R, which is what a hardware meter
+         shows for a mono source. */
+      upmix = ctx.createGain();
+      upmix.channelCount = 2;
+      upmix.channelCountMode = 'explicit';
+      upmix.channelInterpretation = 'speakers';
+
+      splitter = ctx.createChannelSplitter(2);
+      merger = ctx.createChannelMerger(2);
       gain = ctx.createGain();
       gain.gain.value = 0; // keep playback silent, as it was while muted
-      tap.connect(analyser);
-      analyser.connect(gain);
+
+      analysers = [0, 1].map(() => {
+        const a = ctx.createAnalyser();
+        a.fftSize = 1024;
+        a.smoothingTimeConstant = 0.6;
+        return a;
+      });
+
+      tap.connect(upmix);
+      upmix.connect(splitter);
+      analysers.forEach((a, ch) => {
+        splitter!.connect(a, ch);
+        a.connect(merger!, 0, ch);
+      });
+      merger.connect(gain);
       gain.connect(ctx.destination);
       el.muted = false;    // a muted element analyses as silence
       void ctx.resume();   // no-op when already running
@@ -67,25 +108,29 @@ export default function AudioMeter({ isDayMode, videoRef, sourceKey }: AudioMete
       return;
     }
 
-    const buf = new Float32Array(analyser.fftSize);
+    const bufs = analysers.map((a) => new Float32Array(a.fftSize));
     let last = performance.now();
-    let held = 0;
+    const held: [number, number] = [0, 0];
 
     const tick = () => {
-      if (cancelled || !analyser) return;
+      if (cancelled || analysers.length === 0) return;
       const now = performance.now();
       const dt = Math.min(0.25, (now - last) / 1000);
       last = now;
 
-      analyser.getFloatTimeDomainData(buf);
-      let sum = 0;
-      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-      const rms = Math.sqrt(sum / buf.length);
-      const unit = rms > 0 ? dbToUnit(20 * Math.log10(rms)) : 0;
+      const next: [number, number] = [0, 0];
+      analysers.forEach((a, ch) => {
+        const buf = bufs[ch];
+        a.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const rms = Math.sqrt(sum / buf.length);
+        next[ch] = rms > 0 ? dbToUnit(20 * Math.log10(rms)) : 0;
+        held[ch] = Math.max(next[ch], held[ch] - PEAK_FALL * dt);
+      });
 
-      held = Math.max(unit, held - PEAK_FALL * dt);
-      setLevel(unit);
-      setPeak(held);
+      setLevels(next);
+      setPeaks([held[0], held[1]]);
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -94,75 +139,92 @@ export default function AudioMeter({ isDayMode, videoRef, sourceKey }: AudioMete
       cancelled = true;
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       // leave the cached tap in place (it cannot be recreated) but drop our chain
-      try { analyser?.disconnect(); gain?.disconnect(); } catch { /* already gone */ }
+      try {
+        analysers.forEach((a) => a.disconnect());
+        upmix?.disconnect(); splitter?.disconnect(); merger?.disconnect(); gain?.disconnect();
+      } catch { /* already gone */ }
       el.muted = wasMuted;
       setLive(false);
-      setLevel(0);
-      setPeak(0);
+      setLevels([0, 0]);
+      setPeaks([0, 0]);
     };
   }, [sourceKey, videoRef]);
 
-  const hot = level >= dbToUnit(DB_HOT);
-  const fillPx = Math.round(level * TRACK_PX);
-  const peakPx = Math.round(peak * TRACK_PX);
+  const top = Math.max(levels[0], levels[1]);
+  const hot = top >= dbToUnit(DB_HOT);
 
   return (
-    <div className="flex flex-col items-center gap-1.5 w-full shrink-0" data-testid="audio-meter">
-      <span
-        className={`text-[7px] uppercase tracking-[0.2em] font-bold ${
-          hot ? 'text-red-400' : isDayMode ? 'text-neutral-400' : 'text-neutral-500'
-        }`}
-      >
-        Audio
-      </span>
+    <div
+      className="flex flex-col items-center gap-1.5 w-full flex-1 min-h-0"
+      data-testid="audio-meter"
+    >
+      {/* the pair of columns — centred in the rail, filling the space that is left */}
+      <div className="flex-1 min-h-0 flex items-stretch justify-center gap-[5px]">
+        {([0, 1] as const).map((ch) => {
+          const fillPx = Math.round(levels[ch] * trackPx);
+          const peakPx = Math.round(peaks[ch] * trackPx);
+          return (
+            <div
+              key={ch}
+              ref={ch === 0 ? trackRef : undefined}
+              className={`relative w-2.5 h-full rounded-full overflow-hidden border ${
+                isDayMode ? 'border-neutral-300 bg-neutral-200' : 'border-ink-700/60 bg-white/[0.06]'
+              } ${hot ? 'shadow-[0_0_10px_rgba(239,68,68,0.45)]' : ''}`}
+              data-testid={ch === 0 ? 'audio-meter-track' : 'audio-meter-track-r'}
+              title={live ? `Playback level — ${ch === 0 ? 'left' : 'right'}` : 'Load a video to see its level'}
+            >
+              {/* scale ticks at roughly -6 / -12 / -24 dB */}
+              {[DB_HOT, -12, -24].map((db) => (
+                <span
+                  key={db}
+                  className={`absolute left-0 right-0 h-px ${isDayMode ? 'bg-black/15' : 'bg-white/15'}`}
+                  style={{ bottom: Math.round(dbToUnit(db) * trackPx) }}
+                />
+              ))}
 
-      <div
-        className={`relative w-2.5 rounded-full overflow-hidden border ${
-          isDayMode ? 'border-neutral-300 bg-neutral-200' : 'border-ink-700/60 bg-white/[0.06]'
-        } ${hot ? 'shadow-[0_0_10px_rgba(239,68,68,0.45)]' : ''}`}
-        style={{ height: TRACK_PX }}
-        title={live ? 'Playback level' : 'Load a video to see its level'}
-      >
-        {/* scale ticks at roughly -6 / -12 / -24 dB */}
-        {[DB_HOT, -12, -24].map((db) => (
-          <span
-            key={db}
-            className={`absolute left-0 right-0 h-px ${isDayMode ? 'bg-black/15' : 'bg-white/15'}`}
-            style={{ bottom: Math.round(dbToUnit(db) * TRACK_PX) }}
-          />
-        ))}
+              {/* the level: green low → amber → red top, pinned to the full track so
+                  the colours stay put as the fill moves */}
+              <div
+                className="absolute left-0 right-0 bottom-0 transition-[height] duration-75"
+                data-testid={ch === 0 ? 'audio-meter-fill' : 'audio-meter-fill-r'}
+                style={{
+                  height: fillPx,
+                  backgroundImage: 'linear-gradient(to top, #22c55e 0%, #22c55e 45%, #f59e0b 78%, #ef4444 100%)',
+                  backgroundSize: `100% ${trackPx}px`,
+                  backgroundPosition: 'bottom',
+                  backgroundRepeat: 'no-repeat',
+                }}
+              />
 
-        {/* the level: green low → amber → red top, pinned to the full track so the
-            colours stay put as the fill moves */}
-        <div
-          className="absolute left-0 right-0 bottom-0 transition-[height] duration-75"
-          data-testid="audio-meter-fill"
-          style={{
-            height: fillPx,
-            backgroundImage: 'linear-gradient(to top, #22c55e 0%, #22c55e 45%, #f59e0b 78%, #ef4444 100%)',
-            backgroundSize: `100% ${TRACK_PX}px`,
-            backgroundPosition: 'bottom',
-            backgroundRepeat: 'no-repeat',
-          }}
-        />
-
-        {/* peak hold */}
-        {peakPx > 1 && (
-          <span
-            className="absolute left-0 right-0 h-[2px] bg-white/85"
-            data-testid="audio-meter-peak"
-            style={{ bottom: Math.min(TRACK_PX - 2, peakPx) }}
-          />
-        )}
+              {/* peak hold */}
+              {peakPx > 1 && (
+                <span
+                  className="absolute left-0 right-0 h-[2px] bg-white/85"
+                  data-testid={ch === 0 ? 'audio-meter-peak' : 'audio-meter-peak-r'}
+                  style={{ bottom: Math.min(trackPx - 2, peakPx) }}
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <span
-        className={`text-[6.5px] font-mono tracking-wider ${
+        className={`shrink-0 text-[6.5px] font-mono tracking-wider ${
           live ? (hot ? 'text-red-400' : isDayMode ? 'text-neutral-500' : 'text-neutral-400') : 'text-neutral-600'
         }`}
         data-testid="audio-meter-readout"
       >
-        {live ? (level > 0 ? `${Math.round(DB_FLOOR + level * -DB_FLOOR)}` : '-∞') : '––'}
+        {live ? (top > 0 ? `${Math.round(DB_FLOOR + top * -DB_FLOOR)}` : '-∞') : '––'}
+      </span>
+
+      {/* caption UNDER the columns, not above */}
+      <span
+        className={`shrink-0 text-[7px] uppercase tracking-[0.2em] font-bold ${
+          hot ? 'text-red-400' : isDayMode ? 'text-neutral-400' : 'text-neutral-500'
+        }`}
+      >
+        Audio
       </span>
     </div>
   );

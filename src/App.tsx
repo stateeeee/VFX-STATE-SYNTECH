@@ -685,7 +685,9 @@ export default function App() {
             ))}
           </ul>
 
-          {/* playback level of the loaded clip — the space under OPTIMIZER */}
+          {/* playback level of the loaded clip — a stereo pair that fills ALL the
+              space left under OPTIMIZER, down to the foot of the rail, with its
+              "Audio" caption under the columns (see AudioMeter.tsx) */}
           <div className={`w-8 h-px mt-5 mb-3 shrink-0 ${isDayMode ? 'bg-neutral-300' : 'bg-ink-700'}`} />
           <AudioMeter isDayMode={isDayMode} videoRef={heroVideoRef} sourceKey={compSource?.url ?? null} />
         </nav>

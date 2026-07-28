@@ -5,10 +5,14 @@
  *      them (the sections read as holes cut over it);
  *   3. the logo follows that same ramp while keeping its inflated glossy 3D;
  *   4. nothing added above or below an open effect (its HTML is self-sufficient);
- *   5. a single-column playback level meter in the sidebar — green low, red hot;
+ *   5. a playback level meter in the sidebar — green low, red hot. Since the
+ *      2026-07-28 direction it is a STEREO PAIR: two columns side by side,
+ *      centred in the rail, filling all the space left down to its foot, with
+ *      the "Audio" caption UNDER them instead of above;
  *   6. the wordmarks are bolder (700, the vendored family's max).
  *
- * Needs a clip WITH audio at $AUDIO_CLIP (see gen-audio-video.cjs) for step 5.
+ * Needs a clip WITH audio at $AUDIO_CLIP for step 5 (a STEREO one, ideally with
+ * the channels at different levels, proves the two columns are independent).
  * Run: NODE_PATH=/opt/node22/lib/node_modules node tools/verify/verify-ui-gel-pass.js
  */
 const { chromium } = require('playwright');
@@ -209,12 +213,42 @@ const skipped = (n, why) => { skip++; console.log(`SKIP  ${n} — ${why}`); };
 
   // ── 5. the level meter ────────────────────────────────────────────────────
   step('meter present in the sidebar', !!(await page.$('[data-testid="audio-meter"]')));
-  const idle = await page.evaluate(() => {
-    const f = document.querySelector('[data-testid="audio-meter-fill"]');
-    const r = document.querySelector('[data-testid="audio-meter-readout"]');
-    return { h: f ? f.getBoundingClientRect().height : -1, txt: r ? r.textContent.trim() : '' };
+
+  /* Geometry, per the 2026-07-28 direction: TWO columns, side by side, centred in
+     the rail, running to its foot, caption underneath. */
+  const meterGeom = await page.evaluate(() => {
+    const box = (e) => { const r = e.getBoundingClientRect(); return { x: +r.x.toFixed(1), y: +r.y.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1), bottom: +r.bottom.toFixed(1), right: +r.right.toFixed(1) }; };
+    const meter = document.querySelector('[data-testid="audio-meter"]');
+    const rail = meter.closest('nav');
+    const cap = [...meter.querySelectorAll('span')].find((s) => /^audio$/i.test(s.textContent.trim()));
+    return {
+      rail: box(rail), padBottom: parseFloat(getComputedStyle(rail).paddingBottom),
+      l: box(document.querySelector('[data-testid="audio-meter-track"]')),
+      r: box(document.querySelector('[data-testid="audio-meter-track-r"]')),
+      cap: cap ? box(cap) : null,
+    };
   });
-  step('meter idle with no clip loaded', idle.h === 0 && idle.txt === '––', `h=${idle.h} readout="${idle.txt}"`);
+  step('meter is a stereo PAIR — two columns side by side, same height',
+    meterGeom.r.x > meterGeom.l.right && Math.abs(meterGeom.l.h - meterGeom.r.h) < 1,
+    `L x=${meterGeom.l.x} w=${meterGeom.l.w} | R x=${meterGeom.r.x} w=${meterGeom.r.w} | h=${meterGeom.l.h}`);
+  const pairMid = (meterGeom.l.x + meterGeom.r.right) / 2;
+  const railMid = meterGeom.rail.x + meterGeom.rail.w / 2;
+  step('the pair is centred in the rail', Math.abs(pairMid - railMid) < 2,
+    `pair ${pairMid.toFixed(1)} vs rail ${railMid.toFixed(1)}`);
+  step('the "Audio" caption is UNDER the columns', !!meterGeom.cap && meterGeom.cap.y > meterGeom.l.bottom,
+    `caption y=${meterGeom.cap && meterGeom.cap.y} vs column bottom ${meterGeom.l.bottom}`);
+  const foot = meterGeom.rail.bottom - meterGeom.padBottom - (meterGeom.cap ? meterGeom.cap.bottom : 0);
+  step('the columns fill the space left, down to the foot of the rail',
+    meterGeom.l.h > 200 && foot < 4,
+    `h=${meterGeom.l.h}px, ${foot.toFixed(1)}px left under the caption`);
+
+  const idle = await page.evaluate(() => {
+    const h = (s) => { const e = document.querySelector(s); return e ? e.getBoundingClientRect().height : -1; };
+    const r = document.querySelector('[data-testid="audio-meter-readout"]');
+    return { l: h('[data-testid="audio-meter-fill"]'), r: h('[data-testid="audio-meter-fill-r"]'), txt: r ? r.textContent.trim() : '' };
+  });
+  step('meter idle with no clip loaded', idle.l === 0 && idle.r === 0 && idle.txt === '––',
+    `L=${idle.l} R=${idle.r} readout="${idle.txt}"`);
 
   if (CLIP && fs.existsSync(CLIP)) {
     await page.setInputFiles('[data-testid="source-file"]', CLIP);
@@ -222,17 +256,20 @@ const skipped = (n, why) => { skip++; console.log(`SKIP  ${n} — ${why}`); };
     const samples = [];
     for (let i = 0; i < 12; i++) {
       samples.push(await page.evaluate(() => {
-        const f = document.querySelector('[data-testid="audio-meter-fill"]');
+        const h = (s) => { const e = document.querySelector(s); return e ? +e.getBoundingClientRect().height.toFixed(1) : -1; };
         const hot = !!document.querySelector('[data-testid="audio-meter"] .shadow-\\[0_0_10px_rgba\\(239\\,68\\,68\\,0\\.45\\)\\]');
-        return { h: f ? +f.getBoundingClientRect().height.toFixed(1) : -1, hot };
+        return { h: h('[data-testid="audio-meter-fill"]'), hr: h('[data-testid="audio-meter-fill-r"]'), hot };
       }));
       await page.waitForTimeout(320);
     }
-    const hs = samples.map((s) => s.h);
-    const maxH = Math.max(...hs), minH = Math.min(...hs);
-    step('meter reads the clip level (> 0)', maxH > 5, `heights ${minH}…${maxH} of 96px`);
+    const hs = samples.map((s) => s.h), hrs = samples.map((s) => s.hr);
+    const maxH = Math.max(...hs), minH = Math.min(...hs), maxR = Math.max(...hrs);
+    const track = meterGeom.l.h;
+    step('meter reads the clip level (> 0)', maxH > 5, `heights ${minH}…${maxH} of ${track}px`);
+    step('the RIGHT column reads it too (both channels are live)', maxR > 5, `right max ${maxR} of ${track}px`);
     step('meter tracks the level as it changes', maxH - minH > 4, `span ${(maxH - minH).toFixed(1)}px`);
-    step('meter goes hot on the loud ramp (red state)', samples.some((s) => s.hot) || maxH > 80, `maxH=${maxH} hot=${samples.some((s) => s.hot)}`);
+    step('meter goes hot on the loud ramp (red state)',
+      samples.some((s) => s.hot) || maxH > track * 0.83, `maxH=${maxH} of ${track} hot=${samples.some((s) => s.hot)}`);
     const readout = await page.evaluate(() => document.querySelector('[data-testid="audio-meter-readout"]').textContent.trim());
     step('meter shows a dB readout while playing', /^-?\d+$/.test(readout), `"${readout}"`);
   } else {
