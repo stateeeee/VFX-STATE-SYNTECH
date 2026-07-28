@@ -90,83 +90,144 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   THE STONE (night mode only — App.tsx mounts it for the dark theme)
-
-   The 3D rock that divides the sections, laid OVER them: the panels stay plain
-   rectangles and the rock covers their edges, so they LOOK irregular without
-   being irregular. The montage is cut from the operator's artwork in
-   src/lib/stoneMontage.ts and placed by src/components/GelCrust.tsx — the notes
-   at the top of those two files are the ones worth reading.
-
-   Two rules for this layer:
-
-   1. It never animates and it is never filtered from CSS. The montage is painted
-      once per geometry into a canvas; anything that made this layer repaint per
-      frame would skew AudioEngine's BPM estimate, because beat detection reads
-      spectral flux BETWEEN frames (measured: 189 BPM with a full-screen blur, 171
-      with four blend layers, 138 with one, 124 with none — target 120).
-   2. `will-change: transform` is load-bearing, not a micro-optimisation: it keeps
-      each strip on its own compositor layer, above a hero canvas that DOES repaint
-      every frame, so compositing the two stays a GPU blit.
+   GEL SLAB (night mode only — App.tsx mounts it for the dark theme)
+   The sections are solid black "holes" and this animated sheet lives underneath,
+   so it reads only in the gaps between them: a colour-shifting LED slab under a
+   layer of gel. It flows through the SAME violet→gold ramp as the wordmarks, so
+   background, logo and titles all shift together.
    ═══════════════════════════════════════════════════════════════ */
-.syn-gel-crust {
+.syn-bg-layer {
   position: fixed;
-  /* above the panels (nav is z-20, top bar z-30) and below the modals (z-50) */
-  z-index: 40;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  isolation: isolate;           /* keeps the gel's screen blend inside this layer */
+  background-color: #120a1e;    /* deep base so the gaps never read as flat black */
+}
+
+/* Every layer of the slab animates ONLY `transform`, so each is GPU-composited
+   and repaints nothing per frame. This is load-bearing, not a micro-optimisation:
+   an animated `background-position` or a full-viewport `filter: blur()` here costs
+   enough frames to skew AudioEngine's BPM estimate, because beat detection reads
+   spectral flux BETWEEN frames. Keep the gloss in gradients and blend modes. */
+.syn-bg-layer > * {
+  position: absolute;
   pointer-events: none;
   will-change: transform;
-  background-repeat: no-repeat;
 }
 
-/* A zero-sized marker that owns the strips; the strips are `fixed`, so they place
-   themselves against the viewport and this never needs a size of its own.
-   It MUST carry the z-index itself: Chrome makes every `position: fixed` element a
-   stacking context, so the strips' own `z-index: 40` is resolved INSIDE this one,
-   and with `z-index: auto` here the whole rock painted in DOM order — behind the
-   panels, leaving the stone trapped in the 28px gaps with two straight edges. */
-.syn-gel-crust-root {
-  position: fixed;
+/* 1. the LED sheet: the wordmark ramp. The plate is 4× wide with the ramp laid
+   twice, so sliding it by half its width loops seamlessly. */
+.syn-gel-sheet {
+  top: -25%;
+  bottom: -25%;
   left: 0;
-  top: 0;
-  width: 0;
-  height: 0;
-  z-index: 40;
-  pointer-events: none;
+  width: 400%;
+  background-image: linear-gradient(100deg,
+    #8b5cf6 0%, #7c3aed 11%, #ffda4d 25%, #ffb31a 36%, #8b5cf6 50%,
+    #7c3aed 61%, #ffda4d 75%, #ffb31a 86%, #8b5cf6 100%);
+  /* 6s — the wordmark shimmer's own cadence. Half the plate is two viewport
+     widths, and the title shifts two of its own widths in 6s, so the slab and the
+     titles sweep at exactly the same rate. */
+  animation: syn-gel-flow 6s linear infinite;
 }
 
-/* ── Brand logo, top-left of the sidebar ──────────────────────────
-   The delivered mark is ALREADY iridescent — violet, gold, teal and red all in
-   one poured, inflated 3D object — and the backdrop is now the operator's gel
-   artwork rather than the violet→gold ramp. So the mark is shown in its OWN
-   colours (no masked ramp, no `luminosity` blend that would strip them) and the
-   only thing riding the brand's 6s cadence is a narrow wet sheen sweeping across
-   it, which is what keeps it reading as glass. */
+/* 2. THE GEL MATERIAL — one single layer, and NO blend mode.
+   Swell, bubbles and wet gloss are baked into one seamless canvas tile
+   (src/lib/gelTexture.ts): transparent, with white crowns and dark undersides, so
+   plain alpha compositing embosses inflated 3D beads onto the ramp beneath.
+   Blend modes are avoided ON PURPOSE — anything blended over the sliding ramp is
+   re-composited every frame, which on a GPU-less machine costs enough frames to
+   skew AudioEngine's BPM estimate (beat detection reads spectral flux between
+   frames). Keep this layer unblended and keep it to one. */
+.syn-gel-material {
+  inset: -7%;
+  background-image: var(--syn-gel-tex, none); /* set on the app root by App.tsx */
+  background-repeat: repeat;
+  background-size: var(--syn-gel-tile, 640px) var(--syn-gel-tile, 640px);
+  opacity: 0.92;
+  animation: syn-gel-drift 34s ease-in-out infinite alternate;
+}
+
+/* 4. air bubbles suspended in the gel, rising slowly. Each is a little glass
+   dome: offset specular, faint rim, inset shading — screened so it reads as
+   trapped light rather than paint. */
+.syn-gel-bubbles {
+  inset: 0;
+  overflow: hidden;
+}
+
+/* Small and crisp on purpose: a bubble has to read inside a ~16px gap, so the
+   specular is tight, the rim is bright and the glass edge is a hard 1px. */
+.syn-bubble {
+  position: absolute;
+  bottom: -14%;
+  border-radius: 50%;
+  background-image:
+    radial-gradient(circle at 33% 27%, rgba(255, 255, 255, 0.98) 0 16%, rgba(255, 255, 255, 0.30) 32%, transparent 52%),
+    radial-gradient(circle at 50% 50%, transparent 0 52%, rgba(255, 255, 255, 0.55) 74%, rgba(255, 255, 255, 0.12) 88%, transparent 100%);
+  box-shadow:
+    inset -1px -1px 3px rgba(255, 255, 255, 0.45),
+    0 0 5px rgba(255, 255, 255, 0.22);
+  opacity: 0.85;
+  will-change: transform;
+  animation-name: syn-bubble-rise;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+/* slide exactly half the plate: the ramp repeats, so the loop is seamless */
+@keyframes syn-gel-flow {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+@keyframes syn-gel-sheen {
+  from { transform: translate3d(-40%, 0, 0); }
+  to { transform: translate3d(0%, 0, 0); }
+}
+
+@keyframes syn-gel-drift {
+  0% { transform: translate3d(-1.5%, -1%, 0) scale(1.03); }
+  50% { transform: translate3d(2%, 1.5%, 0) scale(1.07); }
+  100% { transform: translate3d(-1%, 2%, 0) scale(1.04); }
+}
+
+/* rise the full height with a slow lateral wobble, as gel resists the bubble */
+@keyframes syn-bubble-rise {
+  0% { transform: translate3d(0, 0, 0) scale(0.92); }
+  25% { transform: translate3d(7px, -32vh, 0) scale(1); }
+  50% { transform: translate3d(-6px, -62vh, 0) scale(1.04); }
+  75% { transform: translate3d(5px, -92vh, 0) scale(1); }
+  100% { transform: translate3d(0, -124vh, 0) scale(0.94); }
+}
+
+/* ── Brand logo riding the same ramp ──────────────────────────────
+   The delivered mark keeps its inflated, glossy 3D read: the colour layer is the
+   flowing ramp masked to the mark's silhouette, and the mark itself sits on top
+   in `luminosity` blend, so it contributes only its light and shade while the
+   hue comes from the ramp. Result: the logo shifts colour with the slab and the
+   titles, without flattening into a silhouette. */
 .syn-logo {
   position: relative;
   isolation: isolate;
 }
 
-.syn-logo-mark,
-.syn-logo-gloss {
+.syn-logo-color,
+.syn-logo-shade {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
 }
 
-.syn-logo-mark {
-  object-fit: contain;
-}
-
-/* the sheen: a tight white band travelling across the mark, clipped to its
-   silhouette so it glazes the object instead of painting a rectangle. At 44px a
-   background-position animation costs nothing — and it must NOT be a transform,
-   which would move the mark itself. Timed to 6s, the wordmarks' cadence. */
-.syn-logo-gloss {
-  background-image: linear-gradient(100deg,
-    transparent 38%, rgba(255, 255, 255, 0.10) 45%, rgba(255, 255, 255, 0.42) 50%,
-    rgba(255, 255, 255, 0.10) 55%, transparent 62%);
-  background-size: 300% 100%;
+.syn-logo-color {
+  background-image: linear-gradient(100deg, #8b5cf6 0%, #7c3aed 22%, #ffda4d 50%, #ffb31a 72%, #8b5cf6 100%);
+  background-size: 220% 220%;
+  /* its own keyframes: the slab slides by transform, which would MOVE the mark.
+     At 44px a background-position shift costs nothing. Timed to the wordmark
+     shimmer (6s) so logo, titles and slab all shift together. */
   animation: syn-logo-flow 6s linear infinite;
   -webkit-mask-image: url('/assets/logo.png');
   mask-image: url('/assets/logo.png');
@@ -178,89 +239,23 @@ body {
   mask-repeat: no-repeat;
 }
 
+.syn-logo-shade {
+  object-fit: contain;
+  filter: grayscale(1) contrast(1.25) brightness(1.05);
+  mix-blend-mode: luminosity;
+}
+
 @keyframes syn-logo-flow {
-  from { background-position: 300% 50%; }
-  to { background-position: 0% 50%; }
+  from { background-position: 0% 50%; }
+  to { background-position: 220% 50%; }
 }
 
-/* day mode: the cream sidebar gives the mark no separation of its own, so the
-   sheen is dropped to near-nothing and the shadow (App.tsx) does the lifting */
-.syn-day .syn-logo-gloss {
-  opacity: 0.35;
-}
 
-/* ── The cosmic field ──────────────────────────────────────────────
-   The reference's backdrop, full screen and behind everything. The panels are cut
-   out of it by their traced clip paths, so it reads as one continuous material
-   the UI is set into — which is what the reference does. Stretched whole, not
-   `cover`: the piece is a slab with its own crusted border and rivets, and
-   cropping a square into a 16:9 window throws that border off screen. */
-.syn-field {
-  position: fixed;
-  inset: -9.5%;
-  z-index: -1;
-  pointer-events: none;
-  background-image: url('/assets/bg-texture.jpg');
-  background-size: 100% 100%;
-  background-position: center;
-  background-repeat: no-repeat;
-}
 
-/* the clip-path carrier paints nothing and must not take space */
-.syn-clip-defs {
-  position: absolute;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-/* ── Chrome surfaces (night) ───────────────────────────────────────
-   The panels are pure black by direction, which next to the rock reads as a hole
-   punched in card. These give each surface the barest sense of being a lit plane
-   without lifting it off black: a hairline of the key light along the top edge
-   (same key as the rock's — from above), and a fall-off toward the bottom. Both
-   are inset shadows, so nothing changes size or position and no layout moves. */
-.syn-surface {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    inset 0 14px 26px -20px rgba(255, 255, 255, 0.10),
-    inset 0 -18px 30px -24px rgba(0, 0, 0, 0.9);
-}
-
-/* the rail and the top bar are narrower, so the same treatment at half strength */
-.syn-surface-slim {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    inset 0 10px 18px -16px rgba(255, 255, 255, 0.08);
-}
-
-.syn-day .syn-surface,
-.syn-day .syn-surface-slim {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-}
-
-/* a card is a small plane under the same key: top hairline, base fall-off */
-.syn-card {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    inset 0 -14px 20px -18px rgba(0, 0, 0, 0.9);
-  transition: box-shadow 180ms ease, border-color 180ms ease;
-}
-.syn-card:hover {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 6px 18px -10px rgba(0, 0, 0, 0.85);
-}
-
-/* recessed fields (search): the opposite key — dark at the top, so it reads sunk */
-.syn-inset {
-  box-shadow:
-    inset 0 2px 5px rgba(0, 0, 0, 0.75),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.045);
-}
-.syn-day .syn-card,
-.syn-day .syn-inset {
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+/* day mode: the deeper ramp (same as the wordmarks) so the mark stays legible
+   on the cream sidebar */
+.syn-day .syn-logo-color {
+  background-image: linear-gradient(100deg, #6d28d9 0%, #5b21b6 22%, #a16207 50%, #92400e 72%, #6d28d9 100%);
 }
 
 /* Accent glow effects — follow the accent token */

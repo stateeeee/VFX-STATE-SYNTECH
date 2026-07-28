@@ -19,132 +19,51 @@ dependent**: the **5 effect-card covers** (drop-in wiring is ready) and the
 **≥30fps@720p perf pass** (GPU machine). The checkbox stays unchecked until those
 two land.
 
-**⇒ A fresh session should read `docs/workflow/HANDOFF.md` — it was rewritten on
-2026-07-25 as a complete continuation brief** (visual system, file map, the
-frame-cost contract and the other traps, harness playbook, open operator items).
+**⇒ A fresh session should read `docs/workflow/HANDOFF.md` — rewritten
+2026-07-28 as a complete continuation brief** (current visual state after the
+revert, the operator's mandatory process, everything measured about material,
+lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
-**One known gap to the reference, waiting on the operator's call:** in their
-reference the left rail and the right column are TRANSLUCENT over the artwork and
-the right sidebar has no black panel — its cards float on the texture. Our
-sections are solid black (2026-07-25 direction). That is the last structural
-difference; everything else is matched.
+**La UI è allo stato approvato dall'operatore (revert del 2026-07-28).** Non
+toccare l'estetica senza una direzione approvata: leggi `CODEX_WORKFLOW.md` e
+fermati dopo il piano, come chiede.
 
-Dials on the stone, all cheap to turn: ridge thickness and bias
-(`paintStone`'s `thick`/`thickSlim`/`thickFrame` and the `biasPx` at the call
-sites in `stoneMontage.ts`), divider width (`gap-7` / `p-10` in `App.tsx`), the
-logo's native colours vs the old violet→gold ramp (`.syn-logo` in
-`src/index.css`), and whether the artwork's "COSMOGEL REACTOR X" label stays
-painted out (re-copy the source texture to restore it).
-
-**Phase 10 is substantially DONE; two operator-/hardware-dependent items remain.**
-(1) **5 effect-card covers** — the operator is still finishing them. Drop-in
-wiring is LIVE: place each cover at `public/assets/covers/<ModuleId>.webp` (or
-`.png`/`.jpg`; ModuleIds: `analog`, `anamorphic_lab`, `blob_reveal`,
-`blob_tracker`, `bokeh`) and the right-sidebar card renders it automatically
-under a scrim (no code change needed; until then the plain-label look shows).
-(2) **≥30fps@720p perf pass** — a GPU-machine check, unassessable under sandbox
-SwiftShader (~1–2fps); **⇒ remind the operator to run it on their PC when
-everything else is closed** (they explicitly asked to be reminded). **It is
-self-serve — no tooling needed:** open **AI Lab**, wire the 5-effect chain, play
-a 720p clip, and read ChainLab's live **FPS** / **RES%** badges (`chain-fps` /
-`chain-res`). The engine already does **graceful adaptive-res** (auto-downscales
-when fps<45, upscales when fps>57), so RES% dropping below 100 (amber) IS the
-"graceful adaptive-res" acceptance — the pass condition is fps≥30 **or** a stable
-adaptive RES%. Everything
-else in Phase 10 is done + verified this session (logo, CDN vendoring, colour/
-day-mode audit). Read `05-ROADMAP.md` Phase 10 + `06-VERIFICATION.md`.
-**Gotchas:** ~~standalone HTMLs load THREE from cdnjs~~ **RESOLVED (Phase 10,
-2026-07-24): all CDN deps are vendored** under `public/effects/vendor/` and the
-five effect HTMLs' `<script>`/`locateFile`/`import()` srcs now point there — the
-old `THREE`/`SelfieSegmentation is not defined` sandbox failures are GONE, the
-standalones load fully offline (proven 19/19 + a wasm-init run). No CDN mirror /
-route-interception is needed for verification any more. Restart the flaky dev
-server (`fuser -k 3000/tcp` — `pkill -f 'tsx server.ts'` does NOT match the real
-cmdline) after every SOURCE edit (it serves STALE code otherwise); vendored
-`public/` files are static and need no restart. Headless Chromium has no H.264
-WebCodecs encoder (export falls back to AV1/VP9 in-sandbox; the operator's Chrome
-uses H.264).
-
-## Phase board
-
-- [x] Phase 0 — Baseline & housekeeping
-- [x] Phase 1 — Single-effect mode + settings save (bridge v1)
-- [x] Phase 2 — AI Lab UX (armed mode + drag wiring)
-- [x] Phase 3 — Engine services (AudioEngine, VideoAnalyzer, ParamBus, PersonMask)
-- [x] Phase 4 — 1:1 port: analog
-- [x] Phase 5 — 1:1 port: bokeh
-- [x] Phase 6 — 1:1 port: anamorphic_lab
-- [x] Phase 7 — 1:1 port: blob_reveal
-- [x] Phase 8 — 1:1 port: blob_tracker
-- [x] Phase 9 — Chain export (Master MP4)
-- [ ] Phase 10 — Assets & polish  ← **BLOCKED on the 6 operator images**
-
-## Open items
-
-- **Phase 8 L5 ripple — operator decided (a) audio/beat force** (2026-07-19):
-  the mouse force is replaced by the reactive `rippleForce` param pre-wired to
-  the beat. Ported + verified (see log). Decision recorded here for the record.
-- ~~Operator will deliver 6 images~~ — **DEFINITIVE logo delivered + integrated**
-  (2026-07-25, the final iridescent mark → `public/assets/logo.{webp,png}`, wired
-  top-left of the sidebar, never inverted). **5 effect-card covers still pending**
-  (operator finishing them); drop-in wiring is live — see Next step for the
-  path/naming.
-- ~~Background-texture look~~ — ~~superseded the same day by the animated gel
-  slab~~ — **RE-ADOPTED and shipped 2026-07-27** on the operator's reference: the
-  backdrop is texture A itself (`public/assets/bg-texture.jpg`), stretched whole so
-  its crusted border frames the UI. The procedural violet→gold ramp + canvas bead
-  tile are gone from the backdrop (the tile still fills the hero wordmark).
-- **Day-mode title gradient variant** — still pending the operator's call (deeper
-  stops for legibility vs the identical bright ramp).
-- ~~`ChainLab` "Master MP4" button references `/effects/vendor/*` files that do
-  not exist until Phase 9~~ — **RESOLVED (Phase 9)**: `mp4-muxer.min.js` +
-  `syntech-export.js` vendored; the button exports a real MP4.
-- **Phase 10 substantially done** — only the 5 covers (operator) + the
-  ≥30fps@720p perf pass (GPU machine) remain. See Current phase / Next step.
-- ~~Effects load CDNs (three.js, MediaPipe, fonts) — network required at
-  runtime~~ — **RESOLVED (Phase 10, 2026-07-24): fully vendored offline** under
-  `public/effects/vendor/` (three.min.js r128; MediaPipe selfie_segmentation +
-  pose + face_mesh + tasks-vision, SIMD wasm; self-hosted fonts). No runtime
-  network needed for any effect.
-- Claude remote sandbox only: `cdn.jsdelivr.net` and `cdnjs.cloudflare.com`
-  are blocked by the environment's network policy (fonts.googleapis.com is
-  reachable by tools but not by the un-proxied headless browser). Workaround
-  used for verification (reuse in Phases 4–8): download the same packages
-  from npm (`three@0.128.0`, `@mediapipe/*`) into the scratchpad and serve
-  them via Playwright route interception — see the Phase 0 log. Not a
-  problem on the operator's machine, where CDNs load normally.
-
-## Decisions record (operator-confirmed)
-
-| # | Decision | Date |
-|---|---|---|
-| 1 | AI Lab chaining via SynEngine native ports; iframes stay for single-effect mode | 2026-07-17 |
-| 2 | Ports must be **1:1 full fidelity** (operator chose over "core look") | 2026-07-17 |
-| 3 | Save in single-effect mode = **settings/preset only**, no video export | 2026-07-17 |
-| 4 | Workflow docs in English; operator communication in Italian | 2026-07-17 |
-| 5 | The 5 uploaded HTMLs (2026-07-17) are the official effect builds; old `blob_tracker` replaced | 2026-07-17 |
-| 6 | Add Node menu alphabetical: ANALOG, ANAMORPHIC LAB, BLOB REVEAL, BLOB TRACKER, BOKEH | 2026-07-17 |
-| 7 | Port order locked: analog → bokeh → anamorphic_lab → blob_reveal → blob_tracker | 2026-07-17 |
-| 8 | blob_tracker ripple (L5): mouse force → **audio/beat-reactive force** in the chain node | 2026-07-19 |
-| 9 | blob_tracker panels (L6): draw the panel labels + connector lines **INTO the node texture** (Canvas-2D), not HTML/SVG overlays | 2026-07-19 |
-| 10 | blob_tracker L3b smart contour → mapped to the **shared PersonMask** (SelfieSegmentation), not a new Tasks-Vision ImageSegmenter dep; segEnabled derived from ctMode (*Claude, operator away*) | 2026-07-20 |
-| 11 | blob_tracker L7 reactivity → the bespoke 7-band auto-driver mapped to **ParamBus defaultRoutes** on the shared signals (analog pattern); ar-*/vr-* gains + toggles consolidated (*Claude, operator away*) | 2026-07-20 |
-| 12 | blob_tracker L7b colours → **palette-enum indices** (ParamSchema can't hold hex); panels-label colour left at L6 styling (*Claude, operator away*) | 2026-07-20 |
-| 13 | blob_tracker L7c chaos points **auto-placed** (golden-angle scatter) since the chain has no mouse; autoMode per-panel onset choreography omitted (consolidated into L7a routes) (*Claude, operator away*) | 2026-07-20 |
-| 14 | Phase 9 export → preferred codec **universal H.264 (avc)** with **AV1/VP9 fallbacks** (headless has no H.264 encoder; robustness); video-only for v1, audio muxing a follow-up (*Claude, operator away*) | 2026-07-20 |
-| 15 | **Operator authorised editing the five effect HTMLs' `<script>`/`locateFile`/`import()` srcs** to vendored local paths (explicit deroga to hard rule #1, for CDN-offline) — the ONLY non-bridge edit allowed to those files | 2026-07-24 |
-| 16 | Vendoring scope: three.js r128 + MediaPipe (selfie_segmentation both simd+nosimd; pose/face_mesh/tasks-vision **SIMD-only**, modern-Chrome target, lazy features fall back gracefully) + **latin/latin-ext** font subsets only; pose **lite** model only (matches `modelComplexity:0`) — drops 34MB of unused pose models (*Claude, operator away*) | 2026-07-24 |
-| 17 | Logo presentation: keep the delivered mark 1:1 but **key the black field to transparent** (alpha=luminance) + tight crop → `logo.png`, so it floats on the UI and **inverts for day mode**; original kept as `logo.webp`. One-off effect accent colours **kept** (`#e0913f`/`#e0554b`/`#c65b9c`/`#6ea8e0`, operator: "lasciarli") | 2026-07-24 |
-| 18 | Backdrop = the operator's **artwork itself** (texture A), stretched WHOLE (`100% 100%`, not `cover`) so its crusted border frames the UI; the procedural ramp + bead tile are retired from the backdrop. Frame widened to `p-7` so the material reads as a slab the panels are cut out of (*Claude, from the operator's reference image*) | 2026-07-27 |
-| 19 | The sidebar logo shows the mark's **own iridescence** — the masked violet→gold ramp + `luminosity` blend are dropped (they existed to tie it to the procedural slab, which is gone), leaving a sheen on the 6s cadence. **Flagged for the operator: one-block revert if they preferred the ramp** (*Claude, from the operator's reference image*) | 2026-07-27 |
-| 20 | The artwork **divides** the sections instead of lying behind them: drawn OVER the panels. ~~masked to the skeleton, holes eroded by `feTurbulence`~~ — **superseded the same day (see #22)**: the operator ruled that the panels must stay rectangles. Still load-bearing from this pass: night-mode panel **hairlines removed**, dividers widened to 28px, and the layer cut into **strips** so nothing overlays the hero canvas | 2026-07-27 |
-| 23 | **Containers take the operator's red-lined curves** via traced `objectBoundingBox` clip-paths (`panelClips.ts`), the cosmic field sits full-screen behind them, and the stone walks the same outlines. Supersedes #22's "panels stay rectangles" (*operator, annotated screenshot*) | 2026-07-28 |
-| 22 | ~~The rock is a **MONTAGE** (`src/lib/stoneMontage.ts`): pieces of bead vein cut from the artwork and stamped along each section's outline, laid OVER the panels. **The panels stay plain rectangles — never masked, never clipped** (operator: "non devono essere i pannelli con forme non regolari"); the irregularity is the rock's alone, and the suite asserts no `[data-crust]` section carries a mask or clip-path. Source patches are chosen by an edge-energy-vs-saturation score, not by eye~~ — **the "panels stay rectangles" half is superseded by #23**; the montage itself stands | 2026-07-27 |
-| 21 | `public/assets/bg-texture.jpg` is a **derived** asset: the artwork's "COSMOGEL REACTOR X" label is cloned out, because the crust exposes it over the top bar where it reads as a UI glitch. Source untouched in `docs/design/textures/`. **Flagged for the operator** (*Claude*) | 2026-07-27 |
+Restano le due voci di Phase 10 che dipendono dall'operatore:
+(1) **5 cover degli effetti** — le sta finendo; il wiring è già live, basta
+mettere il file in `public/assets/covers/<ModuleId>.{webp,png,jpg}`.
+(2) **Pass ≥30fps@720p su macchina con GPU** — non valutabile in sandbox
+(SwiftShader, 1–2fps); **ricordarglielo**, è self-service dai badge FPS/RES%
+dell'AI Lab. Dettagli completi in `docs/workflow/HANDOFF.md`.
 
 ## Log
+
+### 2026-07-28 (fine) — REVERT: la UI torna allo stato approvato
+
+Operatore: *"non mi piace il risultato. torniamo a quando l'ui era come nella
+foto caricata."* Fatto.
+
+- `src/App.tsx`, `src/index.css`, `src/components/NodalComposition.tsx` e
+  `tools/verify/verify-ui-gel-pass.js` riportati a `eb74197` (lo stato prima
+  della sessione). Cancellati `GelCrust.tsx`, `PanelClips.tsx`,
+  `stoneMontage.ts`, `panelClips.ts`, `public/assets/bg-texture.jpg`.
+- La UI è di nuovo la lastra gel procedurale violetto→oro, logo ricolorato dalla
+  rampa, wordmark a `left-8`, cornice `p-4` / solchi `gap-4`.
+- Verificato sullo stato ripristinato: **gel 32/32**, brand 13/13, search 6/6,
+  covers 7/7, phase 2 26/26, phase 3 14/14 (BPM 124), lint + build puliti.
+- **Conservati** (sono la parte di valore della sessione): `CODEX_WORKFLOW.md`,
+  `ANALISI.md`, `DESIGN_ANALYSIS.md`, `IMPLEMENTATION_PLAN.md`, e
+  `docs/workflow/HANDOFF.md` riscritto con tutto ciò che è stato misurato.
+- Il codice annullato resta raggiungibile: `02a6922` è l'ultimo stato completo
+  "roccia + clip-path".
+
+**Lezione, per chi legge dopo.** Le decisioni #18–#23 descrivono cinque
+direzioni estetiche diverse in due giorni, tutte con le suite verdi, tutte
+annullate. Il problema non era tecnico: si è implementato prima di far approvare
+una direzione. `CODEX_WORKFLOW.md` esiste per questo — va rispettata anche la
+parte che dice **"Wait"**.
+
 
 ### 2026-07-28 — Red-lined geometry: the containers take the operator's curves
 

@@ -26,15 +26,11 @@ import ChainLab from './components/ChainLab';
 import AiDirector from './components/AiDirector';
 import NodalComposition, { CompEffect, EFFECT_META, WireMap } from './components/NodalComposition';
 import AudioMeter from './components/AudioMeter';
-import GelCrust from './components/GelCrust';
-import PanelClips from './components/PanelClips';
 import { gelMaterialTile } from './lib/gelTexture';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 
 // explicit session snapshot for the SAVE nav action (decision #9: localStorage)
-// gel material tile edge (px) — the hero wordmark's fill; the backdrop itself is
-// the operator's artwork now, not this tile (see .syn-gel-photo in index.css)
-const GEL_TILE = 640;
+const GEL_TILE = 640; // gel material tile edge (px) — also its background-size
 const SESSION_KEY = 'syntech.session';
 const COMP_KEY = 'syntech.composition.v3';
 const COMP_KEY_V2 = 'syntech.composition.v2';
@@ -65,6 +61,26 @@ const readSession = (): SavedSession => {
 };
 
 
+/* Air bubbles rising through the gel (the moving ones, on top of the frozen
+   field). Fixed list so the look is stable; spread wide because the sections cover
+   most of the slab and only the gaps show it, so the visible strips need a few
+   bubbles passing at any time. Negative delays start them mid-rise. */
+const GEL_BUBBLES: Array<{ x: number; d: number; dur: number; delay: number }> = [
+  { x: 0.2, d: 11, dur: 30, delay: 2 }, { x: 1.4, d: 7, dur: 22, delay: 15 },
+  { x: 2.6, d: 15, dur: 38, delay: 27 }, { x: 4, d: 9, dur: 26, delay: 7 },
+  { x: 8, d: 13, dur: 34, delay: 19 }, { x: 12, d: 6, dur: 20, delay: 9 },
+  { x: 17, d: 17, dur: 42, delay: 31 }, { x: 22, d: 8, dur: 24, delay: 3 },
+  { x: 27, d: 12, dur: 32, delay: 22 }, { x: 32, d: 14, dur: 36, delay: 11 },
+  { x: 37, d: 7, dur: 21, delay: 17 }, { x: 42, d: 16, dur: 40, delay: 5 },
+  { x: 47, d: 10, dur: 28, delay: 25 }, { x: 50.5, d: 13, dur: 33, delay: 13 },
+  { x: 54, d: 8, dur: 23, delay: 29 }, { x: 59, d: 15, dur: 37, delay: 8 },
+  { x: 64, d: 11, dur: 29, delay: 20 }, { x: 69, d: 9, dur: 25, delay: 34 },
+  { x: 74, d: 14, dur: 35, delay: 6 }, { x: 79, d: 7, dur: 22, delay: 24 },
+  { x: 84, d: 16, dur: 41, delay: 12 }, { x: 88, d: 10, dur: 27, delay: 30 },
+  { x: 92, d: 13, dur: 31, delay: 4 }, { x: 95, d: 8, dur: 23, delay: 18 },
+  { x: 97, d: 15, dur: 39, delay: 26 }, { x: 98.6, d: 6, dur: 20, delay: 10 },
+  { x: 99.4, d: 12, dur: 33, delay: 21 }, { x: 0.8, d: 9, dur: 24, delay: 32 },
+];
 
 /* Phase-10 (assets): right-sidebar effect-card cover art. Drops in a cover the
    moment the operator delivers it at public/assets/covers/<ModuleId>.{webp,png,jpg}
@@ -254,9 +270,11 @@ export default function App() {
   // the hero clip — the sidebar level meter taps this element
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  /* the gel material for the hero wordmark, painted once on a canvas: softer
-     undersides than the slab variant, because at letter scale a full-strength bead
-     shadow can swallow a whole stroke (see gelTexture.ts) */
+  /* the gel material: painted once on a canvas, then tiled. One image, one blend
+     layer — see the note in gelTexture.ts about why this must not be split up. */
+  const gelMaterial = useMemo(() => gelMaterialTile({ size: GEL_TILE, count: 300, seed: 0x5f3a7c1d }), []);
+  /* the same material, softer undersides, for the hero wordmark: at letter scale a
+     full-strength bead shadow can swallow a whole stroke (see gelTexture.ts) */
   const gelTextMaterial = useMemo(() => gelMaterialTile({ size: GEL_TILE, count: 300, seed: 0x5f3a7c1d, shade: 0.4 }), []);
   const pickSource = () => sourceInputRef.current?.click();
   const onSourceFile = (file: File | null) => {
@@ -504,29 +522,42 @@ export default function App() {
 
   return (
     <div
-      /* The frame is wider than the gaps between sections (p-7 vs gap-4): in the
-         operator's reference the artwork reads as a slab the UI is cut out of, and
-         that only works if there is a real border of material around everything. */
-      className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-10 gap-7`}
+      className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-4 gap-4`}
       /* the gel tile is generated at runtime, so it reaches CSS as a variable —
-         the hero wordmark reads it from here */
+         the slab and the hero wordmark both read it from here */
       style={{
+        '--syn-gel-tex': gelMaterial ? `url(${gelMaterial})` : 'none',
         '--syn-gel-tex-text': gelTextMaterial ? `url(${gelTextMaterial})` : 'none',
+        '--syn-gel-tile': `${GEL_TILE}px`,
       } as React.CSSProperties}
     >
 
-      {/* Night mode only.
-          1. the cosmic field: the reference's own backdrop, full screen, behind
-             everything — the panels are cut out of it by their clip paths;
-          2. the clip-path definitions traced from the operator's red lines;
-          3. the stone, which lays its bead ridge along those same traced curves.
-          Every section shell carries `data-crust`; see GelCrust.tsx. */}
+      {/* Gel slab behind the whole UI (night mode only). The sections are solid
+          black, so it reads through the gaps between them: a violet→gold LED sheet
+          under a poured, glossy gel with air bubbles rising through it. Layers are
+          transform-animated only — see the note in index.css. */}
       {!isDayMode && (
-        <>
-          <div className="syn-field" aria-hidden data-testid="bg-field" />
-          <PanelClips />
-          <GelCrust layoutKey={`${openEffectId ?? ''}|${chainOpen}|${projectsOpen}`} />
-        </>
+        <div className="syn-bg-layer" aria-hidden data-testid="bg-layer">
+          <span className="syn-gel-sheet" />
+
+          {/* the whole material — swell, bubbles and gloss — in ONE overlay layer */}
+          <span className="syn-gel-material" data-testid="bg-relief" />
+          <span className="syn-gel-bubbles" data-testid="bg-bubbles">
+            {GEL_BUBBLES.map((b, i) => (
+              <span
+                key={i}
+                className="syn-bubble"
+                style={{
+                  left: `${b.x}%`,
+                  width: b.d,
+                  height: b.d,
+                  animationDuration: `${b.dur}s`,
+                  animationDelay: `-${b.delay}s`, // negative: the field is already in motion at load
+                }}
+              />
+            ))}
+          </span>
+        </div>
       )}
 
       {/* hidden source picker (shared INPUT) */}
@@ -540,7 +571,7 @@ export default function App() {
       />
 
       {/* ═══════════════ TOP BAR ═══════════════ */}
-      <header data-crust className={`h-12 shrink-0 flex items-center justify-between px-4 rounded-[20px] border relative z-30 syn-surface-slim ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-transparent bg-ink-950'} shadow-md`}>
+      <header className={`h-12 shrink-0 flex items-center justify-between px-4 rounded-2xl border relative z-30 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} shadow-md`}>
         <div className="flex items-center gap-3 w-56">
           <div className="flex items-center gap-1.5 font-mono text-[10px] text-neutral-500 uppercase tracking-widest">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -591,21 +622,21 @@ export default function App() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden gap-7">
+      <div className="flex-1 flex overflow-hidden gap-4">
         {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
-        <nav data-crust className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-[20px] border transition-colors duration-300 syn-surface-slim ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-transparent bg-ink-950'} z-20 shadow-md`}>
-          {/* Brand logo, top-left — the operator's delivered mark in its OWN
-              iridescence (violet, gold, teal, red), which is what pairs with the
-              gel artwork behind the UI. A narrow sheen sweeps across it on the
-              brand's 6s cadence (.syn-logo in index.css). Never inverted. */}
-          <div className="syn-logo w-14 h-14 shrink-0 mb-5" data-testid="brand-logo" title="VFX Syntech — created by State">
+        <nav className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} z-20 shadow-md`}>
+          {/* Brand logo. The mark keeps its inflated glossy 3D shading but takes its
+              colour from the same violet→gold ramp as the gel slab and the titles:
+              a masked gradient layer underneath, the mark on top in `luminosity`
+              blend (see .syn-logo in index.css). Never inverted. */}
+          <div className="syn-logo w-11 h-11 shrink-0 mb-5" title="VFX Syntech — created by State">
+            <span className="syn-logo-color" aria-hidden />
             <img
               src="/assets/logo.png"
               alt="VFX Syntech"
               draggable={false}
-              className={`syn-logo-mark select-none ${isDayMode ? 'drop-shadow-[0_1px_3px_rgba(0,0,0,0.35)]' : 'drop-shadow-[0_0_10px_rgba(139,92,246,0.35)]'}`}
+              className={`syn-logo-shade select-none ${isDayMode ? '' : 'drop-shadow-[0_0_10px_rgba(139,92,246,0.35)]'}`}
             />
-            <span className="syn-logo-gloss" aria-hidden />
           </div>
 
           <ul className="flex flex-col gap-5 w-full items-center">
@@ -660,7 +691,7 @@ export default function App() {
         </nav>
 
         {/* ═══════════════ MAIN CONTENT ═══════════════ */}
-        <div className="flex-1 flex flex-col gap-7 overflow-hidden relative">
+        <div className="flex-1 flex flex-col gap-4 overflow-hidden relative">
 
           {/* PROJECTS MODAL */}
           {projectsOpen && (
@@ -713,11 +744,7 @@ export default function App() {
 
                 {/* TOP: Hero (brain graph / video) OR AI Lab OR Effect */}
                 <Panel defaultSize={62} minSize={20}>
-                  {/* NO `syn-surface` here, deliberately: this shell holds the hero canvas, which
-                      repaints every frame, and an inset box-shadow on it has to be composited
-                      over that canvas every frame. Phase 3's BPM estimate went 124 -> 138 with
-                      it. The rock already gives this panel its lit edge. */}
-                  <div data-crust data-clip="hero" style={isDayMode ? undefined : { clipPath: 'url(#syn-clip-hero)' }} className={`w-full h-full relative rounded-[20px] border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-transparent bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
+                  <div className={`w-full h-full relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
                     {/* armed AI Lab stays mounted under an open effect so its
                         composition (nodes, wiring, params) survives navigation */}
                     {chainOpen && (
@@ -775,12 +802,8 @@ export default function App() {
                         {/* legibility gradient */}
                         <div className="absolute inset-0 pointer-events-none bg-gradient-to-br from-black/70 via-black/25 to-transparent" />
 
-                        {/* Wordmark + subtitle. Pushed hard to the LEFT edge of the
-                            hero (operator, 2026-07-27): the brain graph's mass sits
-                            around and right of centre, so a title indented into the
-                            panel leaves the left half plain black — flush left, the
-                            wordmark is the counterweight to the graph. */}
-                        <div className="absolute top-6 left-4 z-10 max-w-[70%]" data-testid="hero-wordmark">
+                        {/* wordmark + subtitle + actions */}
+                        <div className="absolute top-7 left-8 z-10 max-w-[70%]">
                           {/* Brand unification: the top-bar wordmark's font, the shared
                               shimmer, and — on this large one only — the gel material with
                               the logo's inflated 3D (`hero-gel-text`; at 15px in the top bar
@@ -797,7 +820,7 @@ export default function App() {
                   </div>
                 </Panel>
 
-                <PanelResizeHandle className="h-7 flex items-center justify-center cursor-row-resize group relative z-10 shrink-0">
+                <PanelResizeHandle className="h-4 flex items-center justify-center cursor-row-resize group relative z-10 shrink-0">
                   <div className={`w-12 h-[3px] rounded-full transition-colors ${isDayMode ? 'bg-neutral-300 group-hover:bg-violet-500' : 'bg-ink-700 group-hover:bg-violet-500'}`} />
                 </PanelResizeHandle>
 
@@ -820,12 +843,12 @@ export default function App() {
                       />
                     </Panel>
 
-                    <PanelResizeHandle className="w-7 flex items-center justify-center cursor-col-resize group shrink-0">
+                    <PanelResizeHandle className="w-4 flex items-center justify-center cursor-col-resize group shrink-0">
                       <div className={`w-[3px] h-12 rounded-full transition-colors ${isDayMode ? 'bg-neutral-300 group-hover:bg-violet-500' : 'bg-ink-700 group-hover:bg-violet-500'}`} />
                     </PanelResizeHandle>
 
                     <Panel defaultSize={45} minSize={20}>
-                      <div data-crust data-clip="gemini" style={isDayMode ? undefined : { clipPath: 'url(#syn-clip-gemini)' }} className={`w-full h-full rounded-[20px] border syn-surface ${isDayMode ? 'border-neutral-200 bg-white' : 'border-transparent bg-ink-900'} flex flex-col relative shadow-lg overflow-hidden`}>
+                      <div className={`w-full h-full rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} flex flex-col relative shadow-lg overflow-hidden`}>
                         <AiDirector
                           isDayMode={isDayMode}
                           activeGeminiMode={activeGeminiMode}
@@ -853,16 +876,16 @@ export default function App() {
               </PanelGroup>
             </Panel>
 
-            <PanelResizeHandle className="w-7 flex items-center justify-center cursor-col-resize group shrink-0">
+            <PanelResizeHandle className="w-4 flex items-center justify-center cursor-col-resize group shrink-0">
               <div className={`w-[3px] h-12 rounded-full transition-colors ${isDayMode ? 'bg-neutral-300 group-hover:bg-violet-500' : 'bg-ink-700 group-hover:bg-violet-500'}`} />
             </PanelResizeHandle>
 
             {/* RIGHT SIDEBAR: Effects Library */}
             <Panel defaultSize={26} minSize={16} maxSize={40}>
-              <div data-crust data-clip="right" style={isDayMode ? undefined : { clipPath: 'url(#syn-clip-right)' }} className={`w-full h-full rounded-[20px] border flex flex-col overflow-hidden shadow-lg syn-surface ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-transparent bg-ink-900'}`}>
+              <div className={`w-full h-full rounded-2xl border flex flex-col overflow-hidden shadow-lg ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-ink-700/60 bg-ink-900'}`}>
                 {/* Search box (positioned at the top) */}
                 <div className={`px-4 py-3 border-b shrink-0 ${isDayMode ? 'border-neutral-200' : 'border-ink-700/50'}`}>
-                  <div className={`w-full border rounded-xl p-2.5 flex items-center gap-2 syn-inset ${isDayMode ? 'bg-[#fcfbf9] border-neutral-200' : 'bg-[#0b0b0f] border-white/[0.07]'}`}>
+                  <div className={`w-full border rounded-lg p-2.5 flex items-center gap-2 ${isDayMode ? 'bg-[#fcfbf9] border-neutral-200' : 'bg-[#0e0e0e] border-ink-700/70'}`}>
                     <Search className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
                     <input
                       data-testid="effect-search"
@@ -899,10 +922,10 @@ export default function App() {
                         key={module.id}
                         data-testid={`effect-card-${module.id}`}
                         onClick={() => handleModuleOpen(module.id)}
-                        className={`h-20 p-2.5 rounded-2xl border transition-all flex items-center justify-center relative overflow-hidden cursor-pointer ${
+                        className={`h-20 p-2.5 rounded-lg border transition-all flex items-center justify-center relative overflow-hidden cursor-pointer ${
                           active
-                            ? isDayMode ? 'border-violet-500/50 bg-violet-500/5 shadow-sm' : 'border-violet-500/45 bg-violet-500/[0.07] shadow-[0_0_18px_rgba(139,92,246,0.10)]'
-                            : isDayMode ? 'border-neutral-200 bg-white hover:border-neutral-300' : 'border-white/[0.06] bg-ink-850 syn-card hover:border-white/[0.12]'
+                            ? isDayMode ? 'border-violet-500/50 bg-violet-500/5 shadow-sm' : 'border-violet-500/45 bg-violet-500/[0.07] shadow-[0_0_10px_rgba(139,92,246,0.06)]'
+                            : isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-850'
                         }`}
                       >
                         <EffectCardArt id={module.id} name={module.name} isDayMode={isDayMode} />
