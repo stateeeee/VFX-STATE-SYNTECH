@@ -189,6 +189,31 @@ body {
   opacity: 0.35;
 }
 
+/* ── The cosmic field ──────────────────────────────────────────────
+   The reference's backdrop, full screen and behind everything. The panels are cut
+   out of it by their traced clip paths, so it reads as one continuous material
+   the UI is set into — which is what the reference does. Stretched whole, not
+   `cover`: the piece is a slab with its own crusted border and rivets, and
+   cropping a square into a 16:9 window throws that border off screen. */
+.syn-field {
+  position: fixed;
+  inset: -9.5%;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url('/assets/bg-texture.jpg');
+  background-size: 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* the clip-path carrier paints nothing and must not take space */
+.syn-clip-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
 /* ── Chrome surfaces (night) ───────────────────────────────────────
    The panels are pure black by direction, which next to the rock reads as a hole
    punched in card. These give each surface the barest sense of being a lit plane

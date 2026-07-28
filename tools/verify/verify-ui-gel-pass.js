@@ -96,10 +96,21 @@ const skipped = (n, why) => { skip++; console.log(`SKIP  ${n} — ${why}`); };
       overCanvas,
       sections: document.querySelectorAll('[data-crust]').length,
       decoded,
-      // the panels stay plain rectangles — nothing may mask or deform them
-      deformed: [...document.querySelectorAll('[data-crust]')].some((e) => {
+      /* 2026-07-28, SUPERSEDING the 07-27 rule that panels must stay rectangles:
+         the operator's red-lined annotation IS the new container geometry, so the
+         clipped sections are now required rather than forbidden. Each one must
+         carry a clip-path, and it must be an objectBoundingBox <clipPath> so the
+         curve survives every resize with no JS. */
+      clipped: [...document.querySelectorAll('[data-clip]')].map((e) => {
         const st = getComputedStyle(e);
-        return (st.maskImage && st.maskImage !== 'none') || (st.clipPath && st.clipPath !== 'none');
+        const def = document.getElementById(`syn-clip-${e.dataset.clip}`);
+        return {
+          id: e.dataset.clip,
+          applied: /url\(/.test(st.clipPath || ''),
+          units: def && def.getAttribute('clipPathUnits'),
+          // clip-path must NOT change the box — the hero's canvas sizes off it
+          box: Math.round(e.getBoundingClientRect().width) > 0,
+        };
       }),
       // FRAME-COST CONTRACT — see the note below
       anim: cs.animationName,
@@ -112,9 +123,9 @@ const skipped = (n, why) => { skip++; console.log(`SKIP  ${n} — ${why}`); };
   step('artwork actually decodes', !!crust && !!crust.decoded, (crust && crust.decoded) || 'failed to decode');
   step('stone is a montage painted at runtime, not the photo', !!crust && crust.painted && !crust.rawPhoto);
   step('a ridge is laid for every section', !!crust && crust.sections >= 6, crust && `${crust.sections} sections`);
-  /* the operator was explicit: "non devono essere i pannelli con forme non
-     regolari" — the irregularity is the rock's, never the panel's */
-  step('the panels stay plain rectangles (never masked or clipped)', !!crust && !crust.deformed);
+  step('every red-lined section carries its traced clip', !!crust && crust.clipped.length >= 4
+    && crust.clipped.every((c) => c.applied && c.units === 'objectBoundingBox' && c.box),
+    crust && crust.clipped.map((c) => `${c.id}:${c.applied ? 'on' : 'OFF'}/${c.units}`).join(' '));
   step('stone sits over the panels and stays click-through', !!crust && crust.overPanels && crust.clickThrough,
     crust && `z\u226540=${crust.overPanels} pointer-events=${crust.clickThrough}`);
   step('stone is cut into skeleton strips, not one sheet', !!crust && crust.strips > 1 && crust.coverage < 65,

@@ -82,6 +82,26 @@ export interface StoneOptions {
   seed?: number;
 }
 
+/** A section the rock has to run around: its box, and — when the operator's red
+ *  line gave it one — the traced outline in VIEWPORT pixels. */
+export interface Section { rect: Rect; pts?: Array<[number, number]> }
+
+/** walk an arbitrary closed polyline at a fixed spacing, carrying the tangent */
+function walk(pts: Array<[number, number]>, step: number): Array<[number, number, number]> {
+  const out: Array<[number, number, number]> = [];
+  for (let i = 0; i < pts.length; i++) {
+    const [ax, ay] = pts[i];
+    const [bx, by] = pts[(i + 1) % pts.length];
+    const len = Math.hypot(bx - ax, by - ay);
+    if (len < 0.001) continue;
+    const ang = Math.atan2(by - ay, bx - ax);
+    for (let d = 0; d < len; d += step) {
+      out.push([ax + (bx - ax) * (d / len), ay + (by - ay) * (d / len), ang]);
+    }
+  }
+  return out;
+}
+
 /** points along a rounded-rect outline, with the tangent angle at each */
 function outline(r: Rect, radius: number, step: number): Array<[number, number, number]> {
   const rad = Math.max(0, Math.min(radius, Math.min(r.w, r.h) / 2));
@@ -119,15 +139,16 @@ function outline(r: Rect, radius: number, step: number): Array<[number, number, 
  *
  * @param img    the decoded artwork
  * @param vw/vh  viewport
- * @param holes  the sections, in viewport coordinates — a ridge is laid along each
+ * @param holes  the sections — a ridge is laid along each one's traced outline
+ *               when it has one, and around its box when it does not
  * @returns a canvas the size of the viewport, transparent except for the stone
  */
 export function paintStone(
   img: CanvasImageSource,
   vw: number,
   vh: number,
-  holes: Rect[],
-  { thick = 30, thickSlim = 13, slimBelow = 140, thickFrame = 34, seed = 0x51a7e3 }: StoneOptions = {},
+  holes: Section[],
+  { thick = 30, thickSlim = 12, slimBelow = 140, thickFrame = 30, seed = 0x51a7e3 }: StoneOptions = {},
 ): HTMLCanvasElement {
   const cv = document.createElement('canvas');
   cv.width = vw; cv.height = vh;
@@ -212,8 +233,11 @@ export function paintStone(
      unlit wherever they overlap. */
   const lit: Array<[number, number, number]> = [];
 
-  const ridge = (r: Rect, radius: number, band: number, gemChance: number, biasPx: number) => {
-    const pts = outline(r, radius, band * 0.62);
+  const ridge = (r: Rect, radius: number, band: number, gemChance: number, biasPx: number, poly?: Array<[number, number]>) => {
+    /* When the operator's red line gave this section an outline, the rock runs
+       along THAT — the panel is clipped to the same curve, so anything else would
+       leave the ridge floating beside its own edge. */
+    const pts = poly && poly.length > 2 ? walk(poly, band * 0.62) : outline(r, radius, band * 0.62);
 
     // 1. the bed, laid first along the whole ridge
     pts.forEach(([px, py, ang], t) => {
@@ -281,14 +305,14 @@ export function paintStone(
   // 1. the outer bezel, leaning outward so it spills off screen rather than over
   //    the top bar's text
   const inset = 16;
-  ridge({ x: inset, y: inset, w: vw - inset * 2, h: vh - inset * 2 }, thickFrame * 0.9, thickFrame, 0.004, 14);
+  ridge({ x: inset, y: inset, w: vw - inset * 2, h: vh - inset * 2 }, thickFrame * 0.9, thickFrame, 0.004, 18);
 
   // 2. a ridge around every section, thinner on the slim ones (a bite that is
   //    texture on the hero is a third of a 48px top bar)
   for (const h of holes) {
-    const slim = Math.min(h.w, h.h) < slimBelow;
+    const slim = Math.min(h.rect.w, h.rect.h) < slimBelow;
     // half the 28px layout gap, so the ridge fills it and leans only ~12px in
-    ridge(h, slim ? 16 : 26, slim ? thickSlim : thick, slim ? 0.0008 : 0.0028, slim ? 16 : 18);
+    ridge(h.rect, slim ? 16 : 26, slim ? thickSlim : thick, slim ? 0.0008 : 0.0028, slim ? 19 : 16, h.pts);
   }
 
   /* 2b. THE JUNCTION POOLS. Where three sections meet, the reference swells into a
@@ -301,7 +325,7 @@ export function paintStone(
   const seenPool: Array<[number, number]> = [];
   // Only between BROAD sections. A pool at a corner of the 78px icon rail is wider
   // than the rail itself and lands straight on its labels.
-  const broad = holes.filter((h) => Math.min(h.w, h.h) >= slimBelow);
+  const broad = holes.map((h) => h.rect).filter((h) => Math.min(h.w, h.h) >= slimBelow);
   for (let i = 0; i < broad.length; i++) {
     for (let j = i + 1; j < broad.length; j++) {
       for (const [ax, ay] of corners4(broad[i])) {

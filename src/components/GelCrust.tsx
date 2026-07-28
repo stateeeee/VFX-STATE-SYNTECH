@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { paintStone, Rect } from '../lib/stoneMontage';
+import { paintStone, Rect, Section } from '../lib/stoneMontage';
+import { PANEL_CLIPS } from '../lib/panelClips';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    THE STONE — the 3D rock that divides the sections, laid OVER them.
@@ -50,9 +51,9 @@ const REACH = 46;
  * as possible: a scanline over every distinct row boundary, keeping the
  * x-intervals no section spans, then merging rows that line up.
  */
-function skeletonStrips(vw: number, vh: number, holes: Rect[]): Rect[] {
+function skeletonStrips(vw: number, vh: number, holes: Section[]): Rect[] {
   const cores = holes
-    .map((h) => ({ x: h.x + REACH, y: h.y + REACH, w: h.w - REACH * 2, h: h.h - REACH * 2 }))
+    .map(({ rect: h }) => ({ x: h.x + REACH, y: h.y + REACH, w: h.w - REACH * 2, h: h.h - REACH * 2 }))
     .filter((h) => h.w > 0 && h.h > 0);
 
   const rows = [...new Set([0, vh, ...cores.flatMap((c) => [c.y, c.y + c.h])])]
@@ -89,7 +90,7 @@ function skeletonStrips(vw: number, vh: number, holes: Rect[]): Rect[] {
  */
 export default function GelCrust({ layoutKey }: { layoutKey: string }) {
   const [vp, setVp] = useState({ w: 0, h: 0 });
-  const [holes, setHoles] = useState<Rect[]>([]);
+  const [holes, setHoles] = useState<Section[]>([]);
   const [art, setArt] = useState<CanvasImageSource | null>(null);
   const [stone, setStone] = useState<string>('');
   // last measurement, serialised: the observers fire on every layout pass, and
@@ -110,12 +111,17 @@ export default function GelCrust({ layoutKey }: { layoutKey: string }) {
     const measure = () => {
       raf = 0;
       const els = Array.from(document.querySelectorAll<HTMLElement>('[data-crust]'));
-      const next = els.map((el) => {
+      const next: Section[] = els.map((el) => {
         const r = el.getBoundingClientRect();
-        return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+        const rect = { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+        // a section clipped to one of the operator's traced curves hands the rock
+        // that same curve, in viewport pixels, so ridge and clip edge coincide
+        const clip = el.dataset.clip ? PANEL_CLIPS[el.dataset.clip] : undefined;
+        const pts = clip?.poly.map(([nx, ny]) => [rect.x + nx * rect.w, rect.y + ny * rect.h] as [number, number]);
+        return { rect, pts };
       });
       const w = window.innerWidth, h = window.innerHeight;
-      const key = `${w}x${h}|${next.map((r) => `${r.x},${r.y},${r.w},${r.h}`).join(';')}`;
+      const key = `${w}x${h}|${next.map(({ rect: r }) => `${r.x},${r.y},${r.w},${r.h}`).join(';')}`;
       if (key === sig.current) return;
       sig.current = key;
       setVp({ w, h });

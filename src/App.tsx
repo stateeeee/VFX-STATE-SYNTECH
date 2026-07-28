@@ -27,6 +27,7 @@ import AiDirector from './components/AiDirector';
 import NodalComposition, { CompEffect, EFFECT_META, WireMap } from './components/NodalComposition';
 import AudioMeter from './components/AudioMeter';
 import GelCrust from './components/GelCrust';
+import PanelClips from './components/PanelClips';
 import { gelMaterialTile } from './lib/gelTexture';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 
@@ -514,11 +515,19 @@ export default function App() {
       } as React.CSSProperties}
     >
 
-      {/* The crust (night mode only): the operator's artwork drawn OVER the panels
-          and masked to the skeleton between them, so the material DIVIDES the
-          sections — irregular rock, with the panels as holes eroded through it.
+      {/* Night mode only.
+          1. the cosmic field: the reference's own backdrop, full screen, behind
+             everything — the panels are cut out of it by their clip paths;
+          2. the clip-path definitions traced from the operator's red lines;
+          3. the stone, which lays its bead ridge along those same traced curves.
           Every section shell carries `data-crust`; see GelCrust.tsx. */}
-      {!isDayMode && <GelCrust layoutKey={`${openEffectId ?? ''}|${chainOpen}|${projectsOpen}`} />}
+      {!isDayMode && (
+        <>
+          <div className="syn-field" aria-hidden data-testid="bg-field" />
+          <PanelClips />
+          <GelCrust layoutKey={`${openEffectId ?? ''}|${chainOpen}|${projectsOpen}`} />
+        </>
+      )}
 
       {/* hidden source picker (shared INPUT) */}
       <input
@@ -708,7 +717,7 @@ export default function App() {
                       repaints every frame, and an inset box-shadow on it has to be composited
                       over that canvas every frame. Phase 3's BPM estimate went 124 -> 138 with
                       it. The rock already gives this panel its lit edge. */}
-                  <div data-crust className={`w-full h-full relative rounded-[20px] border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-transparent bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
+                  <div data-crust data-clip="hero" style={isDayMode ? undefined : { clipPath: 'url(#syn-clip-hero)' }} className={`w-full h-full relative rounded-[20px] border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-transparent bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
                     {/* armed AI Lab stays mounted under an open effect so its
                         composition (nodes, wiring, params) survives navigation */}
                     {chainOpen && (
@@ -816,7 +825,7 @@ export default function App() {
                     </PanelResizeHandle>
 
                     <Panel defaultSize={45} minSize={20}>
-                      <div data-crust className={`w-full h-full rounded-[20px] border syn-surface ${isDayMode ? 'border-neutral-200 bg-white' : 'border-transparent bg-ink-900'} flex flex-col relative shadow-lg overflow-hidden`}>
+                      <div data-crust data-clip="gemini" style={isDayMode ? undefined : { clipPath: 'url(#syn-clip-gemini)' }} className={`w-full h-full rounded-[20px] border syn-surface ${isDayMode ? 'border-neutral-200 bg-white' : 'border-transparent bg-ink-900'} flex flex-col relative shadow-lg overflow-hidden`}>
                         <AiDirector
                           isDayMode={isDayMode}
                           activeGeminiMode={activeGeminiMode}
@@ -850,7 +859,7 @@ export default function App() {
 
             {/* RIGHT SIDEBAR: Effects Library */}
             <Panel defaultSize={26} minSize={16} maxSize={40}>
-              <div data-crust className={`w-full h-full rounded-[20px] border flex flex-col overflow-hidden shadow-lg syn-surface ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-transparent bg-ink-900'}`}>
+              <div data-crust data-clip="right" style={isDayMode ? undefined : { clipPath: 'url(#syn-clip-right)' }} className={`w-full h-full rounded-[20px] border flex flex-col overflow-hidden shadow-lg syn-surface ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-transparent bg-ink-900'}`}>
                 {/* Search box (positioned at the top) */}
                 <div className={`px-4 py-3 border-b shrink-0 ${isDayMode ? 'border-neutral-200' : 'border-ink-700/50'}`}>
                   <div className={`w-full border rounded-xl p-2.5 flex items-center gap-2 syn-inset ${isDayMode ? 'bg-[#fcfbf9] border-neutral-200' : 'bg-[#0b0b0f] border-white/[0.07]'}`}>

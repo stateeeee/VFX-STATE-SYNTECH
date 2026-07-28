@@ -140,10 +140,50 @@ uses H.264).
 | 18 | Backdrop = the operator's **artwork itself** (texture A), stretched WHOLE (`100% 100%`, not `cover`) so its crusted border frames the UI; the procedural ramp + bead tile are retired from the backdrop. Frame widened to `p-7` so the material reads as a slab the panels are cut out of (*Claude, from the operator's reference image*) | 2026-07-27 |
 | 19 | The sidebar logo shows the mark's **own iridescence** — the masked violet→gold ramp + `luminosity` blend are dropped (they existed to tie it to the procedural slab, which is gone), leaving a sheen on the 6s cadence. **Flagged for the operator: one-block revert if they preferred the ramp** (*Claude, from the operator's reference image*) | 2026-07-27 |
 | 20 | The artwork **divides** the sections instead of lying behind them: drawn OVER the panels. ~~masked to the skeleton, holes eroded by `feTurbulence`~~ — **superseded the same day (see #22)**: the operator ruled that the panels must stay rectangles. Still load-bearing from this pass: night-mode panel **hairlines removed**, dividers widened to 28px, and the layer cut into **strips** so nothing overlays the hero canvas | 2026-07-27 |
-| 22 | The rock is a **MONTAGE** (`src/lib/stoneMontage.ts`): pieces of bead vein cut from the artwork and stamped along each section's outline, laid OVER the panels. **The panels stay plain rectangles — never masked, never clipped** (operator: "non devono essere i pannelli con forme non regolari"); the irregularity is the rock's alone, and the suite asserts no `[data-crust]` section carries a mask or clip-path. Source patches are chosen by an edge-energy-vs-saturation score, not by eye | 2026-07-27 |
+| 23 | **Containers take the operator's red-lined curves** via traced `objectBoundingBox` clip-paths (`panelClips.ts`), the cosmic field sits full-screen behind them, and the stone walks the same outlines. Supersedes #22's "panels stay rectangles" (*operator, annotated screenshot*) | 2026-07-28 |
+| 22 | ~~The rock is a **MONTAGE** (`src/lib/stoneMontage.ts`): pieces of bead vein cut from the artwork and stamped along each section's outline, laid OVER the panels. **The panels stay plain rectangles — never masked, never clipped** (operator: "non devono essere i pannelli con forme non regolari"); the irregularity is the rock's alone, and the suite asserts no `[data-crust]` section carries a mask or clip-path. Source patches are chosen by an edge-energy-vs-saturation score, not by eye~~ — **the "panels stay rectangles" half is superseded by #23**; the montage itself stands | 2026-07-27 |
 | 21 | `public/assets/bg-texture.jpg` is a **derived** asset: the artwork's "COSMOGEL REACTOR X" label is cloned out, because the crust exposes it over the top bar where it reads as a UI glitch. Source untouched in `docs/design/textures/`. **Flagged for the operator** (*Claude*) | 2026-07-27 |
 
 ## Log
+
+### 2026-07-28 — Red-lined geometry: the containers take the operator's curves
+
+Operator delivered an annotated screenshot (red curves = "la nuova geometria
+esatta dei bordi dei container") plus a 3-phase workflow. **This reverses the
+2026-07-27 rule** that panels must stay rectangles: the containers themselves are
+now clipped to the traced curves. Decision #22 is superseded by #23.
+
+- **The curves are TRACED, not eyeballed** (`src/lib/panelClips.ts`): the red
+  stroke was thresholded out of the annotation, dilated to close its antialiasing,
+  and regions were flood-filled from OUTSIDE the frame, so a region is whatever
+  the operator's line actually encloses. Contours were walked, box-smoothed,
+  Douglas-Peucker simplified and turned into Catmull-Rom cubics.
+- **Trap:** the annotation's LABELS and ARROWHEADS are red too and acted as walls
+  inside the fill — the arrow beside "CORREZIONE CURVATURA" bit a notch out of the
+  hero's left edge. Only red components with a bounding diagonal over 200px (the
+  boundary strokes) are kept.
+- **The left rail is NOT clipped**: its red outline is genuinely open — filling
+  from inside escapes to the page border at every dilation up to 8px. Nothing
+  closed to trace. Flagged for the operator.
+- Paths are `clipPathUnits="objectBoundingBox"` (0..1 of each element's own box),
+  so the curvature survives every panel drag and window resize **with no JS**.
+- **The cosmic field** (`.syn-field`) is back full-screen behind everything; the
+  panels are cut out of it, which is what the reference does.
+- **The stone follows the same curves.** `paintStone` takes `Section = { rect,
+  pts? }` and walks the traced outline when there is one, so ridge and clip edge
+  coincide instead of the rock floating beside its own edge.
+- **Phase 3 (video engine) verified, not assumed:** `clip-path` does not change an
+  element's box, so the hero panel still measures 1026×506 and its canvas still
+  sizes to 1024×504 with a matching buffer — no offscreen rendering, no
+  ResizeObserver change. And Chrome clips HIT TESTING to the path: the centre of
+  the hero resolves to the CANVAS, a clipped-away corner does not resolve to the
+  hero at all, so the field behind is un-clickable while the modules stay live.
+- Suite updated: the "panels stay plain rectangles" assertion is replaced by one
+  requiring every `[data-clip]` section to carry an applied objectBoundingBox
+  clip with a non-zero box.
+- Regression all green: stone/UI **40/40**, brand 13/13, search 6/6, covers 7/7,
+  phase 1 21/21, phase 2 26/26, phase 3 14/14 (**BPM 120**); lint + build clean.
+
 
 ### 2026-07-27 (5th pass) — FASE 4 executed: the restyle, 7 commits
 

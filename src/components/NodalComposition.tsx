@@ -277,12 +277,13 @@ export default function NodalComposition({
   return (
     <div
       data-crust
+      data-clip="nodal"
       className={`w-full h-full rounded-[20px] border syn-surface flex flex-col relative overflow-hidden ${
         // night: the gel crust IS this panel's border now (GelCrust.tsx), so a
         // hairline here would show as a rectangle floating inside an eroded hole
         isDayMode ? 'border-neutral-200' : 'border-transparent'
       }`}
-      style={{ background: panel }}
+      style={isDayMode ? { background: panel } : { background: panel, clipPath: 'url(#syn-clip-nodal)' }}
     >
       {/* header */}
       <div className="flex items-center justify-between px-4 pt-3.5 pb-2 shrink-0 z-10">
