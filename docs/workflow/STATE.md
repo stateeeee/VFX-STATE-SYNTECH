@@ -14,10 +14,10 @@ polish) is DONE except two external items** (2026-07-25): the definitive
 and the **colour/day-mode audit** are all in. On top of the roadmap the operator
 drove a multi-round **visual pass** — gel slab in the gaps, gradient-riding logo,
 gel-cast hero wordmark, one 6s brand cadence, bare effect host, sidebar audio
-meter — all implemented and verified. Outstanding, both **operator-/hardware-
-dependent**: the **5 effect-card covers** (drop-in wiring is ready) and the
-**≥30fps@720p perf pass** (GPU machine). The checkbox stays unchecked until those
-two land.
+meter — all implemented and verified. The **5 effect-card covers are now IN**
+(2026-07-29, cut from the operator's own effect screenshots — see the log).
+**One item is left, and it is hardware-dependent: the ≥30fps@720p perf pass**
+(GPU machine). The checkbox stays unchecked until that lands.
 
 **⇒ A fresh session should read `docs/workflow/HANDOFF.md` — rewritten
 2026-07-28 as a complete continuation brief** (current visual state after the
@@ -31,14 +31,73 @@ meter audio a due colonne chiesto subito dopo.** Non toccare l'estetica senza un
 direzione approvata: leggi `CODEX_WORKFLOW.md` e fermati dopo il piano, come
 chiede.
 
-Restano le due voci di Phase 10 che dipendono dall'operatore:
-(1) **5 cover degli effetti** — le sta finendo; il wiring è già live, basta
-mettere il file in `public/assets/covers/<ModuleId>.{webp,png,jpg}`.
-(2) **Pass ≥30fps@720p su macchina con GPU** — non valutabile in sandbox
+Le **5 cover sono dentro** (2026-07-29). Resta **una sola** voce di Phase 10:
+**pass ≥30fps@720p su macchina con GPU** — non valutabile in sandbox
 (SwiftShader, 1–2fps); **ricordarglielo**, è self-service dai badge FPS/RES%
 dell'AI Lab. Dettagli completi in `docs/workflow/HANDOFF.md`.
 
+Due domande aperte all'operatore sulle cover (poste il 2026-07-29, in attesa):
+l'altezza della card (80px oggi, la stella non può essere più grande di così) e
+la provenienza della 5ª cover (ritagliata dalla sezione ANAMORPHIC dell'app
+bokeh, non dall'app `anamorphic_lab`). Vedi il log.
+
 ## Log
+
+### 2026-07-29 — Le 5 cover degli effetti, tagliate dagli screenshot dell'operatore
+
+Operatore (di notte, prima di dormire): *"ho caricato il mio logo su ogni effetto
+dei 5 del app… come immagine da usare devi usare solo il logo, la mia 'stella',
+solo cio che e nello spazio di esportazione del html, il logo con sfondo nero,
+che deve essere al centro non tagliato… tieni la scritta nella stessa grandezza e
+posizione ma cambia il font."* Fatto: Phase 10 item 1 è chiuso.
+
+- **Le 5 immagini sono state recuperate dal transcript di sessione** (come già il
+  logo il 2026-07-24) e sono in `docs/design/covers-src/` per rifarle: sono
+  screenshot 2000×1250 delle cinque app, non file su disco.
+- **Il taglio è misurato, non a occhio** (`tools/gen/gen-effect-covers.cjs`): per
+  ogni shot si ritaglia una finestra ben dentro il canvas — fuori restano le
+  staffe d'angolo, la hairline della cornice, la didascalia "1920 × 1080 · …", la
+  barra di trasporto e il PIP — poi si cerca il **bounding box del contenuto**
+  (una riga/colonna conta solo se più pixel superano la soglia, così un pixel di
+  antialiasing non trascina il box fino al bordo) e lo si ridisegna centrato su
+  una tavola nera con un margine del 2%.
+- **La tavola è STRETTA sul soggetto, e questa è la decisione portante.** Con
+  `object-contain`, una tavola più stretta della card vincola sempre in
+  **altezza**: la stella riempie la card da cima a fondo, centrata, a **ogni**
+  larghezza della sidebar. Le tavole vanno da 0.88:1 a 1.46:1, la card più
+  stretta possibile è 2.5:1 → il margine è ampio. **`object-cover` (quello che
+  c'era) tagliava la stella sopra e sotto** su qualunque card più larga della
+  tavola, cioè quasi ovunque: a 1920px la card di default è 5.5:1.
+- **Niente banda di scrim dietro al testo.** Etichetta e stella sono entrambe
+  centrate, quindi qualunque banda scurisce la stella **esattamente in vita** e la
+  fa leggere come tagliata — l'unica cosa che le cover non devono fare. Provata e
+  scartata guardandola: il testo porta il proprio alone (`text-shadow`, come un
+  sottotitolo sul video) e l'arte resta intatta.
+- **Font dell'etichetta: JetBrains Mono**, maiuscolo, `tracking 0.14em`, **stessa
+  dimensione (14px) e stessa posizione (centrata)**, come chiesto. È la faccia
+  che usano le cinque app negli header dei pannelli ("SOURCE", "BLOB REVEAL ·
+  ROTOSCOPE ENGINE v2.0") e che lo shell usa già per GEMINI PRO e i nodi: la card
+  ora parla la lingua dell'anteprima che contiene. Prima era Inter, il default.
+- La card prende un **letto nero** sotto l'arte quando la cover c'è, così il
+  letterbox ai lati è invisibile; senza cover il fallback resta identico a prima.
+- **`verify-phase10-covers.js` riscritto** (il vecchio provava il contratto
+  drop-in con un'immagine finta e un 404: con i file veri non reggeva più).
+  Adesso è un contratto geometrico: **16/16** — cinque cover decodificate,
+  `object-contain`, letto nero, ogni tavola abbastanza stretta da restare
+  height-bound, stella a piena altezza **trascinando la sidebar ai due estremi
+  (card da 2.54:1 a 6.92:1)**, etichetta mono/14px/tracciata/centrata con alone,
+  day mode, fallback su 404, zero errori di pagina.
+- Regressione: **gel/UI 41/41**, **phase 2 26/26**, **search 6/6**, **brand
+  13/13**; `npm run lint` + `npm run build` puliti.
+- **Due cose da far decidere all'operatore** (screenshot consegnati):
+  1. **L'altezza della card (80px) è il limite dell'arte.** La stella è già a
+     ~78px: più grande non può essere senza tagliarla. A 112px l'anteprima
+     respira molto di più — mockup A/B renderizzato dalle cover vere.
+  2. **La 5ª cover viene dalla sezione ANAMORPHIC dell'app bokeh**
+     (`bokeh_state_v1 (3).html`, LETTERBOX + SQUEEZE 2.20), non dall'app
+     `anamorphic_lab`: è lo screenshot che ha caricato come quinto. Se vuole il
+     look dell'app vera, basta uno screenshot e la cover si rigenera in un
+     comando.
 
 ### 2026-07-28 (dopo il revert) — Il meter audio: due colonne, a tutta altezza
 

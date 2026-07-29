@@ -95,6 +95,12 @@ function EffectCardArt({ id, name, isDayMode }: { id: string; name: string; isDa
   const src = `/assets/covers/${id}.${COVER_EXTS[extIdx]}`;
   return (
     <>
+      {/* Black bed under the art. The covers are cut tight around the subject on
+          black, so a black card + `object-contain` makes the letterbox seamless —
+          and contain is what keeps the star WHOLE and centred at every sidebar
+          width. `object-cover` would crop it top and bottom as soon as the card
+          is wider than the plate, which it is on most screens. */}
+      {hasCover && <div className="absolute inset-0 bg-black" />}
       {state !== 'err' && (
         <img
           key={src}
@@ -104,14 +110,19 @@ function EffectCardArt({ id, name, isDayMode }: { id: string; name: string; isDa
           draggable={false}
           onLoad={() => setState('ok')}
           onError={() => (extIdx < COVER_EXTS.length - 1 ? setExtIdx(extIdx + 1) : setState('err'))}
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${hasCover ? 'opacity-100' : 'opacity-0'}`}
+          className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-300 ${hasCover ? 'opacity-100' : 'opacity-0'}`}
         />
       )}
-      {hasCover && <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />}
+      {/* No scrim band across the art: the label and the star are BOTH centred, so
+          any band darkens the star exactly at its waist and it reads as cut in
+          half — the one thing the covers must not do. The label carries its own
+          contrast instead (a tight dark halo, the way a subtitle sits over video),
+          which leaves the star whole. */}
       <span
-        className={`text-sm font-bold z-10 relative ${
-          hasCover ? 'text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.85)]' : isDayMode ? 'text-neutral-900' : 'text-white'
+        className={`font-mono text-sm font-bold tracking-[0.14em] z-10 relative ${
+          hasCover ? 'text-white' : isDayMode ? 'text-neutral-900' : 'text-white'
         }`}
+        style={hasCover ? { textShadow: '0 0 3px rgba(0,0,0,0.95), 0 0 7px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.95)' } : undefined}
       >
         {name}
       </span>
