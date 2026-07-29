@@ -100,9 +100,10 @@ function EffectCardArt({ id, name, isDayMode }: { id: string; name: string; isDa
       {hasCover && <div className="absolute inset-0 bg-black" />}
       {/* The art sits on the RIGHT, full card height, vertically centred (operator
           direction 2026-07-29 — the label no longer sits over it). `object-contain`
-          with `h-full w-auto` keeps the star WHOLE: the box takes the star's own
-          aspect, and the max-width caps it on a narrow sidebar rather than letting
-          it push into the label. */}
+          with `h-full w-auto` keeps the star WHOLE: the box takes the plate's
+          aspect, which is the SAME for all five covers, so every art column is the
+          same width and the labels beside them line up. The max-width only bites on
+          a very narrow sidebar, where the art gives way rather than push the label. */}
       {state !== 'err' && (
         <img
           key={src}
@@ -112,22 +113,23 @@ function EffectCardArt({ id, name, isDayMode }: { id: string; name: string; isDa
           draggable={false}
           onLoad={() => setState('ok')}
           onError={() => (extIdx < COVER_EXTS.length - 1 ? setExtIdx(extIdx + 1) : setState('err'))}
-          className={`absolute right-0 top-0 h-full w-auto max-w-[38%] object-contain transition-opacity duration-300 ${hasCover ? 'opacity-100' : 'opacity-0'}`}
+          className={`absolute right-0 top-0 h-full w-auto max-w-[45%] object-contain transition-opacity duration-300 ${hasCover ? 'opacity-100' : 'opacity-0'}`}
         />
       )}
       {hasCover ? (
-        /* Label centre-LEFT. Its right edge stops short of the art's column, so
-           the two can never collide — on the narrowest sidebar the name truncates
-           instead of running under the star. */
+        /* Label centred in the LEFT band, which stops short of the art's column:
+           the two can never collide (on the narrowest sidebar the name truncates
+           rather than running under the star), and centring the band brings every
+           name in toward its graphic instead of pinning it to the far edge. */
         <span
           title={name}
-          className="absolute left-4 right-[40%] top-1/2 -translate-y-1/2 truncate text-left font-mono text-sm font-bold tracking-[0.14em] text-white"
+          className="absolute left-2 right-[46%] top-1/2 -translate-y-1/2 truncate text-center font-mono text-xs font-bold tracking-[0.12em] text-white"
         >
           {name}
         </span>
       ) : (
         <span
-          className={`font-mono text-sm font-bold tracking-[0.14em] z-10 relative ${
+          className={`font-mono text-xs font-bold tracking-[0.12em] z-10 relative ${
             isDayMode ? 'text-neutral-900' : 'text-white'
           }`}
         >
@@ -757,10 +759,13 @@ export default function App() {
             </div>
           )}
 
-          <PanelGroup direction="horizontal" autoSaveId="syntech-main-horiz" className="flex-1 flex overflow-hidden">
+          {/* autoSaveId bumped to -v2 with the narrower systems column: this group's
+              layout is persisted, so a browser that already ran the app would have
+              restored the old 74/26 split and the new default would never show. */}
+          <PanelGroup direction="horizontal" autoSaveId="syntech-main-horiz-v2" className="flex-1 flex overflow-hidden">
 
             {/* LEFT & CENTER COLUMN */}
-            <Panel defaultSize={74} minSize={30} className="flex flex-col overflow-hidden">
+            <Panel defaultSize={80} minSize={30} className="flex flex-col overflow-hidden">
               <PanelGroup direction="vertical" autoSaveId="syntech-main-vert" className="flex flex-col">
 
                 {/* TOP: Hero (brain graph / video) OR AI Lab OR Effect */}
@@ -902,7 +907,8 @@ export default function App() {
             </PanelResizeHandle>
 
             {/* RIGHT SIDEBAR: Effects Library */}
-            <Panel defaultSize={26} minSize={16} maxSize={40}>
+            {/* the systems column: narrower by direction (2026-07-29) — 26% → 20% */}
+            <Panel defaultSize={20} minSize={14} maxSize={34}>
               <div className={`w-full h-full rounded-2xl border flex flex-col overflow-hidden shadow-lg ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-ink-700/60 bg-ink-900'}`}>
                 {/* Search box (positioned at the top) */}
                 <div className={`px-4 py-3 border-b shrink-0 ${isDayMode ? 'border-neutral-200' : 'border-ink-700/50'}`}>

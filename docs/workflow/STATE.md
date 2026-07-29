@@ -76,6 +76,28 @@ posizione ma cambia il font."* Fatto: Phase 10 item 1 è chiuso.
   `left-4 right-[40%]` con `truncate`: **i due non possono collidere per
   costruzione**, e sulla sidebar più stretta il nome si tronca invece di finire
   sotto la stella.
+- **Terzo giro — colonna più stretta, titoli più piccoli, testo più vicino
+  all'arte.** Operatore: *"vorrei che la sezione di destra fosse piu corta
+  orizzontalmente e che i titoli degli effetti fossero piu piccoli… rimpicciolisci
+  il font e avvicina la scritta alla grafica."*
+  - Colonna **26% → 20%** (min 16→14, max 40→34): a 1600px la card passa da
+    349px a **262px**.
+  - Titoli **14px → 12px**, tracking 0.14 → 0.12em.
+  - L'etichetta ora è **centrata dentro la sua fascia** invece di essere
+    inchiodata al bordo sinistro: è il modo per avvicinarla alla grafica senza
+    sfilacciare la colonna (i cinque nomi restano su un asse solo).
+  - **Le cinque tavole sono state rigenerate a un'unica proporzione** (1.46:1, la
+    più larga — lo swirl del bokeh). Tagliate strette una per una, le colonne
+    d'arte venivano larghe da 0.88 a 1.46 e le etichette finivano su cinque assi
+    diversi; peggio, la più larga sbatteva contro il `max-width` della colonna e
+    il bokeh renderizzava la stella **più bassa delle altre**. Con una
+    proporzione sola le colonne sono identiche (misurato: arte a 147px per tutte
+    e cinque) e le stelle condividono l'altezza.
+  - **Trappola vera, trovata prima di consegnare:** il `PanelGroup` ha
+    `autoSaveId` e **persiste il layout in localStorage**, quindi sul browser
+    dell'operatore il vecchio 74/26 avrebbe vinto sul nuovo default e la modifica
+    sarebbe sembrata non applicata. La chiave è ora `syntech-main-horiz-v2`, e la
+    suite lo verifica seminando la chiave vecchia e pretendendo la card stretta.
 - **Il primo giro aveva l'etichetta sopra l'arte, ed è così che si è imparata la
   cosa utile:** con etichetta e stella entrambe centrate, qualunque banda di scrim
   scurisce la stella **esattamente in vita** e la fa leggere come tagliata.
@@ -90,7 +112,7 @@ posizione ma cambia il font."* Fatto: Phase 10 item 1 è chiuso.
   letterbox ai lati è invisibile; senza cover il fallback resta identico a prima.
 - **`verify-phase10-covers.js` riscritto** (il vecchio provava il contratto
   drop-in con un'immagine finta e un 404: con i file veri non reggeva più).
-  Adesso è un contratto geometrico: **15/15** — cinque cover decodificate,
+  Adesso è un contratto geometrico: **16/16** — cinque cover decodificate,
   `object-contain`, letto nero, arte allineata a destra e a piena altezza della
   card, etichetta mono/14px/tracciata a sinistra e centrata in verticale, e
   soprattutto **il bordo destro del testo non raggiunge mai l'arte**, verificato

@@ -66,7 +66,7 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
     labelMidOffset: +((lr.y + lr.height / 2) - (cr.y + cr.height / 2)).toFixed(1),
     label: label.textContent.trim(),
     font: cs.fontFamily.split(',')[0].replace(/"/g, ''),
-    size: cs.fontSize, tracking: cs.letterSpacing,
+    size: cs.fontSize, tracking: cs.letterSpacing, align: cs.textAlign,
   };
 }), IDS);
 
@@ -96,11 +96,12 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
 
   const lbl = cards[0];
   step('label in the vendored mono face', cards.every((c) => c.font === 'JetBrains Mono'), lbl.font);
-  step('label kept at 14px, tracked', cards.every((c) => c.size === '14px' && parseFloat(c.tracking) > 1),
+  step('label at the smaller 12px, still tracked',
+    cards.every((c) => c.size === '12px' && parseFloat(c.tracking) > 1),
     `${lbl.size} / ${lbl.tracking}`);
-  step('label sits on the LEFT, vertically centred',
-    cards.every((c) => c.labelLeft < c.cardW * 0.2 && Math.abs(c.labelMidOffset) < 1.5),
-    cards.map((c) => `l=${c.labelLeft} dy=${c.labelMidOffset}`).join(' '));
+  step('label band is on the left, vertically centred, text centred in it',
+    cards.every((c) => c.labelLeft < c.cardW * 0.2 && Math.abs(c.labelMidOffset) < 1.5 && c.align === 'center'),
+    cards.map((c) => `l=${c.labelLeft} dy=${c.labelMidOffset} ${c.align}`).join(' '));
   step('label never reaches the art',
     cards.every((c) => c.labelRight <= c.artLeft),
     cards.map((c) => `${c.id} text→${c.labelRight} art→${c.artLeft}`).join(' | '));
@@ -166,6 +167,23 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
     `hasImg=${fb.hasImg} opacity=${fb.opacity} bed=${fb.bed} "${fb.label}"`);
   step('the other four are unaffected', others.every((c) => c.opacity === 1),
     others.map((c) => `${c.id}=${c.opacity}`).join(' '));
+
+  /* The systems column was narrowed by direction, but this PanelGroup persists its
+     layout — a browser that had already run the app would restore the old 74/26
+     split and the new default would never appear. The autoSaveId carries a -v2
+     suffix for exactly that reason; seed the OLD key and prove it is ignored. */
+  const ctx3 = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+  await ctx3.addInitScript(() => {
+    localStorage.setItem('react-resizable-panels:syntech-main-horiz',
+      JSON.stringify({ '{"direction":"horizontal"}': { layout: [74, 26], expandToSizes: {} } }));
+  });
+  const page3 = await ctx3.newPage();
+  page3.on('pageerror', (e) => errs.push(String(e.message || e)));
+  await page3.goto('http://localhost:3000', { waitUntil: 'load', timeout: 45000 });
+  await page3.waitForTimeout(1500);
+  const stale = await page3.evaluate(() =>
+    Math.round(document.querySelector('[data-testid="effect-card-bokeh"]').getBoundingClientRect().width));
+  step('a stored pre-change layout does not resurrect the wide column', stale < 300, `card ${stale}px`);
 
   step('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
   await browser.close();
