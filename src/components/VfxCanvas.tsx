@@ -894,10 +894,14 @@ export default function VfxCanvas({
           // Obsidian Hub Glow with pulse arrival flash
           const glowRad = node.size * (isSelectedActive ? 3.5 : isHovered ? 3.0 : 2.5) + (amplitudeFactor * 6) + (flash * 15);
           const hubGrad = ctx.createRadialGradient(node.x, node.y, 1, node.x, node.y, glowRad);
-          hubGrad.addColorStop(0, isSelectedActive 
+          /* WHITE IS RESERVED (operator direction, 2026-07-29): only the core and
+             the SELECTED module read white. Every other hub stays on the accent,
+             however hard it is flashing or hovered — a heartbeat arriving used to
+             turn each of them white in turn, which read as five selected modules. */
+          hubGrad.addColorStop(0, isSelectedActive
             ? (isDayMode ? `rgba(139, 92, 246, ${0.45 + flash * 0.35})` : `rgba(255, 255, 255, ${0.45 + flash * 0.35})`)
             : isHovered
-            ? (isDayMode ? `rgba(139, 92, 246, 0.35)` : `rgba(255, 255, 255, 0.35)`)
+            ? ga(0.45)
             : ga(0.15 + flash * 0.55)
           );
           hubGrad.addColorStop(1, isDayMode ? 'rgba(251, 250, 247, 0)' : 'rgba(5, 5, 5, 0)');
@@ -907,8 +911,11 @@ export default function VfxCanvas({
           ctx.arc(node.x, node.y, glowRad, 0, Math.PI * 2);
           ctx.fill();
 
-          // Outer reticle halo rings around Hubs (flashes white on pulse arrival or hover)
-          ctx.strokeStyle = (isSelectedActive || isHovered || flash > 0.15) ? (isDayMode ? '#7c3aed' : '#ffffff') : ga(0.25);
+          // Outer reticle halo rings around Hubs — white only on the selected one;
+          // hover and pulse arrivals brighten the accent instead
+          ctx.strokeStyle = isSelectedActive
+            ? (isDayMode ? '#7c3aed' : '#ffffff')
+            : (isHovered || flash > 0.15) ? ga(0.7) : ga(0.25);
           ctx.lineWidth = (isSelectedActive || isHovered) ? 0.9 : 0.45 + (flash * 0.6);
           ctx.beginPath();
           ctx.arc(node.x, node.y, drawSize + 4 + Math.sin(frameCount * 0.05 + i) * 1.5, 0, Math.PI * 2);
@@ -923,7 +930,9 @@ export default function VfxCanvas({
         } else if (isHub) {
           ctx.beginPath();
           ctx.arc(node.x, node.y, drawSize, 0, Math.PI * 2);
-          ctx.fillStyle = (isSelectedActive || flash > 0.4) ? (isDayMode ? '#6d28d9' : '#ffffff') : ACCENT;
+          // the dot itself: white ONLY for the selected module (the core is drawn
+          // white in the branch above); a pulse arrival no longer whitens it
+          ctx.fillStyle = isSelectedActive ? (isDayMode ? '#6d28d9' : '#ffffff') : ACCENT;
           ctx.fill();
         } else {
           // Satellite subnodes - Continuous smooth alpha-blended transition for energy flash (no branch popping!)
@@ -951,10 +960,11 @@ export default function VfxCanvas({
             ctx.fillStyle = baseColor;
             ctx.fill();
 
-            // 3. Highlight white energetic core overlay
+            // 3. Energetic core overlay — on the accent, not white (white is the
+            //    core's and the selected module's alone)
             ctx.beginPath();
             ctx.arc(node.x, node.y, drawSize, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(255, 255, 255, ${flash})`;
+            ctx.fillStyle = ga(flash);
             ctx.fill();
           } else {
             // Draw standard base color dot

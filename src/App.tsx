@@ -117,19 +117,18 @@ function EffectCardArt({ id, name, isDayMode }: { id: string; name: string; isDa
         />
       )}
       {hasCover ? (
-        /* Label centred in the LEFT band, which stops short of the art's column:
-           the two can never collide (on the narrowest sidebar the name truncates
-           rather than running under the star), and centring the band brings every
-           name in toward its graphic instead of pinning it to the far edge. */
+        /* Label LEFT-aligned in a band that stops short of the art's column, so
+           the two can never collide — on the narrowest sidebar the name truncates
+           rather than running under the star. */
         <span
           title={name}
-          className="absolute left-2 right-[46%] top-1/2 -translate-y-1/2 truncate text-center font-mono text-xs font-bold tracking-[0.12em] text-white"
+          className="absolute left-3 right-[46%] top-1/2 -translate-y-1/2 truncate text-left font-mono text-[11px] font-bold tracking-[0.1em] text-white"
         >
           {name}
         </span>
       ) : (
         <span
-          className={`font-mono text-xs font-bold tracking-[0.12em] z-10 relative ${
+          className={`font-mono text-[11px] font-bold tracking-[0.1em] z-10 relative ${
             isDayMode ? 'text-neutral-900' : 'text-white'
           }`}
         >

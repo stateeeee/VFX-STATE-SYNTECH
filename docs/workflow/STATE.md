@@ -98,6 +98,28 @@ posizione ma cambia il font."* Fatto: Phase 10 item 1 è chiuso.
     dell'operatore il vecchio 74/26 avrebbe vinto sul nuovo default e la modifica
     sarebbe sembrata non applicata. La chiave è ora `syntech-main-horiz-v2`, e la
     suite lo verifica seminando la chiave vecchia e pretendendo la card stretta.
+- **Quarto giro — testo a sinistra e ancora più piccolo; e il bianco del brain
+  graph.** Operatore: *"nella sezione di destra il testo degli effetti allinealo a
+  sinistra e rimpicciolisci ancora un po. nel brain graph solo vfx syntech e
+  l'effetto selezionato devono avere il puntino bianco."*
+  - Etichetta: da centrata nella fascia a **allineata a sinistra**, **12px →
+    11px**, tracking 0.12 → 0.1em.
+  - **Brain graph: il bianco è ora riservato.** In `VfxCanvas` il punto di un hub
+    diventava bianco quando gli arrivava il battito (`flash > 0.4`), l'anello a
+    `flash > 0.15` e l'overlay dei satelliti era bianco puro: a turno **tutti e
+    cinque** i moduli sembravano selezionati. Ora il bianco è solo del core e del
+    modulo selezionato; hover e battito accendono l'accento violetto.
+  - **Perché serviva un test e non uno screenshot:** il lampeggio è intermittente,
+    quindi ogni singolo frame mostrava un insieme diverso e plausibile (la foto
+    che l'operatore ha mandato come riferimento era, per caso, già corretta).
+    Nuovo `tools/verify/verify-graph-highlight.js`: strumenta il contesto 2D,
+    registra ogni arco riempito con raggio e colore, usa il ripulisci-canvas come
+    confine di frame e conta i punti bianchi **per frame** su ~250 frame.
+    **Prima: max 6 per frame, 6 posizioni distinte. Dopo: esattamente 2, sempre**,
+    e il secondo segue il modulo selezionato quando cambia. **7/7.**
+  - Trappola del test: in night mode il loop non chiama `clearRect` (il canvas è
+    opaco) ma un `fillRect` a tutta area — agganciando solo `clearRect` il
+    contatore di frame resta a 1 e la matematica per-frame collassa in silenzio.
 - **Il primo giro aveva l'etichetta sopra l'arte, ed è così che si è imparata la
   cosa utile:** con etichetta e stella entrambe centrate, qualunque banda di scrim
   scurisce la stella **esattamente in vita** e la fa leggere come tagliata.

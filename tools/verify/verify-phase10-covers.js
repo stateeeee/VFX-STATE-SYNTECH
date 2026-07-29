@@ -16,7 +16,7 @@
  *     reaches the art — checked with the sidebar dragged to both extremes, where
  *     the name truncates rather than running under the star;
  *   - the art sits on a black bed, so the card reads as one preview surface;
- *   - the label is in the vendored mono face, at its original size;
+ *   - the label is in the vendored mono face, left-aligned in its band;
  *   - the fallback still works when a cover is missing (forced with a 404 route).
  *
  * Run: NODE_PATH=/opt/node22/lib/node_modules node tools/verify/verify-phase10-covers.js
@@ -96,11 +96,11 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
 
   const lbl = cards[0];
   step('label in the vendored mono face', cards.every((c) => c.font === 'JetBrains Mono'), lbl.font);
-  step('label at the smaller 12px, still tracked',
-    cards.every((c) => c.size === '12px' && parseFloat(c.tracking) > 1),
+  step('label at the smaller 11px, still tracked',
+    cards.every((c) => c.size === '11px' && parseFloat(c.tracking) > 0.9),
     `${lbl.size} / ${lbl.tracking}`);
-  step('label band is on the left, vertically centred, text centred in it',
-    cards.every((c) => c.labelLeft < c.cardW * 0.2 && Math.abs(c.labelMidOffset) < 1.5 && c.align === 'center'),
+  step('label band is on the left, vertically centred, text left-aligned in it',
+    cards.every((c) => c.labelLeft < c.cardW * 0.2 && Math.abs(c.labelMidOffset) < 1.5 && c.align === 'left'),
     cards.map((c) => `l=${c.labelLeft} dy=${c.labelMidOffset} ${c.align}`).join(' '));
   step('label never reaches the art',
     cards.every((c) => c.labelRight <= c.artLeft),
