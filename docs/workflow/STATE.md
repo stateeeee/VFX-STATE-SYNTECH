@@ -68,25 +68,38 @@ posizione ma cambia il font."* Fatto: Phase 10 item 1 è chiuso.
   stretta possibile è 2.5:1 → il margine è ampio. **`object-cover` (quello che
   c'era) tagliava la stella sopra e sotto** su qualunque card più larga della
   tavola, cioè quasi ovunque: a 1920px la card di default è 5.5:1.
-- **Niente banda di scrim dietro al testo.** Etichetta e stella sono entrambe
-  centrate, quindi qualunque banda scurisce la stella **esattamente in vita** e la
-  fa leggere come tagliata — l'unica cosa che le cover non devono fare. Provata e
-  scartata guardandola: il testo porta il proprio alone (`text-shadow`, come un
-  sottotitolo sul video) e l'arte resta intatta.
+- **Secondo giro, stesso giorno — il layout definitivo: etichetta al centro a
+  SINISTRA, arte al centro a DESTRA.** Operatore: *"non mettiamo la scritta sopra
+  alla immagine ma mettiamo la scritta al centro a sinistra e l'immagine al centro
+  a destra."* L'arte è una colonna a destra (`right-0 h-full w-auto`, quindi il
+  box prende l'aspetto della stella) con `max-w-[38%]`, l'etichetta è a
+  `left-4 right-[40%]` con `truncate`: **i due non possono collidere per
+  costruzione**, e sulla sidebar più stretta il nome si tronca invece di finire
+  sotto la stella.
+- **Il primo giro aveva l'etichetta sopra l'arte, ed è così che si è imparata la
+  cosa utile:** con etichetta e stella entrambe centrate, qualunque banda di scrim
+  scurisce la stella **esattamente in vita** e la fa leggere come tagliata.
+  Provata, guardata, scartata. Ora il problema non esiste: il testo sta sul nero,
+  niente scrim e niente alone.
 - **Font dell'etichetta: JetBrains Mono**, maiuscolo, `tracking 0.14em`, **stessa
-  dimensione (14px) e stessa posizione (centrata)**, come chiesto. È la faccia
-  che usano le cinque app negli header dei pannelli ("SOURCE", "BLOB REVEAL ·
-  ROTOSCOPE ENGINE v2.0") e che lo shell usa già per GEMINI PRO e i nodi: la card
-  ora parla la lingua dell'anteprima che contiene. Prima era Inter, il default.
+  dimensione (14px)**, come chiesto. È la faccia che usano le cinque app negli
+  header dei pannelli ("SOURCE", "BLOB REVEAL · ROTOSCOPE ENGINE v2.0") e che lo
+  shell usa già per GEMINI PRO e i nodi: la card ora parla la lingua
+  dell'anteprima che contiene. Prima era Inter, il default.
 - La card prende un **letto nero** sotto l'arte quando la cover c'è, così il
   letterbox ai lati è invisibile; senza cover il fallback resta identico a prima.
 - **`verify-phase10-covers.js` riscritto** (il vecchio provava il contratto
   drop-in con un'immagine finta e un 404: con i file veri non reggeva più).
-  Adesso è un contratto geometrico: **16/16** — cinque cover decodificate,
-  `object-contain`, letto nero, ogni tavola abbastanza stretta da restare
-  height-bound, stella a piena altezza **trascinando la sidebar ai due estremi
-  (card da 2.54:1 a 6.92:1)**, etichetta mono/14px/tracciata/centrata con alone,
-  day mode, fallback su 404, zero errori di pagina.
+  Adesso è un contratto geometrico: **15/15** — cinque cover decodificate,
+  `object-contain`, letto nero, arte allineata a destra e a piena altezza della
+  card, etichetta mono/14px/tracciata a sinistra e centrata in verticale, e
+  soprattutto **il bordo destro del testo non raggiunge mai l'arte**, verificato
+  **trascinando la sidebar ai due estremi (card da 2.54:1 a 6.92:1)**; più day
+  mode, fallback su 404, zero errori di pagina.
+- Trappola del test, per chi lo tocca: l'arte è posizionata sul **padding box**,
+  quindi "piena altezza" sono 78px su una card da 80 (i 2px sono i bordi); e i
+  controlli a larghezza di default vanno fatti **prima** dei drag, altrimenti
+  girano con la sidebar rimasta al minimo.
 - Regressione: **gel/UI 41/41**, **phase 2 26/26**, **search 6/6**, **brand
   13/13**; `npm run lint` + `npm run build` puliti.
 - **Due cose da far decidere all'operatore** (screenshot consegnati):

@@ -4,18 +4,19 @@
  *
  * The operator's direction for the art (2026-07-29): each cover is ONLY what the
  * effect's HTML renders — the logo/"star" on black, no app chrome — and the star
- * must sit CENTRED and NEVER CUT, so the five cards can be compared at a glance.
+ * must be NEVER CUT, so the five cards can be compared at a glance. Second pass,
+ * same day: the label no longer sits over the art — **label centre-LEFT, art
+ * centre-RIGHT**.
  *
  * That is a geometric contract, and this suite checks it as one:
  *   - all five covers load and decode, and are drawn with `object-contain`
- *     (object-cover would crop the star top and bottom on any card wider than the
- *     plate — which is most screens);
- *   - every plate is narrower than the narrowest the card can get, so `contain`
- *     always binds on height: the star fills the card top to bottom at every
- *     sidebar width, verified by dragging the sidebar to both extremes;
- *   - the art sits on a black bed, so the letterbox either side is seamless;
- *   - the label is centred, in the vendored mono face, and carries its own halo
- *     (no scrim band — a band would darken the star exactly at its waist);
+ *     (object-cover would crop the star);
+ *   - the art is right-aligned and fills the card height at the default width;
+ *   - the label sits on the left, vertically centred, and its right edge NEVER
+ *     reaches the art — checked with the sidebar dragged to both extremes, where
+ *     the name truncates rather than running under the star;
+ *   - the art sits on a black bed, so the card reads as one preview surface;
+ *   - the label is in the vendored mono face, at its original size;
  *   - the fallback still works when a cover is missing (forced with a 404 route).
  *
  * Run: NODE_PATH=/opt/node22/lib/node_modules node tools/verify/verify-phase10-covers.js
@@ -44,20 +45,28 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
     return b === 'rgb(0, 0, 0)' && d.getBoundingClientRect().width >= cr.width - 3;
   });
   const nat = img ? { w: img.naturalWidth, h: img.naturalHeight } : { w: 0, h: 0 };
-  // what object-contain actually paints
-  const k = nat.w ? Math.min(cr.width / nat.w, cr.height / nat.h) : 0;
+  // what object-contain paints INSIDE the img's own box (which is now a column on
+  // the right, not the whole card)
+  const ir = img ? img.getBoundingClientRect() : { x: 0, width: 0, height: 0, right: 0 };
+  const k = nat.w ? Math.min(ir.width / nat.w, ir.height / nat.h) : 0;
   return {
     id, found: true, hasImg: !!img, nat: `${nat.w}x${nat.h}`,
     natAspect: nat.h ? +(nat.w / nat.h).toFixed(2) : 0,
     cardAspect: +(cr.width / cr.height).toFixed(2),
     shownH: Math.round(nat.h * k), shownW: Math.round(nat.w * k),
     cardH: Math.round(cr.height), cardW: Math.round(cr.width),
+    // the art is positioned against the PADDING box, so "full height" means the
+    // card's height less its 1px borders — not the border-box height
+    innerH: card.clientHeight,
     fit: img ? getComputedStyle(img).objectFit : '', opacity: img ? +getComputedStyle(img).opacity : null,
     bed,
+    // geometry of the two halves, in card-relative pixels
+    artLeft: +(ir.x - cr.x).toFixed(1), artRightGap: +(cr.right - ir.right).toFixed(1),
+    labelLeft: +(lr.x - cr.x).toFixed(1), labelRight: +(lr.right - cr.x).toFixed(1),
+    labelMidOffset: +((lr.y + lr.height / 2) - (cr.y + cr.height / 2)).toFixed(1),
     label: label.textContent.trim(),
     font: cs.fontFamily.split(',')[0].replace(/"/g, ''),
-    size: cs.fontSize, tracking: cs.letterSpacing, shadow: cs.textShadow,
-    labelOffset: +Math.abs((lr.x + lr.width / 2) - (cr.x + cr.width / 2)).toFixed(1),
+    size: cs.fontSize, tracking: cs.letterSpacing,
   };
 }), IDS);
 
@@ -81,24 +90,40 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
     cards.every((c) => c.fit === 'contain'), cards.map((c) => c.fit).join(','));
   step('each cover sits on a black bed (seamless letterbox)', cards.every((c) => c.bed));
 
-  /* The card can only get as narrow as the sidebar's minSize (16% of the
-     horizontal group). A plate wider than that ratio would start binding on
-     WIDTH and shrink the star; every plate must stay under it. */
-  const NARROWEST_CARD_ASPECT = 2.5;
-  step('every plate is narrow enough to stay height-bound at any sidebar width',
-    cards.every((c) => c.natAspect > 0 && c.natAspect < NARROWEST_CARD_ASPECT),
-    cards.map((c) => `${c.id} ${c.natAspect}`).join(' | '));
-  step('the star fills the card height at the default width',
-    cards.every((c) => c.shownH === c.cardH), cards.map((c) => `${c.shownH}/${c.cardH}`).join(' '));
+  step('the art is right-aligned and fills the card height at the default width',
+    cards.every((c) => c.artRightGap <= 1 && c.shownH === c.innerH),
+    cards.map((c) => `${c.id} h=${c.shownH}/${c.innerH} gap=${c.artRightGap}`).join(' | '));
 
   const lbl = cards[0];
   step('label in the vendored mono face', cards.every((c) => c.font === 'JetBrains Mono'), lbl.font);
   step('label kept at 14px, tracked', cards.every((c) => c.size === '14px' && parseFloat(c.tracking) > 1),
     `${lbl.size} / ${lbl.tracking}`);
-  step('label centred in the card', cards.every((c) => c.labelOffset < 2),
-    cards.map((c) => c.labelOffset).join(','));
-  step('label carries its own halo instead of a scrim band',
-    cards.every((c) => /rgba?\(0, 0, 0/.test(c.shadow)), lbl.shadow.slice(0, 60));
+  step('label sits on the LEFT, vertically centred',
+    cards.every((c) => c.labelLeft < c.cardW * 0.2 && Math.abs(c.labelMidOffset) < 1.5),
+    cards.map((c) => `l=${c.labelLeft} dy=${c.labelMidOffset}`).join(' '));
+  step('label never reaches the art',
+    cards.every((c) => c.labelRight <= c.artLeft),
+    cards.map((c) => `${c.id} text→${c.labelRight} art→${c.artLeft}`).join(' | '));
+
+  // ── day mode, and the reference shot — both at the DEFAULT sidebar width, so
+  //    they must come before the drags ────────────────────────────────────────
+  await page.click('button[title="Toggle day / night"]');
+  await page.waitForTimeout(600);
+  const day = await probe(page);
+  step('day mode keeps the covers', day.every((c) => c.opacity === 1 && c.shownH === c.innerH),
+    day.map((c) => `${c.shownH}/${c.innerH}`).join(' '));
+  if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'covers-day.png') });
+  await page.click('button[title="Toggle day / night"]');
+  await page.waitForTimeout(500);
+
+  if (SHOT_DIR) {
+    const box = await page.evaluate(() => {
+      const a = document.querySelector('[data-testid="effect-card-blob_tracker"]').getBoundingClientRect();
+      const z = document.querySelector('[data-testid="effect-card-anamorphic_lab"]').getBoundingClientRect();
+      return { x: a.x - 12, y: a.y - 12, width: a.width + 24, height: z.bottom - a.y + 24 };
+    });
+    await page.screenshot({ path: path.join(SHOT_DIR, 'covers-cards.png'), clip: box });
+  }
 
   // ── the sidebar drag: both extremes must keep the star whole ───────────────
   const handles = await page.$$('[data-panel-resize-handle-id]');
@@ -116,36 +141,16 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
 
   await drag(400); // sidebar to its minimum
   const narrow = await probe(page);
-  step('narrowest sidebar: star still whole, full card height',
-    narrow.every((c) => c.shownH === c.cardH && c.shownW <= c.cardW),
-    `card ${narrow[0].cardW}x${narrow[0].cardH} (aspect ${narrow[0].cardAspect})`);
+  step('narrowest sidebar: art still whole, and the label stops short of it',
+    narrow.every((c) => c.shownH > 0 && c.shownH <= c.innerH && c.labelRight <= c.artLeft),
+    `card ${narrow[0].cardW}x${narrow[0].cardH} — ` +
+    narrow.map((c) => `${c.id} h=${c.shownH} text→${c.labelRight} art→${c.artLeft}`).join(' | '));
 
   await drag(-900); // sidebar to its maximum
   const wide = await probe(page);
-  step('widest sidebar: star still whole, full card height',
-    wide.every((c) => c.shownH === c.cardH && c.shownW <= c.cardW),
+  step('widest sidebar: art at full card height, label still clear of it',
+    wide.every((c) => c.shownH === c.innerH && c.labelRight <= c.artLeft),
     `card ${wide[0].cardW}x${wide[0].cardH} (aspect ${wide[0].cardAspect})`);
-  await drag(500);
-  await page.waitForTimeout(300);
-
-  // ── day mode ──────────────────────────────────────────────────────────────
-  await page.click('button[title="Toggle day / night"]');
-  await page.waitForTimeout(600);
-  const day = await probe(page);
-  step('day mode keeps the covers', day.every((c) => c.opacity === 1 && c.shownH === c.cardH));
-  if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'covers-day.png') });
-  await page.click('button[title="Toggle day / night"]');
-  await page.waitForTimeout(500);
-
-  if (SHOT_DIR) {
-    const box = await page.evaluate(() => {
-      const a = document.querySelector('[data-testid="effect-card-blob_tracker"]').getBoundingClientRect();
-      const z = document.querySelector('[data-testid="effect-card-anamorphic_lab"]').getBoundingClientRect();
-      return { x: a.x - 12, y: a.y - 12, width: a.width + 24, height: z.bottom - a.y + 24 };
-    });
-    await page.screenshot({ path: path.join(SHOT_DIR, 'covers-cards.png'), clip: box });
-  }
-
   // ── fallback: a missing cover falls back to the plain label ────────────────
   const ctx2 = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
   await ctx2.route(new RegExp(`/assets/covers/${MISSING}\\.(webp|png|jpg)`), (r) => r.fulfill({ status: 404, body: '' }));

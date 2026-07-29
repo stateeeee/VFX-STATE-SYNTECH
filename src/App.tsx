@@ -95,12 +95,14 @@ function EffectCardArt({ id, name, isDayMode }: { id: string; name: string; isDa
   const src = `/assets/covers/${id}.${COVER_EXTS[extIdx]}`;
   return (
     <>
-      {/* Black bed under the art. The covers are cut tight around the subject on
-          black, so a black card + `object-contain` makes the letterbox seamless —
-          and contain is what keeps the star WHOLE and centred at every sidebar
-          width. `object-cover` would crop it top and bottom as soon as the card
-          is wider than the plate, which it is on most screens. */}
+      {/* Black bed under the art, so the card reads as one preview surface and the
+          cover's own black plate has nothing to seam against. */}
       {hasCover && <div className="absolute inset-0 bg-black" />}
+      {/* The art sits on the RIGHT, full card height, vertically centred (operator
+          direction 2026-07-29 — the label no longer sits over it). `object-contain`
+          with `h-full w-auto` keeps the star WHOLE: the box takes the star's own
+          aspect, and the max-width caps it on a narrow sidebar rather than letting
+          it push into the label. */}
       {state !== 'err' && (
         <img
           key={src}
@@ -110,22 +112,28 @@ function EffectCardArt({ id, name, isDayMode }: { id: string; name: string; isDa
           draggable={false}
           onLoad={() => setState('ok')}
           onError={() => (extIdx < COVER_EXTS.length - 1 ? setExtIdx(extIdx + 1) : setState('err'))}
-          className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-300 ${hasCover ? 'opacity-100' : 'opacity-0'}`}
+          className={`absolute right-0 top-0 h-full w-auto max-w-[38%] object-contain transition-opacity duration-300 ${hasCover ? 'opacity-100' : 'opacity-0'}`}
         />
       )}
-      {/* No scrim band across the art: the label and the star are BOTH centred, so
-          any band darkens the star exactly at its waist and it reads as cut in
-          half — the one thing the covers must not do. The label carries its own
-          contrast instead (a tight dark halo, the way a subtitle sits over video),
-          which leaves the star whole. */}
-      <span
-        className={`font-mono text-sm font-bold tracking-[0.14em] z-10 relative ${
-          hasCover ? 'text-white' : isDayMode ? 'text-neutral-900' : 'text-white'
-        }`}
-        style={hasCover ? { textShadow: '0 0 3px rgba(0,0,0,0.95), 0 0 7px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.95)' } : undefined}
-      >
-        {name}
-      </span>
+      {hasCover ? (
+        /* Label centre-LEFT. Its right edge stops short of the art's column, so
+           the two can never collide — on the narrowest sidebar the name truncates
+           instead of running under the star. */
+        <span
+          title={name}
+          className="absolute left-4 right-[40%] top-1/2 -translate-y-1/2 truncate text-left font-mono text-sm font-bold tracking-[0.14em] text-white"
+        >
+          {name}
+        </span>
+      ) : (
+        <span
+          className={`font-mono text-sm font-bold tracking-[0.14em] z-10 relative ${
+            isDayMode ? 'text-neutral-900' : 'text-white'
+          }`}
+        >
+          {name}
+        </span>
+      )}
     </>
   );
 }
