@@ -36,10 +36,10 @@ Le **5 cover sono dentro** (2026-07-29). Resta **una sola** voce di Phase 10:
 (SwiftShader, 1–2fps); **ricordarglielo**, è self-service dai badge FPS/RES%
 dell'AI Lab. Dettagli completi in `docs/workflow/HANDOFF.md`.
 
-Due domande aperte all'operatore sulle cover (poste il 2026-07-29, in attesa):
-l'altezza della card (80px oggi, la stella non può essere più grande di così) e
-la provenienza della 5ª cover (ritagliata dalla sezione ANAMORPHIC dell'app
-bokeh, non dall'app `anamorphic_lab`). Vedi il log.
+Le due domande aperte sulle cover sono **CHIUSE dall'operatore (2026-07-29)**:
+l'**altezza della card resta 80px** e la **5ª cover resta quella ritagliata dalla
+sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
+Non riaprirle.
 
 ## Log
 
