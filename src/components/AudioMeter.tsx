@@ -209,23 +209,10 @@ export default function AudioMeter({ isDayMode, videoRef, sourceKey }: AudioMete
         })}
       </div>
 
-      <span
-        className={`shrink-0 text-[6.5px] font-mono tracking-wider ${
-          live ? (hot ? 'text-red-400' : isDayMode ? 'text-neutral-500' : 'text-neutral-400') : 'text-neutral-600'
-        }`}
-        data-testid="audio-meter-readout"
-      >
-        {live ? (top > 0 ? `${Math.round(DB_FLOOR + top * -DB_FLOOR)}` : '-∞') : '––'}
-      </span>
-
-      {/* caption UNDER the columns, not above */}
-      <span
-        className={`shrink-0 text-[7px] uppercase tracking-[0.2em] font-bold ${
-          hot ? 'text-red-400' : isDayMode ? 'text-neutral-400' : 'text-neutral-500'
-        }`}
-      >
-        Audio
-      </span>
+      {/* The dB readout and the "Audio" caption are gone: the meter now lives in
+          its own small opening in the cage, where there is room for the columns
+          and nothing else. The colour still carries the state — the columns go
+          red when the signal is hot. */}
     </div>
   );
 }

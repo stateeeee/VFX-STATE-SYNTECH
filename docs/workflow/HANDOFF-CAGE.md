@@ -1,8 +1,10 @@
 # HANDOFF — "the cage": re-adapting the UI to the operator's artwork
 
 > Written 2026-07-31 to hand this work to a fresh session. Read it together with
-> `STATE.md` and `CODEX_WORKFLOW.md`. **Everything below is at PREVIEW stage: not
-> one line of app code has been changed yet, and that is deliberate.**
+> `STATE.md` and `CODEX_WORKFLOW.md`.
+> **The operator approved it and it is now IMPLEMENTED** — see §6. Everything
+> above §6 is the specification it was built against; keep it as the record of
+> what was asked, and of why each thing is the way it is.
 
 ## 1. Where this stands, in one paragraph
 
@@ -18,14 +20,17 @@ instead of the black bed behind it — those pixels are dark by construction
 (the flood-fill's threshold is 26, and the grade darkens them further), so the
 measured lift is ~6/255 on the margins and nothing else moves.
 Each round was a composite: the running app, its sections positioned into the
-cage's openings, with the keyed cage laid over the screenshot. **The app itself was
-never modified** — the only code touched was a temporary patch to `VfxCanvas.tsx`
-for photographing the graph, reverted every time (`git status` is clean).
+cage's openings, with the keyed cage laid over the screenshot. Through all twelve
+the app itself was never modified — the only code touched was a temporary patch to
+`VfxCanvas.tsx` for photographing the graph, reverted every time. That patch is
+now folded in for real (`tools/frame/graph-preview-patch.py` is spent, and kept
+only as the record of what it encoded).
 
-**The operator has not yet said "vai".** The last message was another round of
-corrections, all applied and delivered. Do not start implementing until they
-approve — `CODEX_WORKFLOW.md` is explicit, and the 2026-07-28 revert happened
-precisely because someone implemented before a direction was approved.
+**The operator gave the go on 2026-07-31**, after running the app locally and
+finding the aesthetic still the old one: *"quando apro l'app come ho fatto prima
+l'estetica deve essere quella finale che avevamo deciso."* Twelve rounds of
+preview, then one implementation — which is the order `CODEX_WORKFLOW.md` asks
+for, and the opposite of the 2026-07-28 revert.
 
 ## 2. The accumulated spec
 
@@ -186,9 +191,28 @@ Move an element out of the flow before filtering by size.
 - Day-mode effect covers read pale on ivory — they are art made for black. If day
   mode becomes a mode they actually use, consider dedicated covers.
 
-## 6. Implementation plan (not started)
+## 6. Implementation — DONE (2026-07-31)
 
-One commit per area, per `CODEX_WORKFLOW.md`, pausing for review between areas:
+The operator gave the go: *"quando apro l'app come ho fatto prima l'estetica deve
+essere quella finale che avevamo deciso."* All five areas are in the app; the
+sections below are kept as the record of what was built.
+
+What the app now carries: `public/assets/cage.webp` (the keyed frame, 370 KB,
+generated) and `src/cage/` (`holes.generated.ts` + the `cageBox`/`cagePlane`
+helpers). Neither is hand-editable — `build-frame.cjs` is the only writer.
+
+Two things the build had to learn that the preview never showed:
+* **The frame needs its own compositor layer.** Without `will-change: transform`
+  the browser repainted a full-screen RGBA image under the brain graph on every
+  frame, and the phase-3 BPM canary caught it — the estimate ran to 189 from 120,
+  the audio loop starved. Promoted, it rasterises once. The canary is the reason
+  this was found and not shipped.
+* **The systems column is narrower than the panel it replaces** (223px vs 262 at
+  1600). The covers meet their 45% cap before the card's height, so
+  `object-contain` letterboxes them — all five identically, which is what the
+  operator's "compare at a glance" direction was actually about.
+
+One commit per area, per `CODEX_WORKFLOW.md`:
 
 1. **The cage** — artwork as a single layer, gel slab and LEDs removed, surface
    tokens to black. The frame-cost contract holds: one image, no blend modes, no
@@ -201,15 +225,29 @@ One commit per area, per `CODEX_WORKFLOW.md`, pausing for review between areas:
 
 ### Verification — read this before running the suites
 
-**`tools/verify/verify-ui-gel-pass.js` must be rewritten.** It asserts the gel slab
-that this work removes — 41 assertions that would go red *by design*, not by
-regression. Replace it with a geometric contract: every section inside its opening,
-no spill, the cage a single unblended unfiltered layer, the contour present, and
-the day/night bed rules of §9–11.
+**`tools/verify/verify-ui-gel-pass.js` is gone, replaced by
+`tools/verify/verify-ui-cage.cjs` (18 checks).** The old suite asserted the gel
+slab this work removes — 41 assertions that would have gone red *by design*, and a
+suite that has to be ignored is worse than none. The new one asserts what the
+redesign actually promises: one image with no blend/filter/animation, the slab and
+its LEDs gone, every section inside its opening at three window sizes (the
+fractions must track a resize with no JS), and — measured on the pixels — the
+corner opening lit by day and black at night, with every material zone identical
+between the two themes.
 
-Keep green: `verify-phase10-covers.js` (16), `verify-graph-highlight.js` (7),
-`verify-phase10-search.js` (6), `verify-phase10-brand.js` (13), phase 2 (26),
-phase 3 (14, the BPM canary — the frame must not cost frames).
+Green as of 2026-07-31, all against the running app:
+`verify-ui-cage.cjs` (18), `verify-phase10-covers.js` (16 — its two sidebar-drag
+cases became window-stretch cases: the openings are fixed shapes now, there is
+nothing to drag), `verify-graph-highlight.js` (7), `verify-phase10-search.js` (6),
+`verify-phase10-brand.js` (13), phase 2 (26), phase 3 (14, BPM 129).
+
+**Running them at all takes a workaround.** The suites are CommonJS with a `.js`
+extension in a `"type": "module"` package, so `node tools/verify/<x>.js` dies on
+`require is not defined`; and several carry an unsubstituted `__SCRATCH__`
+placeholder plus fixtures (`beat120.wav`, `test.webm`) that must be generated
+first. Both predate this work. Copy to `.cjs`, sed the placeholder, run
+`make-beat-wav` and `gen1080` — or rename the lot to `.cjs`, which is the real
+fix and is listed as an open item in STATE.md.
 
 ## 7. Running the tooling
 

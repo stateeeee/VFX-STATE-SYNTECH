@@ -28,6 +28,7 @@ import NodalComposition, { CompEffect, EFFECT_META, WireMap } from './components
 import AudioMeter from './components/AudioMeter';
 import { gelMaterialTile } from './lib/gelTexture';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+import { HOLES, DAY_BACKDROPS, VIDEO_BOX, CAGE_BED, CAGE_SURFACE, cageBox, cagePlane } from './cage/cage';
 
 // explicit session snapshot for the SAVE nav action (decision #9: localStorage)
 const GEL_TILE = 640; // gel material tile edge (px) — also its background-size
@@ -92,12 +93,16 @@ function EffectCardArt({ id, name, isDayMode }: { id: string; name: string; isDa
   const [extIdx, setExtIdx] = useState(0);
   const [state, setState] = useState<'idle' | 'ok' | 'err'>('idle');
   const hasCover = state === 'ok';
-  const src = `/assets/covers/${id}.${COVER_EXTS[extIdx]}`;
+  /* By day the covers come from covers/day/, where the black plate they stand on
+     has been keyed out (tools/frame/build-day-covers.cjs). The originals are art
+     made FOR black: on the cage's ivory surface their plate reads as five black
+     rectangles. Keyed at build time, so this costs nothing at runtime. */
+  const src = isDayMode ? `/assets/covers/day/${id}.webp` : `/assets/covers/${id}.${COVER_EXTS[extIdx]}`;
   return (
     <>
       {/* Black bed under the art, so the card reads as one preview surface and the
           cover's own black plate has nothing to seam against. */}
-      {hasCover && <div className="absolute inset-0 bg-black" />}
+      {hasCover && !isDayMode && <div className="absolute inset-0 bg-black" />}
       {/* The art sits on the RIGHT, full card height, vertically centred (operator
           direction 2026-07-29 — the label no longer sits over it). `object-contain`
           with `h-full w-auto` keeps the star WHOLE: the box takes the plate's
@@ -120,18 +125,16 @@ function EffectCardArt({ id, name, isDayMode }: { id: string; name: string; isDa
         /* Label LEFT-aligned in a band that stops short of the art's column, so
            the two can never collide — on the narrowest sidebar the name truncates
            rather than running under the star. */
+        /* the same grey as the rail's labels, so the two columns read as one
+           family instead of the systems shouting in white */
         <span
           title={name}
-          className="absolute left-3 right-[46%] top-1/2 -translate-y-1/2 truncate text-left font-mono text-[11px] font-bold tracking-[0.1em] text-white"
+          className="absolute left-3 right-[46%] top-1/2 -translate-y-1/2 truncate text-left font-mono text-[11px] font-bold tracking-[0.1em] text-neutral-500"
         >
           {name}
         </span>
       ) : (
-        <span
-          className={`font-mono text-[11px] font-bold tracking-[0.1em] z-10 relative ${
-            isDayMode ? 'text-neutral-900' : 'text-white'
-          }`}
-        >
+        <span className="font-mono text-[11px] font-bold tracking-[0.1em] z-10 relative text-neutral-500">
           {name}
         </span>
       )}
@@ -542,43 +545,51 @@ export default function App() {
 
   return (
     <div
-      className={`h-screen w-screen transition-colors duration-300 ${isDayMode ? 'syn-day bg-[#fcfbf9] text-neutral-900' : 'text-white space-vignette'} flex flex-col font-sans overflow-hidden p-4 gap-4`}
+      className={`syn-cage h-screen w-screen ${isDayMode ? 'syn-day text-neutral-900' : 'text-white'} flex flex-col font-sans overflow-hidden`}
       /* the gel tile is generated at runtime, so it reaches CSS as a variable —
-         the slab and the hero wordmark both read it from here */
+         the hero wordmark still reads its material from here */
       style={{
         '--syn-gel-tex': gelMaterial ? `url(${gelMaterial})` : 'none',
         '--syn-gel-tex-text': gelTextMaterial ? `url(${gelTextMaterial})` : 'none',
         '--syn-gel-tile': `${GEL_TILE}px`,
+        background: CAGE_BED,
       } as React.CSSProperties}
     >
 
-      {/* Gel slab behind the whole UI (night mode only). The sections are solid
-          black, so it reads through the gaps between them: a violet→gold LED sheet
-          under a poured, glossy gel with air bubbles rising through it. Layers are
-          transform-animated only — see the note in index.css. */}
-      {!isDayMode && (
-        <div className="syn-bg-layer" aria-hidden data-testid="bg-layer">
-          <span className="syn-gel-sheet" />
+      {/* ═══════════════ THE CAGE ═══════════════
+          The operator's artwork IS the chrome now: it divides the sections, and
+          the coloured gel slab that used to fill the gaps is gone. The bed is
+          BLACK in both themes, so nothing outlines the individual sections — the
+          only dark line anywhere is the artwork's own rim.
 
-          {/* the whole material — swell, bubbles and gloss — in ONE overlay layer */}
-          <span className="syn-gel-material" data-testid="bg-relief" />
-          <span className="syn-gel-bubbles" data-testid="bg-bubbles">
-            {GEL_BUBBLES.map((b, i) => (
-              <span
-                key={i}
-                className="syn-bubble"
-                style={{
-                  left: `${b.x}%`,
-                  width: b.d,
-                  height: b.d,
-                  animationDuration: `${b.dur}s`,
-                  animationDelay: `-${b.delay}s`, // negative: the field is already in motion at load
-                }}
-              />
-            ))}
-          </span>
-        </div>
-      )}
+          Day mode: each opening that HOSTS a panel gets its own warm-ivory plane
+          behind the frame, so the panel's surface fills its whole organic hole.
+          The openings that host nothing stay black, exactly as at night. */}
+      {isDayMode && DAY_BACKDROPS.map((b, i) => (
+        <div key={i} aria-hidden data-testid="cage-backdrop" style={{ ...cagePlane(b, 1), background: CAGE_SURFACE }} />
+      ))}
+
+      {/* The bottom-right corner: the raw-video reference, the permanent A/B
+          against the processed hero. One plane behind the cage — the cage itself
+          masks it into the corner's organic shape. EMPTY = the theme's own
+          surface, never a placeholder image. */}
+      <div
+        aria-hidden
+        data-testid="cage-video"
+        style={{ ...cagePlane(VIDEO_BOX, 2), background: isDayMode ? CAGE_SURFACE : CAGE_BED, overflow: 'hidden' }}
+      />
+
+      {/* ONE image, on top of everything, masking the sections into the openings.
+          No blend mode, no filter, no animation: that is the frame-cost contract,
+          and it is why the frame costs nothing per frame. */}
+      <img
+        src="/assets/cage.webp"
+        alt=""
+        aria-hidden
+        draggable={false}
+        data-testid="cage-frame"
+        className="syn-cage-frame"
+      />
 
       {/* hidden source picker (shared INPUT) */}
       <input
@@ -591,13 +602,18 @@ export default function App() {
       />
 
       {/* ═══════════════ TOP BAR ═══════════════ */}
-      <header className={`h-12 shrink-0 flex items-center justify-between px-4 rounded-2xl border relative z-30 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} shadow-md`}>
+      {/* The top opening is split in two by a bridge of material: the left group
+          and the wordmark sit in the left slot, SESSION + clock in the right one. */}
+      <header
+        className={`syn-hole flex items-center justify-between px-4 rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'}`}
+        style={cageBox(HOLES.topbar, 4, 6)}
+      >
         <div className="flex items-center gap-3 w-56">
           <div className="flex items-center gap-1.5 font-mono text-[10px] text-neutral-500 uppercase tracking-widest">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            live streaming
+            system online
           </div>
-          
+
           <button
             type="button"
             title="Toggle day / night"
@@ -608,8 +624,20 @@ export default function App() {
           </button>
         </div>
 
-        {/* centered wordmark */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
+        {/* The wordmark sits at the RIGHT end of the left slot, hard against the
+            bridge of material that splits the top opening — not centred on the
+            whole bar, which would put it behind that bridge. The block keeps
+            `items-center`, so "created by state" stays centred under the title. */}
+        <div
+          className="absolute flex flex-col items-center pointer-events-none"
+          style={{
+            left: 'auto',
+            /* percentages here resolve against the HEADER, not the viewport, so
+               the gap between the two slots is expressed in the header's width */
+            right: `calc(${((((HOLES.topbar.x + HOLES.topbar.w) - (HOLES.slotL.x + HOLES.slotL.w)) / HOLES.topbar.w) * 100).toFixed(4)}% + 16px)`,
+            transform: 'none',
+          }}
+        >
           {/* Brand unification: this wordmark's font (Space Grotesk semibold,
               tracking-tight, Title Case) is now the shared title style, and it
               carries the hero title's shimmer animation. Position/size unchanged. */}
@@ -644,12 +672,18 @@ export default function App() {
 
       <div className="flex-1 flex overflow-hidden gap-4">
         {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
-        <nav className={`w-[78px] shrink-0 flex flex-col items-center pt-5 pb-5 rounded-2xl border transition-colors duration-300 ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'} z-20 shadow-md`}>
+        {/* The tall left opening. With the meter moved out of it (below), the slot
+            is shorter than the nav wants, so the rhythm tightens — otherwise
+            AI LAB and GEMINI PRO collide. Tighten the spacing, never the type. */}
+        <nav
+          className={`syn-hole flex flex-col items-center pt-3 pb-3 rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'}`}
+          style={cageBox(HOLES.railTop, 4, 6)}
+        >
           {/* Brand logo. The mark keeps its inflated glossy 3D shading but takes its
               colour from the same violet→gold ramp as the gel slab and the titles:
               a masked gradient layer underneath, the mark on top in `luminosity`
               blend (see .syn-logo in index.css). Never inverted. */}
-          <div className="syn-logo w-11 h-11 shrink-0 mb-5" title="VFX Syntech — created by State">
+          <div className="syn-logo w-[34px] h-[34px] shrink-0 mb-2.5" title="VFX Syntech — created by State">
             <span className="syn-logo-color" aria-hidden />
             <img
               src="/assets/logo.png"
@@ -659,7 +693,7 @@ export default function App() {
             />
           </div>
 
-          <ul className="flex flex-col gap-5 w-full items-center">
+          <ul className="flex flex-col gap-[13px] w-full items-center">
             {navItems.map(({ key, label, Icon, active, onClick, title }) => (
               <li key={key} className="w-full flex justify-center">
                 <button
@@ -705,12 +739,16 @@ export default function App() {
             ))}
           </ul>
 
-          {/* playback level of the loaded clip — a stereo pair that fills ALL the
-              space left under OPTIMIZER, down to the foot of the rail, with its
-              "Audio" caption under the columns (see AudioMeter.tsx) */}
-          <div className={`w-8 h-px mt-5 mb-3 shrink-0 ${isDayMode ? 'bg-neutral-300' : 'bg-ink-700'}`} />
-          <AudioMeter isDayMode={isDayMode} videoRef={heroVideoRef} sourceKey={compSource?.url ?? null} />
         </nav>
+
+        {/* Playback level of the loaded clip. There is a SEPARATE small opening
+            under the rail in the artwork, so the meter leaves the rail's flow and
+            is centred in that hole — which is also why the hairline that used to
+            divide the two is gone. (The one above GEMINI PRO stays: without it,
+            AI LAB and GEMINI PRO end up touching.) */}
+        <div className="flex flex-col" style={cageBox(HOLES.meter, 6, 6)}>
+          <AudioMeter isDayMode={isDayMode} videoRef={heroVideoRef} sourceKey={compSource?.url ?? null} />
+        </div>
 
         {/* ═══════════════ MAIN CONTENT ═══════════════ */}
         <div className="flex-1 flex flex-col gap-4 overflow-hidden relative">
@@ -769,7 +807,11 @@ export default function App() {
 
                 {/* TOP: Hero (brain graph / video) OR AI Lab OR Effect */}
                 <Panel defaultSize={62} minSize={20}>
-                  <div className={`w-full h-full relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col shadow-lg`}>
+                  {/* the big rounded opening */}
+                  <div
+                    className={`syn-hole relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col`}
+                    style={cageBox(HOLES.hero)}
+                  >
                     {/* armed AI Lab stays mounted under an open effect so its
                         composition (nodes, wiring, params) survives navigation */}
                     {chainOpen && (
@@ -824,8 +866,8 @@ export default function App() {
                           />
                         )}
 
-                        {/* legibility gradient */}
-                        <div className="absolute inset-0 pointer-events-none bg-gradient-to-br from-black/70 via-black/25 to-transparent" />
+                        {/* legibility gradient (off by day — see .syn-cage.syn-day) */}
+                        <div className="hero-scrim absolute inset-0 pointer-events-none bg-gradient-to-br from-black/70 via-black/25 to-transparent" />
 
                         {/* wordmark + subtitle + actions */}
                         <div className="absolute top-7 left-8 z-10 max-w-[70%]">
@@ -836,7 +878,7 @@ export default function App() {
                               unchanged. */}
                           <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient hero-gel-text leading-[0.92] drop-shadow-2xl">VFX</h1>
                           <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient hero-gel-text leading-[0.98] drop-shadow-2xl">Syntech</h1>
-                          <p className="mt-3 text-[11px] md:text-[13px] tracking-[0.18em] font-medium text-neutral-200/90 drop-shadow-md">
+                          <p className="hero-strapline mt-3 text-[11px] md:text-[13px] tracking-[0.18em] font-medium text-neutral-200/90 drop-shadow-md">
                             AI-Powered. Node-Based. Limitless.
                           </p>
                         </div>
@@ -853,6 +895,7 @@ export default function App() {
                 <Panel defaultSize={38} minSize={15}>
                   <PanelGroup direction="horizontal" autoSaveId="syntech-bottom-horiz" className="flex">
                     <Panel defaultSize={55} minSize={20}>
+                      <div className="syn-hole-host" style={cageBox(HOLES.nodes)}>
                       <NodalComposition
                         isDayMode={isDayMode}
                         effects={compEffects}
@@ -866,6 +909,7 @@ export default function App() {
                         onPickSource={pickSource}
                         isStreaming={isStreaming}
                       />
+                      </div>
                     </Panel>
 
                     <PanelResizeHandle className="w-4 flex items-center justify-center cursor-col-resize group shrink-0">
@@ -873,7 +917,10 @@ export default function App() {
                     </PanelResizeHandle>
 
                     <Panel defaultSize={45} minSize={20}>
-                      <div className={`w-full h-full rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} flex flex-col relative shadow-lg overflow-hidden`}>
+                      <div
+                        className={`syn-hole rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} flex flex-col relative overflow-hidden`}
+                        style={cageBox(HOLES.gemini)}
+                      >
                         <AiDirector
                           isDayMode={isDayMode}
                           activeGeminiMode={activeGeminiMode}
@@ -908,7 +955,10 @@ export default function App() {
             {/* RIGHT SIDEBAR: Effects Library */}
             {/* the systems column: narrower by direction (2026-07-29) — 26% → 20% */}
             <Panel defaultSize={20} minSize={14} maxSize={34}>
-              <div className={`w-full h-full rounded-2xl border flex flex-col overflow-hidden shadow-lg ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-ink-700/60 bg-ink-900'}`}>
+              <div
+                className={`syn-hole rounded-2xl border flex flex-col overflow-hidden ${isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-ink-700/60 bg-ink-900'}`}
+                style={cageBox(HOLES.sidebar)}
+              >
                 {/* Search box (positioned at the top) */}
                 <div className={`px-4 py-3 border-b shrink-0 ${isDayMode ? 'border-neutral-200' : 'border-ink-700/50'}`}>
                   <div className={`w-full border rounded-lg p-2.5 flex items-center gap-2 ${isDayMode ? 'bg-[#fcfbf9] border-neutral-200' : 'bg-[#0e0e0e] border-ink-700/70'}`}>
@@ -933,7 +983,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-3.5 space-y-2 custom-scrollbar">
+                <div className="syn-systems-list flex-1 overflow-y-auto p-3.5 space-y-2 custom-scrollbar">
                   {(() => {
                     const q = systemSearch.trim().toLowerCase();
                     const shown = q ? modules.filter((m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)) : modules;
@@ -951,7 +1001,7 @@ export default function App() {
                         className={`h-20 p-2.5 rounded-lg border transition-all flex items-center justify-center relative overflow-hidden cursor-pointer ${
                           active
                             ? isDayMode ? 'border-violet-500/50 bg-violet-500/5 shadow-sm' : 'border-violet-500/45 bg-violet-500/[0.07] shadow-[0_0_10px_rgba(139,92,246,0.06)]'
-                            : isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-850'
+                            : isDayMode ? 'border-neutral-200 bg-[#fbfaf7]' : 'border-ink-700/60 bg-ink-850'
                         }`}
                       >
                         <EffectCardArt id={module.id} name={module.name} isDayMode={isDayMode} />

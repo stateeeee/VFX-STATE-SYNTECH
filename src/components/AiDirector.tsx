@@ -75,8 +75,12 @@ export default function AiDirector({ currentConfig, onApplyPreset, isDayMode, ac
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Active
             </span>
           ) : (
-            <span className={`flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded ${isDayMode ? 'bg-[#8b5cf6]/10 text-[#8b5cf6] border border-[#8b5cf6]/30' : 'bg-[#8b5cf6]/10 text-[#8b5cf6]/80 border border-[#8b5cf6]/40'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isDayMode ? 'bg-[#8b5cf6]/70' : 'bg-[#8b5cf6]/80/70'}`} /> Standby
+            /* Grey, like the node panel's — the two read as one state. (This also
+               retires `bg-[#8b5cf6]/80/70`, which was never a valid class: two
+               opacity modifiers, so Tailwind emitted nothing and the dot fell
+               back to transparent.) ACTIVE stays green in both panels. */
+            <span className="flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded bg-neutral-500/10 text-neutral-400 border border-neutral-500/40">
+              <span className="w-1.5 h-1.5 rounded-full bg-neutral-400/80" /> Standby
             </span>
           )}
         </div>
@@ -102,7 +106,11 @@ export default function AiDirector({ currentConfig, onApplyPreset, isDayMode, ac
 function AiHomeTab({ isDayMode }: { isDayMode?: boolean }) {
   return (
     <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-      <div className={`p-5 rounded-xl border ${isDayMode ? 'bg-white border-[#8b5cf6]/20' : 'bg-[#8b5cf6]/10 border-[#8b5cf6]/40'} flex flex-col h-full gap-4`}>
+      {/* Sizes to its CONTENT, not to h-full: the opening is shorter than the
+          panel's natural height, and stretched to full height the card was
+          clipping its own "Select a module" button. The panel adapts to the
+          hole — that is the whole point of the cage. */}
+      <div className={`p-3 rounded-xl border ${isDayMode ? 'bg-white border-[#8b5cf6]/20' : 'bg-[#8b5cf6]/10 border-[#8b5cf6]/40'} flex flex-col gap-2.5`}>
         <div>
           <h3 className={`${isDayMode ? 'text-[#8b5cf6]' : 'text-[#8b5cf6]'} font-mono text-[10px] uppercase tracking-widest mb-3`}>
             System Capabilities

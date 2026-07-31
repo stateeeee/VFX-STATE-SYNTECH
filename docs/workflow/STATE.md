@@ -19,42 +19,39 @@ meter — all implemented and verified. The **5 effect-card covers are now IN**
 **One item is left, and it is hardware-dependent: the ≥30fps@720p perf pass**
 (GPU machine). The checkbox stays unchecked until that lands.
 
-**⇒ PROGETTO IN PAUSA dal 2026-07-31 — leggi "Next step" qui sotto prima di
-qualunque cosa.** L'operatore è soddisfatto esteticamente, ha provato l'app in
-locale e ha chiuso dicendo che ci tornerà. La "gabbia" resta a stadio preview,
-niente implementato, approvazione mai data. Il contesto completo è in
-`docs/workflow/HANDOFF-CAGE.md`. Poi `docs/workflow/HANDOFF.md`
+**⇒ LA GABBIA È IMPLEMENTATA (2026-07-31).** L'operatore ha dato il via dopo aver
+provato l'app in locale, e l'estetica approvata è ora dentro l'app, non nei
+preview. Contesto completo in `docs/workflow/HANDOFF-CAGE.md` (§6 = cosa è stato
+costruito). Poi `docs/workflow/HANDOFF.md`
 (rewritten 2026-07-28: current visual state after the
 revert, the operator's mandatory process, everything measured about material,
 lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
-**PROGETTO IN PAUSA — deciso dall'operatore il 2026-07-31.** *"Forse non c'è
-bisogno di continuare perché almeno esteticamente sono soddisfatto."* Ha poi
-avviato l'app sulla sua macchina (MacBook Pro M1, 8GB) — **"ok funziona"** — e ha
-chiuso: *"ci tornerò più avanti."*
+**LA GABBIA È DENTRO L'APP (2026-07-31).** L'operatore ha dato il via —
+*"quando apro l'app come ho fatto prima l'estetica deve essere quella finale che
+avevamo deciso"* — dopo aver provato l'app in locale e averla trovata ancora con
+la vecchia interfaccia. Dodici giri di preview, poi una implementazione.
 
-**Non ripartire da solo.** Quando riapre, la prima domanda è **quale dei due
-tronconi vuole**, perché sono indipendenti:
+**Aperto, in ordine di importanza:**
 
-1. **La gabbia — ferma a stadio preview, dodici giri, zero codice applicativo
-   modificato.** L'ultimo giro (12) ha corretto l'angolo in basso a destra di
-   giorno: si accende **intero**, e il bordo esterno della gabbia non si keya più —
-   le due cose che aveva cerchiato in rosso e in verde. Da fargli guardare:
-   `docs/design/frame/preview-round12-{day,night}.webp`. Tutto — spec accumulata,
-   geometria misurata, trappole, piano in 5 commit, tooling — è in
-   **`docs/workflow/HANDOFF-CAGE.md`**. **Non implementare prima della sua
-   approvazione esplicita**: `CODEX_WORKFLOW.md` lo vieta ed è esattamente ciò che
-   ha causato il revert del 2026-07-28. Nota per chi implementerà:
-   `tools/verify/verify-ui-gel-pass.js` va **riscritto**, non fatto passare —
-   asserisce il gel slab che quel lavoro rimuove (41 assertion rosse per design).
-2. **Il pass performance ≥30fps@720p — ancora aperto.** L'unico item di roadmap
-   non spuntato. Ha avviato l'app ma **non ha riportato i numeri**, quindi la
-   verifica non è stata fatta. È self-service e dura cinque minuti sulla sua
-   macchina: AI Lab → catena a 5 effetti → clip 720p → leggere i badge **FPS** e
-   **RES%**. Accettazione: `fps ≥ 30` **e** `RES% < 100` (ambra). In sandbox non è
-   valutabile (SwiftShader, 1–2 fps): serve la sua GPU.
+1. **Il suo giudizio sull'app vera.** I preview erano compositi; questa è la cosa
+   che gira. Se qualcosa non torna, si corregge da `tools/frame/` e si rigenera —
+   nessun numero va toccato a mano.
+2. **Il pass performance ≥30fps@720p — ancora aperto**, e ora conta di più: la
+   gabbia aggiunge un'immagine a schermo intero con alpha, sopra tutto. In sandbox
+   è costata il canary BPM (189 invece di 120) finché non le è stato dato un layer
+   di compositing proprio; con quello è tornata a 129. Va misurato sulla SUA GPU:
+   AI Lab → catena a 5 effetti → clip 720p → badge **FPS** e **RES%**.
+   Accettazione: `fps ≥ 30` **e** `RES% < 100` (ambra).
+3. **Le suite di verifica non partono da sole**, e viene da prima di questo
+   lavoro: sono CommonJS con estensione `.js` dentro un package `"type":
+   "module"`, quindi `node tools/verify/<x>.js` muore su *require is not
+   defined*; e alcune hanno un `__SCRATCH__` mai sostituito più fixture
+   (`beat120.wav`, `test.webm`) da generare prima. Il fix vero è rinominarle
+   tutte in `.cjs` e aggiornare `06-VERIFICATION.md`. La nuova
+   `verify-ui-cage.cjs` è già `.cjs` e parte così com'è.
 
 Sotto, lo stato precedente resta valido per tutto il resto dell'app.
 
@@ -74,6 +71,47 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-07-31 — La gabbia entra nell'app
+
+L'operatore ha dato il via: *"quando apro l'app come ho fatto prima l'estetica
+deve essere quella finale che avevamo deciso."* Dodici giri di preview, poi
+l'implementazione — l'ordine che `CODEX_WORKFLOW.md` chiede.
+
+- **Gli asset dell'app sono generati, non ricopiati.** `build-frame.cjs` ora
+  scrive anche `public/assets/cage.webp` (la cornice keyata, 370 KB) e
+  `src/cage/holes.generated.ts` (la geometria). Nessuno dei due è modificabile a
+  mano: quello script è l'unico scrittore, e la geometria è misurata sull'artwork.
+- **Le sezioni sono in frazioni di viewport**, quindi seguono lo stretch della
+  finestra senza una riga di JS e senza resize listener (`src/cage/cage.ts`,
+  `cageBox`/`cagePlane`). Verificato a 1280, 1600 e 1920: ogni sezione dentro la
+  sua apertura, zero sbordo.
+- **Il gel slab e i LED sono spariti**, letto nero in entrambi i temi, e di giorno
+  ogni apertura che ospita un pannello ha il suo piano avorio dietro la cornice.
+- **Il canary BPM ha fatto il suo lavoro.** Alla prima passata la fase 3 è andata
+  rossa: BPM stimato **189** invece di 120. Causa: senza un layer di compositing
+  proprio, ogni frame disegnato dal grafo costringeva il browser a ridipingere
+  un'immagine RGBA a schermo intero sotto di esso, e il loop audio veniva
+  affamato. Con `will-change: transform` la cornice viene rasterizzata una volta
+  sola: **BPM 129, 14/14**. Trovato misurando, non guardando.
+- **`verify-ui-gel-pass.js` è stato rimosso**, non "fatto passare": asseriva il
+  gel slab che questo lavoro toglie (41 assertion rosse *per design*). Al suo
+  posto `tools/verify/verify-ui-cage.cjs`, **18/18**: una sola immagine senza
+  blend/filtri/animazioni, slab e LED assenti, ogni sezione dentro la sua apertura
+  a tre dimensioni di finestra, e — misurato sui pixel — l'angolo acceso di giorno
+  e nero di notte con ogni zona di materiale identica fra i due temi.
+- **`verify-phase10-covers.js` ritarato sulla gabbia (16/16).** La colonna dei
+  sistemi non è più un pannello ridimensionabile: è larga quanto la sua apertura
+  (223px a 1600 contro 262), quindi la cover incontra il suo tetto del 45% prima
+  dell'altezza della card e `object-contain` la mette in letterbox — tutte e
+  cinque identiche, che è ciò che la direzione *"confrontarle a colpo d'occhio"*
+  chiedeva davvero. I due casi di drag della sidebar sono diventati casi di
+  stretch della finestra, perché le aperture ora sono forme fisse.
+- **Le cover di giorno sono keyate a build time** (`tools/frame/build-day-covers.cjs`
+  → `public/assets/covers/day/`): il piatto nero su cui sta la star leggeva come
+  cinque rettangoli neri sull'avorio. Costo a runtime: zero.
+- Verde: cage 18/18, covers 16/16, graph-highlight 7/7, search 6/6, brand 13/13,
+  fase 2 26/26, fase 3 14/14. `npm run lint` pulito.
 
 ### 2026-07-31 — Gabbia, giro 12: l'angolo in basso a destra si accende intero
 

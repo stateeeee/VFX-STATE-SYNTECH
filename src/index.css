@@ -390,3 +390,69 @@ body {
   background: var(--syn-accent-700);
 }
 .custom-scrollbar { scrollbar-width: thin; scrollbar-color: var(--syn-accent-900) transparent; }
+
+/* ═══════════════════════ THE CAGE ═══════════════════════
+   The operator's artwork is the app's chrome: it divides the sections, and the
+   coloured gel slab that used to fill the gaps between them is gone.
+
+   The frame-cost contract, unchanged from the gel slab it replaces: ONE image,
+   no blend mode, no filter, no animation. It is painted once and composited by
+   the GPU from then on, so it costs nothing per frame — which is what keeps the
+   BPM canary (verify-phase3) green. Do not add a filter here to "grade" it: the
+   grade is BAKED INTO the file by tools/frame/build-frame.cjs. */
+.syn-cage-frame {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* it STRETCHES to fill any window — the operator's answer to the aspect
+     question was no black bands, ever. Its own ratio is 1.679:1. */
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+  z-index: 9;
+  /* Its OWN compositor layer. Without this the frame is part of the same layer as
+     the hero, so every frame the brain graph draws forces the browser to repaint
+     a full-screen RGBA image underneath it — which the BPM canary caught (the
+     estimate ran away to 189 from 120: the audio loop was being starved).
+     Promoted, the frame is rasterised once and only composited from then on. */
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* The openings are fixed organic shapes: there is nothing to drag a section into,
+   so the resize handles go. They stay MOUNTED — react-resizable-panels needs its
+   own DOM to keep the group's bookkeeping consistent — just invisible and inert. */
+.syn-cage [data-panel-resize-handle-id] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The hero carries a black→transparent scrim so the wordmark reads over video.
+   On the night bed it is invisible; on the day bed it IS a grey rectangle with
+   hard edges, which is what made the hero read as a box instead of a surface.
+   Off by day — and then the strapline, which leaned on it, has to darken. */
+.syn-cage.syn-day .hero-scrim { display: none; }
+.syn-cage.syn-day .hero-strapline {
+  color: rgb(82, 82, 82);
+  text-shadow: none;
+}
+
+/* The systems list will grow past five effects, and a hard clip reads as a
+   straight line cutting the artwork. Fade it at BOTH ends instead, so the frame
+   appears to swallow the cards as they leave. */
+.syn-cage .syn-systems-list {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 26px, #000 calc(100% - 26px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 26px, #000 calc(100% - 26px), transparent 100%);
+}
+
+/* A section pinned into an opening has no outline of its own: the cage's own
+   material is what delimits it, and a rounded rectangle drawn inside an organic
+   hole reads as a second, wrong frame. Radius stays — the openings are round at
+   the corners too, and the two agree there. */
+.syn-cage .syn-hole,
+.syn-cage .syn-hole-host > * {
+  border-color: transparent;
+  box-shadow: none;
+  border-radius: 16px;
+}

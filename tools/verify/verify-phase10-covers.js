@@ -90,8 +90,16 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
     cards.every((c) => c.fit === 'contain'), cards.map((c) => c.fit).join(','));
   step('each cover sits on a black bed (seamless letterbox)', cards.every((c) => c.bed));
 
-  step('the art is right-aligned and fills the card height at the default width',
-    cards.every((c) => c.artRightGap <= 1 && c.shownH === c.innerH),
+  /* Under the cage the systems column is no longer a resizable panel: it is the
+     width of its opening in the artwork (~223px at 1600), narrower than the
+     column this suite was written against. The art therefore meets its 45% cap
+     before it meets the card's height, and `object-contain` letterboxes it.
+     What still has to hold — and is what the direction was actually about — is
+     that the star is WHOLE, right-aligned, and the SAME size on all five cards,
+     so they can be compared at a glance. */
+  step('the art is right-aligned, whole, and identical on all five cards',
+    cards.every((c) => c.artRightGap <= 1 && c.shownH > 0 && c.shownH <= c.innerH)
+      && new Set(cards.map((c) => c.shownH)).size === 1,
     cards.map((c) => `${c.id} h=${c.shownH}/${c.innerH} gap=${c.artRightGap}`).join(' | '));
 
   const lbl = cards[0];
@@ -111,7 +119,11 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
   await page.click('button[title="Toggle day / night"]');
   await page.waitForTimeout(600);
   const day = await probe(page);
-  step('day mode keeps the covers', day.every((c) => c.opacity === 1 && c.shownH === c.innerH),
+  /* By day the cards load the KEYED covers (covers/day/), so the black plate the
+     star stands on does not read as a rectangle on the cage's ivory. Same source
+     art, same box — so the drawn size must be identical to the night one. */
+  step('day mode keeps the covers, at the same size',
+    day.every((c, i) => c.opacity === 1 && c.shownH === cards[i].shownH && c.shownH > 0),
     day.map((c) => `${c.shownH}/${c.innerH}`).join(' '));
   if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'covers-day.png') });
   await page.click('button[title="Toggle day / night"]');
@@ -126,32 +138,21 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
     await page.screenshot({ path: path.join(SHOT_DIR, 'covers-cards.png'), clip: box });
   }
 
-  // ── the sidebar drag: both extremes must keep the star whole ───────────────
-  const handles = await page.$$('[data-panel-resize-handle-id]');
-  const grip = handles[handles.length - 1]; // the sidebar boundary
-  // re-measure every time: the grip MOVES with the drag, and a stale box would
-  // silently start the next drag from empty space (the second drag then no-ops)
-  const drag = async (dx) => {
-    const hb = await grip.boundingBox();
-    await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(hb.x + hb.width / 2 + dx, hb.y + hb.height / 2, { steps: 12 });
-    await page.mouse.up();
-    await page.waitForTimeout(400);
-  };
-
-  await drag(400); // sidebar to its minimum
-  const narrow = await probe(page);
-  step('narrowest sidebar: art still whole, and the label stops short of it',
-    narrow.every((c) => c.shownH > 0 && c.shownH <= c.innerH && c.labelRight <= c.artLeft),
-    `card ${narrow[0].cardW}x${narrow[0].cardH} — ` +
-    narrow.map((c) => `${c.id} h=${c.shownH} text→${c.labelRight} art→${c.artLeft}`).join(' | '));
-
-  await drag(-900); // sidebar to its maximum
-  const wide = await probe(page);
-  step('widest sidebar: art at full card height, label still clear of it',
-    wide.every((c) => c.shownH === c.innerH && c.labelRight <= c.artLeft),
-    `card ${wide[0].cardW}x${wide[0].cardH} (aspect ${wide[0].cardAspect})`);
+  /* The two sidebar-drag cases are gone with the cage: the openings are fixed
+     organic shapes in the artwork, so the resize handles are inert and there is
+     no narrowest/widest column any more. What replaces them is the window
+     stretch — the sections are positioned in FRACTIONS of the viewport, so the
+     same contract has to hold at any window size, with no JS re-layout. */
+  for (const vp of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]) {
+    await page.setViewportSize(vp);
+    await page.waitForTimeout(500);
+    const at = await probe(page);
+    step(`at ${vp.width}x${vp.height}: art whole, right-aligned, label clear of it`,
+      at.every((c) => c.shownH > 0 && c.shownH <= c.innerH && c.artRightGap <= 1 && c.labelRight <= c.artLeft),
+      `card ${at[0].cardW}x${at[0].cardH} — ` + at.map((c) => `${c.id} h=${c.shownH} text→${c.labelRight} art→${c.artLeft}`).join(' | '));
+  }
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.waitForTimeout(400);
   // ── fallback: a missing cover falls back to the plain label ────────────────
   const ctx2 = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
   await ctx2.route(new RegExp(`/assets/covers/${MISSING}\\.(webp|png|jpg)`), (r) => r.fulfill({ status: 404, body: '' }));

@@ -253,17 +253,32 @@ export default function VfxCanvas({
       nodeFlashIntensity.fill(0);
       coreSwell = 0;
 
-      const cx = w / 2;
+      // the graph sits RIGHT of centre: the hero opening is wide, and the
+      // wordmark occupies its left third
+      const cx = w * 0.60;
       const cy = h / 2;
 
+      /* Cluster palettes. Unselected: violet only, eight shades, each node
+         carrying its own opacity so the cluster has depth without a second hue.
+         Selected: gold and violet mixed, stored on `glow` so the draw path can
+         swap families without a second lookup table. */
+      const VIOLET_SHADES = ['#4c1d95', '#5b21b6', '#6d28d9', '#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'];
+      const GOLD_SHADES = ['#7a5c12', '#a8801d', '#d4a72c', '#e8c34a', '#f5da7a', '#ffe9a8'];
+      const shadeOf = (list: string[], k: number) => {
+        const h = list[Math.abs(k) % list.length];
+        const a = 0.45 + ((Math.abs(k) * 37) % 55) / 100;
+        return `rgba(${parseInt(h.slice(1, 3), 16)}, ${parseInt(h.slice(3, 5), 16)}, ${parseInt(h.slice(5, 7), 16)}, ${a.toFixed(2)})`;
+      };
+      const vio = (k: number) => shadeOf(VIOLET_SHADES, k);
+      const au = (k: number) => shadeOf(GOLD_SHADES, k);
       const scale = Math.min(w, h) / 600 * 1.5;
       // Define our 5 main Hubs (representing active modules in the network)
-      const hubsConfig: { id: ModuleId; label: string; angle: number; dist: number; color: string; glow: string }[] = [
-        { id: 'blob_tracker', label: 'BLOB TRACKER', angle: -Math.PI / 4 - 0.2, dist: 120 * scale, color: '#ffffff', glow: ACCENT },
-        { id: 'analog', label: 'ANALOG', angle: Math.PI / 4 + 0.1, dist: 130 * scale, color: '#ffffff', glow: ACCENT },
-        { id: 'blob_reveal', label: 'BLOB REVEAL', angle: Math.PI - 0.5, dist: 140 * scale, color: '#ffffff', glow: ACCENT },
-        { id: 'bokeh', label: 'BOKEH', angle: -Math.PI / 2 - 0.3, dist: 125 * scale, color: '#ffffff', glow: ACCENT },
-        { id: 'anamorphic_lab', label: 'ANAMORPHIC LAB', angle: Math.PI + 0.4, dist: 110 * scale, color: '#ffffff', glow: ACCENT },
+      const hubsConfig: { glowHue: string; id: ModuleId; label: string; angle: number; dist: number; color: string; glow: string }[] = [
+        { glowHue: '#8b5cf6', id: 'blob_tracker', label: 'BLOB TRACKER', angle: -Math.PI / 4 - 0.2, dist: 120 * scale, color: '#ffffff', glow: ACCENT },
+        { glowHue: '#7c3aed', id: 'analog', label: 'ANALOG', angle: Math.PI / 4 + 0.1, dist: 130 * scale, color: '#ffffff', glow: ACCENT },
+        { glowHue: '#a78bfa', id: 'blob_reveal', label: 'BLOB REVEAL', angle: Math.PI - 0.5, dist: 140 * scale, color: '#ffffff', glow: ACCENT },
+        { glowHue: '#6d28d9', id: 'bokeh', label: 'BOKEH', angle: -Math.PI / 2 - 0.3, dist: 125 * scale, color: '#ffffff', glow: ACCENT },
+        { glowHue: '#c4b5fd', id: 'anamorphic_lab', label: 'ANAMORPHIC LAB', angle: Math.PI + 0.4, dist: 110 * scale, color: '#ffffff', glow: ACCENT },
       ];
 
       // Add central master core node representing the root index.md / Obsidian Vault main core
@@ -304,7 +319,7 @@ export default function VfxCanvas({
           size: 6.5 * scale,
           baseSize: 6.5 * scale,
           color: hub.color,
-          glow: hub.glow,
+          glow: hub.glowHue,
           pulseSpeed: 0.03 + i * 0.005,
           pulsePhase: Math.random() * Math.PI,
         });
@@ -332,12 +347,12 @@ export default function VfxCanvas({
           let nodeGlow = ga(0.2);
           let isPurple = false;
 
-          if (rand < 0.25) {
-            // Purple dot (viola)
-            nodeColor = '#8b5cf6';
-            nodeGlow = '#8b5cf6';
+          const k = i * 13 + s * 7;
+          if (rand < 0.92) {
+            nodeColor = vio(k);                          // idle cluster
+            nodeGlow = s % 2 === 0 ? au(k) : vio(k + 3); // when SELECTED
             isPurple = true;
-          } else if (rand < 0.65) {
+          } else if (rand < 0.96) {
             // Gold spark
             nodeColor = ACCENT;
             nodeGlow = ACCENT;
@@ -575,7 +590,9 @@ export default function VfxCanvas({
       // -------------------------------------------------------------
       // PHYSICAL FORCE-DIRECTED SPRING PHYSICS LOOP
       // -------------------------------------------------------------
-      const cx = w / 2;
+      // the graph sits RIGHT of centre: the hero opening is wide, and the
+      // wordmark occupies its left third
+      const cx = w * 0.60;
       const cy = h / 2;
 
       // Update positions of central nodes
@@ -932,18 +949,16 @@ export default function VfxCanvas({
           ctx.arc(node.x, node.y, drawSize, 0, Math.PI * 2);
           // the dot itself: white ONLY for the selected module (the core is drawn
           // white in the branch above); a pulse arrival no longer whitens it
-          ctx.fillStyle = isSelectedActive ? (isDayMode ? '#6d28d9' : '#ffffff') : ACCENT;
+          ctx.fillStyle = isSelectedActive ? (isDayMode ? '#6d28d9' : '#ffffff') : (node.glow || ACCENT);
           ctx.fill();
         } else {
           // Satellite subnodes - Continuous smooth alpha-blended transition for energy flash (no branch popping!)
           let baseColor = node.color || (isDayMode ? 'rgba(160, 150, 135, 0.55)' : 'rgba(120, 110, 95, 0.45)');
           
-          if (node.isPurple) {
-            baseColor = isSatelliteOfActive 
-              ? (isDayMode ? '#7c3aed' : '#c4b5fd') 
-              : '#8b5cf6';
-          } else if (isSatelliteOfActive) {
-            baseColor = isDayMode ? 'rgba(180, 150, 60, 0.9)' : 'rgba(235, 214, 125, 0.9)';
+          if (isSatelliteOfActive) {
+            baseColor = node.glow || 'rgba(235, 214, 125, 0.9)';
+          } else if (node.isPurple) {
+            baseColor = node.color || '#8b5cf6';
           }
           
           if (flash > 0.005) {
