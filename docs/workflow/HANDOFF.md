@@ -147,10 +147,10 @@ giorni diversi e sono incompatibili fra loro.
 
 ## 8. Voci ancora aperte da prima di questa sessione
 
-1. **5 cover degli effetti** — l'operatore le sta finendo. Wiring già pronto:
-   basta mettere il file in `public/assets/covers/<ModuleId>.{webp,png,jpg}`
-   (ModuleId: `analog`, `anamorphic_lab`, `blob_reveal`, `blob_tracker`,
-   `bokeh`) e la card lo mostra sotto uno scrim, senza modifiche al codice.
+1. ~~**5 cover degli effetti**~~ — **CHIUSA il 2026-07-29.** Tutte e cinque sono
+   in `public/assets/covers/` (`analog`, `anamorphic_lab`, `blob_reveal`,
+   `blob_tracker`, `bokeh`), ritagliate dagli screenshot dell'operatore, e le due
+   domande aperte (altezza card, 5ª cover) le ha chiuse lui. Non riaprirla.
 2. **Pass performance ≥30fps@720p** — va fatto sulla SUA macchina con GPU (sotto
    sandbox SwiftShader gira a 1–2fps, non è valutabile). È self-service: AI Lab →
    catena a 5 effetti → clip 720p → leggere i badge FPS / RES%. L'engine fa già

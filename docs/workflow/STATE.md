@@ -19,26 +19,42 @@ meter — all implemented and verified. The **5 effect-card covers are now IN**
 **One item is left, and it is hardware-dependent: the ≥30fps@720p perf pass**
 (GPU machine). The checkbox stays unchecked until that lands.
 
-**⇒ A NEW SESSION MUST READ `docs/workflow/HANDOFF-CAGE.md` FIRST** — the live
-piece of work is the operator's "cage" redesign, at preview stage with nothing
-implemented and their approval still pending. Then `docs/workflow/HANDOFF.md`
+**⇒ PROGETTO IN PAUSA dal 2026-07-31 — leggi "Next step" qui sotto prima di
+qualunque cosa.** L'operatore è soddisfatto esteticamente, ha provato l'app in
+locale e ha chiuso dicendo che ci tornerà. La "gabbia" resta a stadio preview,
+niente implementato, approvazione mai data. Il contesto completo è in
+`docs/workflow/HANDOFF-CAGE.md`. Poi `docs/workflow/HANDOFF.md`
 (rewritten 2026-07-28: current visual state after the
 revert, the operator's mandatory process, everything measured about material,
 lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
-**IN CORSO: il redesign "gabbia".** L'operatore ha consegnato un artwork e ha
-chiesto di riadattarci dentro tutta l'app. Siamo a **stadio preview: zero codice
-applicativo modificato**, **dodici** giri di correzioni tutti recepiti, e **manca
-solo il suo via**. L'ultimo giro (12) corregge l'angolo in basso a destra di giorno:
-si accende **intero**, e il bordo esterno della gabbia non si keya più — le due cose
-che aveva cerchiato in rosso e in verde. Da guardare:
-`docs/design/frame/preview-round12-{day,night}.webp`. Tutto — spec accumulata,
-geometria misurata, trappole, piano di implementazione, tooling — è in
-**`docs/workflow/HANDOFF-CAGE.md`**. Non implementare prima della sua approvazione:
-`CODEX_WORKFLOW.md` lo vieta ed è esattamente ciò che ha causato il revert del
-2026-07-28.
+**PROGETTO IN PAUSA — deciso dall'operatore il 2026-07-31.** *"Forse non c'è
+bisogno di continuare perché almeno esteticamente sono soddisfatto."* Ha poi
+avviato l'app sulla sua macchina (MacBook Pro M1, 8GB) — **"ok funziona"** — e ha
+chiuso: *"ci tornerò più avanti."*
+
+**Non ripartire da solo.** Quando riapre, la prima domanda è **quale dei due
+tronconi vuole**, perché sono indipendenti:
+
+1. **La gabbia — ferma a stadio preview, dodici giri, zero codice applicativo
+   modificato.** L'ultimo giro (12) ha corretto l'angolo in basso a destra di
+   giorno: si accende **intero**, e il bordo esterno della gabbia non si keya più —
+   le due cose che aveva cerchiato in rosso e in verde. Da fargli guardare:
+   `docs/design/frame/preview-round12-{day,night}.webp`. Tutto — spec accumulata,
+   geometria misurata, trappole, piano in 5 commit, tooling — è in
+   **`docs/workflow/HANDOFF-CAGE.md`**. **Non implementare prima della sua
+   approvazione esplicita**: `CODEX_WORKFLOW.md` lo vieta ed è esattamente ciò che
+   ha causato il revert del 2026-07-28. Nota per chi implementerà:
+   `tools/verify/verify-ui-gel-pass.js` va **riscritto**, non fatto passare —
+   asserisce il gel slab che quel lavoro rimuove (41 assertion rosse per design).
+2. **Il pass performance ≥30fps@720p — ancora aperto.** L'unico item di roadmap
+   non spuntato. Ha avviato l'app ma **non ha riportato i numeri**, quindi la
+   verifica non è stata fatta. È self-service e dura cinque minuti sulla sua
+   macchina: AI Lab → catena a 5 effetti → clip 720p → leggere i badge **FPS** e
+   **RES%**. Accettazione: `fps ≥ 30` **e** `RES% < 100` (ambra). In sandbox non è
+   valutabile (SwiftShader, 1–2 fps): serve la sua GPU.
 
 Sotto, lo stato precedente resta valido per tutto il resto dell'app.
 
