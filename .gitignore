@@ -9,3 +9,4 @@ coverage/
 
 # verify scripts write screenshots here when SCRATCH is left unset
 __SCRATCH__/
+tools/frame/out/

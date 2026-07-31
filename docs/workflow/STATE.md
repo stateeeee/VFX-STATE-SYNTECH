@@ -19,12 +19,24 @@ meter — all implemented and verified. The **5 effect-card covers are now IN**
 **One item is left, and it is hardware-dependent: the ≥30fps@720p perf pass**
 (GPU machine). The checkbox stays unchecked until that lands.
 
-**⇒ A fresh session should read `docs/workflow/HANDOFF.md` — rewritten
-2026-07-28 as a complete continuation brief** (current visual state after the
+**⇒ A NEW SESSION MUST READ `docs/workflow/HANDOFF-CAGE.md` FIRST** — the live
+piece of work is the operator's "cage" redesign, at preview stage with nothing
+implemented and their approval still pending. Then `docs/workflow/HANDOFF.md`
+(rewritten 2026-07-28: current visual state after the
 revert, the operator's mandatory process, everything measured about material,
 lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
+
+**IN CORSO: il redesign "gabbia".** L'operatore ha consegnato un artwork e ha
+chiesto di riadattarci dentro tutta l'app. Siamo a **stadio preview: zero codice
+applicativo modificato**, dieci giri di correzioni tutti recepiti, e **manca solo
+il suo via**. Tutto — spec accumulata, geometria misurata, trappole, piano di
+implementazione, tooling — è in **`docs/workflow/HANDOFF-CAGE.md`**. Non
+implementare prima della sua approvazione: `CODEX_WORKFLOW.md` lo vieta ed è
+esattamente ciò che ha causato il revert del 2026-07-28.
+
+Sotto, lo stato precedente resta valido per tutto il resto dell'app.
 
 **La UI è allo stato approvato dall'operatore (revert del 2026-07-28), più il
 meter audio a due colonne chiesto subito dopo.** Non toccare l'estetica senza una
@@ -42,6 +54,42 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-07-31 — La "gabbia": dieci giri di preview, niente codice, handoff
+
+L'operatore ha consegnato il suo artwork — una gabbia di bolle con aperture
+irregolari — e ha chiesto: *"tenere tutte le funzioni del app ma anziche avere una
+interfaccia comune vorrei che fosse riadattata al immagine… non voglio piu led
+colorati che dividono le sezioni"*, con la richiesta esplicita di **vedere prima
+una foto**: *"generami una foto per capire prima di farti lavorare come viene"*.
+
+Dieci giri di preview, tutti consegnati come composito dell'app vera sotto la
+gabbia. **Nessuna riga di codice applicativo è stata cambiata**: l'unica cosa
+toccata è stata una patch temporanea a `VfxCanvas.tsx` per fotografare il grafo,
+annullata ogni volta. Manca solo il via dell'operatore.
+
+- **Tutto il lavoro è ora nel repo** (era nello scratchpad, che è effimero):
+  `docs/design/frame/` (l'artwork, la mappa delle aperture, i due preview
+  approvati), `tools/frame/` (il generatore della maschera + geometria, lo script
+  di preview, il check delle zone, la patch temporanea del grafo).
+- **`docs/workflow/HANDOFF-CAGE.md`** raccoglie la spec accumulata (22 punti), il
+  contratto geometrico, **nove trappole** con sintomo e causa, le domande aperte e
+  il piano in cinque commit.
+- **La geometria è misurata, non stimata**: flood-fill delle aperture, maschera
+  sfumata per il contorno (la versione binaria dava una linea seghettata),
+  rettangolo adattato a ogni apertura ignorando gli angoli, cerchio inscritto dove
+  serve un cerchio.
+- **Color grade sulla gabbia**: esposizione +8%, contrasto +12%, **vividezza** +30%
+  pesata su `(1 - saturazione)`.
+- **Le due trappole che sono costate di più, entrambe della stessa famiglia:** uno
+  script che si rompeva **prima** delle scritture su disco, e un preview che
+  leggeva la maschera **dal disco** — per tre giri le modifiche venivano calcolate
+  e buttate via mentre sembravano applicate. Si sono trovate misurando i pixel, non
+  guardando le foto. Regola che resta: *il reporting non deve mai fare da gate
+  all'output*, e *misura, non strizzare gli occhi*.
+- **Da sapere prima di implementare:** `verify-ui-gel-pass.js` va **riscritta** —
+  pretende la lastra gel che stiamo togliendo, quindi le sue 41 asserzioni
+  diventerebbero rosse per progetto, non per regressione.
 
 ### 2026-07-29 — Le 5 cover degli effetti, tagliate dagli screenshot dell'operatore
 
