@@ -48,7 +48,8 @@ const HOLES = JSON.parse(fs.readFileSync(__dirname + '/holes.json', 'utf8'));
       /* The bed is BLACK in both themes. In day mode each panel's opening gets its
          own light backdrop behind the frame, so the panel's surface fills the whole
          organic hole — while the EMPTY openings (the one beside the effects column,
-         next to the orange stars, and the video corner) stay black, as at night. */
+         next to the orange stars) stay black, as at night. The bottom-right corner
+         lights up whole: it is the raw-video reference, not an empty opening. */
       const bed = '#000000';
       const surface = day ? 'rgb(251, 250, 247)' : '#000000';
       for (const el of [document.documentElement, document.body, root]) el.style.background = bed;
@@ -67,8 +68,8 @@ const HOLES = JSON.parse(fs.readFileSync(__dirname + '/holes.json', 'utf8'));
       };
       window.__backdrops = [];
       if (day) {
-        /* The video corner's openings light up like a panel (operator's red rings);
-           the opening beside the effects column does not — it stays black. */
+        /* The video corner lights up like a panel (the operator's red ring); the
+           opening beside the effects column does not — it stays black. */
         for (const b of [...Object.values(holes.boxes), ...(holes.videoBoxes || [])]) {
           window.__backdrops.push(b);
           const el = document.createElement('div');
@@ -204,13 +205,15 @@ const HOLES = JSON.parse(fs.readFileSync(__dirname + '/holes.json', 'utf8'));
         window.__railGrey = grey;
       }
 
-      // ── the bottom-right openings become the RAW VIDEO reference ────────────
+      // ── the bottom-right opening becomes the RAW VIDEO reference ────────────
       {
         const vid = document.createElement('div');
-        /* Widened past the opening on every side: a rect edge that falls INSIDE a
-           hole shows as a straight cut through the art, so the plane has to end on
-           material, where the frame hides it. */
-        const r = { x: 0.655, y: 0.838, w: 0.345, h: 0.162 };
+        /* The opening's own bounding box, measured by build-frame — never typed by
+           hand. A rect edge that falls INSIDE a hole shows as a straight cut through
+           the art (it did: the corner read as a black rectangle sliced off at
+           y=0.838); a bounding box cannot, because each of its edges rests on the
+           opening's outermost pixel, where the material takes over. */
+        const r = holes.videoBoxes[0];
         Object.assign(vid.style, {
           position: 'fixed', left: `${r.x * W}px`, top: `${r.y * H}px`,
           width: `${r.w * W}px`, height: `${r.h * H}px`, zIndex: '2',
@@ -288,7 +291,8 @@ const HOLES = JSON.parse(fs.readFileSync(__dirname + '/holes.json', 'utf8'));
       const tracks = [...document.querySelectorAll('[data-testid^="audio-meter-track"]')].map((t) => {
         const r = t.getBoundingClientRect(); return `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`;
       });
-      const probePt = document.elementFromPoint(Math.round(W * 0.847), Math.round(H * 0.832));
+      const vb = holes.videoBoxes[0];
+      const probePt = document.elementFromPoint(Math.round((vb.x + vb.w / 2) * W), Math.round((vb.y + vb.h / 2) * H));
       return { violetFollows, nBackdrops: window.__backdrops.length, atVideo: probePt ? `${probePt.tagName}.${(probePt.className || '').toString().slice(0, 40)}` : 'none', meter: mEl ? `${Math.round(mr.x)},${Math.round(mr.y)} ${Math.round(mr.width)}x${Math.round(mr.height)}` : 'GONE', tracks };
     }, { holes: HOLES, pick, day: !!day });
 

@@ -30,11 +30,15 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 **IN CORSO: il redesign "gabbia".** L'operatore ha consegnato un artwork e ha
 chiesto di riadattarci dentro tutta l'app. Siamo a **stadio preview: zero codice
-applicativo modificato**, dieci giri di correzioni tutti recepiti, e **manca solo
-il suo via**. Tutto — spec accumulata, geometria misurata, trappole, piano di
-implementazione, tooling — è in **`docs/workflow/HANDOFF-CAGE.md`**. Non
-implementare prima della sua approvazione: `CODEX_WORKFLOW.md` lo vieta ed è
-esattamente ciò che ha causato il revert del 2026-07-28.
+applicativo modificato**, **dodici** giri di correzioni tutti recepiti, e **manca
+solo il suo via**. L'ultimo giro (12) corregge l'angolo in basso a destra di giorno:
+si accende **intero**, e il bordo esterno della gabbia non si keya più — le due cose
+che aveva cerchiato in rosso e in verde. Da guardare:
+`docs/design/frame/preview-round12-{day,night}.webp`. Tutto — spec accumulata,
+geometria misurata, trappole, piano di implementazione, tooling — è in
+**`docs/workflow/HANDOFF-CAGE.md`**. Non implementare prima della sua approvazione:
+`CODEX_WORKFLOW.md` lo vieta ed è esattamente ciò che ha causato il revert del
+2026-07-28.
 
 Sotto, lo stato precedente resta valido per tutto il resto dell'app.
 
@@ -54,6 +58,43 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-07-31 — Gabbia, giro 12: l'angolo in basso a destra si accende intero
+
+L'operatore ha annotato il preview **di giorno**: in **rosso** un rettangolo nero
+che dovrebbe essere bianco, in **verde** i pezzi bianchi che dovrebbero essere neri.
+*"La versione di notte è perfetta."* Le due annotazioni sono **lo stesso errore**,
+non due: il piano acceso di giorno nell'angolo era un rettangolo scritto a mano
+(`x 0.655, y 0.838, w 0.345, h 0.162`) sopra la sola striscia bassa.
+
+- **Il rettangolo nero** era l'apertura tagliata in due: il bordo superiore del
+  piano cadeva **dentro** il buco, a `y=0.838`, e sotto quella riga tutto si
+  accendeva mentre sopra restava nero. È il taglio dritto della trappola §4.5 —
+  l'operatore ha disegnato il suo rettangolo esattamente lungo quella riga.
+- **I pezzi bianchi** erano il contorno esterno della gabbia: era **keyato** (meno
+  un rim di 14px) per riuscire ad accendere l'angolo. Così però ogni backdrop che
+  sporgeva dalla sua apertura filtrava tra le bolle del bordo basso e del margine
+  destro. Il bordo esterno **non è un'apertura, è materiale**: ora non si keya più.
+- **L'angolo è una sola apertura** (R[5]: lobo alto, lobo tondo a destra, sventaglio
+  fino allo spigolo) e si accende **intera**, dal bounding box misurato della
+  regione — mai più scritto a mano. Un bounding box non può tagliare la sua apertura:
+  ogni suo lato poggia sul pixel più esterno della regione.
+- **Verificato, non guardato.** `tools/frame/check-zones.cjs` è stato riscritto:
+  legge i due preview e asserisce il contratto in **14 check** — l'angolo acceso di
+  giorno e nero di notte, **ogni zona di materiale identica al bit tra giorno e
+  notte** (`|diff| = 0.00` su tutte e sette), e nessuna banda scura lungo le colonne
+  dell'angolo (la canarina del taglio dritto: stampa la riga dove lo trova). Esce
+  con codice ≠ 0 se fallisce. Sui preview del giro 11 fa **6/14**, e la canarina
+  indica `y=0.838`: il tool è noto fallire sullo stato che l'operatore ha rifiutato.
+  Sul giro 12 fa **14/14**.
+- **La notte resta quella approvata**: l'unica cosa che la tocca è il bordo esterno
+  che riprende il proprio artwork al posto del letto nero. Sono pixel scuri per
+  costruzione (soglia del flood-fill 26, e il grade li scurisce ancora): misurato,
+  un +6/255 sui margini, nient'altro si muove.
+- Preview del giro nel repo: `docs/design/frame/preview-round12-{day,night}.webp`.
+  I due `preview-approved-*.webp` restano il giro 11 finché non arriva il suo via.
+- **Sempre stadio preview: zero codice applicativo modificato.** Toccati solo
+  `tools/frame/` e i documenti.
 
 ### 2026-07-31 — La "gabbia": dieci giri di preview, niente codice, handoff
 

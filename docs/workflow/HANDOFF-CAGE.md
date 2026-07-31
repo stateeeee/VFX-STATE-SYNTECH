@@ -8,9 +8,15 @@
 
 The operator delivered an artwork — a bubble/nebula **cage** with irregular
 openings — and asked that the app be re-adapted to live inside it, keeping every
-feature, with the coloured "LED" gel between the sections gone. Over ten rounds of
+feature, with the coloured "LED" gel between the sections gone. Over eleven rounds of
 preview they refined it down to the state in
-`docs/design/frame/preview-approved-day.webp` and `preview-approved-night.webp`.
+`docs/design/frame/preview-approved-day.webp` and `preview-approved-night.webp`;
+round 12 corrects the day treatment of the bottom-right corner and is in
+`preview-round12-day.webp` / `-night.webp`. Night still reads as they approved it:
+the only thing that reaches it is the outer rim getting its own artwork back
+instead of the black bed behind it — those pixels are dark by construction
+(the flood-fill's threshold is 26, and the grade darkens them further), so the
+measured lift is ~6/255 on the margins and nothing else moves.
 Each round was a composite: the running app, its sections positioned into the
 cage's openings, with the keyed cage laid over the screenshot. **The app itself was
 never modified** — the only code touched was a temporary patch to `VfxCanvas.tsx`
@@ -52,8 +58,11 @@ specification to build against.
    → node panel and Gemini panel.
 8. **Bottom-right corner → the raw-video reference.** The clip plays there without
    effects, as a permanent A/B against the processed hero. One plane behind the
-   cage; the cage itself masks it into the corner's shapes. **Empty = the theme's
-   surface, never a placeholder image.**
+   cage; the cage itself masks it into the corner's shape. **Empty = the theme's
+   surface, never a placeholder image.** The corner is *one* opening — an S-shaped
+   blob: an upper lobe, a round lobe right of it, and a sweep down to the bottom
+   corner — and the plane is that opening's bounding box, so no edge of it can fall
+   inside the hole (round 12; see §4.4).
 
 ### Day / night
 9. **Night is the classic look**: every surface black. The bed behind the cage is
@@ -62,8 +71,15 @@ specification to build against.
     own **warm ivory** (`#fbfaf7`) backdrop behind the cage. That way the panel's
     surface fills its whole organic hole (no black rim around each section — the
     operator rejected that) while **empty openings stay black**, as at night.
-11. **Exception**: the low strip of the bottom-right corner (the video area) **does**
-    light up by day. The two shapes above it stay black.
+11. **Exception**: the bottom-right corner (the video area) **does** light up by day
+    — the whole opening, top to bottom.
+    *Corrected in round 12.* It had been read the other way round: only the low
+    strip lit, the shapes above it black. The operator ringed that upper black area
+    in red ("should be white") and the pale specks along the bottom and right
+    margins in green ("should be black"). Both came from the same mistake — the
+    lit plane was a hand-typed window over the low strip, so its top edge cut the
+    opening in two at y=0.838 (the "black rectangle") while its skirt lit the outer
+    rim (the "white pieces"). The opening's own bounding box fixes both.
 12. Day mode also needs: the hero's `bg-gradient-to-br` scrim **off** (see trap §4.2),
     the hero strapline darkened, and the effect covers **keyed** (black → transparent)
     so they don't read as five black rectangles on a light card.
@@ -97,10 +113,9 @@ specification to build against.
 Nothing here was eyeballed. `tools/frame/build-frame.cjs`:
 
 1. **Flood-fills the artwork's dark regions** → the openings. The outer rim
-   flood-fills as one region touching all four edges; it is keyed too, but a
-   **14px RIM** near the image border is kept so the cage keeps its dark outline.
-   (Before that, the bottom-right corner could never be lit — it was opaque black
-   material, not an opening. See trap §4.4.)
+   flood-fills as one region touching all four edges: that one is **not** keyed —
+   it is the cage's own material and stays opaque, so a backdrop can only ever show
+   through a real opening. (It was keyed once, minus a 14px rim. See trap §4.4.)
 2. **Blurs that mask (3px) and reads the ramp** — alpha follows `1 - m`, and the
    contour is painted where the ramp crosses the middle. Antialiased, follows the
    organic curve.
@@ -129,11 +144,21 @@ relies on it, must darken.
 panel doesn't cover shows the bed. Bed and panel must be the same colour, or the
 opening must get its own backdrop.
 
-**4.4 Not every black area is an opening.** The artwork's outer rim is opaque black
-material that flood-fills as one huge region. Any backdrop behind it is invisible.
+**4.4 Not every black area is an opening — and the fix for that was worse than the
+bug.** The artwork's outer rim is opaque black material that flood-fills as one huge
+region running the whole bottom band and both side margins; a backdrop behind it is
+invisible. It was keyed (minus a 14px rim) to force the bottom-right corner to light.
+That was the wrong target: the corner is R[5], a real opening, and it needed no help.
+What the keying did instead was turn the rim into a leak — every day backdrop that
+overhung its opening showed through the bubbles as pale specks, along the bottom edge
+and down the right margin. **Key openings only.** Then day and night are byte-identical
+everywhere the cage is material, which is what `check-zones.cjs` now asserts.
 
 **4.5 A rect that ends inside an opening shows as a straight cut** through the art.
-Backdrop planes must end on material, where the cage hides them.
+Backdrop planes must end on material, where the cage hides them. **An opening's own
+bounding box always satisfies this** — each edge rests on the region's outermost
+pixel — so take the box from the region, never from a hand-typed guess. The corner's
+hand-typed window is exactly the cut the operator ringed in red.
 
 **4.6 Reporting must never gate output.** A `console.log` loop crashed three times
 on a newly added key — and it ran **before** the writes, so `holes.json` and the
@@ -155,8 +180,9 @@ Move an element out of the flow before filtering by size.
 ## 5. Open questions
 
 - **Approval to implement.** Nothing else is blocking.
-- The bottom-right corner's exact split (which sub-shapes light by day) was set by
-  measurement against their red/blue annotations; re-check after the first build.
+- ~~The bottom-right corner's exact split (which sub-shapes light by day).~~
+  Closed in round 12: there is no split. The corner is one opening and it lights
+  whole; nothing outside it ever lights. See §2.11 and §4.4.
 - Day-mode effect covers read pale on ivory — they are art made for black. If day
   mode becomes a mode they actually use, consider dedicated covers.
 
@@ -196,9 +222,14 @@ git checkout src/components/VfxCanvas.tsx                      # ALWAYS
 NODE_PATH=/opt/node22/lib/node_modules node tools/frame/check-zones.cjs
 ```
 
-Outputs land in `tools/frame/out/` (gitignored). `check-zones.cjs` measures the
-three zones the operator called out — the expected values are black, black, ivory.
+Outputs land in `tools/frame/out/` (gitignored). `check-zones.cjs` reads both
+previews and asserts the day/night contract in 14 checks — the corner opening lit
+whole by day and black at night, every material zone byte-identical between the two
+themes, and no dark band down the corner's columns (the straight-cut canary, which
+names the row it found). It exits non-zero on failure. Against the round-11 previews
+it scores 6/14, so it is known to fail on the state the operator rejected.
 
 Sources: `docs/design/frame/cage.webp` is their artwork, untouched;
 `app-before.webp` is the app as it was; `holes-map.webp` shows the detected
-openings; the two `preview-approved-*.webp` are the state they last saw.
+openings; `preview-approved-*.webp` is the round-11 state, and
+`preview-round12-*.webp` is the current one, awaiting their word.

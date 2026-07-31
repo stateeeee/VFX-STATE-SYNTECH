@@ -73,18 +73,15 @@ const VW = 1600, VH = Math.round(1600 / 1.679);
     for (const r of regions) { if (!isBorder(r)) for (const p of r.px) hole[p] = 1; }
 
     /* The artwork's outer black rim flood-fills as ONE region that touches all four
-       edges, and it reaches deep into the bottom-right corner — which is why that
-       corner stayed black whatever backdrop was put behind it: it was never an
-       opening at all, it was opaque black material. Key that region too, but keep a
-       RIM of pixels near the image border so the cage still has its dark outline. */
-    const RIM = 14;
-    for (const r of regions) {
-      if (!isBorder(r)) continue;
-      for (const p of r.px) {
-        const x = p % W, y = (p - x) / W;
-        if (x >= RIM && y >= RIM && x < W - RIM && y < H - RIM) hole[p] = 1;
-      }
-    }
+       edges, running the whole bottom band and both side margins. It is NOT keyed:
+       it is the cage's own material, and it stays opaque.
+       (It was keyed once — minus a 14px rim — on the theory that the bottom-right
+       corner was solid black material that could never be lit. It is not: the corner
+       is R[5], a real opening, and it is what hosts the raw-video reference. Keying
+       the border made every day backdrop leak through the bottom band and the right
+       margin as pale speckles between the bubbles — the white pieces the operator
+       ringed. With the border opaque, a backdrop can only ever show through a real
+       opening, which is the whole contract.) */
 
     const mc = document.createElement('canvas'); mc.width = W; mc.height = H;
     const mg = mc.getContext('2d', { willReadFrequently: true });
@@ -266,14 +263,17 @@ const VW = 1600, VH = Math.round(1600 / 1.679);
           nodes: bbox(R[2]),
           gemini: bbox(R[3]),
         },
-        /* The three openings in the bottom-right corner: they host the raw-video
-           reference, and by day they light up like a panel — unlike the opening
-           beside the effects column, which stays black. */
-        /* Only the LOW strip of the bottom-right corner lights up by day (the
-           operator ringed it in blue); the two shapes above it stay black. Whole
-           regions are the wrong unit here — the corner reads as several openings
-           but flood-fills as one diagonal blob, so this is a window over it. */
-        videoBoxes: [{ x: 0.655, y: 0.838, w: 0.345, h: 0.162 }],
+        /* The bottom-right corner opening — R[5], one S-shaped blob: an upper lobe,
+           a round lobe to its right, and a sweep running down to the bottom corner.
+           It hosts the raw-video reference and by day it lights up like a panel,
+           WHOLE — unlike the opening beside the effects column, which stays black.
+           Its bounding box is the right unit: every edge of it rests on the region's
+           outermost pixel, so no edge can cut across the opening, and with the
+           border region opaque nothing else inside the box is keyed. (A hand-typed
+           window over the low strip was tried and is what the operator rejected: its
+           top edge sliced the corner in two — the straight cut at y=0.838 they
+           ringed in red — and its skirt lit the bottom rim.) */
+        videoBoxes: [bbox(R[5])],
         _spare: {
         },
         paletteCircle: inscribeCircle(R[5].px),
