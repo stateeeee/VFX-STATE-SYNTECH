@@ -1,24 +1,20 @@
 import express from "express";
 import path from "path";
-import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
+
+/* The AI behind these endpoints is pluggable: Groq if GROQ_API_KEY is set,
+   Gemini if GEMINI_API_KEY is, and offline fallbacks if neither. The endpoints
+   below are written against `generate` and never name a provider — see
+   ai-provider.ts. Every catch block here IS the no-key path, and it is why the
+   app has never needed a key to work. */
+import { generate, parseJson, describeProvider } from "./ai-provider";
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
-
-// Initialize Google Gen AI with named key configuration and proper telemetry headers
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    }
-  }
-});
 
 // AI Oracle endpoint for multi-turn conversational intelligence
 app.post("/api/gemini/chat", async (req, res) => {
@@ -52,29 +48,22 @@ FORMAT RULES:
 - Keep responses concise, scannable, and highly relevant.
 - IMPORTANT: If you suggest changes to parameters, format them nicely. If you suggest specific values for the current active module, you can optionally include a line with JSON formatting like: \`PRESET:{"threshold":96,"datamosh":18}\` using ONLY keys that exist in the Parameters listed above, so the user can apply them instantly. Each parameter entry includes its own "min"/"max" range and a "hint" describing what it controls — every value you suggest MUST lie within that parameter's range (ranges differ per parameter), and parameters hinted as "(on/off switch)" accept only 0 or 1.`;
 
-    // Map message history to standard GenAI parts format
     const formattedContents = [
       ...(history || []).map((msg: any) => ({
-        role: msg.role === "user" ? "user" : "model",
-        parts: [{ text: msg.text }]
+        role: msg.role === "user" ? "user" : "model" as const,
+        text: msg.text,
       })),
-      {
-        role: "user",
-        parts: [{ text: message }]
-      }
+      { role: "user" as const, text: message },
     ];
 
-    // Generate response using gemini-3.5-flash
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const response = await generate({
+      tier: "fast",
+      systemInstruction,
       contents: formattedContents,
-      config: {
-        systemInstruction,
-        temperature: 0.75,
-      }
+      temperature: 0.75,
     });
 
-    const replyText = response.text || "I was unable to retrieve a response from the neural nodes.";
+    const replyText = response.text;
     
     // Check if replyText contains a parameter preset suggestion
     let presetMatch = replyText.match(/PRESET:({.*?})/);
@@ -135,18 +124,13 @@ Available node IDs are: "blob_tracker", "analog", "blob_reveal", "bokeh", "anamo
 Return a JSON object with a list of nodes to ENABLE and nodes to DISABLE to achieve the user request.
 Example: {"enable": ["analog", "blob_tracker"], "disable": ["bokeh"]}`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        systemInstruction,
-        
-        responseMimeType: "application/json"
-      }
+    const response = await generate({
+      tier: "pro",
+      systemInstruction,
+      contents: [{ role: "user", text: prompt }],
+      json: true,
     });
-    const replyText = response.text?.trim() || "{}";
-    const cleanedJson = replyText.replace(/```json/g, "").replace(/```/g, "").trim();
-    const result = JSON.parse(cleanedJson);
+    const result = parseJson(response.text);
     res.json({ result, message: "Applied automated workflow edits based on your request." });
   } catch (error: any) {
     res.json({ result: {}, message: "Agent encountered a local sensor error.", isFallback: true });
@@ -159,14 +143,12 @@ app.post("/api/gemini/analyze-video", async (req, res) => {
   try {
     let systemInstruction = `You are a video analysis AI. The user has uploaded or selected a video named "${videoName}". 
 Provide a brief, high-level analysis of what you detect in this type of video and how the active Nodal Composition could be optimized for it.`;
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: [{ role: "user", parts: [{ text: "Analyze the video context." }] }],
-      config: {
-        systemInstruction,
-      }
+    const response = await generate({
+      tier: "pro",
+      systemInstruction,
+      contents: [{ role: "user", text: "Analyze the video context." }],
     });
-    res.json({ analysis: response.text?.trim() });
+    res.json({ analysis: response.text });
   } catch (error: any) {
     res.json({ analysis: "Offline telemetry: Action sequence detected. Optimize buffer speeds.", isFallback: true });
   }
@@ -198,19 +180,15 @@ CURRENT PARAMETERS: ${JSON.stringify(parameters)}`;
       systemInstruction += `\n\nCRITICAL USER DIRECTION: The operator has requested the following visual theme/guideline: "${prompt}". You MUST calibrate the parameters strictly to match this style.`;
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: [{ role: "user", parts: [{ text: "Generate the optimized parameter JSON" }] }],
-      config: {
-        systemInstruction,
-        temperature: 0.4,
-        responseMimeType: "application/json"
-      }
+    const response = await generate({
+      tier: "fast",
+      systemInstruction,
+      contents: [{ role: "user", text: "Generate the optimized parameter JSON" }],
+      temperature: 0.4,
+      json: true,
     });
 
-    const replyText = response.text?.trim() || "{}";
-    const cleanedJson = replyText.replace(/```json/g, "").replace(/```/g, "").trim();
-    const result = JSON.parse(cleanedJson);
+    const result = parseJson(response.text);
 
     res.json({ preset: result });
   } catch (error: any) {
@@ -251,16 +229,14 @@ Describe what the wave forms and particles are expressing. Keep it elegant, dram
       systemInstruction += `\n\nUSER DIRECTION / FOCUS: The operator has requested you to focus on or incorporate the following idea: "${prompt}". Tailor your aesthetic analysis or design inspiration around this context.`;
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: [{ role: "user", parts: [{ text: "Perform live canvas aesthetic critique" }] }],
-      config: {
-        systemInstruction,
-        temperature: 0.85,
-      }
+    const response = await generate({
+      tier: "fast",
+      systemInstruction,
+      contents: [{ role: "user", text: "Perform live canvas aesthetic critique" }],
+      temperature: 0.85,
     });
 
-    res.json({ analysis: response.text?.trim() || "Obsidian nodes align. The stream spectrum is clean." });
+    res.json({ analysis: response.text || "Obsidian nodes align. The stream spectrum is clean." });
   } catch (error: any) {
     // Sci-fi aesthetic backup telemetry generator when upstream is busy, rate-limited, or unconfigured
 
@@ -309,6 +285,7 @@ const startServer = async () => {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server launched on port ${PORT} // Full-stack core ready.`);
+    console.log(describeProvider());
   });
 };
 

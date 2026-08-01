@@ -39,6 +39,11 @@ la vecchia interfaccia. Dodici giri di preview, poi una implementazione.
 1. **Il suo giudizio sull'app vera.** I preview erano compositi; questa è la cosa
    che gira. Se qualcosa non torna, si corregge da `tools/frame/` e si rigenera —
    nessun numero va toccato a mano.
+1b. **Groq con una chiave vera, da provare.** Il percorso è implementato e
+   verificato fino al confine di rete del sandbox, che blocca `api.groq.com`.
+   La prima risposta reale la vedrà lui: `GROQ_API_KEY` in `.env.local`, e la
+   riga di boot deve dire `AI provider: groq`. Se cade sul fallback, la causa è
+   nel log come `[ai:groq] ...`.
 2. **Il pass performance ≥30fps@720p — ancora aperto**, e ora conta di più: la
    gabbia aggiunge un'immagine a schermo intero con alpha, sopra tutto. In sandbox
    è costata il canary BPM (189 invece di 120) finché non le è stato dato un layer
@@ -71,6 +76,52 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-07-31 — Il dev server non partiva sul Mac; l'AI diventa sostituibile
+
+Due cose distinte, arrivate insieme.
+
+**Il blocco.** Sul MacBook dell'operatore `npm run dev` moriva con
+`getaddrinfo ENOTFOUND localhost` prima ancora di mettersi in ascolto. Non è
+l'app: **quel Mac non risolve `localhost`** — la riga `127.0.0.1 localhost` manca
+dal suo `/etc/hosts`. Vite però lo cerca comunque via DNS all'avvio
+(`getLocalhostAddressIfDiffersFromDNS`, che esiste per intercettare il cambio di
+ordinamento IPv6 di Node 17+), e quella `dns.lookup("localhost")` esplode.
+Verificato leggendo il bundle di Vite installato: `dep-Dm0c1Wj2.js:7058`, chiamata
+da `vite:client-inject` in `buildStart`, e **solo quando `server.host` è
+esattamente la stringa `"localhost"`**. Quindi `vite.config.ts` ora dichiara
+`host: '127.0.0.1'`: un IP letterale salta del tutto quel percorso. Express
+continua a fare bind su `0.0.0.0`, quindi nel browser `http://localhost:3000`
+funziona lo stesso. All'operatore va detto comunque di riparare `/etc/hosts`:
+rotto così gli romperà anche altri strumenti.
+
+**Il provider AI.** L'operatore ha chiesto di sostituire Gemini con Groq. Fatto
+in modo che non sia una sostituzione ma una **scelta**, nuovo `ai-provider.ts`:
+`GROQ_API_KEY` → Groq (formato OpenAI, una fetch), `GEMINI_API_KEY` → Gemini,
+nessuna delle due → `generate()` lancia subito e ogni endpoint cade sul proprio
+archivio offline. **Nessuna chiave è richiesta per niente che non sia AI**, come
+è sempre stato.
+- I cinque endpoint non nominano più un provider: passano tutti da `generate()`.
+- Modelli parametrizzati via env (`GROQ_MODEL_FAST/PRO`, `GEMINI_MODEL_FAST/PRO`):
+  un id rifiutato è una riga di `.env`, non una modifica al codice. Serviva,
+  perché `gemini-3.5-flash` / `gemini-3.1-pro-preview` erano cablati e non sono
+  verificati.
+- **`generate()` logga il fallimento una volta sola, per tutti.** I catch degli
+  endpoint inghiottivano l'errore e rispondevano dall'archivio: chiave sbagliata e
+  modello inesistente erano indistinguibili da "l'AI oggi è poetica". Ora esce
+  `[ai:groq] groq 401: ...` nel log del server, mai nel browser.
+- Il client Gemini è creato **pigramente**: era costruito all'import anche senza
+  chiave, ed è ciò che stampava due volte *"API key should be set..."* a ogni
+  avvio. Al suo posto una riga sola e azionabile.
+- `.env.example` riscritto: le due opzioni, i limiti del piano gratuito, e il
+  fatto che si può non mettere niente.
+
+**Verificato:** senza chiave → fallback su tutti gli endpoint, nessun 500. Con una
+chiave Groq finta → il provider viene scelto, la richiesta parte, l'errore emerge
+nel log e l'endpoint cade sul fallback. **Non verificata una risposta Groq vera:**
+`api.groq.com` non è nella allowlist di rete di questo sandbox (`403 Host not in
+allowlist`). Il percorso è provato fino al confine della rete, la risposta no —
+lo prova l'operatore sulla sua macchina. Lint pulito, cage 18/18.
 
 ### 2026-07-31 — La gabbia entra nell'app
 
