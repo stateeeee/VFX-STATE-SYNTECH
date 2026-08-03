@@ -1,0 +1,1925 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Guida alla tesi — Accademia di Brera, Nuove Tecnologie dell'Arte</title>
+<style>
+/* ============ PAGINA ============ */
+@page {
+  size: A4;
+  margin: 22mm 20mm 20mm 20mm;
+  @top-left {
+    content: string(parte);
+    font-family: "Liberation Sans", sans-serif;
+    font-size: 7.5pt;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #8a8394;
+    vertical-align: bottom;
+    padding-bottom: 4mm;
+  }
+  @top-right {
+    content: string(capitolo);
+    font-family: "Liberation Sans", sans-serif;
+    font-size: 7.5pt;
+    color: #8a8394;
+    vertical-align: bottom;
+    padding-bottom: 4mm;
+  }
+  @bottom-center {
+    content: counter(page);
+    font-family: "Liberation Sans", sans-serif;
+    font-size: 8.5pt;
+    color: #6d6578;
+    vertical-align: top;
+    padding-top: 5mm;
+  }
+}
+@page :first {
+  margin: 0;
+  @top-left { content: none; }
+  @top-right { content: none; }
+  @bottom-center { content: none; }
+}
+@page cover { margin: 0; @top-left{content:none} @top-right{content:none} @bottom-center{content:none} }
+
+/* ============ BASE ============ */
+* { box-sizing: border-box; }
+html {
+  font-family: "Bitstream Charter", "Charter", "DejaVu Serif", serif;
+  font-size: 10.2pt;
+  line-height: 1.52;
+  color: #1c1a20;
+  hyphens: auto;
+}
+body { margin: 0; }
+p { margin: 0 0 .62em 0; text-align: justify; }
+p.first { text-indent: 0; }
+strong { font-weight: bold; }
+em { font-style: italic; }
+a { color: #5b3fa8; text-decoration: none; }
+code, .mono { font-family: "DejaVu Sans Mono", monospace; font-size: .84em; }
+
+/* ============ COPERTINA ============ */
+.cover {
+  page: cover;
+  height: 297mm;
+  width: 210mm;
+  background: #14111c;
+  color: #efeaf7;
+  padding: 34mm 24mm 22mm 24mm;
+  page-break-after: always;
+  position: relative;
+}
+.cover .rule { width: 46mm; height: 3px; background: #8b5cf6; margin-bottom: 12mm; }
+.cover .kicker {
+  font-family: "Liberation Sans", sans-serif;
+  font-size: 8.5pt; letter-spacing: .22em; text-transform: uppercase;
+  color: #a99cc4; margin-bottom: 6mm; line-height: 1.7;
+}
+.cover h1 {
+  font-size: 33pt; line-height: 1.1; font-weight: normal;
+  margin: 0 0 8mm 0; letter-spacing: -.015em;
+}
+.cover h1 b { color: #b79aff; font-weight: normal; }
+.cover .sub {
+  font-size: 12pt; line-height: 1.5; color: #c9c0dd;
+  max-width: 118mm; margin-bottom: 16mm;
+}
+.cover .meta {
+  position: absolute; bottom: 22mm; left: 24mm; right: 24mm;
+  font-family: "Liberation Sans", sans-serif; font-size: 8.5pt;
+  color: #8d84a3; border-top: 1px solid #2e2740; padding-top: 5mm;
+  display: flex; justify-content: space-between;
+}
+.cover .toc-hint {
+  font-family: "Liberation Sans", sans-serif; font-size: 9pt;
+  color: #9b90b8; line-height: 1.9;
+}
+.cover .toc-hint span { color: #b79aff; }
+
+/* ============ TITOLI ============ */
+h2.parte {
+  string-set: parte content();
+  page-break-before: always;
+  font-family: "Liberation Sans", sans-serif;
+  font-size: 8.5pt; letter-spacing: .2em; text-transform: uppercase;
+  color: #8b5cf6; font-weight: bold;
+  margin: 0 0 2mm 0; padding-bottom: 2.5mm;
+  border-bottom: 2px solid #8b5cf6;
+  bookmark-level: 1; bookmark-label: content();
+}
+h3 {
+  string-set: capitolo content();
+  font-family: "Liberation Sans", sans-serif;
+  font-size: 15pt; line-height: 1.22; font-weight: bold;
+  color: #14111c; margin: 8mm 0 3mm 0;
+  page-break-after: avoid;
+  bookmark-level: 2; bookmark-label: content();
+}
+h2.parte + h3 { margin-top: 5mm; }
+h4 {
+  font-family: "Liberation Sans", sans-serif;
+  font-size: 10.5pt; font-weight: bold; color: #3d2f5c;
+  margin: 5.5mm 0 1.8mm 0; page-break-after: avoid;
+  bookmark-level: 3; bookmark-label: content();
+}
+h5 {
+  font-family: "Liberation Sans", sans-serif;
+  font-size: 9.3pt; font-weight: bold; color: #1c1a20;
+  margin: 4mm 0 1.2mm 0; page-break-after: avoid;
+}
+
+/* ============ INDICE ============ */
+.toc { page-break-after: always; }
+.reset-run { string-set: capitolo ""; }
+.toc ol { list-style: none; margin: 0; padding: 0; }
+.toc > ol > li { margin-top: 2.2mm; }
+.toc > ol > li:first-child { margin-top: 1mm; }
+.toc .p-line {
+  font-family: "Liberation Sans", sans-serif;
+  font-size: 7.4pt; letter-spacing: .16em; text-transform: uppercase;
+  color: #8b5cf6; font-weight: bold;
+  border-bottom: 1px solid #ded8e8; padding-bottom: .7mm; margin-bottom: 1mm;
+}
+.toc ol ol { margin: 0; }
+.toc ol ol li { margin: 0 0 .18mm 0; }
+.toc a { color: #1c1a20; display: block; font-size: 9.4pt; }
+.toc a::after {
+  content: " " leader('.') " " target-counter(attr(href), page);
+  color: #9a92a8; font-family: "Liberation Sans", sans-serif; font-size: 8.2pt;
+}
+.toc .n {
+  font-family: "Liberation Sans", sans-serif; font-size: 8.2pt;
+  color: #8b5cf6; font-weight: bold; display: inline-block; min-width: 6.4mm;
+}
+
+/* ============ BLOCCHI ============ */
+.box {
+  border: 1px solid #ded8e8; border-left: 3px solid #8b5cf6;
+  background: #faf8fd; padding: 4mm 5mm 3.4mm 5mm;
+  margin: 4mm 0; page-break-inside: avoid;
+}
+.box.warn { border-left-color: #c2410c; background: #fff8f4; border-color: #f0dcd0; }
+.box.key  { border-left-color: #15803d; background: #f5fbf7; border-color: #d4e9dc; }
+.box .lab {
+  font-family: "Liberation Sans", sans-serif; font-size: 7.4pt;
+  letter-spacing: .16em; text-transform: uppercase; font-weight: bold;
+  color: #8b5cf6; display: block; margin-bottom: 1.8mm;
+}
+.box.warn .lab { color: #c2410c; }
+.box.key .lab { color: #15803d; }
+.box p:last-child, .box ul:last-child, .box ol:last-child { margin-bottom: 0; }
+
+.badge {
+  font-family: "Liberation Sans", sans-serif; font-size: 6.6pt; font-weight: bold;
+  letter-spacing: .1em; text-transform: uppercase;
+  padding: .9mm 1.8mm; border-radius: 2px; vertical-align: .12em;
+  margin-right: 1.5mm; white-space: nowrap;
+}
+.badge.reg { background: #ede4ff; color: #5b3fa8; }
+.badge.prax { background: #e8eef7; color: #2c4a7c; }
+.badge.check { background: #fdeee2; color: #9a3412; }
+
+/* ============ LISTE ============ */
+ul, ol { margin: 0 0 .7em 0; padding-left: 5.2mm; }
+li { margin-bottom: .3em; text-align: justify; }
+ul.tight li, ol.tight li { margin-bottom: .12em; }
+ul.plain { list-style: none; padding-left: 0; }
+ul.plain > li { padding-left: 4.6mm; position: relative; }
+ul.plain > li::before {
+  content: "▸"; position: absolute; left: 0; color: #8b5cf6; font-size: .82em; top: .1em;
+}
+
+/* ============ TABELLE ============ */
+table {
+  width: 100%; border-collapse: collapse; margin: 3.5mm 0 4.5mm 0;
+  font-size: 8.8pt; page-break-inside: avoid;
+}
+th {
+  font-family: "Liberation Sans", sans-serif; font-size: 7.4pt;
+  letter-spacing: .1em; text-transform: uppercase; font-weight: bold;
+  text-align: left; color: #5b3fa8; background: #f4f0fb;
+  padding: 2.2mm 2.6mm; border-bottom: 1.5px solid #d8cdf0;
+}
+td {
+  padding: 2mm 2.6mm; border-bottom: .5px solid #e6e1ee; vertical-align: top;
+  text-align: left; line-height: 1.42;
+}
+tr:last-child td { border-bottom: none; }
+td.num { font-family: "Liberation Sans", sans-serif; white-space: nowrap; }
+table.zebra tr:nth-child(even) td { background: #faf9fc; }
+
+/* ============ ESEMPI BIBLIOGRAFICI ============ */
+.cit {
+  background: #f7f5fa; border-left: 2px solid #c8bce0;
+  padding: 2.6mm 3.4mm; margin: 2mm 0 3mm 0;
+  font-size: 9pt; line-height: 1.48;
+  page-break-inside: avoid;
+}
+.cit p { margin: 0 0 1.4mm 0; text-align: left; text-indent: -4mm; padding-left: 4mm; }
+.cit p:last-child { margin-bottom: 0; }
+.cit .t {
+  font-family: "Liberation Sans", sans-serif; font-size: 7.2pt;
+  letter-spacing: .1em; text-transform: uppercase; color: #7a719a;
+  display: block; margin-bottom: 1.6mm; text-indent: 0; padding-left: 0;
+}
+
+/* ============ SCHEMA INDICE ============ */
+.schema {
+  border: 1px solid #e0dae9; background: #fcfbfe;
+  padding: 4mm 5mm; margin: 3mm 0 4.5mm 0;
+  font-family: "Liberation Sans", sans-serif; font-size: 8.6pt; line-height: 1.55;
+  page-break-inside: avoid;
+}
+.schema .h {
+  font-size: 7.4pt; letter-spacing: .14em; text-transform: uppercase;
+  color: #8b5cf6; font-weight: bold; margin-bottom: 2.5mm;
+  border-bottom: 1px solid #e6e0f0; padding-bottom: 1.5mm;
+}
+.schema div.l0 { font-weight: bold; margin-top: 2mm; color: #14111c; }
+.schema div.l1 { padding-left: 6mm; color: #453d52; }
+.schema div.l2 { padding-left: 12mm; color: #6a627a; font-size: 8.2pt; }
+.schema .cc { color: #a099b0; font-style: italic; }
+
+.lead {
+  font-size: 10.6pt; line-height: 1.5; color: #443c52;
+  border-left: 2px solid #8b5cf6; padding-left: 4mm; margin: 0 0 5mm 0;
+}
+.lead p { text-align: left; }
+.lead p:last-child { margin-bottom: 0; }
+
+.kv { font-family: "Liberation Sans", sans-serif; font-size: 8.6pt; }
+.nowrap { white-space: nowrap; }
+.avoid { page-break-inside: avoid; }
+hr.sep { border: none; border-top: 1px solid #e6e1ee; margin: 6mm 0; }
+h4.newpage { page-break-before: always; margin-top: 0; }
+.src { font-size: 8.2pt; color: #6d6578; line-height: 1.45; }
+.src p { text-indent: -4mm; padding-left: 4mm; margin-bottom: 1.2mm; text-align: left; }
+</style>
+</head>
+<body>
+
+<!-- ================= COPERTINA ================= -->
+<section class="cover">
+  <div class="rule"></div>
+  <div class="kicker">Accademia di Belle Arti di Brera<br>Scuola di Nuove Tecnologie dell'Arte</div>
+  <h1>Come si fa<br>la <b>tesi</b>.</h1>
+  <div class="sub">
+    Guida completa alla prova finale del Diploma Accademico di Primo Livello:
+    regolamento, scadenze, struttura dell'indice, lunghezza, norme redazionali,
+    citazioni, progetto, discussione.
+  </div>
+  <div class="toc-hint">
+    <span>I.</span> Capire la prova finale &nbsp;·&nbsp;
+    <span>II.</span> Il calendario e il voto<br>
+    <span>III.</span> Anatomia della tesi &nbsp;·&nbsp;
+    <span>IV.</span> Norme redazionali<br>
+    <span>V.</span> Il progetto &nbsp;·&nbsp;
+    <span>VI.</span> Metodo e strumenti &nbsp;·&nbsp;
+    <span>VII.</span> Arrivare in fondo
+  </div>
+  <div class="meta">
+    <span>Documento di lavoro · agosto 2026</span>
+    <span>Da verificare in Segreteria Didattica</span>
+  </div>
+</section>
+
+<!-- ================= AVVERTENZA ================= -->
+<h2 class="parte">Avvertenza</h2>
+<h3>Come leggere questa guida</h3>
+
+<div class="lead">
+<p>Questa guida risponde a una domanda sola: <em>che cosa devo materialmente fare,
+e in che ordine, per produrre e discutere la tesi triennale a Brera.</em>
+Non riguarda il contenuto della tua ricerca — quello lo decidi tu con il relatore.</p>
+</div>
+
+<p>Le informazioni qui raccolte provengono da una ricerca su fonti pubbliche.
+Poiché non tutte hanno lo stesso peso, ogni affermazione importante è marcata:</p>
+
+<table class="zebra">
+<tr>
+  <td style="width:26mm"><span class="badge reg">Brera</span></td>
+  <td>Regola che risulta dal regolamento didattico e dalle pagine ufficiali
+  dell'Accademia di Brera. È vincolante. Va comunque riverificata (vedi sotto).</td>
+</tr>
+<tr>
+  <td><span class="badge prax">Prassi</span></td>
+  <td>Consuetudine accademica consolidata, condivisa dalle Accademie italiane e
+  dalla saggistica storico-artistica. Non è un obbligo formale, ma è quello che
+  la Commissione si aspetta di vedere.</td>
+</tr>
+<tr>
+  <td><span class="badge check">Verifica</span></td>
+  <td>Dato che cambia di anno in anno, o che ho trovato in due versioni
+  discordanti. <strong>Da confermare in Segreteria prima di agire.</strong></td>
+</tr>
+</table>
+
+<div class="box warn">
+<span class="lab">Limite di questa ricerca — leggilo</span>
+<p>Il dominio <span class="mono">accademiadibrera.milano.it</span> non era raggiungibile
+dalla rete su cui ho lavorato: ogni richiesta diretta al sito è stata rifiutata dal
+proxy di rete. Ho quindi ricostruito il regolamento <strong>indirettamente</strong>,
+attraverso gli estratti testuali che il motore di ricerca restituisce di quelle stesse
+pagine ufficiali, incrociandoli tra loro e con i regolamenti di altre Accademie.</p>
+<p>Il risultato è solido sulla sostanza — le regole strutturali (le 40 cartelle, i due
+relatori, le tre sessioni, il calcolo del voto) sono confermate da più estratti
+indipendenti — ma <strong>le date esatte e gli importi vanno riverificati sul sito
+ufficiale o in Segreteria</strong>, perché sono la parte che cambia ogni anno
+accademico e che non ho potuto leggere alla fonte. Al §30 trovi la lista esatta delle
+domande da fare, già pronta.</p>
+</div>
+
+<p>Un'ultima nota di metodo. A Brera la prova finale del triennio <strong>non è solo un
+testo scritto</strong>: è un testo scritto <em>più</em> un progetto, con due relatori
+distinti. È la cosa che più spesso sorprende chi arriva da fuori, ed è il motivo per cui
+la Parte I di questa guida viene prima di tutto il resto.</p>
+
+<!-- ================= INDICE ================= -->
+<h2 class="parte">Indice</h2>
+<div class="toc">
+<span class="reset-run"></span>
+<ol>
+  <li>
+    <div class="p-line">Parte I — Capire la prova finale</div>
+    <ol>
+      <li><a href="#c1"><span class="n">1</span> Che cos'è la tesi a Brera: la doppia natura</a></li>
+      <li><a href="#c2"><span class="n">2</span> I numeri che contano</a></li>
+      <li><a href="#c3"><span class="n">3</span> Quanto è lunga davvero: cartelle, caratteri, pagine</a></li>
+      <li><a href="#c4"><span class="n">4</span> Le persone: relatori, correlatore, Commissione</a></li>
+    </ol>
+  </li>
+  <li>
+    <div class="p-line">Parte II — Il calendario e il voto</div>
+    <ol>
+      <li><a href="#c5"><span class="n">5</span> Le tre sessioni</a></li>
+      <li><a href="#c6"><span class="n">6</span> Le scadenze, passo per passo</a></li>
+      <li><a href="#c7"><span class="n">7</span> L'iscrizione «solo tesi»</a></li>
+      <li><a href="#c8"><span class="n">8</span> Come si calcola il voto finale e la lode</a></li>
+    </ol>
+  </li>
+  <li>
+    <div class="p-line">Parte III — Anatomia della tesi</div>
+    <ol>
+      <li><a href="#c9"><span class="n">9</span> Le parti della tesi, in ordine</a></li>
+      <li><a href="#c10"><span class="n">10</span> Il frontespizio</a></li>
+      <li><a href="#c11"><span class="n">11</span> L'indice: che cos'è e come si costruisce</a></li>
+      <li><a href="#c12"><span class="n">12</span> Introduzione, capitoli, conclusioni</a></li>
+      <li><a href="#c13"><span class="n">13</span> Il budget di battute</a></li>
+      <li><a href="#c14"><span class="n">14</span> Tre modelli di indice pronti all'uso</a></li>
+      <li><a href="#c15"><span class="n">15</span> Il titolo</a></li>
+      <li><a href="#c16"><span class="n">16</span> L'abstract</a></li>
+    </ol>
+  </li>
+  <li>
+    <div class="p-line">Parte IV — Norme redazionali</div>
+    <ol>
+      <li><a href="#c17"><span class="n">17</span> Impaginazione: font, corpo, interlinea, margini</a></li>
+      <li><a href="#c18"><span class="n">18</span> La gerarchia dei titoli</a></li>
+      <li><a href="#c19"><span class="n">19</span> Citazioni nel testo</a></li>
+      <li><a href="#c20"><span class="n">20</span> Le note a piè di pagina</a></li>
+      <li><a href="#c21"><span class="n">21</span> Ibidem, Ivi, Cfr., op. cit.</a></li>
+      <li><a href="#c22"><span class="n">22</span> La bibliografia, tipo per tipo</a></li>
+      <li><a href="#c23"><span class="n">23</span> Sitografia e fonti native digitali</a></li>
+      <li><a href="#c24"><span class="n">24</span> L'apparato iconografico</a></li>
+    </ol>
+  </li>
+  <li>
+    <div class="p-line">Parte V — Il progetto</div>
+    <ol>
+      <li><a href="#c25"><span class="n">25</span> La componente pratica e la sua documentazione</a></li>
+    </ol>
+  </li>
+  <li>
+    <div class="p-line">Parte VI — Metodo e strumenti</div>
+    <ol>
+      <li><a href="#c26"><span class="n">26</span> Cronoprogramma a ritroso</a></li>
+      <li><a href="#c27"><span class="n">27</span> Ricerca delle fonti e diario di lettura</a></li>
+      <li><a href="#c28"><span class="n">28</span> Word: setup operativo</a></li>
+      <li><a href="#c29"><span class="n">29</span> Plagio e intelligenza artificiale</a></li>
+    </ol>
+  </li>
+  <li>
+    <div class="p-line">Parte VII — Arrivare in fondo</div>
+    <ol>
+      <li><a href="#c30"><span class="n">30</span> La consegna</a></li>
+      <li><a href="#c31"><span class="n">31</span> La discussione</a></li>
+      <li><a href="#c32"><span class="n">32</span> I dodici errori più comuni</a></li>
+      <li><a href="#c33"><span class="n">33</span> Checklist finale</a></li>
+      <li><a href="#c34"><span class="n">34</span> Le domande da fare in Segreteria</a></li>
+      <li><a href="#c35"><span class="n">35</span> Fonti consultate</a></li>
+    </ol>
+  </li>
+</ol>
+</div>
+
+<!-- ================= PARTE I ================= -->
+<h2 class="parte">Parte I — Capire la prova finale</h2>
+
+<h3 id="c1">1. Che cos'è la tesi a Brera: la doppia natura</h3>
+
+<div class="lead">
+<p>La prova finale del triennio a Brera è composta da <strong>due cose distinte</strong>
+che devono parlarsi: una <strong>tesi scritta</strong> e un <strong>progetto</strong>.
+Non è una tesi con delle immagini allegate. Sono due elaborati, con due relatori
+diversi, discussi lo stesso giorno.</p>
+</div>
+
+<p><span class="badge reg">Brera</span> Il regolamento didattico descrive la prova finale
+come «la presentazione di un progetto e la discussione di una tesi elaborata nell'ambito
+di uno degli insegnamenti seguiti nel triennio». La tesi deve affrontare
+<strong>un aspetto della produzione artistica e uno della ricerca storico-teorica</strong>,
+concordati con due relatori.</p>
+
+<p>Nei corsi di Nuove Tecnologie dell'Arte questa struttura ha una forma tipica: da un
+lato un <strong>saggio breve</strong> di natura storico-teorica o tecnico-artistica,
+dall'altro la <strong>produzione di un elaborato multimediale</strong> su un tema
+concordato, <em>coerente con la parte scritta</em>. La parola chiave è quella: coerente.
+Il progetto non è un'appendice decorativa della tesi, e la tesi non è la didascalia del
+progetto. Sono due facce della stessa ricerca.</p>
+
+<h4>Le tre conseguenze pratiche</h4>
+
+<ul class="plain">
+<li><strong>Ti servono due relatori.</strong> Un docente di disciplina teorica
+(il <em>relatore di tesi</em>) e un docente di disciplina laboratoriale
+(il <em>relatore di progetto</em>). Vedi §4.</li>
+<li><strong>Il tema è uno solo, declinato due volte.</strong> Quando scegli
+l'argomento, chiediti subito: qual è la domanda teorica? e qual è l'oggetto che
+produco? Se le due risposte non si toccano, il progetto va ripensato.</li>
+<li><strong>La discussione ha due tempi.</strong> Il giorno dell'esame le due prove si
+sostengono una di seguito all'altra, con l'ammissione alla seconda decisa dalla
+Commissione. Vedi §31.</li>
+</ul>
+
+<div class="box key">
+<span class="lab">Il punto che conta di più</span>
+<p>La forza di una tesi di Nuove Tecnologie dell'Arte sta quasi sempre nella
+<strong>cerniera</strong> fra teoria e progetto: nel capitolo in cui dimostri che il tuo
+lavoro pratico <em>risponde</em> a un problema che hai costruito teoricamente nei
+capitoli precedenti. Le tesi deboli tengono le due parti separate e le giustappongono
+alla fine. Le tesi forti fanno sì che ciascuna delle due renda l'altra necessaria.</p>
+</div>
+
+<h3 id="c2">2. I numeri che contano</h3>
+
+<p>Tutto quello che devi sapere in forma numerica, in una pagina. I dettagli sono nei
+capitoli indicati.</p>
+
+<table class="zebra">
+<tr><th style="width:52mm">Cosa</th><th style="width:38mm">Valore</th><th>Note</th></tr>
+<tr>
+  <td>Lunghezza minima tesi</td>
+  <td class="num"><strong>40 cartelle</strong><br>da 1.500 caratteri</td>
+  <td><span class="badge reg">Brera</span> = 60.000 caratteri spazi inclusi. È un
+  <em>minimo</em>, non un obiettivo. Vedi §3 — non sono 40 pagine.</td>
+</tr>
+<tr>
+  <td>Abstract</td>
+  <td class="num">2 cartelle<br>(≈ 3.000 car.)</td>
+  <td><span class="badge reg">Brera</span> Da consegnare in Segreteria insieme alla tesi,
+  con bibliografia selezionata. Vedi §16.</td>
+</tr>
+<tr>
+  <td>Note e bibliografia</td>
+  <td class="num">Obbligatorie</td>
+  <td><span class="badge reg">Brera</span> «Riferimenti bibliografici in nota e
+  bibliografia finale, redatti secondo gli standard normalmente utilizzati nella
+  ricerca accademica umanistica». Vedi §20 e §22.</td>
+</tr>
+<tr>
+  <td>Relatori</td>
+  <td class="num">2</td>
+  <td><span class="badge reg">Brera</span> Relatore di tesi + relatore di progetto.
+  Devi aver sostenuto <strong>almeno un esame con ciascuno</strong>. Vedi §4.</td>
+</tr>
+<tr>
+  <td>Richiesta tesi</td>
+  <td class="num">20 dicembre<br><em>oppure</em> 10 aprile</td>
+  <td><span class="badge check">Verifica</span> Chi presenta entro il 10 aprile
+  <strong>non</strong> può accedere alla sessione estiva. Vedi §6.</td>
+</tr>
+<tr>
+  <td>Conferma tesi</td>
+  <td class="num">10 giugno / 10 ottobre / 10 febbraio</td>
+  <td><span class="badge check">Verifica</span> Rispettivamente per sessione estiva,
+  autunnale, invernale. Vedi §6.</td>
+</tr>
+<tr>
+  <td>Sessioni</td>
+  <td class="num">3</td>
+  <td><span class="badge reg">Brera</span> Estiva (giugno), autunnale (novembre),
+  straordinaria/invernale (febbraio). Vedi §5.</td>
+</tr>
+<tr>
+  <td>Consegna in Segreteria</td>
+  <td class="num">15 o 21 giorni prima</td>
+  <td><span class="badge check">Verifica</span> Le fonti divergono. Assumi il termine
+  più stringente e considera 21 giorni. Vedi §30.</td>
+</tr>
+<tr>
+  <td>Copie cartacee</td>
+  <td class="num">3 <span class="cc">(+ CD)</span></td>
+  <td><span class="badge check">Verifica</span> Almeno una rilegata a caldo con
+  copertina rigida, firmata dai docenti. Vedi §30.</td>
+</tr>
+<tr>
+  <td>Presentazione alla discussione</td>
+  <td class="num">max 20 minuti</td>
+  <td><span class="badge reg">Brera</span> «La presentazione in PPT non può durare più
+  di 20 minuti». Vedi §31.</td>
+</tr>
+<tr>
+  <td>Voto finale</td>
+  <td class="num">/110</td>
+  <td><span class="badge reg">Brera</span> Media di partenza + fino a 10 punti dalla
+  Commissione. Vedi §8.</td>
+</tr>
+<tr>
+  <td>Soglia lode</td>
+  <td class="num">104 di partenza</td>
+  <td><span class="badge reg">Brera</span> All'unanimità, e con almeno 30/30 nella
+  materia d'indirizzo. Vedi §8.</td>
+</tr>
+</table>
+
+<h3 id="c3">3. Quanto è lunga davvero: cartelle, caratteri, pagine</h3>
+
+<div class="box warn">
+<span class="lab">L'equivoco più costoso di tutti</span>
+<p><strong>40 cartelle non sono 40 pagine.</strong> La «cartella» è un'unità di misura
+editoriale, non una pagina di Word. Brera definisce la cartella come
+<strong>1.500 caratteri</strong>, quindi il minimo è <strong>60.000 caratteri spazi
+inclusi</strong>. Chi confonde le due cose scrive metà del necessario e se ne accorge
+tardi, oppure ne scrive il doppio senza motivo.</p>
+</div>
+
+<h4>La conversione, fatta bene</h4>
+
+<p>Con impostazioni standard (corpo 12, interlinea 1,5, margini 2,5–3 cm) una pagina A4
+contiene fra 1.900 e 2.100 caratteri spazi inclusi. Quindi:</p>
+
+<table class="zebra">
+<tr><th>Unità</th><th style="width:34mm">Quantità</th><th>Equivalente</th></tr>
+<tr><td>Cartella Brera</td><td class="num">1.500 caratteri</td><td>circa ¾ di pagina A4 formattata</td></tr>
+<tr><td>Minimo regolamentare</td><td class="num">40 cartelle</td><td><strong>60.000 caratteri</strong> spazi inclusi</td></tr>
+<tr><td>In parole</td><td class="num">≈ 9.500–10.000</td><td>l'italiano viaggia intorno ai 6,2 caratteri per parola, spazio incluso</td></tr>
+<tr><td>In pagine di solo testo</td><td class="num">≈ 29–32 pagine</td><td>senza indice, bibliografia, immagini</td></tr>
+<tr><td>Documento completo</td><td class="num">≈ 45–65 pagine</td><td>con frontespizio, indice, note, bibliografia, apparato iconografico</td></tr>
+</table>
+
+<div class="box">
+<span class="lab">Come contare, in pratica</span>
+<p>In Word: <span class="mono">Revisione → Conteggio parole → «Caratteri (spazi
+inclusi)»</span>. Conta <strong>solo il corpo del testo</strong>: escludi frontespizio,
+indice, bibliografia, didascalie e ringraziamenti. Le note a piè di pagina di norma si
+contano — ma è una delle domande da fare al relatore.</p>
+</div>
+
+<h4>Il target realistico</h4>
+
+<p><span class="badge prax">Prassi</span> Punta a <strong>65.000–80.000 caratteri</strong>.
+Stare esattamente sul minimo è un segnale di lavoro fatto al risparmio, e ti lascia senza
+margine se in revisione devi tagliare. Andare oltre i 100.000 caratteri in una triennale
+è quasi sempre sintomo di un argomento non messo a fuoco: la Commissione legge come
+mancanza di selezione, non come abbondanza di ricerca.</p>
+
+<div class="box check">
+<span class="lab">Da chiedere al relatore</span>
+<p>Alcuni docenti, per abitudine, dicono «quaranta pagine» intendendo pagine vere — che
+sarebbero circa 80.000 caratteri, il doppio del minimo regolamentare. <strong>Chiarisci
+questo punto alla prima riunione</strong>, con la domanda esatta: «quando dice quaranta,
+intende cartelle da 1.500 battute o pagine?».</p>
+</div>
+
+<h3 id="c4">4. Le persone: relatori, correlatore, Commissione</h3>
+
+<h4>Relatore di tesi</h4>
+<p><span class="badge reg">Brera</span> È un <strong>docente titolare di una disciplina
+teorica</strong>. Con lui concordi argomento e titolo della parte scritta, di norma
+<strong>almeno all'inizio dell'ultimo anno di corso</strong>. È la figura che guida la
+ricerca bibliografica, corregge i capitoli e risponde della qualità del testo.</p>
+
+<h4>Relatore di progetto</h4>
+<p><span class="badge reg">Brera</span> È un <strong>docente titolare di discipline
+laboratoriali</strong>. Con lui concordi il tema e la natura dell'elaborato pratico.</p>
+
+<div class="box warn">
+<span class="lab">Requisito che blocca tutto se manca</span>
+<p>Devi aver <strong>sostenuto almeno un esame con entrambi i docenti</strong> nel corso
+del triennio. Se ti manca l'esame con uno dei due, non puoi indicarlo come relatore.
+Controlla il libretto <em>prima</em> di chiedere, non dopo.</p>
+</div>
+
+<h4>Correlatore</h4>
+<p><span class="badge prax">Prassi</span> Figura facoltativa: un secondo docente, anche
+di altra materia, oppure un esperto esterno, individuato d'accordo con il relatore.
+Serve quando la tesi tocca un ambito che il relatore non presidia — tipicamente, in NTA,
+una competenza tecnica specialistica. Non aggiunge punti di per sé; aggiunge qualità se
+è la persona giusta.</p>
+
+<h4>La Commissione</h4>
+<p><span class="badge reg">Brera</span> È presieduta dal Direttore o da un suo delegato,
+ed è composta da:</p>
+<ul class="tight">
+<li>il docente di indirizzo / coordinatore del corso;</li>
+<li>il <strong>relatore della tesi</strong>;</li>
+<li>il <strong>relatore del progetto</strong>;</li>
+<li>almeno <strong>due docenti</strong> di discipline inserite nel piano di studi.</li>
+</ul>
+
+<p>Conseguenza pratica: <strong>la maggioranza della Commissione non ha letto la tua tesi
+per intero</strong>. Ti conoscono il relatore e il correlatore; gli altri si formano
+un'idea in venti minuti, dalla tua presentazione e dalle prime pagine. Scrivi
+l'introduzione e costruisci il PPT pensando a loro.</p>
+
+<!-- ================= PARTE II ================= -->
+<h2 class="parte">Parte II — Il calendario e il voto</h2>
+
+<h3 id="c5">5. Le tre sessioni</h3>
+
+<p><span class="badge reg">Brera</span> La discussione della prova finale può avvenire in
+tre sessioni:</p>
+
+<table class="zebra">
+<tr><th style="width:40mm">Sessione</th><th style="width:30mm">Periodo</th><th>Note</th></tr>
+<tr><td><strong>Estiva</strong></td><td class="num">giugno</td>
+  <td>La più affollata. Accessibile solo a chi ha presentato la richiesta tesi entro
+  la scadenza di dicembre.</td></tr>
+<tr><td><strong>Autunnale</strong></td><td class="num">novembre</td>
+  <td>Accessibile anche a chi ha presentato richiesta entro aprile.</td></tr>
+<tr><td><strong>Straordinaria</strong><br>(o invernale)</td><td class="num">febbraio</td>
+  <td>Chiude l'anno accademico. Le sessioni devono concludersi entro il
+  <strong>30 aprile</strong> dell'anno accademico successivo.</td></tr>
+</table>
+
+<p><span class="badge prax">Prassi</span> Scegliere la sessione non è una formalità
+burocratica: è la decisione che determina tutto il tuo cronoprogramma (§26). Decidila
+per prima, e sceglila con onestà rispetto al tempo che hai davvero. Passare dalla
+sessione estiva all'autunnale a metà percorso significa quasi sempre pagare un'altra
+iscrizione.</p>
+
+<h3 id="c6">6. Le scadenze, passo per passo</h3>
+
+<div class="box check">
+<span class="lab">Date da riverificare</span>
+<p>Le date di questo capitolo sono quelle che risultano dalle pagine ufficiali, ma sono
+esattamente il tipo di informazione che l'Accademia aggiorna ogni anno accademico.
+Verificale prima di fissarci sopra il tuo piano.</p>
+</div>
+
+<h4>Fase 1 — Richiesta tesi (Modulo 1)</h4>
+<p>È l'atto che apre formalmente il percorso. Il modulo va caricato sul proprio profilo
+online, <strong>firmato dal relatore di tesi e dal relatore di progetto</strong>, e
+contiene l'argomento e un titolo di lavoro (che potrà cambiare).</p>
+
+<table class="zebra">
+<tr><th style="width:34mm">Scadenza</th><th>Che cosa ti apre</th></tr>
+<tr><td class="num"><strong>20 dicembre</strong></td>
+  <td>Tutte e tre le sessioni: estiva, autunnale, invernale.</td></tr>
+<tr><td class="num"><strong>10 aprile</strong></td>
+  <td>Solo autunnale e straordinaria (invernale).
+  <strong>Chi presenta entro il 10 aprile non può discutere nella sessione
+  estiva.</strong></td></tr>
+</table>
+
+<p>Un'altra fonte indica che il modulo di richiesta va consegnato con un anticipo di
+<strong>nove mesi</strong> rispetto alla sessione d'esame: è coerente con la scadenza di
+dicembre per la sessione estiva di giugno. Tienilo come regola mentale — la richiesta si
+fa <em>molto</em> prima di quanto la maggior parte degli studenti immagina.</p>
+
+<h4>Fase 2 — Conferma tesi (Modulo 2)</h4>
+<p>Conferma il titolo definitivo e va presentata con il libretto:</p>
+
+<table class="zebra">
+<tr><th style="width:34mm">Entro il</th><th>Per la sessione</th></tr>
+<tr><td class="num"><strong>10 giugno</strong></td><td>estiva</td></tr>
+<tr><td class="num"><strong>10 ottobre</strong></td><td>autunnale</td></tr>
+<tr><td class="num"><strong>10 febbraio</strong></td><td>invernale</td></tr>
+</table>
+
+<h4>Fase 3 — Consegna</h4>
+<p>La tesi va recapitata alla Segreteria Didattica in versione definitiva, completa di
+<strong>abstract di due cartelle</strong> e della <strong>documentazione del progetto
+pratico</strong>. Vedi §30 per il dettaglio di formati e copie.</p>
+
+<h4>Fase 4 — Discussione</h4>
+<p>Vedi §31.</p>
+
+<div class="box">
+<span class="lab">Il calendario in una riga</span>
+<p><strong>Sessione estiva (giugno):</strong> richiesta entro il 20 dicembre → conferma
+entro il 10 giugno → consegna ~3 settimane prima → discussione a giugno.
+Fra la richiesta e la discussione passano <strong>sei mesi</strong>: è quello il tempo
+reale che hai per scrivere.</p>
+</div>
+
+<h3 id="c7">7. L'iscrizione «solo tesi»</h3>
+
+<p>Se hai completato gli esami ma non hai ancora discusso, ti iscrivi all'anno
+accademico nella modalità <strong>«solo tesi / esame finale»</strong>.</p>
+
+<ul class="plain">
+<li><span class="badge reg">Brera</span> L'iscrizione solo tesi <strong>non consente di
+frequentare i corsi né di sostenere esami</strong> nell'anno di iscrizione, salvo la
+discussione della tesi nelle sessioni previste. Se ti manca anche un solo esame, questa
+non è la tua modalità.</li>
+<li><span class="badge check">Verifica</span> L'iscrizione online si effettua in una
+finestra che cade fra metà novembre e metà dicembre. Oltre il termine, l'iscrizione va
+richiesta via email a <span class="mono">tassecontributi@accademiadibrera.milano.it</span>
+ed è dovuta una <strong>mora</strong>.</li>
+<li>Il contributo è determinato in base all'<strong>ISEE</strong>. L'avviso PagoPA si
+scarica dal proprio profilo; la conferma del pagamento compare a profilo entro circa
+dieci giorni lavorativi.</li>
+</ul>
+
+<h3 id="c8">8. Come si calcola il voto finale e la lode</h3>
+
+<h4>Il punteggio di partenza</h4>
+<p>Si parte dalla <strong>media dei voti d'esame</strong> riportata in centodecimi. Il
+metodo standard è la media ponderata sui crediti:</p>
+
+<div class="box">
+<p class="mono" style="text-align:center; font-size:9.4pt">
+media ponderata = Σ (voto × CFA) ÷ Σ CFA<br><br>
+punteggio di partenza = media ponderata × 110 ÷ 30
+</p>
+</div>
+
+<p>Moltiplichi ogni voto per i crediti di quell'esame, sommi, dividi per il totale dei
+crediti. Poi riporti il risultato in centodecimi moltiplicando per 110 e dividendo
+per 30.</p>
+
+<h4>I punti della Commissione</h4>
+<p><span class="badge reg">Brera</span> Il voto finale è pari alla media conseguita negli
+esami, «eventualmente incrementata dalla Commissione <strong>fino a un massimo di dieci
+punti</strong>». Quei dieci punti sono ciò su cui puoi davvero incidere adesso: valutano
+la tesi, il progetto e la discussione.</p>
+
+<h4>La lode</h4>
+<p><span class="badge reg">Brera</span> È attribuita <strong>all'unanimità</strong> e
+proposta solo se:</p>
+<ul class="tight">
+<li>ti presenti alla discussione con un <strong>punteggio di partenza di almeno 104</strong>;</li>
+<li>hai conseguito <strong>almeno 30/30 nella materia di indirizzo</strong> o portante.</li>
+</ul>
+
+<div class="box key">
+<span class="lab">Che cosa farne</span>
+<p>Calcola <em>oggi</em> il tuo punteggio di partenza. Sapere se sei a 92 o a 105 cambia
+completamente la strategia: sotto la soglia dei 104 la lode è aritmeticamente fuori
+portata e tanto vale concentrarsi sulla qualità del lavoro; sopra, ogni dettaglio della
+discussione conta, perché serve l'unanimità della Commissione.</p>
+</div>
+
+<!-- ================= PARTE III ================= -->
+<h2 class="parte">Parte III — Anatomia della tesi</h2>
+
+<h3 id="c9">9. Le parti della tesi, in ordine</h3>
+
+<p>Questo è l'ordine standard. Le voci marcate <em>(facoltativo)</em> le metti solo se
+servono davvero.</p>
+
+<table class="zebra">
+<tr><th style="width:8mm">#</th><th style="width:44mm">Parte</th><th>Che cosa contiene</th></tr>
+<tr><td class="num">1</td><td><strong>Copertina</strong></td>
+  <td>Il cartoncino esterno. Riporta gli stessi dati del frontespizio.</td></tr>
+<tr><td class="num">2</td><td><strong>Frontespizio</strong></td>
+  <td>La prima pagina interna. Vedi §10. <strong>Non è numerata.</strong></td></tr>
+<tr><td class="num">3</td><td>Dedica <em>(facoltativa)</em></td>
+  <td>Una riga, in alto a destra o al centro. Nient'altro sulla pagina.</td></tr>
+<tr><td class="num">4</td><td><strong>Indice</strong></td>
+  <td>Titoli di capitoli e paragrafi con i numeri di pagina. Vedi §11.</td></tr>
+<tr><td class="num">5</td><td><strong>Introduzione</strong></td>
+  <td>3–4 pagine. Vedi §12. Non è numerata come capitolo.</td></tr>
+<tr><td class="num">6</td><td><strong>Capitoli</strong></td>
+  <td>Il corpo della ricerca, in capitoli e paragrafi. Vedi §12–13.</td></tr>
+<tr><td class="num">7</td><td><strong>Conclusioni</strong></td>
+  <td>3–5 pagine. Vedi §12.</td></tr>
+<tr><td class="num">8</td><td>Appendici <em>(facoltative)</em></td>
+  <td>Interviste, documentazione tecnica, codice, schede d'opera.</td></tr>
+<tr><td class="num">9</td><td><strong>Apparato iconografico</strong></td>
+  <td>Le immagini con didascalie e crediti. Vedi §24.</td></tr>
+<tr><td class="num">10</td><td><strong>Bibliografia</strong></td>
+  <td>Alfabetica per cognome dell'autore. Vedi §22.</td></tr>
+<tr><td class="num">11</td><td><strong>Sitografia</strong></td>
+  <td>Fonti online, con data di consultazione. Vedi §23.</td></tr>
+<tr><td class="num">12</td><td>Ringraziamenti <em>(facoltativi)</em></td>
+  <td>In fondo. Brevi. Non sono la sede per il racconto personale.</td></tr>
+</table>
+
+<div class="box">
+<span class="lab">Dove vanno le immagini</span>
+<p>Due scuole, entrambe accettate: <strong>immagini nel testo</strong>, vicino al punto
+in cui le discuti, oppure <strong>tutte raccolte in fondo</strong> in un apparato
+iconografico numerato, richiamato nel testo con «(fig. 12)». Per una tesi di Nuove
+Tecnologie dell'Arte, dove le immagini sono spesso l'oggetto stesso dell'analisi, la
+prima soluzione funziona meglio — a patto che la qualità di stampa regga. Decidi una
+volta sola e sii coerente.</p>
+</div>
+
+<h3 id="c10">10. Il frontespizio</h3>
+
+<p><span class="badge reg">Brera</span> Il frontespizio va <strong>controfirmato dal
+relatore di tesi e dal coordinatore/relatore di progetto</strong>. È un dato che
+sorprende molti: quella pagina non è solo grafica, è un documento da far firmare — e
+va messo in conto nel calendario, perché richiede di incrociare fisicamente due docenti
+prima della consegna.</p>
+
+<div class="schema">
+<div class="h">Struttura tipica del frontespizio</div>
+<div class="l0" style="text-align:center">ACCADEMIA DI BELLE ARTI DI BRERA</div>
+<div class="l1 cc" style="text-align:center; padding-left:0">(logo dell'Accademia, se previsto)</div>
+<div class="l1" style="text-align:center; padding-left:0; margin-top:2mm">Diploma Accademico di Primo Livello</div>
+<div class="l1" style="text-align:center; padding-left:0">Scuola di Nuove Tecnologie dell'Arte</div>
+<div class="l0" style="text-align:center; margin-top:5mm; font-size:10pt">TITOLO DELLA TESI</div>
+<div class="l1" style="text-align:center; padding-left:0" >Eventuale sottotitolo esplicativo</div>
+<div style="margin-top:5mm; display:flex; justify-content:space-between">
+  <div style="font-size:8.2pt; line-height:1.6">
+    Relatore<br>
+    <strong>Chiar.mo Prof. Nome Cognome</strong><br><br>
+    Relatore di progetto<br>
+    <strong>Chiar.mo Prof. Nome Cognome</strong><br><br>
+    <span class="cc">Correlatore (se presente)</span><br>
+    <strong>Prof. Nome Cognome</strong>
+  </div>
+  <div style="font-size:8.2pt; line-height:1.6; text-align:right">
+    Tesi di Diploma di<br>
+    <strong>Nome Cognome</strong><br>
+    Matricola n. 000000
+  </div>
+</div>
+<div class="l1" style="text-align:center; padding-left:0; margin-top:5mm">Anno Accademico 20__ / 20__</div>
+</div>
+
+<div class="box check">
+<span class="lab">Da verificare</span>
+<p>L'Accademia mette a disposizione un <strong>modello ufficiale di frontespizio</strong>.
+Chiedilo in Segreteria o cercalo nella sezione modulistica del sito, e usa quello: le
+copisterie che lavorano con Brera lo hanno già pronto. Verifica in particolare se il
+<strong>logo</strong> va inserito e in quale forma — su questo punto le indicazioni
+cambiano nel tempo.</p>
+</div>
+
+<h3 id="c11">11. L'indice: che cos'è e come si costruisce</h3>
+
+<div class="lead">
+<p>L'indice non è la cosa che scrivi alla fine. È lo <strong>strumento con cui progetti
+la tesi</strong>: è la prima cosa che porti al relatore, ed è la prima cosa che la
+Commissione guarda quando apre il volume.</p>
+</div>
+
+<h4>Che cos'è, materialmente</h4>
+<p>Una pagina che elenca i titoli di tutti i capitoli e paragrafi, nell'ordine in cui
+compaiono, ciascuno con il numero di pagina. Si mette <strong>all'inizio</strong>, dopo
+il frontespizio e prima dell'introduzione. (L'uso di metterlo in fondo è editoriale, non
+accademico: nella tesi va davanti.)</p>
+
+<h4>Come si costruisce, in cinque mosse</h4>
+
+<ol>
+<li><strong>Scrivi la domanda.</strong> Una frase sola, interrogativa, che dica che cosa
+vuoi dimostrare. Se non riesci a scriverla, non hai ancora un argomento — hai un tema.
+Un tema è «l'audioreattività nella grafica generativa»; una domanda è «in che modo la
+sincronizzazione audio-visiva ridefinisce l'autorialità dell'artista che progetta il
+sistema anziché l'immagine?».</li>
+<li><strong>Elenca i blocchi di conoscenza</strong> che servono al lettore per capire
+la risposta. Senza ordine, alla rinfusa: contesto storico, definizioni, autori di
+riferimento, casi studio, tecnica, il tuo progetto.</li>
+<li><strong>Ordinali in una sequenza in cui ogni blocco rende possibile il
+successivo.</strong> Questo è il vero lavoro. Un indice funziona quando il capitolo 3
+non si potrebbe leggere senza aver letto il 2.</li>
+<li><strong>Raggruppa in 4–6 capitoli</strong>, ciascuno con 2–4 paragrafi. Meno di 4
+capitoli in una triennale è di solito un segnale di argomento non articolato; più di 6
+significa che stai frammentando.</li>
+<li><strong>Assegna a ogni capitolo un budget di battute</strong> (§13) e verifica che
+la somma stia nel totale. Se un capitolo ha bisogno del doppio degli altri, quello non
+è un capitolo: è la tesi, e il resto è contorno.</li>
+</ol>
+
+<div class="box key">
+<span class="lab">La prova del nove</span>
+<p>Leggi solo i titoli dei capitoli, di fila, ad alta voce. Devono raccontare un
+ragionamento che sta in piedi da solo. Se sembrano un elenco di argomenti affiancati
+anziché i passaggi di una dimostrazione, l'indice va rifatto — ed è enormemente meno
+costoso rifarlo adesso che dopo aver scritto 60.000 caratteri.</p>
+</div>
+
+<h4>Titolazione dei paragrafi</h4>
+<p><span class="badge prax">Prassi</span> Numerazione decimale: <span class="mono">1.
+Capitolo → 1.1 Paragrafo → 1.1.1 Sottoparagrafo</span>. Non scendere sotto il terzo
+livello. I titoli devono essere <strong>descrittivi, non allusivi</strong>: «1.2 La
+sintesi granulare come modello formale» dice qualcosa; «1.2 Frammenti» no.</p>
+
+<h3 id="c12">12. Introduzione, capitoli, conclusioni</h3>
+
+<h4>L'introduzione</h4>
+<p><span class="badge prax">Prassi</span> <strong>3–4 pagine.</strong> È la parte che
+tutta la Commissione legge davvero. Deve contenere, nell'ordine:</p>
+
+<ul class="plain">
+<li><strong>L'oggetto</strong> — di che cosa parla la tesi, in due frasi, senza preamboli
+sul fatto che «da sempre l'uomo…».</li>
+<li><strong>La tesi che intendi sostenere</strong>, esplicitata. Non «esplorerò il tema
+di…», ma «sosterrò che…».</li>
+<li><strong>Lo stato della questione</strong> — chi ne ha già scritto e in che termini,
+brevemente le posizioni a favore e contro.</li>
+<li><strong>La metodologia</strong> — come argomenti: analisi formale? studio di casi?
+ricerca d'archivio? pratica di laboratorio? un misto, e in che proporzione?</li>
+<li><strong>La struttura</strong> — un paragrafo che dice cosa fa ciascun capitolo.</li>
+<li><strong>I limiti</strong> — che cosa hai deciso di <em>non</em> trattare, e perché.
+Dichiararli è un segno di controllo, non di debolezza.</li>
+</ul>
+
+<p>Si scrive per ultima, o quasi. La versione che scrivi all'inizio serve a te per
+orientarti; quella che consegni la riscrivi quando sai davvero come è finita la tesi.</p>
+
+<h4>I capitoli</h4>
+<p>Ogni capitolo dovrebbe avere una sua micro-architettura ricorrente: un breve
+<strong>attacco</strong> che dice di che cosa si occupa e perché arriva qui, lo
+<strong>svolgimento</strong> in paragrafi, e una <strong>chiusura</strong> di poche righe
+che tira le fila e apre al capitolo seguente. È quella chiusura a trasformare una serie
+di capitoli in un discorso.</p>
+
+<p><span class="badge prax">Prassi</span> Ogni capitolo comincia su pagina nuova.</p>
+
+<h4>Le conclusioni</h4>
+<p><span class="badge prax">Prassi</span> <strong>3–5 pagine.</strong> Non sono un
+riassunto. Devono:</p>
+<ul class="tight">
+<li>rispondere esplicitamente alla domanda posta nell'introduzione;</li>
+<li>dire che cosa è emerso che non era prevedibile all'inizio;</li>
+<li>riconoscere i limiti di quello che hai fatto;</li>
+<li>indicare dove potrebbe proseguire la ricerca.</li>
+</ul>
+
+<p>Il modo più semplice per verificare che le conclusioni funzionino: metti a confronto
+l'ultima pagina dell'introduzione e la prima delle conclusioni. Devono parlare della
+stessa cosa, ma la seconda deve saperne di più.</p>
+
+<h3 id="c13">13. Il budget di battute</h3>
+
+<p>Ripartizione indicativa su un totale di <strong>70.000 caratteri</strong> (sopra il
+minimo, sotto la soglia della prolissità). Adattala, ma tieni le proporzioni.</p>
+
+<table class="zebra">
+<tr><th style="width:52mm">Parte</th><th style="width:26mm">Caratteri</th><th style="width:18mm">%</th><th>Pagine ≈</th></tr>
+<tr><td>Introduzione</td><td class="num">6.000</td><td class="num">9%</td><td class="num">3</td></tr>
+<tr><td>Cap. 1 — inquadramento teorico</td><td class="num">12.000</td><td class="num">17%</td><td class="num">6</td></tr>
+<tr><td>Cap. 2 — genealogia / precedenti</td><td class="num">12.000</td><td class="num">17%</td><td class="num">6</td></tr>
+<tr><td>Cap. 3 — casi studio</td><td class="num">14.000</td><td class="num">20%</td><td class="num">7</td></tr>
+<tr><td>Cap. 4 — il progetto</td><td class="num">16.000</td><td class="num">23%</td><td class="num">8</td></tr>
+<tr><td>Conclusioni</td><td class="num">7.000</td><td class="num">10%</td><td class="num">3,5</td></tr>
+<tr><td>Note a piè di pagina</td><td class="num">3.000</td><td class="num">4%</td><td class="num">—</td></tr>
+<tr style="font-weight:bold"><td>Totale corpo</td><td class="num">70.000</td><td class="num">100%</td><td class="num">≈ 33–35</td></tr>
+</table>
+
+<p>A questo si aggiungono, fuori conteggio: frontespizio, indice (1–2 pagine),
+bibliografia (2–4 pagine), sitografia (1–2), apparato iconografico (variabile).
+Documento finale: <strong>45–60 pagine</strong>.</p>
+
+<div class="box">
+<span class="lab">Perché serve un budget</span>
+<p>Senza budget succede sempre la stessa cosa: il primo capitolo diventa enorme perché è
+quello che conosci meglio, e il capitolo sul tuo progetto — che è quello che la
+Commissione vuole davvero sentire — si riduce a otto pagine scritte di corsa l'ultima
+settimana. Assegna le battute <em>prima</em> di scrivere e controlla il consuntivo ogni
+volta che chiudi un capitolo.</p>
+</div>
+
+<h3 id="c14">14. Tre modelli di indice pronti all'uso</h3>
+
+<p>Tre architetture che funzionano per una triennale in Nuove Tecnologie dell'Arte.
+Scegli quella più vicina al tuo caso e adattala — non sono gabbie, sono impalcature.</p>
+
+<h4>Modello A — Monografico</h4>
+<p>Quando la tesi ruota intorno a <strong>un artista, un collettivo, un'opera</strong>.</p>
+
+<div class="schema">
+<div class="h">Modello A · monografico</div>
+<div class="l0">Introduzione</div>
+<div class="l0">1. Il contesto</div>
+<div class="l1">1.1 Coordinate storiche e tecnologiche</div>
+<div class="l1">1.2 La scena di riferimento</div>
+<div class="l0">2. Il percorso</div>
+<div class="l1">2.1 Formazione e prime opere</div>
+<div class="l1">2.2 La svolta</div>
+<div class="l1">2.3 La maturità</div>
+<div class="l0">3. Analisi delle opere chiave</div>
+<div class="l1">3.1 Opera I — descrizione, tecnica, lettura critica</div>
+<div class="l1">3.2 Opera II</div>
+<div class="l1">3.3 Opera III</div>
+<div class="l0">4. La ricezione critica</div>
+<div class="l1">4.1 Le letture consolidate</div>
+<div class="l1">4.2 Una proposta di rilettura</div>
+<div class="l0">5. Il progetto <span class="cc">— il mio lavoro in dialogo con quella ricerca</span></div>
+<div class="l0">Conclusioni</div>
+<div class="l0 cc">Bibliografia · Sitografia · Apparato iconografico</div>
+</div>
+
+<h4>Modello B — Teorico-concettuale</h4>
+<p>Quando la tesi indaga <strong>un concetto, un medium, una tecnica</strong> attraverso
+più autori.</p>
+
+<div class="schema">
+<div class="h">Modello B · teorico-concettuale</div>
+<div class="l0">Introduzione</div>
+<div class="l0">1. Definire il campo</div>
+<div class="l1">1.1 Il concetto e le sue ambiguità</div>
+<div class="l1">1.2 Perimetro della ricerca: cosa includo, cosa escludo</div>
+<div class="l0">2. Genealogia</div>
+<div class="l1">2.1 I precedenti analogici</div>
+<div class="l1">2.2 La soglia digitale</div>
+<div class="l1">2.3 Lo stato attuale</div>
+<div class="l0">3. Il dibattito teorico</div>
+<div class="l1">3.1 Prima posizione e suoi limiti</div>
+<div class="l1">3.2 Seconda posizione e suoi limiti</div>
+<div class="l1">3.3 La mia posizione</div>
+<div class="l0">4. Verifica sui casi</div>
+<div class="l1">4.1 Caso studio A</div>
+<div class="l1">4.2 Caso studio B</div>
+<div class="l0">5. Il progetto come argomento</div>
+<div class="l0">Conclusioni</div>
+<div class="l0 cc">Bibliografia · Sitografia · Apparato iconografico</div>
+</div>
+
+<h4 class="newpage">Modello C — Practice-based</h4>
+<p><strong>È il modello più adatto alla maggior parte delle tesi di NTA</strong>: la
+teoria costruisce il problema, il progetto è la risposta, e l'ultimo capitolo verifica
+se la risposta tiene. Notare la cerniera al capitolo 4.</p>
+
+<div class="schema">
+<div class="h">Modello C · practice-based &nbsp;— consigliato per NTA</div>
+<div class="l0">Introduzione <span class="cc">(la domanda, il metodo, la struttura)</span></div>
+<div class="l0">1. Il problema</div>
+<div class="l1">1.1 Da dove nasce la questione</div>
+<div class="l1">1.2 Perché è rilevante oggi</div>
+<div class="l1">1.3 Come è stata affrontata finora</div>
+<div class="l0">2. Quadro teorico</div>
+<div class="l1">2.1 Gli autori e i concetti che uso</div>
+<div class="l1">2.2 Il lessico della ricerca <span class="cc">(le definizioni operative)</span></div>
+<div class="l0">3. Stato dell'arte</div>
+<div class="l1">3.1 Precedenti artistici</div>
+<div class="l1">3.2 Precedenti tecnici e strumenti esistenti</div>
+<div class="l1">3.3 Che cosa manca <span class="cc">← qui apri lo spazio del tuo progetto</span></div>
+<div class="l0">4. Il progetto</div>
+<div class="l1">4.1 Ipotesi e obiettivi</div>
+<div class="l1">4.2 Architettura e scelte tecniche</div>
+<div class="l1">4.3 Scelte estetiche e loro motivazione teorica</div>
+<div class="l1">4.4 Processo: iterazioni, errori, svolte</div>
+<div class="l0">5. Lettura critica del risultato</div>
+<div class="l1">5.1 Che cosa funziona e perché</div>
+<div class="l1">5.2 Limiti e questioni aperte</div>
+<div class="l1">5.3 Il progetto riletto alla luce del capitolo 2</div>
+<div class="l0">Conclusioni</div>
+<div class="l0 cc">Bibliografia · Sitografia · Apparato iconografico · Appendice tecnica</div>
+</div>
+
+<div class="box key">
+<span class="lab">Il paragrafo 5.3 è il più importante della tesi</span>
+<p>È lì che chiudi il cerchio: riprendi gli strumenti teorici del capitolo 2 e li applichi
+al tuo stesso lavoro, con lo stesso distacco con cui al capitolo 3 hai analizzato quello
+degli altri. È la differenza fra una tesi e una relazione di progetto — ed è quasi sempre
+il punto su cui la Commissione fa la domanda difficile.</p>
+</div>
+
+<h3 id="c15">15. Il titolo</h3>
+
+<p><span class="badge prax">Prassi</span> La formula che funziona quasi sempre è
+<strong>titolo evocativo + sottotitolo descrittivo</strong>:</p>
+
+<div class="cit">
+<span class="t">Struttura</span>
+<p style="text-indent:0; padding-left:0"><strong>Sintassi del visibile.</strong><br>
+Sistemi audio-reattivi e autorialità distribuita nella produzione video contemporanea</p>
+</div>
+
+<p>Il titolo dà il tono, il sottotitolo dice esattamente di che cosa si tratta e in che
+perimetro. Il sottotitolo è la parte che la Commissione legge per capire se sa di cosa
+stai parlando: deve contenere l'oggetto, il metodo o il campo, e non deve promettere più
+di quanto la tesi mantiene.</p>
+
+<p><span class="badge reg">Brera</span> Il titolo indicato nel modulo di richiesta è un
+<strong>titolo di lavoro</strong> e può cambiare: quello definitivo si fissa con il
+modulo di conferma. Ma non trattarlo come un dettaglio da sistemare all'ultimo — scrivere
+un buon titolo presto è uno dei modi migliori per capire se hai un argomento.</p>
+
+<h3 id="c16">16. L'abstract</h3>
+
+<p><span class="badge reg">Brera</span> Va consegnato in Segreteria insieme alla tesi:
+<strong>due cartelle</strong> (circa 3.000 caratteri) sull'argomento, accompagnate dalla
+<strong>bibliografia selezionata</strong> e dal modulo di conferma tesi.</p>
+
+<p>Un abstract efficace risponde in ordine a quattro domande, una o due frasi ciascuna:</p>
+
+<table class="zebra">
+<tr><th style="width:38mm">Domanda</th><th>Che cosa scrivere</th></tr>
+<tr><td><strong>Che cosa</strong> hai indagato</td><td>L'oggetto e la domanda di ricerca.</td></tr>
+<tr><td><strong>Perché</strong></td><td>Il problema che rende la domanda rilevante.</td></tr>
+<tr><td><strong>Come</strong></td><td>Metodo, fonti, eventuale componente pratica.</td></tr>
+<tr><td><strong>Che cosa</strong> hai trovato</td><td>I risultati, non le intenzioni. È la parte che quasi tutti sbagliano scrivendo «si cercherà di…».</td></tr>
+</table>
+
+<p><span class="badge prax">Prassi</span> Scrivilo <strong>dopo</strong> aver finito la
+tesi, non prima. Al tempo presente o passato prossimo, mai al futuro. Senza citazioni,
+senza note, senza abbreviazioni non sciolte.</p>
+
+<!-- ================= PARTE IV ================= -->
+<h2 class="parte">Parte IV — Norme redazionali</h2>
+
+<div class="box warn">
+<span class="lab">Prima di tutto</span>
+<p>Le norme redazionali <strong>non sono uniformi in tutta l'Accademia</strong>: ogni
+Scuola, e spesso ogni relatore, ha le sue preferenze. Quello che segue è lo standard
+ricostruito dalle norme di Brera e dalla prassi delle Accademie italiane.
+<strong>La regola numero uno è: chiedi al tuo relatore se ha un documento di norme
+redazionali</strong> e, se ce l'ha, quello vince su tutto ciò che leggi qui. La cosa che
+la Commissione nota davvero non è quale standard hai scelto, ma se lo hai applicato in
+modo <em>coerente</em> dall'inizio alla fine.</p>
+</div>
+
+<h3 id="c17">17. Impaginazione: font, corpo, interlinea, margini</h3>
+
+<table class="zebra">
+<tr><th style="width:42mm">Elemento</th><th style="width:44mm">Valore</th><th>Note</th></tr>
+<tr><td>Formato</td><td>A4, fronte-retro o solo fronte</td>
+  <td>Se fronte-retro, ogni capitolo apre su pagina dispari (destra).</td></tr>
+<tr><td><strong>Carattere</strong></td><td>Cambria, Calibri, Garamond, Helvetica</td>
+  <td><span class="badge reg">Brera</span> Sono i font indicati nelle norme di Brera.
+  Times New Roman è comunque accettato ovunque.</td></tr>
+<tr><td><strong>Corpo del testo</strong></td><td>12 pt</td><td>Standard.</td></tr>
+<tr><td><strong>Interlinea testo</strong></td><td>1,5</td><td>Standard.</td></tr>
+<tr><td>Interlinea indice, note, bibliografia, sitografia</td><td><strong>singola</strong></td>
+  <td><span class="badge reg">Brera</span> Esplicito nelle norme.</td></tr>
+<tr><td>Corpo delle note</td><td>10 pt</td><td>Due punti meno del testo.</td></tr>
+<tr><td><strong>Margini</strong></td><td>superiore 3 cm<br>inferiore, destro, sinistro 2,5 cm</td>
+  <td>Se rilegatura a caldo, porta il margine interno a 3–3,5 cm o il testo sparisce
+  nella piega.</td></tr>
+<tr><td>Allineamento</td><td>Giustificato</td><td>Con sillabazione attiva, altrimenti si aprono voragini fra le parole.</td></tr>
+<tr><td><strong>Numeri di pagina</strong></td><td>in basso al centro</td>
+  <td><span class="badge reg">Brera</span> Si contano <strong>dalla pagina successiva al
+  frontespizio</strong>. Il frontespizio non porta numero.</td></tr>
+<tr><td>Rientro prima riga</td><td>0,5 cm</td><td>Tranne la prima riga dopo un titolo. Alternativa: nessun rientro e spazio fra i paragrafi. Non entrambi.</td></tr>
+</table>
+
+<h3 id="c18">18. La gerarchia dei titoli</h3>
+
+<p><span class="badge prax">Prassi</span> Tre livelli, visivamente distinti e coerenti:</p>
+
+<table class="zebra">
+<tr><th style="width:34mm">Livello</th><th style="width:44mm">Formato</th><th>Esempio</th></tr>
+<tr><td><strong>Capitolo</strong></td><td>corpo 14, neretto</td><td>3. Stato dell'arte</td></tr>
+<tr><td><strong>Paragrafo</strong></td><td>corpo 12, neretto</td><td>3.1 Precedenti artistici</td></tr>
+<tr><td><strong>Sottoparagrafo</strong></td><td>corpo 12, corsivo <em>(non neretto)</em></td><td>3.1.1 Il caso del software art</td></tr>
+</table>
+
+<p>Ogni capitolo inizia su pagina nuova. Non lasciare mai un titolo da solo in fondo alla
+pagina: in Word si risolve con <span class="mono">Formato → Paragrafo → Distribuzione
+testo → «Mantieni con il successivo»</span>.</p>
+
+<h3 id="c19">19. Citazioni nel testo</h3>
+
+<h4>Citazione breve (fino a ~3 righe)</h4>
+<p>Resta dentro il paragrafo, fra <strong>virgolette basse</strong> «…», con la nota alla
+fine.</p>
+<div class="cit">
+<p style="text-indent:0; padding-left:0">Come osserva Manovich, «i nuovi media rappresentano
+la convergenza di due traiettorie storiche separate»<sup>12</sup>, e questa convergenza
+non è neutrale.</p>
+</div>
+
+<h4>Citazione lunga (oltre 3 righe)</h4>
+<p>Va staccata dal testo, <strong>senza virgolette</strong>, in corpo minore (11 pt),
+interlinea singola, rientrata di 1 cm a sinistra, con una riga bianca sopra e sotto.</p>
+
+<h4>Interventi dentro la citazione</h4>
+<ul class="tight">
+<li><strong>Omissioni:</strong> <span class="mono">[…]</span> — parentesi quadre, non tonde.</li>
+<li><strong>Tue aggiunte</strong> per rendere comprensibile il passo: fra parentesi quadre.</li>
+<li><strong>Corsivo tuo:</strong> segnalalo in nota con «corsivo mio».</li>
+<li><strong>Traduzione tua:</strong> segnala «traduzione mia» in nota. Se il testo
+originale è importante, riportalo in nota.</li>
+</ul>
+
+<div class="box">
+<span class="lab">Regola d'oro</span>
+<p>Ogni citazione deve essere <strong>commentata</strong>. Una citazione che sta lì da
+sola, senza che tu dica perché l'hai messa, è spazio sprecato — e in una tesi con un
+budget di battute, lo spazio sprecato si paga. Se non hai niente da aggiungere alla
+frase di un altro, quella frase non serve.</p>
+</div>
+
+<h3 id="c20">20. Le note a piè di pagina</h3>
+
+<p><span class="badge reg">Brera</span> Le note con riferimenti bibliografici sono
+<strong>obbligatorie</strong>, secondo «gli standard normalmente utilizzati nella ricerca
+accademica umanistica». Tradotto: <strong>sistema umanistico</strong>, cioè numero in
+apice nel testo e nota a piè di pagina — non il sistema autore-data all'americana
+(Rossi 2019, p. 12) usato nelle scienze sociali.</p>
+
+<h4>Regole tipografiche</h4>
+<ul class="plain">
+<li>Il numero di nota va <strong>in esponente, senza spazio</strong> dopo la parola che
+precede.</li>
+<li>A fine frase, il numero va <strong>prima</strong> della punteggiatura:
+<span class="mono">…autorialità<sup>12</sup>.</span></li>
+<li>Numerazione <strong>progressiva e continua</strong> per tutta la tesi (non ricomincia
+a ogni capitolo).</li>
+<li>Corpo 10, interlinea singola, giustificate.</li>
+<li>La nota si chiude sempre con il <strong>punto</strong>.</li>
+</ul>
+
+<h4>Che cosa ci va</h4>
+<ul class="tight">
+<li>il riferimento bibliografico di ciò che hai citato o parafrasato;</li>
+<li>approfondimenti che spezzerebbero il filo del discorso;</li>
+<li>rimandi interni («cfr. <em>supra</em>, cap. 2») e traduzioni.</li>
+</ul>
+
+<p>La prima volta che citi un testo, il riferimento va <strong>per esteso</strong>. Dalla
+seconda in poi si abbrevia (§21).</p>
+
+<div class="cit">
+<span class="t">Prima citazione, per esteso</span>
+<p><sup>12</sup> L. Manovich, <em>Il linguaggio dei nuovi media</em>, Milano, Olivares,
+2002, p. 45.</p>
+<span class="t" style="margin-top:3mm">Citazioni successive</span>
+<p><sup>18</sup> L. Manovich, <em>op. cit.</em>, p. 112.</p>
+<p><sup>19</sup> <em>Ivi</em>, p. 118.</p>
+<p><sup>20</sup> <em>Ibidem</em>.</p>
+</div>
+
+<h3 id="c21">21. Ibidem, Ivi, Cfr., op. cit.</h3>
+
+<p>Le abbreviazioni si sbagliano quasi sempre. Sono quattro, e la differenza fra le prime
+due è netta:</p>
+
+<table class="zebra">
+<tr><th style="width:26mm">Forma</th><th style="width:22mm">Corsivo?</th><th>Quando si usa</th></tr>
+<tr><td><em>Ibidem</em><br><span class="cc">(abbr. Ibid.)</span></td><td>sì</td>
+  <td>Stessa opera <strong>e stessa pagina</strong> della nota immediatamente precedente.
+  Da sola, senza altro.</td></tr>
+<tr><td><em>Ivi</em></td><td><strong>no</strong></td>
+  <td>Stessa opera della nota precedente, <strong>pagina diversa</strong>.
+  Seguita dalla pagina: <span class="mono">Ivi, p. 118.</span></td></tr>
+<tr><td><em>op. cit.</em><br><span class="cc">(art. cit. per gli articoli)</span></td><td>sì</td>
+  <td>Opera già citata <strong>in precedenza ma non nella nota immediatamente
+  precedente</strong>. Va dopo il nome dell'autore, omettendo il titolo.</td></tr>
+<tr><td>Cfr.</td><td>no</td>
+  <td>«Confronta». Rimando generico a un testo che <strong>non stai citando
+  letteralmente</strong> ma a cui rinvii.</td></tr>
+</table>
+
+<p>Altre due che incontrerai: <em>passim</em> (in corsivo: il concetto ricorre in più
+punti dell'opera, non a una pagina precisa) e <em>supra</em> / <em>infra</em> (in
+corsivo: rimando a un punto precedente o successivo della tua stessa tesi).</p>
+
+<div class="box warn">
+<span class="lab">Trappola</span>
+<p><em>Ibidem</em> e <em>Ivi</em> funzionano <strong>solo</strong> rispetto alla nota
+immediatamente precedente. Se poi sposti un paragrafo — cosa che farai — le note si
+riordinano e gli <em>Ibidem</em> puntano al testo sbagliato, in silenzio. <strong>Rileggi
+tutta la sequenza delle note alla fine</strong>, dopo l'ultima revisione strutturale: è
+un controllo di venti minuti che evita l'errore più imbarazzante da farsi notare in
+sede di discussione.</p>
+</div>
+
+<h3 id="c22">22. La bibliografia, tipo per tipo</h3>
+
+<p>La bibliografia finale è <strong>alfabetica per cognome dell'autore</strong>, con il
+cognome che precede il nome (al contrario delle note, dove l'iniziale del nome viene
+prima). Se citi più opere dello stesso autore, si ordinano per anno.</p>
+
+<div class="cit">
+<span class="t">Monografia</span>
+<p>Manovich, Lev, <em>Il linguaggio dei nuovi media</em>, Milano, Olivares, 2002.</p>
+<span class="t">Volume a più autori</span>
+<p>Bolter, Jay David — Grusin, Richard, <em>Remediation. Competizione e integrazione tra
+media vecchi e nuovi</em>, Milano, Guerini, 2002.</p>
+<span class="t">Volume collettaneo (a cura di)</span>
+<p>Grau, Oliver (a cura di), <em>Media Art Histories</em>, Cambridge (MA), MIT Press, 2007.</p>
+<span class="t">Saggio dentro un volume collettaneo</span>
+<p>Dell'Acqua, Francesca, <em>Di fronte alle vetrate</em>, in Castelnuovo, Enrico —
+Sergi, Giuseppe (a cura di), <em>Arti e storia nel Medioevo</em>, vol. III, Torino,
+Einaudi, 2004, pp. 369–403.</p>
+<span class="t">Articolo in rivista</span>
+<p>Anceschi, Luciano, <em>Orizzonte della poesia</em>, in «Il Verri», n. 1, febbraio 1962,
+pp. 6–21.</p>
+<span class="t">Catalogo di mostra</span>
+<p>Coltrinari, Francesca — Delpriori, Alessandro (a cura di), <em>Vittore Crivelli da
+Venezia alle Marche</em>, catalogo della mostra (Sarnano, 21 maggio – 5 novembre 2011),
+Venezia, Marsilio, 2011.</p>
+<span class="t">Saggio in catalogo di mostra</span>
+<p>Cognome, Nome, <em>Titolo del saggio</em>, in <em>Titolo della mostra</em>, catalogo
+della mostra (Luogo, sede, date), a cura di Nome Cognome, Città, Editore, anno, pp. 00–00.</p>
+<span class="t">Traduzione — con originale</span>
+<p>Manovich, Lev, <em>The Language of New Media</em>, Cambridge (MA), MIT Press, 2001;
+trad. it. <em>Il linguaggio dei nuovi media</em>, Milano, Olivares, 2002.</p>
+<span class="t">Tesi non pubblicata</span>
+<p>Cognome, Nome, <em>Titolo della tesi</em>, tesi di Diploma Accademico di Primo Livello,
+Accademia di Belle Arti di Brera, relatore prof. Nome Cognome, a.a. 2024/2025.</p>
+<span class="t">Voce di enciclopedia o dizionario</span>
+<p>Cognome, Nome, <em>voce</em> Intermedialità, in <em>Enciclopedia Italiana</em>,
+vol. 00, Roma, Istituto della Enciclopedia Italiana, anno, pp. 00–00.</p>
+</div>
+
+<h4>Convenzioni da tenere ferme</h4>
+<ul class="plain">
+<li><strong>Corsivo</strong> per i titoli di volumi, opere d'arte, film, riviste citate
+come opera intera.</li>
+<li><strong>Virgolette caporali «…»</strong> per i titoli delle riviste quando citi un
+articolo al loro interno.</li>
+<li><strong>Tondo fra virgolette</strong> per titoli di articoli e saggi, oppure — più
+comune in Italia — corsivo anche per quelli, purché coerente.</li>
+<li>Città di edizione <strong>in italiano</strong> se esiste l'esonimo (Londra, Parigi,
+Monaco); per le città americane si aggiunge lo stato: Cambridge (MA).</li>
+<li><strong>pp.</strong> per un intervallo, <strong>p.</strong> per una pagina sola.</li>
+<li>Se manca la data: <span class="mono">s.d.</span>; se manca il luogo:
+<span class="mono">s.l.</span></li>
+</ul>
+
+<div class="box">
+<span class="lab">Se la bibliografia è lunga</span>
+<p><span class="badge prax">Prassi</span> Sopra le venti-venticinque voci conviene
+suddividerla: <em>Fonti primarie</em> / <em>Letteratura critica</em> /
+<em>Cataloghi di mostra</em> / <em>Sitografia</em>. Per una tesi di NTA può avere senso
+una sezione a parte per <em>Documentazione tecnica e software</em>. Ogni sezione resta
+alfabetica al suo interno.</p>
+</div>
+
+<h3 id="c23">23. Sitografia e fonti native digitali</h3>
+
+<p>È il capitolo dove una tesi di Nuove Tecnologie dell'Arte si distingue — e dove si
+vede subito chi ha lavorato con metodo. Le fonti native digitali <strong>non sono fonti
+di serie B</strong>, ma vanno citate con la stessa disciplina di un libro.</p>
+
+<div class="cit">
+<span class="t">Pagina web / articolo online</span>
+<p>Cognome, Nome, <em>Titolo dell'articolo</em>, in «Nome del sito», data di
+pubblicazione, URL completo (consultato il 12 marzo 2026).</p>
+<span class="t">Sito o piattaforma nel suo insieme</span>
+<p><em>Nome del progetto</em>, URL (consultato il 12 marzo 2026).</p>
+<span class="t">Video online</span>
+<p>Cognome, Nome, <em>Titolo del video</em>, video, durata, piattaforma, data di
+pubblicazione, URL (consultato il 12 marzo 2026).</p>
+<span class="t">Conferenza / talk</span>
+<p>Cognome, Nome, <em>Titolo dell'intervento</em>, intervento al convegno «Nome del
+convegno», Luogo, data, URL (consultato il…).</p>
+<span class="t">Software / libreria</span>
+<p><em>Nome del software</em>, versione 0.0, Produttore/Autore, anno, URL
+(consultato il…).</p>
+<span class="t">Repository di codice</span>
+<p>Cognome, Nome, <em>Nome del repository</em>, codice sorgente, piattaforma, anno, URL
+(consultato il…).</p>
+<span class="t">Opera d'arte digitale / installazione</span>
+<p>Cognome, Nome, <em>Titolo dell'opera</em>, anno, tecnica (es.: installazione
+audio-video generativa, WebGL, dimensioni variabili), collocazione o contesto espositivo,
+URL se disponibile.</p>
+<span class="t">Post su social o forum, se rilevante come fonte</span>
+<p>Autore (@handle), <em>testo o descrizione del contenuto</em>, piattaforma, data, URL
+(consultato il…).</p>
+</div>
+
+<div class="box warn">
+<span class="lab">Due regole non negoziabili</span>
+<p><strong>1. La data di consultazione è obbligatoria</strong> per ogni fonte online.
+È l'unico modo per rendere verificabile una fonte che può cambiare o sparire.</p>
+<p><strong>2. Archivia tutto.</strong> Salva un PDF o uno screenshot di ogni pagina web
+che citi, con la data nel nome del file. Fra la consultazione e la discussione passano
+mesi: se un link muore nel frattempo, senza archivio quella nota diventa indifendibile.
+Per le fonti importanti considera anche di salvarne una copia su un servizio di
+archiviazione web e citare quel link.</p>
+</div>
+
+<h3 id="c24">24. L'apparato iconografico</h3>
+
+<h4>Numerazione e richiami</h4>
+<p><span class="badge prax">Prassi</span> Le immagini si numerano progressivamente —
+<span class="mono">fig. 1, fig. 2</span> — oppure per capitolo —
+<span class="mono">fig. 3.1, 3.2</span>, che è più comodo perché aggiungere un'immagine
+al capitolo 2 non ti costringe a rinumerare tutto. Nel testo si richiamano fra parentesi:
+<span class="mono">(fig. 12)</span>. <strong>Ogni immagine deve essere richiamata almeno
+una volta nel testo</strong>: se non la citi mai, non serve.</p>
+
+<h4>La didascalia</h4>
+<p>Va <strong>sotto</strong> l'immagine, in corpo 9–10, e contiene nell'ordine: numero,
+autore, titolo in corsivo, anno, tecnica e dimensioni, collocazione, <strong>fonte
+dell'immagine</strong>.</p>
+
+<div class="cit">
+<span class="t">Opera</span>
+<p>Fig. 3.2 — Nam June Paik, <em>TV Buddha</em>, 1974, videoinstallazione con circuito
+chiuso, dimensioni variabili, Stedelijk Museum, Amsterdam. Fonte: catalogo della mostra
+[…], p. 87.</p>
+<span class="t">Fotografia scattata da te</span>
+<p>Fig. 4.1 — Facciata principale di Palazzo Strozzi, Firenze (foto dell'autore, marzo 2026).</p>
+<span class="t">Screenshot / frame</span>
+<p>Fig. 4.5 — Interfaccia del sistema in fase di composizione, screenshot dell'autore,
+15 aprile 2026.</p>
+<span class="t">Schema o diagramma tuo</span>
+<p>Fig. 2.1 — Schema del flusso di segnale audio-visivo (elaborazione dell'autore).</p>
+</div>
+
+<h4>Diritti e crediti</h4>
+<ul class="plain">
+<li>Le immagini trovate in rete sono, salvo prova contraria, <strong>protette da
+copyright</strong>. Per una tesi — che è un lavoro a circolazione limitata e finalità di
+studio — l'uso è generalmente tollerato, ma <strong>la fonte va sempre citata</strong>.</li>
+<li>Se pensi di pubblicare la tesi, anche solo online, la questione cambia: servono i
+permessi, oppure immagini con licenza libera (Creative Commons, pubblico dominio) — e in
+quel caso la licenza va indicata in didascalia.</li>
+<li>Le immagini prodotte da te vanno dichiarate come tali. Non è modestia mal riposta
+ometterlo: è la prova documentale del tuo lavoro.</li>
+<li><span class="badge prax">Prassi</span> Risoluzione minima 300 dpi per la stampa.
+Uno screenshot preso a 72 dpi e ingrandito in pagina diventa illeggibile, e in una tesi
+di NTA è proprio l'immagine a dover reggere l'analisi.</li>
+</ul>
+
+<!-- ================= PARTE V ================= -->
+<h2 class="parte">Parte V — Il progetto</h2>
+
+<h3 id="c25">25. La componente pratica e la sua documentazione</h3>
+
+<div class="lead">
+<p>Il progetto è metà della prova finale, ma è la metà su cui esistono meno istruzioni
+scritte. Quello che segue è ricostruito dalla struttura del corso e dalla prassi delle
+Scuole di Nuove Tecnologie dell'Arte.</p>
+</div>
+
+<h4>Che cos'è</h4>
+<p><span class="badge reg">Brera</span> La produzione di un elaborato — tipicamente
+multimediale — su un tema concordato con il <strong>relatore di progetto</strong>, che
+deve essere <strong>coerente con la parte scritta</strong>.</p>
+
+<p>Nelle Scuole di NTA prende di solito una di queste forme: un'opera video o audiovisiva;
+un'installazione interattiva; un'applicazione o un sistema software; una performance
+audiovisiva documentata; un progetto net-art o web-based; una serie fotografica o
+generativa.</p>
+
+<h4>La documentazione</h4>
+<p><span class="badge reg">Brera</span> La tesi va consegnata «completa di documentazione
+del progetto pratico». È una parte che va progettata, non improvvisata la settimana
+prima: <strong>è quella che resta agli atti</strong>, ed è quella che la Commissione può
+riguardare.</p>
+
+<p>Un dossier di progetto solido contiene:</p>
+
+<table class="zebra">
+<tr><th style="width:44mm">Elemento</th><th>Note</th></tr>
+<tr><td><strong>Scheda tecnica</strong></td>
+  <td>Titolo, anno, tecnica, durata o dimensioni, requisiti di installazione o esecuzione,
+  crediti (se hanno collaborato altre persone, vanno nominate).</td></tr>
+<tr><td><strong>Statement</strong></td>
+  <td>Mezza pagina: che cos'è l'opera e che cosa mette in gioco. Non la spiegazione
+  tecnica — quella viene dopo.</td></tr>
+<tr><td><strong>Documentazione visiva</strong></td>
+  <td>Fotografie o frame ad alta risoluzione, in numero sufficiente a far capire l'opera
+  a chi non l'ha vista. Curate come si curerebbe un portfolio.</td></tr>
+<tr><td><strong>Video di documentazione</strong></td>
+  <td>Per opere dinamiche o interattive è indispensabile. Tienilo breve (2–4 minuti),
+  esporta in un formato che si apra ovunque (H.264/MP4).</td></tr>
+<tr><td><strong>Schemi tecnici</strong></td>
+  <td>Architettura del sistema, flusso dei segnali, diagrammi. Vanno bene anche disegnati
+  a mano e scansionati, purché leggibili.</td></tr>
+<tr><td><strong>Processo</strong></td>
+  <td>Studi, prove scartate, iterazioni. È la parte che dimostra che c'è stato un metodo,
+  ed è spesso la più interessante in sede di discussione.</td></tr>
+<tr><td><strong>Supporto digitale</strong></td>
+  <td>Il CD/DVD (o il supporto che la Segreteria richiede oggi) con i file. Vedi §30.</td></tr>
+</table>
+
+<div class="box warn">
+<span class="lab">L'errore tecnico che rovina le discussioni</span>
+<p>Se il progetto è software, interattivo o live, <strong>presuppone che il giorno della
+discussione qualcosa non funzionerà</strong>: rete assente, driver mancanti, risoluzione
+del proiettore diversa, audio non collegato. Porta sempre una
+<strong>registrazione video completa</strong> del progetto funzionante, su una chiavetta
+e non solo nel cloud. Non è pessimismo: è la differenza fra mostrare il tuo lavoro e
+raccontare che funzionava a casa.</p>
+</div>
+
+<h4>Come il progetto entra nella tesi scritta</h4>
+<p>Non come cronaca («poi ho aggiunto il modulo X, poi ho cambiato il colore»), ma come
+<strong>argomentazione</strong>: ogni scelta tecnica ed estetica va motivata rispetto al
+quadro teorico che hai costruito. La domanda a cui rispondere in ogni paragrafo del
+capitolo di progetto è sempre la stessa: <em>perché così e non altrimenti?</em></p>
+
+<!-- ================= PARTE VI ================= -->
+<h2 class="parte">Parte VI — Metodo e strumenti</h2>
+
+<h3 id="c26">26. Cronoprogramma a ritroso</h3>
+
+<p>Si pianifica <strong>partendo dalla data della discussione e andando all'indietro</strong>.
+Ecco il piano su sei mesi, che è il tempo reale fra la richiesta tesi di dicembre e la
+sessione estiva di giugno. Se hai nove o dodici mesi, dilata le prime fasi, non le
+ultime.</p>
+
+<table class="zebra">
+<tr><th style="width:24mm">Quando</th><th style="width:44mm">Fase</th><th>Che cosa produci</th></tr>
+<tr><td class="num"><strong>−6 mesi</strong></td><td>Argomento e relatori</td>
+  <td>Argomento concordato, due relatori che hanno detto sì, <strong>modulo di richiesta
+  firmato</strong>. Verifica di aver sostenuto un esame con entrambi.</td></tr>
+<tr><td class="num"><strong>−5 mesi</strong></td><td>Indice e bibliografia iniziale</td>
+  <td>Indice ragionato in 4–6 capitoli, budget di battute, 15–25 titoli di partenza.
+  <strong>Fatteli approvare</strong> prima di scrivere una riga.</td></tr>
+<tr><td class="num"><strong>−4 mesi</strong></td><td>Ricerca e lettura</td>
+  <td>Diario di lettura (§27), schede dei casi studio, prime prove di progetto.</td></tr>
+<tr><td class="num"><strong>−3,5 mesi</strong></td><td>Stesura capp. 1–2</td>
+  <td>Consegnali al relatore <strong>uno alla volta</strong>, appena pronti.</td></tr>
+<tr><td class="num"><strong>−2,5 mesi</strong></td><td>Stesura capp. 3–4</td>
+  <td>Il capitolo di progetto va scritto mentre il progetto è ancora in corso: è lì che
+  ti ricordi le motivazioni delle scelte.</td></tr>
+<tr><td class="num"><strong>−2 mesi</strong></td><td>Progetto in chiusura</td>
+  <td>Elaborato pratico finito. <strong>Documentazione visiva e video girati</strong>.</td></tr>
+<tr><td class="num"><strong>−6 settimane</strong></td><td>Ultimo capitolo, conclusioni, introduzione</td>
+  <td>Introduzione riscritta per ultima. Bozza completa al relatore.</td></tr>
+<tr><td class="num"><strong>−4 settimane</strong></td><td>Revisione</td>
+  <td>Correzioni del relatore integrate. Controllo note, <em>Ibidem</em>, bibliografia,
+  didascalie, conteggio caratteri.</td></tr>
+<tr><td class="num"><strong>−3 settimane</strong></td><td><strong>Consegna</strong></td>
+  <td>Versione definitiva in Segreteria + abstract + documentazione progetto.
+  <strong>Firme dei docenti sul frontespizio.</strong> Stampa e rilegatura.</td></tr>
+<tr><td class="num"><strong>−1 settimana</strong></td><td>Discussione</td>
+  <td>PPT montato e <strong>provato a voce con il cronometro</strong>. Copia rigida
+  pronta. Video di backup su chiavetta.</td></tr>
+</table>
+
+<div class="box key">
+<span class="lab">Le due regole che salvano il calendario</span>
+<p><strong>Consegna i capitoli uno alla volta.</strong> Aspettare di avere tutto pronto
+per mandarlo al relatore è il modo più affidabile di arrivare a due settimane dalla
+consegna con una revisione strutturale da fare.</p>
+<p><strong>Fissa la data in cui il relatore deve avere l'ultima bozza completa</strong>,
+e mettila almeno tre o quattro settimane prima della consegna in Segreteria. I docenti
+leggono in tempi loro, e a giugno leggono le tesi di tutti.</p>
+</div>
+
+<h3 id="c27">27. Ricerca delle fonti e diario di lettura</h3>
+
+<h4>Dove cercare</h4>
+<ul class="plain">
+<li><strong>La biblioteca dell'Accademia</strong> — è il punto di partenza ovvio e quello
+che quasi nessuno usa per primo. Il personale sa dove sono le cose.</li>
+<li><strong>Le tesi discusse negli anni precedenti</strong> nella tua Scuola: sono in
+biblioteca, e sono il modo migliore per capire il livello atteso, la lunghezza reale e
+il registro. <strong>Chiedine due o tre e guardale prima di iniziare.</strong></li>
+<li><strong>Le bibliografie dei testi che leggi</strong> — il metodo più efficiente in
+assoluto: ogni buon saggio contiene la mappa della propria letteratura.</li>
+<li><strong>Cataloghi di mostre</strong>, che per l'arte contemporanea e i nuovi media
+contengono spesso i contributi critici migliori.</li>
+<li><strong>Riviste e archivi online</strong> di settore, atti di festival e convegni.</li>
+</ul>
+
+<h4>Il diario di lettura</h4>
+<p><span class="badge prax">Prassi</span> Per ogni testo che consulti annota
+<strong>subito</strong>, in un unico file:</p>
+<ol class="tight">
+<li>il riferimento bibliografico <strong>completo</strong>, già nel formato finale;</li>
+<li>i concetti chiave, con parole tue;</li>
+<li>le citazioni testuali che potrebbero servirti, <strong>con il numero di pagina</strong>;</li>
+<li>una riga su come si collega alla tua tesi e a quale capitolo.</li>
+</ol>
+
+<p>Sembra lavoro in più. Non lo è: è il lavoro che rende la stesura veloce anziché
+disperata, e ti evita la ricerca notturna del volume da cui proveniva quella frase che
+avevi appuntato senza pagina.</p>
+
+<h3 id="c28">28. Word: setup operativo</h3>
+
+<p>Mezz'ora di configurazione all'inizio risparmia giorni alla fine.</p>
+
+<h5>1. Usa gli Stili — sempre</h5>
+<p>Non formattare mai un titolo a mano. Applica <span class="mono">Titolo 1</span> ai
+capitoli, <span class="mono">Titolo 2</span> ai paragrafi,
+<span class="mono">Titolo 3</span> ai sottoparagrafi, e modifica l'aspetto dello
+<em>stile</em>, non del singolo testo. È la condizione perché tutto il resto funzioni.</p>
+
+<h5>2. Indice automatico</h5>
+<p><span class="mono">Riferimenti → Sommario → Sommario automatico</span>. Si aggiorna con
+<span class="mono">tasto destro → Aggiorna campo → Aggiorna intero sommario</span>.
+<strong>Aggiornalo per ultima cosa prima di esportare il PDF</strong>: è l'errore più
+comune, consegnare una tesi con i numeri di pagina dell'indice sbagliati.</p>
+
+<h5>3. Numerazione con numeri romani e arabi</h5>
+<p>Inserisci un'<strong>interruzione di sezione</strong>
+(<span class="mono">Layout → Interruzioni → Pagina successiva</span>) fra le pagine
+preliminari e l'introduzione. Poi, nel piè di pagina della seconda sezione, disattiva
+<span class="mono">«Collega al precedente»</span> e imposta la numerazione che riparte
+da 1. Così il frontespizio resta senza numero e il corpo parte da 1.</p>
+
+<h5>4. Note a piè di pagina</h5>
+<p><span class="mono">Riferimenti → Inserisci nota a piè di pagina</span>
+(<span class="mono">Ctrl+Alt+F</span>). Word le rinumera da solo quando sposti il testo:
+è esattamente il motivo per cui <em>Ibidem</em> va ricontrollato a mano alla fine (§21).</p>
+
+<h5>5. Immagini</h5>
+<p>Inseriscile <strong>in linea con il testo</strong>, non «con testo a capo»: le immagini
+ancorate liberamente migrano da sole quando il testo si sposta. Per le didascalie usa
+<span class="mono">Riferimenti → Inserisci didascalia</span>, che ti dà anche l'indice
+delle figure automatico.</p>
+
+<h5>6. Salvataggio</h5>
+<p>Salva su un servizio cloud <em>e</em> tieni una copia locale <em>e</em> esporta un PDF
+datato alla fine di ogni sessione di lavoro (<span class="mono">tesi_2026-04-15.pdf</span>).
+Non è paranoia. La perdita del file a tre settimane dalla consegna succede ogni anno, a
+qualcuno.</p>
+
+<h5>7. PDF finale</h5>
+<p><span class="mono">File → Esporta → Crea PDF/XPS</span>, non «stampa su PDF».
+Controlla il PDF esportato pagina per pagina: font sostituiti, immagini spostate e
+tabelle spezzate si vedono solo lì.</p>
+
+<h3 id="c29">29. Plagio e intelligenza artificiale</h3>
+
+<h4>Plagio</h4>
+<p>Ogni idea, frase o dato che non sia tuo va attribuito in nota. Vale anche per la
+<strong>parafrasi</strong>: riscrivere con parole proprie il ragionamento di un altro
+senza citarlo è plagio esattamente come copiare la frase. Le conseguenze accertate vanno
+fino all'annullamento del titolo, e non hanno prescrizione.</p>
+
+<h4>Intelligenza artificiale</h4>
+<p><span class="badge check">Verifica</span> Le linee guida CRUI aggiornate nel 2024
+chiedono che lo studente <strong>dichiari esplicitamente</strong> l'uso di strumenti di
+IA generativa nella scrittura della tesi, specificando come e in quale misura sono stati
+impiegati. L'omissione della dichiarazione può essere considerata scorrettezza
+accademica anche quando il testo è originale.</p>
+
+<p><strong>Brera potrebbe avere una propria posizione</strong> su questo, e su un tema del
+genere è bene non dedurla: chiedila al relatore, esplicitamente, alla prima riunione.</p>
+
+<div class="box">
+<span class="lab">Una distinzione ragionevole</span>
+<p>Usare l'IA come <strong>strumento</strong> — per riformulare un passaggio contorto,
+sondare una bibliografia, controllare la lingua, discutere un'obiezione — è
+generalmente considerato accettabile <em>se dichiarato</em>. Usarla come
+<strong>autore</strong> del contenuto non lo è, e c'è una ragione che va oltre la regola:
+in sede di discussione ti verrà chiesto di difendere quello che hai scritto, e la
+differenza fra un ragionamento che hai fatto tu e uno che hai raccolto si vede in trenta
+secondi di domande.</p>
+<p>Nota bene: <strong>i sistemi di IA inventano riferimenti bibliografici</strong> con
+grande naturalezza — titoli plausibili di libri che non esistono, pagine sbagliate,
+attribuzioni errate. Ogni riferimento va verificato alla fonte, uno per uno. Una
+bibliografia con dentro un titolo inesistente è il modo più rapido per perdere la
+fiducia della Commissione.</p>
+</div>
+
+<!-- ================= PARTE VII ================= -->
+<h2 class="parte">Parte VII — Arrivare in fondo</h2>
+
+<h3 id="c30">30. La consegna</h3>
+
+<div class="box check">
+<span class="lab">Dato discordante — da verificare</span>
+<p>Sui tempi di consegna ho trovato due indicazioni diverse: «almeno <strong>15
+giorni</strong> prima dell'inizio della sessione» e «almeno <strong>21 giorni</strong>
+prima della data di discussione». Non potendo leggere la pagina ufficiale, <strong>assumi
+il termine più stringente — 21 giorni — e verifica in Segreteria.</strong> Sbagliare per
+eccesso di anticipo non costa nulla; sbagliare per difetto costa una sessione.</p>
+</div>
+
+<h4>Che cosa si consegna</h4>
+<ul class="plain">
+<li><strong>La tesi in formato digitale</strong> alla Segreteria Didattica, in versione
+definitiva.</li>
+<li><strong>L'abstract di due cartelle</strong> con la bibliografia selezionata.</li>
+<li><strong>La documentazione del progetto pratico.</strong></li>
+<li><strong>Il modulo di conferma tesi.</strong></li>
+<li><span class="badge check">Verifica</span> <strong>Tre copie cartacee</strong>, di cui
+una da consegnare in Segreteria (che viene restituita in sede di discussione), e un
+<strong>CD destinato alla biblioteca</strong> per l'archivio.</li>
+<li><span class="badge reg">Brera</span> Almeno una copia cartacea <strong>firmata dai
+docenti, rilegata a caldo e con copertina rigida</strong>, va presentata alla Commissione
+il giorno della discussione.</li>
+</ul>
+
+<div class="box warn">
+<span class="lab">Il controllo di corrispondenza</span>
+<p>Al momento della discussione la Commissione <strong>verifica la corrispondenza fra la
+copia digitale consegnata e la versione cartacea</strong>. Tradotto: una volta consegnato
+il file, <strong>non puoi più correggere nulla nella copia stampata</strong>. Nemmeno un
+refuso. Congela il documento, esporta il PDF, e stampa <em>da quel PDF</em>.</p>
+</div>
+
+<h4>Stampa e rilegatura</h4>
+<ul class="tight">
+<li>«Rilegatura a caldo con copertina rigida» significa il volume cucito o incollato a
+caldo con copertina cartonata — non l'anello a spirale, non la termorilegatura leggera
+con dorso in plastica.</li>
+<li>Le copisterie vicine a Brera conoscono il formato e spesso hanno il frontespizio
+pronto. Chiedi comunque conferma sul modello aggiornato.</li>
+<li><strong>Metti in conto 3–5 giorni lavorativi</strong> per la rilegatura, di più a
+ridosso delle sessioni, quando si laurea tutta l'Accademia insieme.</li>
+<li>Le firme dei docenti sul frontespizio vanno raccolte <strong>prima</strong> della
+stampa definitiva. È il singolo passaggio che più spesso manda in ritardo la consegna,
+perché dipende dai calendari di due persone che non sei tu.</li>
+</ul>
+
+<h3 id="c31">31. La discussione</h3>
+
+<h4>Come si svolge</h4>
+<p><span class="badge reg">Brera</span> Le due prove — la presentazione del progetto e la
+discussione della tesi — si sostengono <strong>una di seguito all'altra</strong> nella
+stessa giornata, previa ammissione alla seconda prova da parte della Commissione.</p>
+<p><span class="badge reg">Brera</span> <strong>La presentazione in PowerPoint non può
+durare più di 20 minuti.</strong></p>
+
+<h4>Come si costruiscono venti minuti</h4>
+<table class="zebra">
+<tr><th style="width:20mm">Minuti</th><th style="width:40mm">Momento</th><th>Contenuto</th></tr>
+<tr><td class="num">0–2</td><td>Apertura</td><td>Chi sei, il titolo, e <strong>la domanda</strong> della tesi in una frase.</td></tr>
+<tr><td class="num">2–5</td><td>Perché</td><td>Il problema e perché è rilevante. Poche slide, molto dense di senso.</td></tr>
+<tr><td class="num">5–9</td><td>Il quadro</td><td>Gli strumenti teorici, senza rifare il capitolo 2 per intero.</td></tr>
+<tr><td class="num">9–13</td><td>Il progetto</td><td><strong>Mostralo</strong>. Video o demo. È il cuore, e la parte che la Commissione ricorda.</td></tr>
+<tr><td class="num">13–17</td><td>La lettura critica</td><td>Che cosa dimostra il progetto rispetto alla domanda iniziale.</td></tr>
+<tr><td class="num">17–20</td><td>Chiusura</td><td>Le conclusioni e una prospettiva aperta. Chiudi con una frase preparata, non lasciata al caso.</td></tr>
+</table>
+
+<h4>Sulle slide</h4>
+<ul class="plain">
+<li><strong>Immagini grandi, testo minimo.</strong> Le slide non sono il tuo copione: se
+la Commissione legge, non ti ascolta.</li>
+<li>Una slide dovrebbe reggere un'idea sola.</li>
+<li><strong>Prova a voce con il cronometro, almeno due volte.</strong> Venti minuti sono
+meno di quanto sembrano, e sforare davanti alla Commissione è la peggior prima
+impressione possibile.</li>
+<li>Porta tutto su chiavetta <em>e</em> nel cloud, PPT <em>e</em> PDF, e il video del
+progetto in un file a parte, riproducibile senza rete.</li>
+</ul>
+
+<h4>Le domande</h4>
+<p>Prevedile e preparale. Le tre che arrivano quasi sempre:</p>
+<ol class="tight">
+<li>«Perché ha scelto questo argomento?» — risposta breve, che colleghi il tuo percorso
+alla domanda di ricerca, non aneddotica.</li>
+<li>«Che rapporto c'è fra la sua tesi e il suo progetto?» — è la domanda vera. Se hai
+scritto bene il capitolo di raccordo (§14, modello C, punto 5.3), la risposta esiste già.</li>
+<li>«Che cosa rifarebbe diversamente?» — non minimizzare. Riconoscere un limite con
+lucidità vale più che difendere tutto.</li>
+</ol>
+
+<p>E una regola: <strong>se non sai una cosa, dillo</strong>. «Non l'ho approfondito, ma
+credo che la questione si ponga in questi termini…» è una risposta accademicamente
+corretta. Improvvisare davanti a cinque docenti non lo è.</p>
+
+<h3 id="c32">32. I dodici errori più comuni</h3>
+
+<table class="zebra">
+<tr><th style="width:8mm">#</th><th style="width:52mm">Errore</th><th>Perché costa</th></tr>
+<tr><td class="num">1</td><td>Confondere cartelle e pagine</td><td>Scrivi metà o il doppio del necessario. Vedi §3.</td></tr>
+<tr><td class="num">2</td><td>Iniziare a scrivere senza indice approvato</td><td>Scrivi 20.000 caratteri che poi vanno buttati.</td></tr>
+<tr><td class="num">3</td><td>Argomento troppo ampio</td><td>«L'arte digitale» non è un argomento. È uno scaffale.</td></tr>
+<tr><td class="num">4</td><td>Mandare la tesi al relatore tutta insieme, alla fine</td><td>Nessun tempo per correggere ciò che va corretto.</td></tr>
+<tr><td class="num">5</td><td>Tesi e progetto che non si parlano</td><td>È esattamente ciò che il regolamento chiede di evitare, ed è la domanda che ti faranno.</td></tr>
+<tr><td class="num">6</td><td>Citazioni non commentate</td><td>Sembra una raccolta di frasi altrui invece di un ragionamento.</td></tr>
+<tr><td class="num">7</td><td><em>Ibidem</em> che puntano al testo sbagliato</td><td>Dopo ogni riordino delle note. Vedi §21.</td></tr>
+<tr><td class="num">8</td><td>Sitografia senza data di consultazione</td><td>Fonte non verificabile. Vedi §23.</td></tr>
+<tr><td class="num">9</td><td>Immagini a bassa risoluzione</td><td>In una tesi di NTA l'immagine è l'argomento. Illeggibile = non pervenuta.</td></tr>
+<tr><td class="num">10</td><td>Indice automatico non aggiornato</td><td>Numeri di pagina sbagliati sulla prima pagina che la Commissione apre.</td></tr>
+<tr><td class="num">11</td><td>Firme dei docenti raccolte all'ultimo</td><td>Dipendi dal calendario di altre due persone. Vedi §30.</td></tr>
+<tr><td class="num">12</td><td>Presentazione mai provata a voce</td><td>Sfori i 20 minuti e ti interrompono a metà. Vedi §31.</td></tr>
+</table>
+
+<h3 id="c33">33. Checklist finale</h3>
+
+<h4>Prima di consegnare</h4>
+<ul class="tight">
+<li>☐ Conteggio caratteri del corpo ≥ 60.000 spazi inclusi</li>
+<li>☐ Frontespizio conforme al modello, con spazio per le due firme</li>
+<li>☐ <strong>Firme del relatore di tesi e del relatore di progetto raccolte</strong></li>
+<li>☐ Indice automatico aggiornato per ultimo</li>
+<li>☐ Numerazione: frontespizio non numerato, corpo che parte da 1</li>
+<li>☐ Note progressive e continue; <em>Ibidem</em> e <em>Ivi</em> ricontrollati uno per uno</li>
+<li>☐ Ogni citazione ha la sua nota; ogni nota ha il suo riferimento completo</li>
+<li>☐ Bibliografia alfabetica, formato coerente in tutte le voci</li>
+<li>☐ Sitografia con data di consultazione su <em>ogni</em> voce</li>
+<li>☐ Copie archiviate (PDF/screenshot) di tutte le fonti online citate</li>
+<li>☐ Ogni figura è richiamata nel testo e ha didascalia con fonte</li>
+<li>☐ Immagini a 300 dpi</li>
+<li>☐ Rilettura ortografica <strong>su carta</strong> — a schermo non si vedono gli stessi errori</li>
+<li>☐ PDF esportato e ricontrollato pagina per pagina</li>
+<li>☐ Abstract di due cartelle + bibliografia selezionata</li>
+<li>☐ Documentazione del progetto completa</li>
+<li>☐ Modulo di conferma tesi consegnato nei termini</li>
+</ul>
+
+<h4>Prima della discussione</h4>
+<ul class="tight">
+<li>☐ Copia rilegata a caldo con copertina rigida, firmata</li>
+<li>☐ PPT provato con il cronometro, entro i 20 minuti</li>
+<li>☐ Video del progetto su chiavetta, riproducibile offline</li>
+<li>☐ PPT esportato anche in PDF, come backup</li>
+<li>☐ Risposte preparate alle tre domande prevedibili (§31)</li>
+<li>☐ Verificato con la Segreteria orario, aula e ordine di chiamata</li>
+</ul>
+
+<h3 id="c34">34. Le domande da fare in Segreteria</h3>
+
+<p>Questa lista esiste per una ragione precisa: sono i punti su cui questa guida non può
+essere definitiva, perché il sito dell'Accademia non era raggiungibile e perché sono dati
+che cambiano ogni anno. <strong>Copiala e portala con te</strong>, o mandala per email.</p>
+
+<div class="box">
+<span class="lab">Alla Segreteria Didattica</span>
+<ol class="tight">
+<li>Quali sono le date esatte, per l'a.a. in corso, della <strong>richiesta tesi</strong>
+e della <strong>conferma tesi</strong> per la sessione a cui punto?</li>
+<li>Con quanti giorni di anticipo va consegnata la tesi: <strong>15 o 21</strong>?
+E rispetto a quale data — l'inizio della sessione o la data di discussione?</li>
+<li>Quante <strong>copie cartacee</strong> servono oggi, e per chi?</li>
+<li>Il supporto per la biblioteca è ancora un <strong>CD</strong>, o si consegna una
+chiavetta / un upload?</li>
+<li>Esiste un <strong>modello ufficiale di frontespizio</strong> per la Scuola di Nuove
+Tecnologie dell'Arte? Dove lo scarico? Il <strong>logo</strong> va inserito?</li>
+<li>Esiste un documento di <strong>norme redazionali</strong> per la mia Scuola?</li>
+<li>Come va consegnata la <strong>documentazione del progetto</strong>, e in quale
+formato?</li>
+<li>Quali sono le date e le modalità dell'<strong>iscrizione «solo tesi»</strong>, e a
+quanto ammonta il contributo con il mio ISEE?</li>
+</ol>
+</div>
+
+<div class="box">
+<span class="lab">Al relatore di tesi, alla prima riunione</span>
+<ol class="tight">
+<li>Quando dice «quaranta», intende <strong>cartelle da 1.500 battute o pagine</strong>?
+Qual è la lunghezza che si aspetta?</li>
+<li>Le <strong>note a piè di pagina si contano</strong> nel conteggio dei caratteri?</li>
+<li>Ha <strong>norme redazionali</strong> sue che devo seguire?</li>
+<li>Preferisce ricevere i capitoli <strong>uno alla volta</strong> o a blocchi? Con quale
+anticipo?</li>
+<li>Qual è la sua posizione sull'uso dell'<strong>intelligenza artificiale</strong>, e va
+dichiarato?</li>
+<li>Può indicarmi <strong>due o tre tesi</strong> degli anni scorsi che considera
+riuscite?</li>
+<li>Ritiene utile un <strong>correlatore</strong> per questo argomento?</li>
+</ol>
+</div>
+
+<h3 id="c35">35. Fonti consultate</h3>
+
+<p class="src" style="margin-bottom:3mm">Il dominio ufficiale dell'Accademia non era
+raggiungibile dalla rete di lavoro; le pagine di Brera elencate qui sotto sono state
+ricostruite attraverso gli estratti testuali restituiti dal motore di ricerca, incrociati
+fra loro. Le altre fonti servono da conferma e da riferimento per la prassi redazionale.</p>
+
+<h5>Accademia di Belle Arti di Brera — pagine ufficiali</h5>
+<div class="src">
+<p>Pagina Tesi · <span class="mono">accademiadibrera.milano.it/it/pagina-test-tesi</span></p>
+<p>Tesi · <span class="mono">sitotest.accademiadibrera.milano.it/it/tesi</span></p>
+<p>Iscrizione solo per tesi / esame finale (Triennio) · <span class="mono">accademiadibrera.milano.it/it/iscrizione-solo-tesi-triennio</span></p>
+<p>Regolamento didattico · <span class="mono">accademiadibrera.milano.it/en/regolamento-didattico-en</span></p>
+<p>Brera FAQ · <span class="mono">accademiadibrera.milano.it/en/brera-faq</span></p>
+<p>Manifesto degli studi · <span class="mono">accademiadibrera.milano.it/sites/default/files/2024-04/MANIFESTO_DEGLI_STUDI_23-24_0.pdf</span></p>
+<p>Norme redazionali tesi (Scuola di Conservazione e Restauro) · <span class="mono">accademiadibrera.milano.it/sites/default/files/inline-files/NORME REDAZIONALI TESI DI RESTAURO.pdf</span></p>
+<p>Tasse e contributi, iscrizione anno tesi · <span class="mono">accademiadibrera.milano.it/it/iscrizione-anno-tesi-tasse-e-contributi-22-23</span></p>
+</div>
+
+<h5>Altre Accademie — regolamenti e guide alla tesi</h5>
+<div class="src">
+<p>Accademia di Belle Arti di Firenze, <em>Guida alla preparazione della tesi</em> · <span class="mono">accademia.firenze.it</span></p>
+<p>Accademia di Belle Arti di Macerata, <em>Guida alla Tesi</em> e <em>Le note e la bibliografia</em> · <span class="mono">abamc.it</span></p>
+<p>Accademia Albertina di Torino, <em>Redazione e presentazione di tesi. Guida ad uso dei diplomandi</em> · <span class="mono">albertina-academy.it</span></p>
+<p>Accademia di Belle Arti di Urbino, <em>Regolamento tesi</em> · <span class="mono">accademiadiurbino.it</span></p>
+<p>Accademia di Belle Arti di Venezia, <em>Tesi</em> · <span class="mono">accademiavenezia.it</span></p>
+<p>Accademia di Belle Arti di Palermo, <em>Norme redazionali tesi</em> (prof. L. Agus) · <span class="mono">accademiadipalermo.it</span></p>
+<p>Accademia di Belle Arti di Napoli, <em>Guida alla tesi</em></p>
+<p>MUR – AFAM, piano di studi DAPL08 <em>Nuove Tecnologie dell'Arte</em> · <span class="mono">valutazioni-afam.mur.gov.it</span></p>
+</div>
+
+<h5>Norme redazionali e citazioni</h5>
+<div class="src">
+<p>Associazione Italiana Biblioteche, <em>Norme per le citazioni bibliografiche e la bibliografia finale</em> · <span class="mono">aib.it</span></p>
+<p>Sapienza Università di Roma, <em>La tesi di laurea, le note &amp; le citazioni bibliografiche: criteri redazionali</em></p>
+<p>Edizioni Ca' Foscari, <em>Norme redazionali</em> · <span class="mono">edizionicafoscari.unive.it</span></p>
+<p>Università di Macerata, <em>Indicazioni per la bibliografia della tesi</em></p>
+<p>Ministero della Cultura, <em>Rassegna degli Archivi di Stato — Norme redazionali</em></p>
+</div>
+
+<h5>Riferimenti per la bibliografia teorica (arte e nuovi media)</h5>
+<div class="src">
+<p>Manovich, Lev, <em>Il linguaggio dei nuovi media</em>, Milano, Olivares, 2002 (ed. or. 2001).</p>
+<p>Manovich, Lev, <em>Software Takes Command</em>, New York, Bloomsbury, 2013.</p>
+<p>Bolter, Jay David — Grusin, Richard, <em>Remediation. Understanding New Media</em>, Cambridge (MA), MIT Press, 1998.</p>
+<p>Krauss, Rosalind, <em>Reinventare il medium. Cinque saggi sull'arte d'oggi</em>, Milano, Bruno Mondadori, 2005.</p>
+<p>Grau, Oliver (a cura di), <em>Media Art Histories</em>, Cambridge (MA), MIT Press, 2007.</p>
+<p>Paul, Christiane, <em>New Media in the White Cube and Beyond. Curatorial Models for Digital Art</em>, Berkeley, University of California Press, 2008.</p>
+<p>Rush, Michael, <em>New Media in Art</em>, Londra, Thames &amp; Hudson, 2005.</p>
+<p class="cc" style="margin-top:2mm">Questi titoli non sono la bibliografia della tua tesi:
+sono il nucleo da cui quasi ogni ricerca di NTA parte, e da cui si arriva — attraverso le
+loro bibliografie — a quella specifica del tuo argomento.</p>
+</div>
+
+<hr class="sep">
+
+<div class="box key">
+<span class="lab">In una riga</span>
+<p><strong>Minimo 40 cartelle da 1.500 caratteri (= 60.000 caratteri), due relatori, tesi
+più progetto coerenti fra loro, note e bibliografia obbligatorie, richiesta entro
+dicembre per discutere a giugno, venti minuti di presentazione.</strong> Tutto il resto
+di questa guida serve a farlo bene.</p>
+</div>
+
+</body>
+</html>

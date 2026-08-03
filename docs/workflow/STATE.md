@@ -77,6 +77,26 @@ Non riaprirle.
 
 ## Log
 
+### 2026-08-03 — Fuori roadmap: la guida alla tesi di Brera
+
+- L'operatore deve laurearsi all'Accademia di Brera (triennio, Nuove Tecnologie
+  dell'Arte) e non sapeva **nulla** su come si fa una tesi: struttura, indice,
+  lunghezza, norme. Ha chiesto una ricerca web approfondita e un PDF.
+- Prodotto `docs/tesi/Guida-Tesi-Brera-NTA.pdf` (39 pagine, 35 capitoli) più il
+  sorgente `docs/tesi/guida-tesi-brera-nta.html`. Reso con WeasyPrint (CSS Paged
+  Media: indice con numeri di pagina reali, segnalibri PDF, testatine correnti).
+- **Nessun codice dell'app toccato.** `npm run lint` pulito.
+- Nota di ricerca: il dominio `accademiadibrera.milano.it` è **bloccato dalla
+  policy di rete** di questa sessione (403 al gateway su WebFetch *e* curl; anche
+  WebFetch verso qualsiasi altro dominio è bloccato). Il regolamento è stato
+  ricostruito dagli estratti di WebSearch di quelle stesse pagine ufficiali,
+  incrociati fra loro e con i regolamenti di altre Accademie. Le regole
+  strutturali sono confermate da più estratti indipendenti; **date e importi
+  restano da verificare in Segreteria** — il PDF lo dichiara apertamente e al
+  §34 ha la lista delle domande già pronta.
+- Il tema della tesi non è ancora deciso: l'operatore lo comunicherà dopo. È
+  plausibile che riguardi questo progetto — per questo la guida vive nel repo.
+
 ### 2026-07-31 — Il dev server non partiva sul Mac; l'AI diventa sostituibile
 
 Due cose distinte, arrivate insieme.
