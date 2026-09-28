@@ -114,6 +114,12 @@ Non riaprirle.
    `SYNTECH_EXE`), cioè sul file esatto che si scarica.
 `LEGGIMI.txt` e `DESKTOP.md` aggiornati.
 
+**Verificato (run 36492641683, commit 599fda6):** Mac — zip scompattato con
+`ditto`, `codesign`: *valid on disk, satisfies its Designated Requirement*, poi
+**24/24** su quell'app; Windows **24/24**. Release `v0.9.0` pubblicata con
+`VFX-SYNTECH-0.9.0-Mac.zip` (252 MB), `-Windows.exe` (115 MB), `LEGGIMI.txt`;
+scaricata da anonimo (senza login) dal sandbox: funziona.
+
 ### 2026-09-28 — L'app diventa un file da doppio clic (Windows + Mac)
 
 **La richiesta.** Tesi a Brera tra un mese: l'operatore vuole consegnare alla
