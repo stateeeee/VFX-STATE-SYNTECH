@@ -31,7 +31,7 @@ restano scaricabili 90 giorni: una volta scaricato, conservalo tu.
 ### Consegna
 
 - Mandare **tutti e tre i file**: non si sa se il prof ha Windows o Mac.
-- Pesano circa 110 MB (Windows) e 200 MB (Mac, perché contiene entrambe le
+- Pesano circa 115 MB (Windows) e 250 MB (Mac, perché contiene entrambe le
   architetture): serve WeTransfer/Drive/chiavetta, non un allegato email.
 - Prima di consegnare: scarica lo zip e **aprilo tu** su un Mac e, se puoi, su un
   PC Windows. È la prova che conta.

@@ -147,6 +147,15 @@ costruito anche nel sandbox (115 MB, icona e metadati verificati nelle risorse
 PE) ma non eseguibile qui; `.dmg` solo su macOS → coperti dal workflow.
 `npm run lint` pulito.
 
+**Verificato su Windows e Mac veri (GitHub Actions, run 36486625494, commit
+026ff7d):** stessa `verify-desktop.cjs` sulla build impacchettata che viene
+caricata — **Windows 24/24, macOS 24/24**. `.exe` 115 MB, `.dmg` universal 253 MB.
+Sul Mac si decodifica anche **HEVC** (i clip dell'iPhone); su Windows del runner
+no (dipende dall'estensione HEVC di Windows, come in Chrome). WebCodecs H.264 in
+encoding disponibile su entrambi (serve all'export MP4 dell'AI Lab). Gli
+screenshot dei test sono negli artifact `test-screenshots-*` della run (non
+scaricabili dal sandbox: il proxy blocca l'host dei blob di GitHub).
+
 ### 2026-07-31 — Il dev server non partiva sul Mac; l'AI diventa sostituibile
 
 Due cose distinte, arrivate insieme.
