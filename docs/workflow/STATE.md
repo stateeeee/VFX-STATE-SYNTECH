@@ -126,6 +126,12 @@ Il ritaglio si ferma prima di qualunque pixel acceso: il più luminoso tagliato
 vale 7/255. Controllata a 1024, 128, 64, 32 e 16 px su fondo chiaro e scuro.
 `LEGGIMI.txt` ora dice su cosa gira.
 
+**Verificato (run 36494187080, commit bbde38e):** Mac — zip scompattato, firma
+valida, `LSMinimumSystemVersion` = **10.15** (il nuovo controllo passa), **24/24**;
+Windows **24/24**. Release `v0.9.0` ricreata da bbde38e: `Mac.zip` 205 MB (era
+252), `Windows.exe` 87 MB (era 115) — Electron 32 è più leggero.
+**Da fare dall'operatore:** riscaricare lo zip e aprirlo sul suo M1 (macOS 12.2.1).
+
 ### 2026-09-28 (sera) — Mac: da .dmg a .zip; download senza login
 
 **Due intoppi dell'operatore al primo tentativo, entrambi risolti.**
