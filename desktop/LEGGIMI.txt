@@ -1,0 +1,46 @@
+VFX SYNTECH — come aprire l'app
+================================
+
+Non serve installare niente, non serve internet, non serve nessun account.
+L'app si apre con un doppio clic, come qualsiasi programma.
+
+
+WINDOWS  (file: VFX-SYNTECH-...-Windows.exe)
+--------------------------------------------
+1. Doppio clic sul file .exe.
+2. Se compare "Windows ha protetto il PC": clic su "Ulteriori informazioni",
+   poi su "Esegui comunque". Appare solo perché l'app non è firmata con un
+   certificato commerciale.
+3. Il primo avvio può richiedere 10-20 secondi: l'app si prepara da sola.
+
+
+MAC  (file: VFX-SYNTECH-...-Mac.dmg — Apple Silicon e Intel)
+------------------------------------------------------------
+1. Doppio clic sul file .dmg, poi trascina "VFX SYNTECH" nella cartella
+   Applicazioni.
+2. La prima volta macOS avvisa che non può verificare lo sviluppatore
+   (l'app non è distribuita tramite l'App Store):
+   - macOS 15 Sequoia o successivi: clic su "Fine", poi apri
+     Impostazioni di Sistema > Privacy e sicurezza, scorri in fondo e clic su
+     "Apri comunque" accanto a VFX SYNTECH; conferma con la password.
+   - macOS 14 o precedenti: tasto destro (o ctrl+clic) sull'app > Apri > Apri.
+   Dalla seconda volta si apre normalmente.
+3. Webcam e microfono: macOS chiede il permesso la prima volta che un effetto
+   li usa.
+
+Solo se macOS dicesse che l'app "è danneggiata": apri il Terminale e scrivi
+   xattr -cr "/Applications/VFX SYNTECH.app"
+poi premi Invio e riapri l'app.
+
+
+USO
+---
+- Dalla schermata iniziale, clic su uno dei cinque effetti a destra
+  (Blob Tracker, Analog, Blob Reveal, Bokeh, Anamorphic Lab).
+- Dentro l'effetto: carica un video o un'immagine, oppure usa la webcam.
+- AI LAB (barra a sinistra): gli effetti in catena, con esportazione MP4.
+- HOME torna alla schermata iniziale.
+- Schermo intero: F11 su Windows, ctrl+cmd+F su Mac.
+
+I pannelli AI funzionano anche senza internet, con preset integrati.
+Per la massima fluidità serve un computer con una scheda grafica recente.

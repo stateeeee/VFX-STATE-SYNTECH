@@ -1,0 +1,64 @@
+# VFX SYNTECH — desktop packaging (electron-builder).
+#
+#   npm run desktop:dist           builds for the OS you are on
+#   .github/workflows/desktop.yml  builds Windows + macOS on GitHub's machines
+#
+# Everything the app needs at runtime is in dist/ (the built web app + the five
+# effects, fully offline) and dist-desktop/main.cjs (Electron main + server.ts,
+# bundled with express, dotenv and the AI clients). So node_modules is left out
+# entirely: the app ships nothing it does not load.
+appId: com.state.vfxsyntech
+productName: VFX SYNTECH
+copyright: © State — VFX SYNTECH
+
+directories:
+  output: release
+  buildResources: desktop
+
+files:
+  - dist/**/*
+  - "!dist/server.cjs"
+  - "!dist/server.cjs.map"
+  - dist-desktop/**/*
+  - desktop/icon.png
+  - package.json
+  - "!node_modules/**/*"
+
+# ── Windows: one .exe, double-click, nothing to install ─────────────────────
+win:
+  target:
+    - target: portable
+      arch: [x64]
+  icon: desktop/icon.png
+portable:
+  artifactName: VFX-SYNTECH-${version}-Windows.exe
+
+# ── macOS: one .dmg that runs on both Apple Silicon and Intel Macs ──────────
+mac:
+  target:
+    - target: dmg
+      arch: [universal]
+  icon: desktop/icon.png
+  category: public.app-category.video
+  # Ad-hoc signature: no Apple Developer account needed. Without ANY signature
+  # an Apple Silicon Mac calls the app "damaged"; with this one it only asks,
+  # the first time, to confirm it in System Settings → Privacy & Security.
+  identity: "-"
+  hardenedRuntime: false
+  extendInfo:
+    NSCameraUsageDescription: VFX SYNTECH usa la webcam come sorgente video per gli effetti.
+    NSMicrophoneUsageDescription: VFX SYNTECH usa il microfono per rendere gli effetti reattivi all'audio.
+dmg:
+  artifactName: VFX-SYNTECH-${version}-Mac.dmg
+  title: VFX SYNTECH
+
+# ── Linux: only used to test the desktop build in the cloud sandbox ─────────
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  icon: desktop/icon.png
+  category: Video
+  executableName: vfx-syntech
+appImage:
+  artifactName: VFX-SYNTECH-${version}-Linux.AppImage

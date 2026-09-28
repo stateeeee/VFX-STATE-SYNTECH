@@ -1,0 +1,92 @@
+# VFX SYNTECH — the desktop app, built and tested on GitHub's machines.
+#
+# Every push builds the app for Windows (.exe) and macOS (.dmg, Apple Silicon +
+# Intel), opens each build on a real Windows / Mac machine and runs
+# tools/verify/verify-desktop.cjs against it. The result is ONE download:
+# Actions → the run → Artifacts → "VFX-SYNTECH-<version>", which holds
+#   VFX-SYNTECH-<version>-Windows.exe
+#   VFX-SYNTECH-<version>-Mac.dmg
+#   LEGGIMI.txt   (how to open it, for whoever receives it)
+# See docs/workflow/DESKTOP.md.
+name: Desktop app
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths-ignore: ["docs/**", "**/*.md"]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build + test (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            target: --win
+            file: release/*.exe
+          - name: Mac
+            os: macos-latest
+            target: --mac
+            file: release/*.dmg
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run desktop:bundle
+      - name: Package
+        run: npx electron-builder ${{ matrix.target }} --publish never
+      - name: Open the packaged app and test it
+        run: |
+          npm install --no-save playwright-core@1.56.1
+          node tools/verify/verify-desktop.cjs "${{ runner.temp }}/screens"
+      - name: Test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-screenshots-${{ matrix.name }}
+          path: ${{ runner.temp }}/screens
+          if-no-files-found: ignore
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.name }}
+          path: ${{ matrix.file }}
+          if-no-files-found: error
+          retention-days: 3
+
+  bundle:
+    name: One download for both
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: echo "v=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
+          path: out
+          merge-multiple: true
+      - run: cp desktop/LEGGIMI.txt out/ && ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VFX-SYNTECH-${{ steps.version.outputs.v }}
+          path: out
+          if-no-files-found: error
+          retention-days: 90
+          # .exe and .dmg are already compressed; zipping them again only costs time
+          compression-level: 0

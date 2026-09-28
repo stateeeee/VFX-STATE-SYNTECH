@@ -1,8 +1,12 @@
 import express from "express";
 import path from "path";
+import type { AddressInfo } from "net";
 import dotenv from "dotenv";
 
-dotenv.config();
+/* .env.local first, .env second — every doc and boot message in this repo says
+   ".env.local", but a bare dotenv.config() only ever read ".env". Neither
+   overrides a variable that is already set (the desktop shell sets its own). */
+dotenv.config({ path: [".env.local", ".env"] });
 
 /* The AI behind these endpoints is pluggable: Groq if GROQ_API_KEY is set,
    Gemini if GEMINI_API_KEY is, and offline fallbacks if neither. The endpoints
@@ -263,9 +267,18 @@ Describe what the wave forms and particles are expressing. Keep it elegant, dram
   }
 });
 
+export interface ServeOptions {
+  port?: number;
+  host?: string;
+  /** Serve this built `dist/` folder instead of running Vite. The desktop shell passes its own. */
+  distPath?: string;
+}
+
 // Configure Vite middleware or static route handling depending on production state
-const startServer = async () => {
-  if (process.env.NODE_ENV !== "production") {
+export const startServer = async (opts: ServeOptions = {}): Promise<number> => {
+  const port = opts.port ?? PORT;
+  const host = opts.host ?? "0.0.0.0";
+  if (!opts.distPath && process.env.NODE_ENV !== "production") {
     // Effect builds are self-contained static apps: serve them ahead of the
     // Vite pipeline, which blocks public assets requested as <script src>
     app.use("/effects", express.static(path.join(process.cwd(), "public/effects")));
@@ -276,17 +289,30 @@ const startServer = async () => {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = opts.distPath ?? path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server launched on port ${PORT} // Full-stack core ready.`);
-    console.log(describeProvider());
+  return new Promise<number>((resolve, reject) => {
+    const server = app.listen(port, host, () => {
+      const bound = (server.address() as AddressInfo).port;
+      console.log(`Server launched on port ${bound} // Full-stack core ready.`);
+      console.log(describeProvider());
+      resolve(bound);
+    });
+    server.once("error", reject);
   });
 };
 
-startServer();
+/* `npm run dev` and `npm start` run this file directly: listen on :3000 now.
+   The desktop shell (desktop/main.ts) imports it instead and calls startServer
+   itself, on its own port and with its own dist/ — it sets SYNTECH_DESKTOP first. */
+if (!process.env.SYNTECH_DESKTOP) {
+  startServer().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

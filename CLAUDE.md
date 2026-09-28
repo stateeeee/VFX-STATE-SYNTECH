@@ -24,6 +24,7 @@ done, what is next, and every decision made so far. Then follow
 | `06-VERIFICATION.md` | How to verify each phase (commands, Playwright, parity protocol) |
 | `07-SESSION-PROTOCOL.md` | How every work session must start, run, and end |
 | `08-PROMPTS.md` | The prompts the operator pastes to drive each session |
+| `DESKTOP.md` | The double-click desktop app (Electron): how it is built, tested, delivered |
 
 ## Commands
 
@@ -32,7 +33,12 @@ npm install          # first time only
 npm run dev          # tsx server.ts → http://localhost:3000 (Express + Vite middleware)
 npm run lint         # tsc --noEmit (must stay clean)
 npm run build        # vite build + esbuild server bundle
+npm run desktop      # build + open the desktop app (Electron, unpackaged)
+npm run desktop:dist # package the desktop app for this OS into release/
 ```
+
+The desktop app (Windows .exe + macOS .dmg) is built and tested on every push
+by `.github/workflows/desktop.yml` — see `docs/workflow/DESKTOP.md`.
 
 `GEMINI_API_KEY` in `.env.local` is optional in dev: AI endpoints degrade to
 offline fallbacks. Never require it for non-AI features to work.
@@ -41,6 +47,7 @@ offline fallbacks. Never require it for non-AI features to work.
 
 ```
 server.ts                       Express: /api/gemini/* endpoints, serves /effects statically
+desktop/main.ts                 Electron shell: runs server.ts inside the app on 127.0.0.1:47291
 src/App.tsx                     Shell: top bar, left nav, layout, composition state, save/projects
 src/components/VfxCanvas.tsx    Animated "brain graph" hero (canvas), hub-drag chaining
 src/components/NodalComposition.tsx  Node graph panel (INPUT → effects → OUTPUT)

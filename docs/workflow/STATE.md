@@ -29,6 +29,23 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**⇒ APP DESKTOP (2026-09-28) — per la consegna della tesi a Brera.** L'operatore
+deve mandare alla segreteria, insieme alla tesi, l'app come file da doppio clic
+che i prof aprono sul loro computer. Fatto: `docs/workflow/DESKTOP.md` è la
+guida completa. **Ogni push costruisce e testa `.exe` (Windows) e `.dmg` (Mac)
+su GitHub** → Actions → "Desktop app" → artifact `VFX-SYNTECH-<versione>`.
+Aperto:
+1. **L'operatore scarica lo zip e apre l'app sul suo Mac** (e su un PC Windows se
+   può) prima della consegna — la prova su una macchina vera che conta.
+2. Le modifiche all'app che farà dopo la tesi entrano nella build da sole: non c'è
+   una versione desktop separata da tenere allineata. Per la consegna finale,
+   alzare `version` in `package.json` (es. `1.0.0`) così i file portano quel numero.
+3. La repo è **pubblica**: chiunque vede codice e build. Se non lo vuole, la può
+   rendere privata (Settings → General → Danger Zone); il workflow continua a
+   funzionare ma consuma minuti del piano gratuito (macOS conta 10×).
+
+Sotto, tutto il resto resta com'era.
+
 **LA GABBIA È DENTRO L'APP (2026-07-31).** L'operatore ha dato il via —
 *"quando apro l'app come ho fatto prima l'estetica deve essere quella finale che
 avevamo deciso"* — dopo aver provato l'app in locale e averla trovata ancora con
@@ -76,6 +93,59 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-09-28 — L'app diventa un file da doppio clic (Windows + Mac)
+
+**La richiesta.** Tesi a Brera tra un mese: l'operatore vuole consegnare alla
+segreteria, oltre alla tesi in Word, l'app stessa — un file che si apre con due
+clic sul PC dei prof, senza localhost, senza GitHub, senza terminale. E vuole
+poter continuare a modificarla dopo.
+
+**Cosa è stato fatto.** Un guscio Electron attorno all'app, non una seconda app:
+- `desktop/main.ts` avvia **lo stesso `server.ts`** dentro l'app su
+  `127.0.0.1:47291` e apre una finestra su di esso. Porta **fissa** perché
+  `localStorage` (preset, sessioni, impostazioni effetti) è per-origine; se è
+  occupata da un altro programma ripiega su una porta libera. Istanza singola,
+  link esterni nel browser vero, la finestra non naviga mai fuori dall'app.
+- `server.ts` esporta `startServer({ port, host, distPath })` e si avvia da solo
+  su :3000 solo se `SYNTECH_DESKTOP` non è impostata: `npm run dev` e
+  `npm start` invariati (verificati entrambi: 200 su `/` e sugli effetti).
+- `electron-builder.yml`: Windows `portable` x64 (un .exe, niente installazione),
+  macOS `dmg` **universal** (Apple Silicon + Intel) con **firma ad-hoc** — senza
+  firma un Mac M1+ direbbe "app danneggiata". Il pacchetto contiene solo `dist/`,
+  `dist-desktop/main.cjs` (Electron + server + express + client AI in un bundle),
+  l'icona e `package.json`: zero `node_modules`.
+- `enable-unsafe-swiftshader`: trovato in verifica — senza GPU (sandbox, ma anche
+  un PC in VM o con driver in blocklist) Chromium 152 (Electron 44) non dà più WebGL software e
+  3 effetti su 5 morivano con "no webgl". Con lo switch rendono su CPU.
+  `force_high_performance_gpu` per i portatili con due GPU.
+- Icona da `public/assets/logo.png` su piastra nera (`tools/gen/gen-app-icon.cjs`).
+- `desktop/LEGGIMI.txt` per i prof: come aprirla su Windows/Mac e superare gli
+  avvisi di SmartScreen / Gatekeeper (l'app non è firmata con certificati a pagamento).
+- `.github/workflows/desktop.yml`: a ogni push costruisce su `windows-latest` e
+  `macos-latest`, **apre la build e la testa** con `verify-desktop.cjs`, poi
+  consegna un unico artifact con `.exe` + `.dmg` + `LEGGIMI.txt`.
+- `package.json`: `name` → `vfx-syntech` (era il template `react-example`),
+  `version` 0.9.0, `productName`, script `desktop*`; `electron` +
+  `electron-builder` come devDependencies (richiesti esplicitamente dall'operatore).
+- `index.html`: il titolo era ancora "My Google AI Studio App" → "VFX SYNTECH".
+
+**Bug trovato strada facendo, corretto.** `dotenv.config()` legge solo `.env`,
+ma tutta la documentazione (e la riga di boot) dice `.env.local`: la chiave Groq
+dell'operatore in `.env.local` sarebbe stata **ignorata** — la riga di boot
+avrebbe detto `AI provider: none`. Ora legge `.env.local` poi `.env`; verificato
+con una chiave finta → `AI provider: groq`.
+
+**Verificato (sandbox, build Linux impacchettata, Playwright → Electron):**
+`verify-desktop.cjs` **24/24** — finestra su `127.0.0.1:47291` titolata VFX
+SYNTECH; effetti, three.js, font, MediaPipe (wasm come `application/wasm`) serviti
+dall'interno; ottimizzatore AI risponde offline; i **5 effetti si aprono** senza
+errori; H.264 si decodifica; `localStorage` sopravvive a chiusura + riapertura;
+un secondo avvio non apre una seconda app; porta occupata → si apre lo stesso.
+Screenshot: stessa UI della web app (gabbia, card, effetti). `.exe` Windows
+costruito anche nel sandbox (115 MB, icona e metadati verificati nelle risorse
+PE) ma non eseguibile qui; `.dmg` solo su macOS → coperti dal workflow.
+`npm run lint` pulito.
 
 ### 2026-07-31 — Il dev server non partiva sul Mac; l'AI diventa sostituibile
 
