@@ -37,7 +37,7 @@ npm run desktop      # build + open the desktop app (Electron, unpackaged)
 npm run desktop:dist # package the desktop app for this OS into release/
 ```
 
-The desktop app (Windows .exe + macOS .dmg) is built and tested on every push
+The desktop app (Windows .exe + macOS .zip) is built and tested on every push
 by `.github/workflows/desktop.yml` — see `docs/workflow/DESKTOP.md`.
 
 `GEMINI_API_KEY` in `.env.local` is optional in dev: AI endpoints degrade to

@@ -32,7 +32,9 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '../..');
 /* Where electron-builder leaves the unpacked app on each OS. */
-const EXE = path.join(ROOT, 'release', {
+/* SYNTECH_EXE: test an app somewhere else — CI points it at the Mac .zip
+   unpacked the way Finder does, so the file people download is what is tested. */
+const EXE = process.env.SYNTECH_EXE || path.join(ROOT, 'release', {
   linux: 'linux-unpacked/vfx-syntech',
   win32: 'win-unpacked/VFX SYNTECH.exe',
   darwin: 'mac-universal/VFX SYNTECH.app/Contents/MacOS/VFX SYNTECH',

@@ -1,11 +1,12 @@
 # VFX SYNTECH — the desktop app, built and tested on GitHub's machines.
 #
-# Every push builds the app for Windows (.exe) and macOS (.dmg, Apple Silicon +
+# Every push builds the app for Windows (.exe) and macOS (.zip, Apple Silicon +
 # Intel), opens each build on a real Windows / Mac machine and runs
 # tools/verify/verify-desktop.cjs against it. The result is ONE download:
-# Actions → the run → Artifacts → "VFX-SYNTECH-<version>", which holds
+# the Releases page (direct links, no login) — and, for logged-in users, also
+# Actions → the run → Artifacts → "VFX-SYNTECH-<version>". Both hold
 #   VFX-SYNTECH-<version>-Windows.exe
-#   VFX-SYNTECH-<version>-Mac.dmg
+#   VFX-SYNTECH-<version>-Mac.zip
 #   LEGGIMI.txt   (how to open it, for whoever receives it)
 # See docs/workflow/DESKTOP.md.
 name: Desktop app
@@ -34,7 +35,7 @@ jobs:
           - name: Mac
             os: macos-latest
             target: --mac
-            file: release/*.dmg
+            file: release/*.zip
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -50,9 +51,17 @@ jobs:
       - name: Package
         run: npx electron-builder ${{ matrix.target }} --publish never
       - name: Open the packaged app and test it
+        shell: bash
         run: |
           npm install --no-save playwright-core@1.56.1
-          node tools/verify/verify-desktop.cjs "${{ runner.temp }}/screens"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            # Test the file people will get: unzip it the way Finder does and
+            # check the signature survived, then run the tests on THAT app.
+            ditto -x -k release/*.zip "$RUNNER_TEMP/unzipped"
+            codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/unzipped/VFX SYNTECH.app"
+            export SYNTECH_EXE="$RUNNER_TEMP/unzipped/VFX SYNTECH.app/Contents/MacOS/VFX SYNTECH"
+          fi
+          node tools/verify/verify-desktop.cjs "$RUNNER_TEMP/screens"
       - name: Test screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -72,6 +81,8 @@ jobs:
     name: One download for both
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - id: version
@@ -88,5 +99,18 @@ jobs:
           path: out
           if-no-files-found: error
           retention-days: 90
-          # .exe and .dmg are already compressed; zipping them again only costs time
+          # .exe and .zip are already compressed; zipping them again only costs time
           compression-level: 0
+      # The same three files as plain links on the Releases page: one click, no
+      # GitHub login, works from a phone, never expires (artifacts need a login
+      # and expire). One release per version, rebuilt from the latest push.
+      - name: Publish to Releases (direct links)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: v${{ steps.version.outputs.v }}
+        run: |
+          gh release delete "$V" --cleanup-tag --yes || true
+          gh release create "$V" out/* \
+            --target "$GITHUB_SHA" \
+            --title "VFX SYNTECH ${{ steps.version.outputs.v }}" \
+            --notes "Windows: scarica il file .exe e fai doppio clic. Mac: scarica il file .zip, doppio clic, poi doppio clic sull'app. Istruzioni per aprirla: LEGGIMI.txt. Build $GITHUB_SHA dal branch $GITHUB_REF_NAME, testata su Windows e macOS."

@@ -32,8 +32,9 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 **⇒ APP DESKTOP (2026-09-28) — per la consegna della tesi a Brera.** L'operatore
 deve mandare alla segreteria, insieme alla tesi, l'app come file da doppio clic
 che i prof aprono sul loro computer. Fatto: `docs/workflow/DESKTOP.md` è la
-guida completa. **Ogni push costruisce e testa `.exe` (Windows) e `.dmg` (Mac)
-su GitHub** → Actions → "Desktop app" → artifact `VFX-SYNTECH-<versione>`.
+guida completa. **Ogni push costruisce e testa `.exe` (Windows) e `.zip` (Mac)
+su GitHub** → pagina **Releases** (link diretti, niente login) oppure Actions →
+"Desktop app" → artifact `VFX-SYNTECH-<versione>` (solo da loggati).
 Aperto:
 1. **L'operatore scarica lo zip e apre l'app sul suo Mac** (e su un PC Windows se
    può) prima della consegna — la prova su una macchina vera che conta.
@@ -93,6 +94,25 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-09-28 (sera) — Mac: da .dmg a .zip; download senza login
+
+**Due intoppi dell'operatore al primo tentativo, entrambi risolti.**
+1. *"Non riesco a scaricare, è come fosse solo testo"*: gli artifact di GitHub
+   Actions si scaricano solo da loggati; senza login il nome è testo con accanto
+   lo `sha256`. Ora il workflow pubblica anche una **Release `v<versione>`** con i
+   tre file come link diretti (niente login, anche da telefono, non scadono).
+   Ricreata a ogni push, quindi è sempre l'ultima build testata.
+2. *"Divieto sul logo quando trascino in Applicazioni, e il doppio clic mi
+   rimanda sempre lì, in loop"*: il `.dmg`. Il 🚫 è il Finder su un disco in sola
+   lettura (diventa "+" solo esattamente sopra la cartella Applicazioni) e l'icona
+   sulla scrivania è il **disco montato**, non l'app: riaprirla ridà la stessa
+   finestra. Se ha confuso lui, confonderà i prof. **Il Mac ora riceve uno `.zip`**:
+   doppio clic → compare l'app → doppio clic. Il workflow scompatta lo zip con
+   `ditto` come il Finder, verifica la firma (`codesign --verify --deep --strict`)
+   e fa girare `verify-desktop.cjs` su **quell'**app (nuova variabile
+   `SYNTECH_EXE`), cioè sul file esatto che si scarica.
+`LEGGIMI.txt` e `DESKTOP.md` aggiornati.
 
 ### 2026-09-28 — L'app diventa un file da doppio clic (Windows + Mac)
 

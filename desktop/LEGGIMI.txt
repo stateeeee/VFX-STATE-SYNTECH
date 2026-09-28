@@ -14,23 +14,24 @@ WINDOWS  (file: VFX-SYNTECH-...-Windows.exe)
 3. Il primo avvio può richiedere 10-20 secondi: l'app si prepara da sola.
 
 
-MAC  (file: VFX-SYNTECH-...-Mac.dmg — Apple Silicon e Intel)
+MAC  (file: VFX-SYNTECH-...-Mac.zip — Apple Silicon e Intel)
 ------------------------------------------------------------
-1. Doppio clic sul file .dmg, poi trascina "VFX SYNTECH" nella cartella
-   Applicazioni.
-2. La prima volta macOS avvisa che non può verificare lo sviluppatore
+1. Doppio clic sul file .zip: accanto compare l'app "VFX SYNTECH".
+   (Consigliato: trascinala nella cartella Applicazioni.)
+2. Doppio clic sull'app.
+3. La prima volta macOS avvisa che non può verificare lo sviluppatore
    (l'app non è distribuita tramite l'App Store):
    - macOS 15 Sequoia o successivi: clic su "Fine", poi apri
      Impostazioni di Sistema > Privacy e sicurezza, scorri in fondo e clic su
      "Apri comunque" accanto a VFX SYNTECH; conferma con la password.
    - macOS 14 o precedenti: tasto destro (o ctrl+clic) sull'app > Apri > Apri.
    Dalla seconda volta si apre normalmente.
-3. Webcam e microfono: macOS chiede il permesso la prima volta che un effetto
+4. Webcam e microfono: macOS chiede il permesso la prima volta che un effetto
    li usa.
 
 Solo se macOS dicesse che l'app "è danneggiata": apri il Terminale e scrivi
    xattr -cr "/Applications/VFX SYNTECH.app"
-poi premi Invio e riapri l'app.
+(o il percorso dove si trova l'app), premi Invio e riapri l'app.
 
 
 USO

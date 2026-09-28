@@ -33,10 +33,15 @@ win:
 portable:
   artifactName: VFX-SYNTECH-${version}-Windows.exe
 
-# ── macOS: one .dmg that runs on both Apple Silicon and Intel Macs ──────────
+# ── macOS: one .zip that runs on both Apple Silicon and Intel Macs ──────────
+# A .zip, not a .dmg: double-click it and the app itself appears next to it,
+# ready to double-click. The .dmg made people drag the app onto an Applications
+# shortcut inside a read-only disk (a 🚫 cursor until you hit the folder exactly)
+# and its disk icon on the desktop reopened that same window in a loop — the
+# operator hit exactly that on the first try (2026-09-28).
 mac:
   target:
-    - target: dmg
+    - target: zip
       arch: [universal]
   icon: desktop/icon.png
   category: public.app-category.video
@@ -48,9 +53,7 @@ mac:
   extendInfo:
     NSCameraUsageDescription: VFX SYNTECH usa la webcam come sorgente video per gli effetti.
     NSMicrophoneUsageDescription: VFX SYNTECH usa il microfono per rendere gli effetti reattivi all'audio.
-dmg:
-  artifactName: VFX-SYNTECH-${version}-Mac.dmg
-  title: VFX SYNTECH
+  artifactName: VFX-SYNTECH-${version}-Mac.zip
 
 # ── Linux: only used to test the desktop build in the cloud sandbox ─────────
 linux:

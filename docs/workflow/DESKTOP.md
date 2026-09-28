@@ -17,23 +17,30 @@ finisce nella prossima build desktop da sola.
 Ogni push su GitHub (su `main` o su un branch `claude/...`) costruisce l'app su
 macchine Windows e Mac vere, la **apre e la testa**, e lascia un solo pacchetto:
 
-1. GitHub → repo → tab **Actions** → workflow **Desktop app** → l'ultima run con
-   la spunta verde.
-2. In fondo alla pagina, sezione **Artifacts** → **VFX-SYNTECH-<versione>**.
-3. Dentro lo zip ci sono:
+- **Il modo più semplice — pagina Releases:** GitHub → repo → **Releases** (colonna
+  a destra) → `VFX SYNTECH <versione>` → clic sui file. Link diretti: non serve
+  essere loggati, funziona anche dal telefono, non scadono.
+- **Oppure dagli Artifacts:** tab **Actions** → workflow **Desktop app** →
+  l'ultima run con la spunta verde → in fondo, **Artifacts** →
+  **VFX-SYNTECH-<versione>**. Si scarica **solo da loggati**: senza login il nome
+  compare come testo semplice con un codice `sha256` accanto, non come link.
+
+I file sono:
    - `VFX-SYNTECH-<versione>-Windows.exe` — un file, doppio clic, niente installazione;
-   - `VFX-SYNTECH-<versione>-Mac.dmg` — per Mac Apple Silicon **e** Intel;
+   - `VFX-SYNTECH-<versione>-Mac.zip` — per Mac Apple Silicon **e** Intel:
+     doppio clic sullo zip, compare l'app, doppio clic sull'app;
    - `LEGGIMI.txt` — come aprirla, per chi la riceve (i prof).
 
-Quello zip è ciò che si manda alla segreteria insieme alla tesi. Gli artifact
-restano scaricabili 90 giorni: una volta scaricato, conservalo tu.
+Questi tre file sono ciò che si manda alla segreteria insieme alla tesi. Gli
+artifact restano scaricabili 90 giorni, la Release finché non la cancelli: in
+ogni caso, una volta scaricati, conservali tu.
 
 ### Consegna
 
 - Mandare **tutti e tre i file**: non si sa se il prof ha Windows o Mac.
 - Pesano circa 115 MB (Windows) e 250 MB (Mac, perché contiene entrambe le
   architetture): serve WeTransfer/Drive/chiavetta, non un allegato email.
-- Prima di consegnare: scarica lo zip e **aprilo tu** su un Mac e, se puoi, su un
+- Prima di consegnare: scarica i file e **aprili tu** su un Mac e, se puoi, su un
   PC Windows. È la prova che conta.
 
 ### Perché compaiono gli avvisi di sicurezza
@@ -64,7 +71,7 @@ La chiave **non** va mai dentro la build: chi riceve l'app la vedrebbe.
 ```bash
 npm install
 npm run desktop        # build + apre l'app desktop (non impacchettata)
-npm run desktop:dist   # crea il .dmg in release/ (sul Mac) o l'.exe (su Windows)
+npm run desktop:dist   # crea lo .zip in release/ (sul Mac) o l'.exe (su Windows)
 ```
 
 ## Per le sessioni di sviluppo
@@ -75,10 +82,10 @@ npm run desktop:dist   # crea il .dmg in release/ (sul Mac) o l'.exe (su Windows
 |---|---|
 | `desktop/main.ts` | Processo principale Electron: avvia `server.ts` dentro l'app su `127.0.0.1:47291`, apre la finestra, gestisce link esterni, istanza singola, fallback di porta |
 | `server.ts` | Lo stesso server di `npm start`. Esporta `startServer({ port, host, distPath })`; si avvia da solo su :3000 **solo** se `SYNTECH_DESKTOP` non è impostata |
-| `electron-builder.yml` | Packaging: Windows `portable` x64, macOS `dmg` universal con firma ad-hoc, Linux AppImage (solo test) |
+| `electron-builder.yml` | Packaging: Windows `portable` x64, macOS `zip` universal con firma ad-hoc, Linux AppImage (solo test) |
 | `desktop/icon.png` | Icona 1024², generata da `tools/gen/gen-app-icon.cjs` dal logo |
 | `desktop/LEGGIMI.txt` | Istruzioni per chi riceve l'app; il workflow la mette nel pacchetto |
-| `.github/workflows/desktop.yml` | Build + test su `windows-latest` e `macos-latest`, poi un artifact unico |
+| `.github/workflows/desktop.yml` | Build + test su `windows-latest` e `macos-latest`, poi un artifact unico e la Release `v<versione>` (ricreata a ogni push) |
 | `tools/verify/verify-desktop.cjs` | Apre la build impacchettata con Playwright/Electron e la verifica (24 controlli) |
 
 `npm run desktop:bundle` compila `desktop/main.ts` + `server.ts` (con express,
@@ -105,6 +112,14 @@ contiene **solo** `dist/`, `dist-desktop/`, l'icona e `package.json`: niente
 - **Firma ad-hoc su Mac (`identity: "-"`, `hardenedRuntime: false`).** Senza
   alcuna firma un Mac Apple Silicon dichiara l'app "danneggiata"; con la firma
   ad-hoc chiede solo la conferma in Privacy e sicurezza. Nessun account Apple.
+- **Mac in `.zip`, non `.dmg`.** Il primo tentativo era un `.dmg`: l'operatore,
+  al primo colpo, ha visto il 🚫 trascinando l'app (il disco del dmg è in sola
+  lettura: il cursore diventa "+" solo esattamente sopra la cartella Applicazioni)
+  e l'icona del disco sulla scrivania riapriva la stessa finestra, in loop. Lo
+  `.zip` si apre con un doppio clic e mostra direttamente l'app. electron-builder
+  lo crea con `zip -y` nativo di macOS, che preserva i symlink dei framework —
+  senza, la firma si rompe. Il workflow lo scompatta con `ditto` (come il Finder),
+  fa `codesign --verify --deep --strict` e testa **quell'**app.
 - **Windows `portable`.** Un file unico, nessuna installazione — è ciò che serve
   a un prof. Il prezzo è qualche secondo in più al primo avvio (si scompatta).
 - **`.env.local` ora viene letto davvero.** `server.ts` faceva `dotenv.config()`,
@@ -119,5 +134,6 @@ NODE_PATH=/opt/node22/lib/node_modules xvfb-run -a node tools/verify/verify-desk
 ```
 
 Nel sandbox si possono costruire anche l'`.exe` Windows
-(`npx electron-builder --win portable`) ma non eseguirlo; il `.dmg` solo su macOS.
+(`npx electron-builder --win portable`) ma non eseguirlo; lo `.zip` Mac universal
+solo su macOS (serve `lipo`).
 Per questo il workflow esegue la stessa verifica su Windows e Mac veri.
