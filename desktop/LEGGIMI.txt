@@ -4,6 +4,9 @@ VFX SYNTECH — come aprire l'app
 Non serve installare niente, non serve internet, non serve nessun account.
 L'app si apre con un doppio clic, come qualsiasi programma.
 
+Funziona su:  Mac con macOS 10.15 Catalina o successivo (Apple Silicon e Intel)
+              PC con Windows 10 o 11 (64 bit)
+
 
 WINDOWS  (file: VFX-SYNTECH-...-Windows.exe)
 --------------------------------------------

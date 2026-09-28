@@ -59,6 +59,11 @@ jobs:
             # check the signature survived, then run the tests on THAT app.
             ditto -x -k release/*.zip "$RUNNER_TEMP/unzipped"
             codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/unzipped/VFX SYNTECH.app"
+            # Older Macs must keep working: an Electron upgrade that raises the
+            # minimum macOS fails HERE, not on a professor's computer.
+            MIN=$(plutil -extract LSMinimumSystemVersion raw "$RUNNER_TEMP/unzipped/VFX SYNTECH.app/Contents/Info.plist")
+            echo "Minimum macOS: $MIN"
+            [ "$MIN" = "10.15" ] || { echo "::error::the app now needs macOS $MIN (expected 10.15) — see docs/workflow/DESKTOP.md"; exit 1; }
             export SYNTECH_EXE="$RUNNER_TEMP/unzipped/VFX SYNTECH.app/Contents/MacOS/VFX SYNTECH"
           fi
           node tools/verify/verify-desktop.cjs "$RUNNER_TEMP/screens"

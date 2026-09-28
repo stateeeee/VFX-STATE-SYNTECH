@@ -35,10 +35,11 @@ const HOST = "127.0.0.1";
 /* Laptops with two GPUs: ask for the discrete one. The effects are WebGL2
    shaders; the integrated GPU is where the frame rate goes to die. */
 app.commandLine.appendSwitch("force_high_performance_gpu");
-/* No usable GPU at all (a blocklisted driver, a VM, remote desktop): Chromium
-   no longer falls back to its software WebGL on its own, and every effect would
-   show "no webgl". With this it renders on the CPU instead — slowly, but it
-   renders. It only ever runs this app's own pages, so the "unsafe" (untrusted
+/* No usable GPU at all (a blocklisted driver, a VM, remote desktop): newer
+   Chromium no longer falls back to its software WebGL on its own, and every
+   effect would show "no webgl" (seen with Electron 44). With this it renders on
+   the CPU instead — slowly, but it renders. Kept on the pinned Electron 32 too,
+   so a future upgrade cannot silently bring the blank effects back. It only ever runs this app's own pages, so the "unsafe" (untrusted
    web content reaching a JIT) does not apply. A real GPU is always preferred. */
 app.commandLine.appendSwitch("enable-unsafe-swiftshader");
 

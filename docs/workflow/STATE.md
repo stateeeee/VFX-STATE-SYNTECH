@@ -95,6 +95,37 @@ Non riaprirle.
 
 ## Log
 
+### 2026-09-28 (notte) — Gira anche sui Mac vecchi; la nuova icona
+
+**Il blocco.** Sul MacBook Pro M1 dell'operatore (macOS **12.2.1**) lo zip nuovo
+si apriva, ma l'app diceva *"richiede macOS 13.0 o versione successiva"*. Causa:
+Electron 44 (Chromium 152) richiede macOS 13. I prof avranno computer di ogni
+età, e l'operatore l'ha chiesto esplicitamente: *"deve girare su più PC possibili"*.
+
+**La scelta.** Minimi letti dagli `Info.plist` delle release Electron darwin:
+44 → 13.0, 37 → 11.0, 32 → **10.15**. Electron **32.3.3** (Chromium 128) è
+l'ultima linea che supporta Catalina (Mac dal 2012 in su); Windows resta 10/11.
+Prima di adottarla:
+- CSS compilato: solo `color-mix`, `oklch`, `@property`, `@layer` (≤ Chromium 111).
+  Nessuna API JS più recente di Chromium 128 in `src/` né negli effetti.
+- `verify-desktop.cjs` con Electron 32: **24/24**.
+- Screenshot home + 5 effetti confrontati pixel per pixel con quelli di Electron
+  44: le differenze (0,1–1,6% dei pixel) sono **tutte** nelle parti animate
+  (grafo, gradiente del brand, orologio, FPS). Layout, font e materiali identici.
+Bloccata con versione esatta in `package.json`, `mac.minimumSystemVersion:
+"10.15"` in `electron-builder.yml`, e il workflow ora **fallisce** se l'app
+impacchettata dichiara un `LSMinimumSystemVersion` diverso da 10.15. Prezzo
+accettato: Electron 32 non riceve più patch di sicurezza. L'app carica solo le
+sue pagine locali, quindi il rischio è minimo; scritto in `DESKTOP.md`.
+
+**L'icona.** L'operatore ha fornito la sua icona (tessera di vetro con la stella,
+1254² su nero), ora in `desktop/icon-source.webp`. `gen-app-icon.cjs` riscritto:
+rende trasparente solo il nero **fuori** dalla tessera (sennò nel Dock è un
+quadrato nero ad angoli vivi) e la porta sulla griglia Apple (850 px su 1024).
+Il ritaglio si ferma prima di qualunque pixel acceso: il più luminoso tagliato
+vale 7/255. Controllata a 1024, 128, 64, 32 e 16 px su fondo chiaro e scuro.
+`LEGGIMI.txt` ora dice su cosa gira.
+
 ### 2026-09-28 (sera) — Mac: da .dmg a .zip; download senza login
 
 **Due intoppi dell'operatore al primo tentativo, entrambi risolti.**

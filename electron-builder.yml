@@ -50,6 +50,12 @@ mac:
   # the first time, to confirm it in System Settings → Privacy & Security.
   identity: "-"
   hardenedRuntime: false
+  # Runs from macOS 10.15 Catalina (2019) up. This is set by the Electron
+  # version, not here: Electron 44 required macOS 13 and the operator's own M1
+  # on macOS 12.2.1 refused to open it. package.json pins Electron 32.3.3, the
+  # last line that supports 10.15. Do NOT upgrade Electron without reading
+  # docs/workflow/DESKTOP.md — the workflow fails the build if this drifts.
+  minimumSystemVersion: "10.15"
   extendInfo:
     NSCameraUsageDescription: VFX SYNTECH usa la webcam come sorgente video per gli effetti.
     NSMicrophoneUsageDescription: VFX SYNTECH usa il microfono per rendere gli effetti reattivi all'audio.

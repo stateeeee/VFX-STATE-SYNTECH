@@ -25,6 +25,9 @@ macchine Windows e Mac vere, la **apre e la testa**, e lascia un solo pacchetto:
   **VFX-SYNTECH-<versione>**. Si scarica **solo da loggati**: senza login il nome
   compare come testo semplice con un codice `sha256` accanto, non come link.
 
+Gira su **Mac con macOS 10.15 Catalina o successivo** (Apple Silicon e Intel) e
+su **Windows 10/11 a 64 bit**.
+
 I file sono:
    - `VFX-SYNTECH-<versione>-Windows.exe` — un file, doppio clic, niente installazione;
    - `VFX-SYNTECH-<versione>-Mac.zip` — per Mac Apple Silicon **e** Intel:
@@ -83,7 +86,7 @@ npm run desktop:dist   # crea lo .zip in release/ (sul Mac) o l'.exe (su Windows
 | `desktop/main.ts` | Processo principale Electron: avvia `server.ts` dentro l'app su `127.0.0.1:47291`, apre la finestra, gestisce link esterni, istanza singola, fallback di porta |
 | `server.ts` | Lo stesso server di `npm start`. Esporta `startServer({ port, host, distPath })`; si avvia da solo su :3000 **solo** se `SYNTECH_DESKTOP` non è impostata |
 | `electron-builder.yml` | Packaging: Windows `portable` x64, macOS `zip` universal con firma ad-hoc, Linux AppImage (solo test) |
-| `desktop/icon.png` | Icona 1024², generata da `tools/gen/gen-app-icon.cjs` dal logo |
+| `desktop/icon.png` | Icona 1024², generata da `tools/gen/gen-app-icon.cjs` da `desktop/icon-source.webp` (l'artwork dell'operatore) |
 | `desktop/LEGGIMI.txt` | Istruzioni per chi riceve l'app; il workflow la mette nel pacchetto |
 | `.github/workflows/desktop.yml` | Build + test su `windows-latest` e `macos-latest`, poi un artifact unico e la Release `v<versione>` (ricreata a ogni push) |
 | `tools/verify/verify-desktop.cjs` | Apre la build impacchettata con Playwright/Electron e la verifica (24 controlli) |
@@ -94,6 +97,30 @@ contiene **solo** `dist/`, `dist-desktop/`, l'icona e `package.json`: niente
 `node_modules`.
 
 ### Decisioni (e perché)
+
+- **Electron bloccato a 32.3.3 → gira da macOS 10.15 Catalina e Windows 10.**
+  La prima build usava Electron 44 (Chromium 152), che richiede **macOS 13**: sul
+  MacBook Pro M1 dell'operatore, fermo a macOS 12.2.1, l'app si rifiutava di
+  partire ("richiede macOS 13.0 o versione successiva"). I prof avranno computer
+  di ogni età. Minimi misurati negli `Info.plist` delle release Electron:
+  44 → 13.0, 37 → 11.0, **32 → 10.15** (ultima linea che supporta Catalina, cioè
+  i Mac dal 2012 in poi). Scelta la 32 (Chromium 128) dopo aver verificato che
+  basta: il CSS compilato usa `color-mix`, `oklch`, `@property`, `@layer` (tutti
+  Chromium ≤ 111) e nessuna API JS più recente di Chromium 128; stessa
+  `verify-desktop.cjs` 24/24; screenshot confrontati pixel per pixel con la 44:
+  differenze **solo** nelle parti animate (grafo, gradiente del brand, orologio,
+  FPS). La versione è **esatta** in `package.json` (niente `^`), c'è
+  `mac.minimumSystemVersion: "10.15"` in `electron-builder.yml`, e il workflow
+  **fallisce** se l'app impacchettata dichiara un minimo diverso.
+  Prezzo: Electron 32 non riceve più patch di sicurezza. L'app carica solo le
+  proprie pagine locali e non naviga mai fuori (vedi `will-navigate`), quindi il
+  rischio è minimo. **Non aggiornare Electron** senza rifare questa verifica e
+  senza accettare di perdere i Mac più vecchi.
+- **Icona = l'artwork dell'operatore** (`desktop/icon-source.webp`, la tessera di
+  vetro con la stella). `tools/gen/gen-app-icon.cjs` non la ridisegna: rende
+  trasparente il nero **fuori** dalla tessera (altrimenti nel Dock è un quadrato
+  nero con angoli vivi) e la porta sulla griglia Apple (~824 px in 1024). Il
+  taglio sta fuori dal bagliore: lo script fallisce se toglierebbe un pixel acceso.
 
 - **Server interno invece di un protocollo custom.** L'app gira esattamente come
   in `npm start` — stesso server, stessi endpoint AI, stessa origine `http://` —
