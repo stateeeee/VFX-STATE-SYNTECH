@@ -124,6 +124,8 @@ all'avvio, il video avanza (9,13 s, nessun errore), il contatore sale e tocca
 100%, l'overlay se ne va da solo e l'app è cliccabile. Build Linux impacchettata:
 **28/28**. Screenshot a ~3 s: schermo nero, la stella che si trasforma,
 `LOADING 34%`. `npm run lint` pulito.
+CI (run 36520788078, commit 214636d): **Mac e Windows verdi** con i nuovi controlli
+sull'intro; Release `v0.9.0` ricreata — `Mac.zip` 209 MB, `Windows.exe` 91 MB.
 
 ### 2026-09-29 — LEGGIMI: primo avvio su Mac, passo per passo
 
