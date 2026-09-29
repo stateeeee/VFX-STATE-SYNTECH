@@ -53,6 +53,7 @@ src/components/VfxCanvas.tsx    Animated "brain graph" hero (canvas), hub-drag c
 src/components/NodalComposition.tsx  Node graph panel (INPUT → effects → OUTPUT)
 src/components/ChainLab.tsx     AI Lab surface: SynEngine rack, audio/video signals, presets
 src/components/EffectHost.tsx   Full-screen iframe host for one standalone effect
+src/components/IntroSplash.tsx  Desktop-app opening: logo → pet video + LOADING 0–100% (browser: ?intro)
 src/components/AiDirector.tsx   Gemini panel (art director / agent / optimizer)
 src/engine/SynEngine.ts         Shared WebGL2 render graph (real, working)
 src/engine/nodes.ts             ★ STUB — DummyNode factory, effects must be ported here 1:1

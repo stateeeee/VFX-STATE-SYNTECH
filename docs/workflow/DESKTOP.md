@@ -89,7 +89,7 @@ npm run desktop:dist   # crea lo .zip in release/ (sul Mac) o l'.exe (su Windows
 | `desktop/icon.png` | Icona 1024², generata da `tools/gen/gen-app-icon.cjs` da `desktop/icon-source.webp` (l'artwork dell'operatore) |
 | `desktop/LEGGIMI.txt` | Istruzioni per chi riceve l'app; il workflow la mette nel pacchetto |
 | `.github/workflows/desktop.yml` | Build + test su `windows-latest` e `macos-latest`, poi un artifact unico e la Release `v<versione>` (ricreata a ogni push) |
-| `tools/verify/verify-desktop.cjs` | Apre la build impacchettata con Playwright/Electron e la verifica (24 controlli) |
+| `tools/verify/verify-desktop.cjs` | Apre la build impacchettata con Playwright/Electron e la verifica (28 controlli, intro compresa) |
 
 `npm run desktop:bundle` compila `desktop/main.ts` + `server.ts` (con express,
 dotenv e i client AI) in un solo `dist-desktop/main.cjs`. L'app impacchettata
@@ -97,6 +97,20 @@ contiene **solo** `dist/`, `dist-desktop/`, l'icona e `package.json`: niente
 `node_modules`.
 
 ### Decisioni (e perché)
+
+- **L'intro (2026-09-29).** All'avvio dell'app desktop gira il video
+  dell'operatore — il logo che diventa il pet, poi la camera entra nel suo occhio
+  e taglia a nero — su schermo nero, con un `LOADING 0–100%` discreto sincronizzato
+  al video. `src/components/IntroSplash.tsx`, montato in `src/main.tsx` **sopra**
+  l'app: l'app si costruisce sotto mentre il video gira, così quando il video
+  finisce (9,13 s, sul nero) l'overlay sfuma in 0,7 s su un'app già pronta.
+  Il file è `public/assets/intro/logo-to-pet.mp4`: quello dell'operatore con la
+  sola traccia audio tolta (era silenzio digitale, −91 dB), rimuxato senza
+  ricodifica — gli hash dei pacchetti video coincidono con l'originale.
+  Un clic o un tasto la salta; se il video non parte o si blocca, dopo 14 s
+  l'app si apre comunque. Nel **browser** non parte (dev e suite di verifica non
+  aspettano 9 s a ogni ricarica): per vederla lì, `http://localhost:3000/?intro`.
+  Per cambiarla basta sostituire il file mp4 (H.264, così gira ovunque).
 
 - **Electron bloccato a 32.3.3 → gira da macOS 10.15 Catalina e Windows 10.**
   La prima build usava Electron 44 (Chromium 152), che richiede **macOS 13**: sul

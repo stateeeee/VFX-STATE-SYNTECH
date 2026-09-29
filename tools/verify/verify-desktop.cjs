@@ -6,6 +6,8 @@
  *
  *   1. It opens by itself: one window, on http://127.0.0.1:47291, titled
  *      VFX SYNTECH, with the shell rendered — no terminal, no browser.
+ *      First the intro (the operator's logo → pet animation) plays on black
+ *      with its LOADING counter, reaches 100% and gives way to the app.
  *   2. Everything is served from INSIDE the app: the five effects, the vendored
  *      three.js / MediaPipe / fonts (wasm with the right MIME type).
  *   3. The AI endpoints answer with no key (offline fallback, never a 500).
@@ -72,6 +74,30 @@ async function launch() {
   const title = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle());
   step('window title', title === 'VFX SYNTECH', title);
   step('exactly one window', app.windows().length === 1, String(app.windows().length));
+
+  // ── 1b. the intro: logo → pet on black, LOADING 0 → 100%, then the app ────
+  const t0 = Date.now();
+  await page.waitForSelector('[data-testid="intro-video"]', { timeout: 15000 });
+  step('intro shows on launch', true);
+  const sample = () => page.evaluate(() => {
+    const v = document.querySelector('[data-testid="intro-video"]');
+    const p = document.querySelector('[data-testid="intro-pct"]');
+    return v ? { t: v.currentTime, d: v.duration, err: v.error && v.error.code, pct: parseInt((p && p.textContent || '').replace(/\D/g, ''), 10) || 0 } : null;
+  }).catch(() => null);
+  const first = await sample();
+  await page.waitForTimeout(3000);
+  const later = await sample();
+  step('intro video plays (9.13 s, advancing, no error)',
+    !!first && !!later && !later.err && later.t > first.t + 1.5 && Math.abs(later.d - 9.13) < 0.2,
+    later ? `t ${first.t.toFixed(2)} → ${later.t.toFixed(2)} of ${later.d}` : 'gone');
+  await page.screenshot({ path: path.join(SCRATCH, 'desktop-intro.png') });
+  let maxPct = later ? later.pct : 0;
+  for (let s; (s = await sample()); await page.waitForTimeout(200)) maxPct = Math.max(maxPct, s.pct);
+  step('LOADING counter climbs to 100%', later && later.pct > 0 && later.pct < 100 && maxPct === 100, `mid ${later && later.pct}% · max ${maxPct}%`);
+  await page.waitForSelector('[data-testid="intro"]', { state: 'detached', timeout: 20000 });
+  const took = (Date.now() - t0) / 1000;
+  step('intro ends by itself and hands over to the app', took > 8 && took < 14, `${took.toFixed(1)} s`);
+
   await page.waitForSelector('[data-testid="effect-card-bokeh"]', { timeout: 30000 });
   step('shell rendered (effect cards present)', true);
   await page.waitForTimeout(1500);

@@ -95,6 +95,36 @@ Non riaprirle.
 
 ## Log
 
+### 2026-09-29 — L'intro: il logo che diventa il pet
+
+**La richiesta.** *"Un'animazione stile loading prima che si apra l'app: in 9
+secondi il mio logo che diventa il mio pet, schermo nero — ti allego il video
+esatto."* (Nel primo messaggio, poi riformulato: *"loading 0-100%"*.)
+
+**Il video.** H.264 Main 1280×720 30 fps, 9,13 s, AAC stereo **muto** (−91 dB).
+Il logo cresce, ruota, diventa il pet (~8 s), poi a 8,5 s la camera entra
+nell'occhio e a 8,7 s è nero. Messo in `public/assets/intro/logo-to-pet.mp4`
+togliendo solo la traccia audio (rimux, niente ricodifica: framemd5 dei pacchetti
+video identico all'originale), 3,7 MB.
+
+**Come funziona.** `src/components/IntroSplash.tsx`, montato in `src/main.tsx`
+sopra `<App />`: overlay nero a schermo intero, video `object-contain`, in basso
+`LOADING nn%` in mono grigio con una barra da 1 px in `--syn-accent`, entrambi
+guidati da `currentTime/duration` — arrivano a 100% esattamente con l'animazione.
+L'app si monta **sotto** mentre il video gira; a fine video (sul nero) l'overlay
+sfuma in 0,7 s e rivela l'app già pronta: il tuffo nell'occhio "atterra" nell'app.
+Clic o tasto = salta; video in errore/bloccato = l'app si apre dopo 14 s al massimo.
+Solo nell'app desktop (user agent `Electron/`); nel browser solo con `?intro`,
+così `npm run dev` e le suite browser non aspettano 9 s a ogni ricarica.
+Il contatore è un'interpretazione di "stile loading / 0-100%": se l'operatore
+vuole il video nudo, si toglie il blocco `bottom-10` in `IntroSplash.tsx`.
+
+**Verificato:** `verify-desktop.cjs` ora controlla anche l'intro — compare
+all'avvio, il video avanza (9,13 s, nessun errore), il contatore sale e tocca
+100%, l'overlay se ne va da solo e l'app è cliccabile. Build Linux impacchettata:
+**28/28**. Screenshot a ~3 s: schermo nero, la stella che si trasforma,
+`LOADING 34%`. `npm run lint` pulito.
+
 ### 2026-09-29 — LEGGIMI: primo avvio su Mac, passo per passo
 
 L'operatore, sul suo M1 con macOS 12, ha incontrato i due passaggi che
