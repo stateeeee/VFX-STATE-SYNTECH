@@ -20,21 +20,21 @@ WINDOWS  (file: VFX-SYNTECH-...-Windows.exe)
 MAC  (file: VFX-SYNTECH-...-Mac.zip — Apple Silicon e Intel)
 ------------------------------------------------------------
 1. Doppio clic sul file .zip: accanto compare l'app "VFX SYNTECH".
-   (Consigliato: trascinala nella cartella Applicazioni.)
-2. Doppio clic sull'app.
-3. La prima volta macOS avvisa che non può verificare lo sviluppatore
-   (l'app non è distribuita tramite l'App Store):
-   - macOS 15 Sequoia o successivi: clic su "Fine", poi apri
-     Impostazioni di Sistema > Privacy e sicurezza, scorri in fondo e clic su
-     "Apri comunque" accanto a VFX SYNTECH; conferma con la password.
-   - macOS 14 o precedenti: tasto destro (o ctrl+clic) sull'app > Apri > Apri.
-   Dalla seconda volta si apre normalmente.
+2. Apri una finestra del Finder e trascina l'app su "Applicazioni" nella barra
+   laterale a sinistra. (Se la lasci sulla Scrivania o in Download funziona lo
+   stesso, ma non compare tra le Applicazioni né nel Launchpad.)
+3. Primo avvio: macOS dice che non può verificare che l'app non contenga
+   malware, perché non viene dall'App Store. Si sblocca UNA volta sola:
+   - fino a macOS 14: tasto destro (o ctrl+clic) sull'app > Apri > di nuovo
+     "Apri" nell'avviso;
+   - macOS 15 Sequoia o successivi: chiudi l'avviso, poi Impostazioni di
+     Sistema > Privacy e sicurezza > in fondo "Apri comunque" > password.
+   Se il pulsante non compare: apri il Terminale, scrivi  xattr -cr
+   seguito da uno spazio, trascina l'app nella finestra del Terminale, premi
+   Invio, poi doppio clic sull'app.
+   Dalla seconda volta si apre con un normale doppio clic.
 4. Webcam e microfono: macOS chiede il permesso la prima volta che un effetto
    li usa.
-
-Solo se macOS dicesse che l'app "è danneggiata": apri il Terminale e scrivi
-   xattr -cr "/Applications/VFX SYNTECH.app"
-(o il percorso dove si trova l'app), premi Invio e riapri l'app.
 
 
 USO

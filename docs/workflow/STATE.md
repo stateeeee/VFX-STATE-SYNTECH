@@ -95,6 +95,16 @@ Non riaprirle.
 
 ## Log
 
+### 2026-09-29 — LEGGIMI: primo avvio su Mac, passo per passo
+
+L'operatore, sul suo M1 con macOS 12, ha incontrato i due passaggi che
+incontreranno i prof: l'avviso *"Apple non è in grado di verificare che VFX
+SYNTECH non contenga malware"* e l'app copiata sulla Scrivania che non compare tra
+le Applicazioni. `LEGGIMI.txt` ora li copre: trascinare l'app su "Applicazioni"
+nella barra laterale del Finder; tasto destro > Apri fino a macOS 14, "Apri
+comunque" da macOS 15; il fallback `xattr -cr` + trascinamento dell'app nel
+Terminale (niente percorsi da scrivere a mano).
+
 ### 2026-09-28 (notte) — Gira anche sui Mac vecchi; la nuova icona
 
 **Il blocco.** Sul MacBook Pro M1 dell'operatore (macOS **12.2.1**) lo zip nuovo
