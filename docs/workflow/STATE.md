@@ -77,6 +77,23 @@ Non riaprirle.
 
 ## Log
 
+### 2026-10-08 — Gemini 3.8 che vede davvero: il contratto (lavoro in corso)
+
+L'operatore ha deciso: **solo `gemini-3.8-flash`**, Groq via (è cieco), chiave
+incollata nel pannello → da STANDBY grigio ad ACTIVE verde, e solo allora si
+sbloccano Art Director / Agent / Optimizer nella barra di sinistra. "AI Lab"
+diventa "Lab", "Gemini Pro" diventa "Gemini 3.8". I tre ruoli, nelle sue parole:
+Art Director = la mente creativa che guarda il video e propone gli effetti;
+Agent = l'operatore che regola parametri e routing audio perché video, musica ed
+effetto interagiscano; Optimizer = il controllore dell'Agent, che guarda il
+risultato e trova errori e miglioramenti.
+
+Questo commit contiene solo **`src/ai/contract.ts`**: il formato condiviso tra
+pannello e server (tipi delle richieste, chiavi enum/carrier/protette che l'AI non
+può rompere, l'interfaccia `LabHandle`). Non è ancora importato da nessuno: lint
+invariato. L'implementazione arriva nel commit successivo, con la voce di log
+completa e la verifica.
+
 ### 2026-07-31 — Il dev server non partiva sul Mac; l'AI diventa sostituibile
 
 Due cose distinte, arrivate insieme.
