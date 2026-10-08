@@ -39,11 +39,15 @@ la vecchia interfaccia. Dodici giri di preview, poi una implementazione.
 1. **Il suo giudizio sull'app vera.** I preview erano compositi; questa è la cosa
    che gira. Se qualcosa non torna, si corregge da `tools/frame/` e si rigenera —
    nessun numero va toccato a mano.
-1b. **Groq con una chiave vera, da provare.** Il percorso è implementato e
-   verificato fino al confine di rete del sandbox, che blocca `api.groq.com`.
-   La prima risposta reale la vedrà lui: `GROQ_API_KEY` in `.env.local`, e la
-   riga di boot deve dire `AI provider: groq`. Se cade sul fallback, la causa è
-   nel log come `[ai:groq] ...`.
+1b. **Gemini 3.8 con la SUA chiave vera — la prima prova tocca a lui.** Groq è
+   sparito (2026-10-08). Tutto il percorso è verificato contro un Google finto
+   (`tools/verify/verify-gemini.cjs`, 205/205) e la chiave sbagliata contro il
+   Google vero; una risposta vera di `gemini-3.8-flash` no, perché qui non c'è
+   una chiave. Lui: incolla la chiave nel pannello Gemini 3.8 → badge ACTIVE
+   verde → Art Director su un suo video → "Use this chain" → Agent → Optimizer.
+   Se un ruolo fallisce, la causa è nel log del server come `[gemini] <tipo>: …`.
+   Da guardare con occhio da regista: la qualità delle proposte e dei piani, e se
+   l'Optimizer sente davvero quando gli effetti non vanno a tempo.
 2. **Il pass performance ≥30fps@720p — ancora aperto**, e ora conta di più: la
    gabbia aggiunge un'immagine a schermo intero con alpha, sopra tutto. In sandbox
    è costata il canary BPM (189 invece di 120) finché non le è stato dato un layer
@@ -77,22 +81,77 @@ Non riaprirle.
 
 ## Log
 
-### 2026-10-08 — Gemini 3.8 che vede davvero: il contratto (lavoro in corso)
+### 2026-10-08 — Gemini 3.8 vede davvero: Art Director, Agent, Optimizer
 
-L'operatore ha deciso: **solo `gemini-3.8-flash`**, Groq via (è cieco), chiave
-incollata nel pannello → da STANDBY grigio ad ACTIVE verde, e solo allora si
-sbloccano Art Director / Agent / Optimizer nella barra di sinistra. "AI Lab"
-diventa "Lab", "Gemini Pro" diventa "Gemini 3.8". I tre ruoli, nelle sue parole:
-Art Director = la mente creativa che guarda il video e propone gli effetti;
-Agent = l'operatore che regola parametri e routing audio perché video, musica ed
-effetto interagiscano; Optimizer = il controllore dell'Agent, che guarda il
-risultato e trova errori e miglioramenti.
+L'operatore: *"in my app gemini purtroppo è 'finta'"*. Lo era più di quanto
+pensasse: "Run Video Analysis" mandava a Gemini **solo il nome del file**, il
+badge ACTIVE si accendeva senza nessuna chiave, ogni errore rispondeva con un
+testo preconfezionato travestito da AI, e "Apply" scriveva su parametri
+segnaposto che nessun effetto leggeva. Decisioni sue: **solo
+`gemini-3.8-flash`**, Groq via (è cieco), chiave incollata nel pannello → da
+STANDBY grigio ad ACTIVE verde, e solo allora si sbloccano Art Director / Agent /
+Optimizer nella barra di sinistra; "AI Lab" → "Lab", "Gemini Pro" → "Gemini 3.8".
+I tre ruoli nelle sue parole: **Art Director** la mente creativa che analizza il
+video e propone gli effetti; **Agent** l'operatore che, con video ed effetto già
+scelti, muove i parametri perché video, musica ed effetto interagiscano;
+**Optimizer** il controllore dell'Agent, che cerca errori e miglioramenti.
 
-Questo commit contiene solo **`src/ai/contract.ts`**: il formato condiviso tra
-pannello e server (tipi delle richieste, chiavi enum/carrier/protette che l'AI non
-può rompere, l'interfaccia `LabHandle`). Non è ancora importato da nessuno: lint
-invariato. L'implementazione arriva nel commit successivo, con la voce di log
-completa e la verifica.
+**Cosa vede Gemini adesso (solo su pressione di un pulsante):**
+- **Art Director**: il video caricato intero una volta (Files API, riusato ~48h),
+  quindi vede il movimento e **sente la canzone**; una foto ridotta; o 4
+  fotogrammi della webcam nel Lab. Risponde con una lettura (soggetto, luce,
+  palette, energia e momenti della musica) e 1–3 catene di effetti motivate.
+  "Use this chain" accende la catena, apre il Lab e **passa la proposta all'Agent
+  come direzione**.
+- **Agent**: lo stesso video intero, la coppia SOURCE/OUTPUT del Lab, 4s del
+  risultato con la musica (a 12 fps, non 1), i segnali live e la tabella della
+  catena. Il piano (parametri + route audio) si applica subito; **Annulla rimette
+  solo le chiavi che ha toccato**, mai le modifiche fatte a mano dopo.
+- **Optimizer**: 4s del risultato con la musica, fotogrammi, controlli
+  deterministici (fps, route su segnali morti, maschera, esposizione), l'ultimo
+  piano dell'Agent e la direzione. Restituisce verdetto + problemi, ciascuno con
+  una correzione applicabile e annullabile.
+
+**Cose nuove nel Lab, nate da qui:**
+- **Audio del clip.** In un video musicale la musica sta nel clip, ma il Lab lo
+  teneva muto e non lo analizzava: tutte le route bass/beat erano morte senza una
+  traccia a parte. Nuovo pulsante **Clip** (e si accende da solo quando l'Agent o
+  l'Optimizer partono su un video).
+- **Foto come sorgente** (INPUT, home e Lab; il Master export resta solo video).
+- Il server valida ogni piano: enum interi e mai instradati, **carrier** (la
+  risposta musicale di fabbrica degli effetti) intoccabili, chiavi protette
+  (incluso `analog.reactEnabled`), `analog.modDepth` mai sotto 0.1, profondità
+  delle route ≤ 0.6.
+- Bug vecchio sistemato di passaggio: dopo una Track, il Mic finiva sugli
+  altoparlanti (feedback).
+
+**Server.** `ai-provider.ts` (client per chiave, errori di Google tradotti in
+tipi leggibili: chiave rifiutata, quota giornaliera/al minuto, contenuto
+rifiutato), `ai-roles.ts` (prompt, schema JSON per richiesta, validatore),
+endpoint `/api/gemini/status|key|upload|art-director|agent|optimizer`. Spariti
+`/chat`, `/analyze`, `/analyze-video`, `/optimize` e tutte le risposte finte.
+`dotenv` ora legge davvero `.env.local` (prima leggeva solo `.env`: una chiave
+messa lì non è mai arrivata al server). La chiave del `.env` vale solo per i
+browser di questa macchina; `/api` rifiuta Host che non siano localhost o un IP.
+`PORT` da env.
+
+**Processo.** Mappa del codice (5 lettori + critico) → contratto condiviso
+(`src/ai/contract.ts`) scritto prima del codice → 4 implementatori in parallelo
+su file disgiunti + integratore → suite end-to-end + 4 revisori avversariali +
+giudice (36 punti confermati) → correzioni → seconda revisione (53 punti
+verificati risolti).
+
+**Verificato:** lint pulito; `npm run build` ok; `verify-gemini.cjs` **205/205
+due volte di fila** (Google finto locale, `mock-gemini.cjs`: chiave, upload,
+tre ruoli, Annulla per chiave, direzione, audio del clip, 12 fps, rifiuti del
+validatore, nessuna chiave nei log); chiave finta contro **Google vero** →
+"Key rejected by Google"; cage 18/18; phase2 26/26; graph-highlight 7/7;
+search 6/6; phase8-chain 6/6; phase3 14/14 (BPM 112: il canary resta ballerino
+sotto SwiftShader, anche su HEAD). **Non verificato:** nessuna risposta vera di
+`gemini-3.8-flash` (niente chiave qui) — quindi né la qualità dei testi in
+italiano, né che Google accetti questi schema e la webm inline, né l'upload vero
+e i suoi tempi; né Firefox/Safari (l'audio del clip usa `captureStream`, che è
+di Chromium); né la GPU vera.
 
 ### 2026-07-31 — Il dev server non partiva sul Mac; l'AI diventa sostituibile
 

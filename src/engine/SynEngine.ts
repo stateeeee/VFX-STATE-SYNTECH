@@ -4,7 +4,8 @@ import { ParamSchema } from '../bridge/types';
    SYNENGINE — the shared render graph (PLAN.md phase 5)
 
    One WebGL2 context, one canvas. A source (video file / webcam)
-   is uploaded once per frame and flows through the enabled nodes
+   is uploaded once per frame (a still photo: once per load) and
+   flows through the enabled nodes
    in order, each rendering into a ping-pong framebuffer; the last
    output is blitted to the screen. This is what iframes cannot
    do: effects composed in series at full speed, no pixel copies.
@@ -109,16 +110,31 @@ uniform sampler2D uTex;
 out vec4 o;
 void main(){ o = texture(uTex, vUV); }`;
 
-export type SourceKind = 'none' | 'video' | 'webcam';
+export type SourceKind = 'none' | 'video' | 'webcam' | 'image';
+
+/* Photos are capped on their long side before they become the source:
+   the render size follows the source (fitToSource), so a 6000px still
+   would make every node render 24 MP per frame — and some GPUs refuse
+   textures that big outright. 2560 keeps a 4K-ish master look. */
+const MAX_IMAGE_SIDE = 2560;
 
 export class SynEngine {
   readonly canvas: HTMLCanvasElement;
   readonly gl: WebGL2RenderingContext;
   chain: EngineNode[] = [];
 
-  private sourceEl: HTMLVideoElement | null = null;
+  private sourceEl: HTMLVideoElement | HTMLImageElement | null = null;
   private sourceKind: SourceKind = 'none';
   private webcamStream: MediaStream | null = null;
+  /* a still never changes, so its pixels go to sourceTex once per load
+     (this flag) instead of once per frame like video */
+  private sourceDirty = false;
+  /** object URL of a downscaled photo — created here, so revoked here */
+  private ownedImageUrl: string | null = null;
+  /* bumped by every stopSource(): a load that was overtaken by another
+     load (or by dispose) while it awaited its media drops its element
+     instead of clobbering the newer source */
+  private loadSeq = 0;
   private sourceTex: WebGLTexture;
   private blitProg: WebGLProgram;
   private quadVao: WebGLVertexArrayObject;
@@ -174,8 +190,22 @@ export class SynEngine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
 
-  get source(): HTMLVideoElement | null { return this.sourceEl; }
+  /** the source element: a <video> (file or webcam) or an <img> (photo) */
+  get source(): HTMLVideoElement | HTMLImageElement | null { return this.sourceEl; }
+  /** the source as a <video> — file or webcam; null for a photo or no source */
+  get video(): HTMLVideoElement | null {
+    return this.sourceEl instanceof HTMLVideoElement ? this.sourceEl : null;
+  }
   get kind(): SourceKind { return this.sourceKind; }
+
+  /** true once the source has a frame to draw (video: HAVE_CURRENT_DATA,
+   *  photo: decoded with a size) — the same gate renderFrame uses */
+  isReady(): boolean {
+    const el = this.sourceEl;
+    if (!el) return false;
+    if (el instanceof HTMLVideoElement) return el.readyState >= 2;
+    return el.complete && el.naturalWidth > 0;
+  }
 
   drawQuad = (): void => {
     const gl = this.gl;
@@ -194,6 +224,7 @@ export class SynEngine {
    */
   async loadVideoUrl(url: string): Promise<void> {
     this.stopSource();
+    const seq = this.loadSeq;
     const v = document.createElement('video');
     v.src = url;
     v.loop = true;
@@ -204,6 +235,12 @@ export class SynEngine {
       v.onerror = () => rej(new Error('video load failed'));
     });
     await v.play().catch(() => {});
+    if (seq !== this.loadSeq) {
+      // overtaken while loading — the newer source (or none) stands
+      v.pause();
+      v.removeAttribute('src');
+      return;
+    }
     this.sourceEl = v;
     this.sourceKind = 'video';
     this.fitToSource();
@@ -211,37 +248,131 @@ export class SynEngine {
 
   async startWebcam(): Promise<void> {
     this.stopSource();
+    const seq = this.loadSeq;
     const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 } } });
     const v = document.createElement('video');
     v.srcObject = stream;
     v.muted = true;
     v.playsInline = true;
     await v.play();
+    if (seq !== this.loadSeq) {
+      // overtaken while the permission prompt / camera start was pending:
+      // release the camera so its light does not stay on
+      stream.getTracks().forEach((t) => t.stop());
+      v.srcObject = null;
+      return;
+    }
     this.webcamStream = stream;
     this.sourceEl = v;
     this.sourceKind = 'webcam';
     this.fitToSource();
   }
 
+  /**
+   * Load a still photo as the source (same URL ownership rule as
+   * loadVideoUrl: the caller's URL is never revoked here). Nodes see an
+   * <img> through ctx.source — drawImage and THREE textures take it like
+   * a video frame — and the texture is uploaded once, not per frame.
+   * Every photo is flattened over black (and capped to MAX_IMAGE_SIDE)
+   * once, here — see flattenImage.
+   */
+  async loadImageUrl(url: string): Promise<void> {
+    this.stopSource();
+    const seq = this.loadSeq;
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = url;
+    try {
+      await img.decode();
+    } catch {
+      throw new Error('image load failed');
+    }
+    if (!img.naturalWidth || !img.naturalHeight) throw new Error('image has no pixel size');
+    const flat = await SynEngine.flattenImage(img);
+    if (seq !== this.loadSeq) {
+      // overtaken while decoding — drop this one, keep the newer source
+      if (flat.url) URL.revokeObjectURL(flat.url);
+      return;
+    }
+    this.ownedImageUrl = flat.url;
+    this.sourceEl = flat.img;
+    this.sourceKind = 'image';
+    this.sourceDirty = true;
+    this.fitToSource();
+  }
+
+  /* Every still is flattened once, here, through a 2D canvas: drawn over
+     opaque black and resampled so its long side is ≤ MAX_IMAGE_SIDE. Black
+     is what the JPEG grabs put under a transparent pixel (capture.ts), so
+     the effects and the SOURCE frame Gemini sees agree; and every photo
+     takes the same path whatever its size (an un-flattened PNG would hand
+     the effects the hidden RGB under alpha 0). The result stays an <img>
+     (canvas → PNG blob → object URL), so the source contract is the same
+     for every still. If the canvas cannot be read back (a cross-origin URL
+     without CORS taints it) the original is used as is. */
+  private static async flattenImage(img: HTMLImageElement): Promise<{ img: HTMLImageElement; url: string | null }> {
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    const k = Math.min(1, MAX_IMAGE_SIDE / Math.max(nw, nh));
+    const w = Math.max(1, Math.round(nw * k));
+    const h = Math.max(1, Math.round(nh * k));
+    let url: string | null = null;
+    try {
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const c2 = c.getContext('2d', { alpha: false });
+      if (!c2) return { img, url: null };
+      c2.fillStyle = '#000';
+      c2.fillRect(0, 0, w, h);
+      c2.imageSmoothingEnabled = true;
+      c2.imageSmoothingQuality = 'high';
+      c2.drawImage(img, 0, 0, w, h);
+      const blob = await new Promise<Blob | null>((res) => c.toBlob(res, 'image/png'));
+      c.width = c.height = 0; // release the backing store now, not at GC
+      if (!blob) return { img, url: null };
+      url = URL.createObjectURL(blob);
+      const flat = new Image();
+      flat.src = url;
+      await flat.decode();
+      img.removeAttribute('src');
+      return { img: flat, url };
+    } catch {
+      if (url) URL.revokeObjectURL(url);
+      return { img, url: null };
+    }
+  }
+
   stopSource(): void {
+    this.loadSeq++;
     if (this.webcamStream) {
       this.webcamStream.getTracks().forEach((t) => t.stop());
       this.webcamStream = null;
     }
-    if (this.sourceEl) {
-      this.sourceEl.pause();
-      this.sourceEl.srcObject = null;
-      this.sourceEl.removeAttribute('src');
-      this.sourceEl = null;
+    const el = this.sourceEl;
+    if (el instanceof HTMLVideoElement) {
+      el.pause();
+      el.srcObject = null;
+      el.removeAttribute('src');
+    } else if (el) {
+      el.removeAttribute('src');
     }
+    this.sourceEl = null;
+    if (this.ownedImageUrl) {
+      URL.revokeObjectURL(this.ownedImageUrl);
+      this.ownedImageUrl = null;
+    }
+    this.sourceDirty = false;
     this.sourceKind = 'none';
   }
 
   private fitToSource(): void {
-    const v = this.sourceEl;
-    if (!v) return;
-    const w = Math.max(2, Math.round((v.videoWidth || 1280) * this.resScale));
-    const h = Math.max(2, Math.round((v.videoHeight || 720) * this.resScale));
+    const el = this.sourceEl;
+    if (!el) return;
+    const sw = el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth;
+    const sh = el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight;
+    const w = Math.max(2, Math.round((sw || 1280) * this.resScale));
+    const h = Math.max(2, Math.round((sh || 720) * this.resScale));
     this.canvas.width = w;
     this.canvas.height = h;
     this.chain.forEach((n) => n.resize(w, h));
@@ -313,7 +444,7 @@ export class SynEngine {
       this.onFps?.(this.fps);
     }
 
-    if (!v || v.readyState < 2) {
+    if (!v || !this.isReady()) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, W, H);
       gl.clearColor(0.02, 0.02, 0.02, 1);
@@ -321,10 +452,14 @@ export class SynEngine {
       return;
     }
 
-    gl.bindTexture(gl.TEXTURE_2D, this.sourceTex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, v);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    // video: a fresh frame every tick; a photo: only right after it loaded
+    if (v instanceof HTMLVideoElement || this.sourceDirty) {
+      gl.bindTexture(gl.TEXTURE_2D, this.sourceTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, v);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      this.sourceDirty = false;
+    }
 
     const ctx: NodeRenderContext = {
       gl,

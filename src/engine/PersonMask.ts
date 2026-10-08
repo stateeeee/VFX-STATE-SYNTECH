@@ -6,6 +6,13 @@
  * The segmentation mask is drawn into maskCanvas, which the engine
  * consumes through engine.personMaskSource. The same CDN family the
  * standalone effects use — vendored locally in Phase 10.
+ *
+ * Sources: a <video> (file / webcam) is segmented every TICK_MS. A still
+ * <img> is segmented once per image; afterwards the cached mask is
+ * re-announced (version bump, no inference) on the same cadence, because
+ * consumers smooth the mask over arrivals (bokeh's temporal pass blends
+ * each one in at 0.28) and would otherwise stay stuck on a faint first
+ * result. Same pixels in, same mask out — the model would only burn GPU.
  */
 
 // Phase-10: vendored locally under public/ (served at /effects/vendor/...) for
@@ -20,7 +27,7 @@ interface SelfieSegmentationLike {
   setOptions(o: { modelSelection: number; selfieMode?: boolean }): void;
   onResults(cb: (res: { segmentationMask: CanvasImageSource & { width: number; height: number } }) => void): void;
   initialize(): Promise<void>;
-  send(input: { image: HTMLVideoElement }): Promise<void>;
+  send(input: { image: HTMLVideoElement | HTMLImageElement }): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -52,6 +59,11 @@ export class PersonMask {
   private busy = false;
   private lastAt = 0;
   private failedAt = 0;
+  // the still whose mask sits in maskCanvas (element + URL), and whether
+  // its segmentation has come back yet
+  private stillEl: HTMLImageElement | null = null;
+  private stillSrc = '';
+  private stillDone = false;
   // invalidates in-flight loads when dispose() lands mid-initialize — the
   // instance outlives React StrictMode's dev mount/unmount/mount cycle, so
   // dispose must be reversible, never a one-way latch
@@ -74,6 +86,7 @@ export class PersonMask {
         this.busy = false;
         const mask = res.segmentationMask;
         if (!mask) return;
+        if (this.stillEl) this.stillDone = true;
         if (!this.maskCanvas) {
           this.maskCanvas = document.createElement('canvas');
           this.maskCtx = this.maskCanvas.getContext('2d');
@@ -106,13 +119,38 @@ export class PersonMask {
     }
   }
 
-  tick(source: HTMLVideoElement | null, now: number): void {
+  tick(source: HTMLVideoElement | HTMLImageElement | null, now: number): void {
     if (this.state !== 'ready' || !this.seg || this.busy) return;
+    if (source instanceof HTMLImageElement) {
+      this.tickStill(source, now);
+      return;
+    }
     if (!source || !(source instanceof HTMLVideoElement) || source.readyState < 2 || !source.videoWidth) return;
     if (now - this.lastAt < TICK_MS) return;
     this.lastAt = now;
+    this.stillEl = null; // a video owns the mask now
     this.busy = true;
     this.seg.send({ image: source }).catch(() => { this.busy = false; });
+  }
+
+  private tickStill(img: HTMLImageElement, now: number): void {
+    if (!img.complete || !img.naturalWidth) return;
+    if (now - this.lastAt < TICK_MS) return;
+    this.lastAt = now;
+    const src = img.currentSrc || img.src;
+    if (img === this.stillEl && src === this.stillSrc) {
+      // already segmented: re-announce the cached result (see header)
+      if (this.stillDone) this.version++;
+      return;
+    }
+    this.stillEl = img;
+    this.stillSrc = src;
+    this.stillDone = false;
+    this.busy = true;
+    this.seg!.send({ image: img }).catch(() => {
+      this.busy = false;
+      this.stillEl = null; // failed — try this still again next tick
+    });
   }
 
   /** Stop and release the segmenter. Reversible: a later enable() reloads. */
@@ -121,6 +159,7 @@ export class PersonMask {
     this.ready = false;
     this.state = 'off';
     this.busy = false;
+    this.stillEl = null; // a reloaded segmenter segments the still afresh
     const seg = this.seg;
     this.seg = null;
     void seg?.close().catch(() => { /* already gone */ });

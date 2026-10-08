@@ -16,10 +16,16 @@ npm install         # first time
 npm run dev         # http://localhost:3000
 ```
 
-- Server: Express on port 3000 with Vite middleware; effects at
-  `/effects/<id>/index.html`.
-- `GEMINI_API_KEY` unset is fine — AI endpoints return offline fallbacks; that
-  must never block non-AI verification.
+- Server: Express on port 3000 (or `PORT`) with Vite middleware; effects at
+  `/effects/<id>/index.html`. A second server next to the operator's (a test
+  run, a parallel session) takes its own port —
+  `PORT=31xx DISABLE_HMR=true npm run dev` — and is stopped by that port only
+  (`fuser -k 31xx/tcp`).
+- No key is fine for everything that is not AI: the Gemini 3.8 panel just
+  stays STANDBY with its three modes locked (there are no offline AI answers
+  any more). That must never block non-AI verification. The AI flow itself is
+  verified against the local mock (§3, "Gemini 3.8 suite"), never with a real
+  key in the sandbox.
 
 ## 3. Browser verification (headless, in this environment)
 
@@ -31,14 +37,24 @@ not the repo (only commit tests if a phase says so).
 
 Useful checks (the shell already ships `data-testid`s — keep them working):
 
-- `nav-home`, `nav-save`, `nav-projects`, `nav-ailab` — left nav
+- `nav-home`, `nav-save`, `nav-projects`, `nav-ailab` (the **Lab** button;
+  the testid keeps its old name), `nav-gemini-<mode>` — left nav
 - `effect-card-<id>` — right sidebar cards
 - `nodal-add`, `nodal-add-<id>`, `nodal-input`, `nodal-output`,
   `nodal-node-<id>`, `port-*`, `nodal-svg` — node graph
 - `chain-canvas`, `chain-fps`, `chain-res`, `toggle-<id>`,
-  `param-<node>-<key>`, `mod-src-*`, `mod-amt-*`, `audio-*`, `signal-*` —
-  AI Lab
-- `source-file`, `chain-file`, `hero-video` — source loading
+  `param-<node>-<key>`, `mod-src-*`, `mod-amt-*`, `audio-*` (incl.
+  `audio-clip`, the source video's own soundtrack), `signal-*` — Lab
+- `source-file`, `chain-file`, `hero-video`, `hero-image` (a still photo on
+  Home) — source loading
+- Gemini 3.8 panel: `ai-status` (STANDBY / ACTIVE pill), `ai-key-input`,
+  `ai-key-submit`, `ai-key-error`, `ai-key-forget`, `ai-pick-<mode>`,
+  `ai-open-lab`; Art Director `ai-ad-intent`, `ai-ad-run`, `ai-ad-result`,
+  `ai-ad-apply-<i>`; Agent `ai-agent-intent`, `ai-agent-run`,
+  `ai-agent-note`, `ai-agent-direction(-clear)`, `ai-agent-result`,
+  `ai-agent-undo`; Optimizer `ai-opt-run`, `ai-opt-note`,
+  `ai-opt-direction(-clear)`, `ai-opt-result`, `ai-opt-fix-<i>`,
+  `ai-opt-fix-all`, `ai-opt-undo`
 
 Feed deterministic media in headless runs: launch Chromium with
 `--use-fake-ui-for-media-stream --use-fake-device-for-media-stream` for
@@ -48,6 +64,42 @@ a short test MP4 with ffmpeg into the scratchpad if none exists).
 Pixel-level assertion for engine work: read the `chain-canvas` pixels
 (`preserveDrawingBuffer` is enabled) and assert non-black variance / expected
 statistics rather than exact pixels.
+
+### Gemini 3.8 suite (no real key, no network)
+
+```bash
+node tools/verify/verify-gemini.cjs                # ~3 min under SwiftShader; exit 0 = all PASS
+PORT=3100 node tools/verify/verify-gemini.cjs      # its own server next to a dev server
+```
+
+- Self-contained: it starts `tools/verify/mock-gemini.cjs` (a local stand-in
+  for generativelanguage.googleapis.com: key check, generateContent, the
+  resumable Files upload; `MOCKKEY` is accepted, anything else gets Google's
+  real `API_KEY_INVALID` body), then its OWN app server with
+  `GEMINI_BASE_URL` pointed at the mock and no server key, generates its
+  media with ffmpeg, and drives the real UI in Chromium. Its port (`PORT`,
+  default 3000) must be free — it refuses to start otherwise; Playwright must
+  resolve, as for the other suites.
+- Ten steps: (1) boot STANDBY + locked rail + renamed copy; (2) bad key
+  rejected and not stored, a curly-quote key refused in the browser; (3) good
+  key → ACTIVE, survives a reload, `ai-pick-*` work; (4) photo → Art
+  Director → Use this chain → art direction, then the Optimizer on the photo
+  with audio off (no false audio FAIL, 12 fps clip); (5) video uploaded once,
+  then reused; (6) Use this chain on the video → Agent with audio OFF: auto
+  Clip audio + its note, cached `fileUri` + OUTPUT clip + direction sent,
+  plan on the ParamBus (floor raised, cap clamped, locked keys dropped),
+  per-key Undo that keeps a later edit and makes the Optimizer forget the
+  run; (7) Optimizer clip + checks + plan + direction, Apply fix, Undo;
+  (8) key rejected mid-session → relocked; (9) the HTTP contract (`/status`,
+  400 `no_media`, 401 `no_key`, the Host guard, old endpoints 404…); (10) the
+  key never reaches a log, a URL, or Google from the browser.
+- It asserts what actually reached "Google" (the mock records every request
+  body), not only what the panel shows.
+- The mock proves the plumbing, not Gemini's judgement: what only the
+  operator's real key can show is listed under Phase 11 in 05-ROADMAP.md.
+- Manual runs: `node tools/verify/mock-gemini.cjs [port]`, then start the app
+  with `GEMINI_BASE_URL=http://127.0.0.1:<port>` (test hook only — never in
+  real use).
 
 ## 4. Parity protocol for 1:1 ports (Phases 4–8) — binding
 
@@ -81,6 +133,8 @@ For the effect being ported, prove equivalence between the standalone HTML
 - Five effects still open and run in single-effect mode (bridge silent
   standalone).
 - Save → Home → reopen restores settings (Phase 1+).
-- AI Lab arm/disarm keeps composition state; wiring still drag-operable
+- Lab arm/disarm keeps composition state; wiring still drag-operable
   (Phase 2+).
+- With no key: Gemini 3.8 panel STANDBY, rail modes locked, nothing else
+  affected. After any AI change: `verify-gemini.cjs` passes (Phase 11+).
 - `npm run lint` clean; no new console errors on the dashboard.

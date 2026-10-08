@@ -1,14 +1,21 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowDown, ArrowUp, Camera, Diamond, Film, Link2, Mic, Music, Pause, Play as PlayIcon, Power, Repeat, Save, Sparkle, Trash2 } from 'lucide-react';
-import { SynEngine, EngineNode } from '../engine/SynEngine';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { ArrowLeft, ArrowDown, ArrowUp, AudioLines, Camera, Diamond, Film, Link2, Mic, Music, Pause, Play as PlayIcon, Power, Repeat, Save, Trash2 } from 'lucide-react';
+import { SynEngine, EngineNode, SourceKind } from '../engine/SynEngine';
 import { NODE_FACTORY } from '../engine/nodes';
-import { AudioEngine, FileTransport } from '../engine/AudioEngine';
+import { AudioEngine, AudioMode, FileTransport } from '../engine/AudioEngine';
 import { VideoAnalyzer } from '../engine/VideoAnalyzer';
 import { PersonMask, PersonMaskState } from '../engine/PersonMask';
 import { ParamBus, MOD_SOURCES, ModSource, ParamBusState } from '../engine/params';
 import { ModuleId } from '../types';
+import { ParamSchema } from '../bridge/types';
+import {
+  AgentPlan, ChainState, LabHandle, MediaPart, ParamDesc, PlanUndo, SignalSummary, Stat,
+  CARRIER_AMOUNT_MAX, CARRIER_AMOUNT_MIN, CARRIER_KEYS, ENUM_KEYS, MAX_ROUTE_AMOUNT, MOD_SOURCE_IDS,
+  PARAM_FLOORS, PROTECTED_KEYS,
+} from '../ai/contract';
+import { elementToJpeg, recordClip } from '../ai/capture';
 
-interface ChainLabProps {
+export interface ChainLabProps {
   isDayMode: boolean;
   onBack: () => void;
   /**
@@ -22,11 +29,12 @@ interface ChainLabProps {
   /** name of a saved chain preset to load on mount (Projects nav) */
   initialPreset?: string;
   /**
-   * Source video shared with the dashboard's Nodal Composition. When set,
-   * the lab loads this exact source; picking a new video here lifts it back
-   * up through onSourcePicked so the dashboard preview + INPUT node follow.
+   * Source shared with the dashboard's Nodal Composition — a video or a
+   * still photo (kind defaults to video). When set, the lab loads this
+   * exact source; picking a new file here lifts it back up through
+   * onSourcePicked so the dashboard preview + INPUT node follow.
    */
-  initialSource?: { url: string; name: string } | null;
+  initialSource?: { url: string; name: string; kind?: 'video' | 'image' } | null;
   onSourcePicked?: (file: File) => void;
 }
 
@@ -54,12 +62,69 @@ const readPresets = (): ChainPreset[] => {
   }
 };
 
+/* ── what the Gemini panel reads through the LabHandle ─────────── */
+
+/** a person mask is wanted when any enabled node asks for one — the same
+ *  test drives the lazy PersonMask load in beforeFrame */
+const wantsPersonMask = (engine: SynEngine): boolean =>
+  engine.chain.some((n) => n.enabled && Number(n.getParam('segEnabled')) >= 0.5);
+
+/** where a still sits in the source, for its label */
+const frameAt = (engine: SynEngine): string => {
+  if (engine.kind === 'webcam') return '(live webcam)';
+  if (engine.kind === 'image') return '(still photo)';
+  const v = engine.video;
+  return v ? `at ${v.currentTime.toFixed(1)}s` : '';
+};
+
+/* grabSourceFrames pacing: a video is read around its playhead (never
+   seeked — playback is not disturbed), a webcam across a short window */
+const VIDEO_FRAME_GAP_MS = 500;
+const WEBCAM_SPAN_MS = 2000;
+const MAX_LIVE_FRAMES = 16;
+/** a grab waiting on the next drawn frame takes the canvas as is after this
+ *  (a hidden tab pauses rAF, so that frame may never come) */
+const GRAB_FALLBACK_MS = 300;
+/** how long a pair grab waits for a source that momentarily has no frame */
+const GRAB_WAIT_MS = 1500;
+const HINT_MAX = 160;
+
+const wait = (ms: number) => new Promise<void>((r) => { window.setTimeout(r, ms); });
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+const statOf = (xs: number[]): Stat => xs.length
+  ? { mean: round3(xs.reduce((a, b) => a + b, 0) / xs.length), peak: round3(Math.max(...xs)) }
+  : { mean: 0, peak: 0 };
+/** a param's range as the AI is told it (chainState) and held to (applyPlan) */
+const rangeOf = (p: ParamSchema) => ({ min: p.min ?? 0, max: p.max ?? 1, step: p.step ?? 1 });
+/** snap to the slider's step grid anchored at min (an <input type=range> does the same) */
+const snapTo = (v: number, min: number, max: number, step: number) => {
+  if (!(step > 0)) return clamp(v, min, max);
+  const dec = (String(step).split('.')[1] ?? '').length;
+  return clamp(Number((min + Math.round((v - min) / step) * step).toFixed(Math.min(8, dec + 2))), min, max);
+};
+/** 'nodeId.param' → that node and its schema (bypassed nodes included) */
+const findParam = (engine: SynEngine, key: string): { node: EngineNode; p: ParamSchema } | null => {
+  const dot = key.indexOf('.');
+  const node = dot > 0 ? engine.chain.find((n) => n.id === key.slice(0, dot)) : undefined;
+  const p = node?.params.find((x) => x.key === key.slice(dot + 1));
+  return node && p ? { node, p } : null;
+};
+
 /**
- * AI LAB — the native SynEngine surface (PLAN.md phase 5):
+ * LAB — the native SynEngine surface (PLAN.md phase 5):
  * one WebGL context, all five effects composed in series on the same
  * frame. This is the capability the iframe architecture cannot provide.
+ *
+ * The ref is a LabHandle (src/ai/contract.ts): the Gemini panel's Agent
+ * and Optimizer read the live chain, the source and the signals through
+ * it, and write their plans back through the same ParamBus the sliders
+ * use (PLAN §4.4) — the AI is one more hand on the rack, not a side door.
  */
-export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainChange, initialPreset, initialSource, onSourcePicked }: ChainLabProps) {
+const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
+  { isDayMode, onBack, chain: chainProp, onChainChange, initialPreset, initialSource, onSourcePicked },
+  ref,
+) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const audioFileRef = useRef<HTMLInputElement | null>(null);
@@ -72,12 +137,26 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
   if (!videoAnRef.current) videoAnRef.current = new VideoAnalyzer();
   if (!maskRef.current) maskRef.current = new PersonMask();
   if (!busRef.current) busRef.current = new ParamBus();
+  // the handle below is built once, so whatever it reaches for must be a
+  // ref: the latest chain callback, the export latch, the source's name
+  const onChainChangeRef = useRef(onChainChange);
+  onChainChangeRef.current = onChainChange;
+  const exportingRef = useRef(false);
+  const sourceNameRef = useRef('');
+  /* frame grabs waiting for the next drawn frame — beforeFrame hands them
+     to a microtask, which runs as soon as that frame is on the canvas */
+  const afterRenderRef = useRef<(() => void)[]>([]);
+  // object URL of a file picked in a standalone (non-embedded) lab: ours to
+  // revoke; the counter tells an overtaken pick from the current one
+  const ownUrlRef = useRef<string | null>(null);
+  const pickSeqRef = useRef(0);
   const [segState, setSegState] = useState<PersonMaskState>('off');
   const [fps, setFps] = useState(0);
   const [resPct, setResPct] = useState(100);
-  const [sourceKind, setSourceKind] = useState<'none' | 'video' | 'webcam'>('none');
+  const [sourceKind, setSourceKind] = useState<SourceKind>('none');
   const [error, setError] = useState<string | null>(null);
   const [audioOn, setAudioOn] = useState(false);
+  const [audioMode, setAudioMode] = useState<AudioMode>('off');
   const [transport, setTransport] = useState<FileTransport | null>(null);
   const [signals, setSignals] = useState({ bass: 0, loud: 0, treble: 0, beat: 0, motion: 0, bright: 0, bpm: null as number | null });
   const [presets, setPresets] = useState<ChainPreset[]>(readPresets);
@@ -115,14 +194,30 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
       }
     }
     engine.beforeFrame = (now) => {
+      // grabs queued for this frame: a microtask queued here runs once this
+      // rAF tick has returned, i.e. with this frame drawn and still in the
+      // (preserved) drawing buffer and the source on the frame it was made from
+      const waiting = afterRenderRef.current;
+      if (waiting.length) {
+        const q = waiting.splice(0);
+        const w = engine.canvas.width;
+        const h = engine.canvas.height;
+        queueMicrotask(() => {
+          // the adaptive resolution resized (= cleared) the canvas after the
+          // draw: the next frame is the first clean one
+          if (engine.canvas.width !== w || engine.canvas.height !== h) afterRenderRef.current.push(...q);
+          else q.forEach((grab) => grab());
+        });
+      }
       const lv = audioRef.current!.tick(now);
       const va = videoAnRef.current!;
       va.tick(engine.source);
       // person mask: lazy-loads the first time an enabled node asks for it
+      // (a still photo is segmented too — bokeh / blob_reveal need the mask)
       const mask = maskRef.current!;
-      const wantsMask = engine.chain.some((n) => n.enabled && Number(n.getParam('segEnabled')) >= 0.5);
+      const wantsMask = wantsPersonMask(engine);
       if (wantsMask) mask.enable();
-      if (wantsMask && mask.state === 'ready') mask.tick(engine.source as HTMLVideoElement | null, now);
+      if (wantsMask && mask.state === 'ready') mask.tick(engine.source, now);
       engine.personMaskSource = wantsMask && mask.ready ? mask.maskCanvas : null;
       engine.personMaskVersion = mask.version;
       busRef.current!.apply(engine.chain, {
@@ -135,10 +230,11 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
     engine.start();
     engineRef.current = engine;
     // dev-only tap for the parity/verification protocol (06-VERIFICATION):
-    // lets headless runs pin the resolution and drive the source deterministically
+    // lets headless runs pin the resolution and drive the source deterministically;
+    // `lab` is the same LabHandle the Gemini panel holds
     if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
       (window as unknown as Record<string, unknown>).__SYN = {
-        engine, audio: audioRef.current, bus: busRef.current, mask: maskRef.current,
+        engine, audio: audioRef.current, bus: busRef.current, mask: maskRef.current, lab: labRef.current,
       };
     }
     return () => {
@@ -146,6 +242,14 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
       maskRef.current?.dispose();
       engine.dispose();
       engineRef.current = null;
+      // the next engine (React StrictMode re-runs this effect in dev) starts
+      // empty: let the shared-source effect load the source into it again
+      loadedUrlRef.current = null;
+      afterRenderRef.current = [];
+      if (ownUrlRef.current) {
+        URL.revokeObjectURL(ownUrlRef.current);
+        ownUrlRef.current = null;
+      }
     };
   }, []);
 
@@ -167,20 +271,81 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
   const emitChain = () => {
     const engine = engineRef.current;
     if (!engine) return;
-    onChainChange?.(engine.chain.filter((n) => n.enabled).map((n) => n.id as ModuleId));
+    onChainChangeRef.current?.(engine.chain.filter((n) => n.enabled).map((n) => n.id as ModuleId));
   };
 
-  // Shared source: load the dashboard's chosen video (single load path — the
-  // Video button lifts its pick up to the shell, which flows back here).
+  /* ── clip audio follows the source ──
+     The Clip input taps the source video's own soundtrack. When the source
+     changes, that tap would go on analysing an element that no longer plays
+     (AudioEngine.tick also notices and drops it — this is the clean path):
+     it is stopped before the swap, and picked back up on the new source if
+     that is a video too — the operator asked for "the clip's music", not for
+     one particular file's.
+     The "pick it back up" intent lives in a ref, not in each load's own
+     closure: with two quick picks the second release finds the mode already
+     off, and only the load that wins (the last one) may act on it. It is
+     cleared by the re-tap itself and by any explicit audio choice. */
+  const pendingRetapRef = useRef(false);
+
+  const releaseClip = (): void => {
+    const audio = audioRef.current!;
+    if (audio.mode !== 'clip') return;
+    audio.stop();
+    setAudioOn(false);
+    setAudioMode('off');
+    pendingRetapRef.current = true;
+  };
+
+  /** Clip audio on for this video, with the UI following — the Clip button,
+   *  a re-tap and the Gemini panel's startClipAudio all go through here.
+   *  AudioEngine.startClip makes (or resumes) the AudioContext before its
+   *  first await, so a caller inside a click keeps the gesture. */
+  const startClipOn = async (video: HTMLVideoElement): Promise<void> => {
+    await audioRef.current!.startClip(video);
+    setAudioOn(true);
+    setAudioMode('clip');
+    setError(null);
+  };
+
+  /** run by the load that now owns the source (never an overtaken one) */
+  const retapClip = async () => {
+    if (!pendingRetapRef.current) return;
+    pendingRetapRef.current = false; // a photo / webcam has no soundtrack: the intent ends here too
+    const engine = engineRef.current;
+    const audio = audioRef.current!;
+    // the operator may have picked Mic / Track while the new source loaded
+    // (that choice also cleared the flag — this is the belt to its braces)
+    if (!engine || engine.kind !== 'video' || !engine.video || audio.mode !== 'off') return;
+    try {
+      await startClipOn(engine.video);
+    } catch (e) {
+      setError('Clip audio: ' + (e as Error).message);
+    }
+  };
+
+  // Shared source: load the dashboard's chosen video or photo (single load
+  // path — the Source button lifts its pick up to the shell, which flows back here).
   const loadedUrlRef = useRef<string | null>(null);
   useEffect(() => {
     const engine = engineRef.current;
     const url = initialSource?.url;
     if (!engine || !url || loadedUrlRef.current === url) return;
     loadedUrlRef.current = url;
-    engine.loadVideoUrl(url)
-      .then(() => { setSourceKind('video'); setError(null); })
-      .catch((e) => setError((e as Error).message));
+    sourceNameRef.current = initialSource?.name ?? '';
+    releaseClip();
+    // a newer pick (or a dispose) took over while this one loaded: the
+    // engine already dropped this element — leave the UI and the clip
+    // re-tap to the load that owns the source now
+    const current = () => engineRef.current === engine && loadedUrlRef.current === url;
+    (initialSource?.kind === 'image' ? engine.loadImageUrl(url) : engine.loadVideoUrl(url))
+      .then(() => {
+        if (!current()) return;
+        setSourceKind(engine.kind);
+        setError(null);
+        void retapClip();
+      })
+      .catch((e) => { if (current()) setError((e as Error).message); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSource?.url]);
 
   // low-rate UI mirror of the live signals (meters + modulated readouts)
@@ -192,20 +357,24 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
       setSegState(maskRef.current!.state);
       setTransport(audioRef.current!.transport);
       setAudioOn(audioRef.current!.active);
+      setAudioMode(audioRef.current!.mode);
     }, 150);
     return () => clearInterval(id);
   }, []);
 
   const toggleAudio = async () => {
     const audio = audioRef.current!;
+    pendingRetapRef.current = false; // an explicit audio choice outranks a pending clip re-tap
     if (audio.mode === 'mic') {
       audio.stop(); // zeroes its levels; the signals mirror picks that up
       setAudioOn(false);
+      setAudioMode('off');
       return;
     }
     try {
       await audio.startMic();
       setAudioOn(true);
+      setAudioMode('mic');
       setError(null);
     } catch (e) {
       setError('Audio in: ' + (e as Error).message);
@@ -215,12 +384,35 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
   // §10: reactivity from a loaded music track, not just the mic
   const loadAudioFile = async (file: File | null) => {
     if (!file) return;
+    pendingRetapRef.current = false;
     try {
       await audioRef.current!.startFile(file);
       setAudioOn(true);
+      setAudioMode('file');
       setError(null);
     } catch (e) {
       setError('Audio file: ' + (e as Error).message);
+    }
+  };
+
+  // D7: in a music video the music is IN the clip — analyse (and hear) the
+  // source video's own soundtrack. The element stays muted; AudioEngine
+  // makes it audible through its analyser, so there is no double audio.
+  const toggleClipAudio = async () => {
+    const audio = audioRef.current!;
+    pendingRetapRef.current = false;
+    if (audio.mode === 'clip') {
+      audio.stop();
+      setAudioOn(false);
+      setAudioMode('off');
+      return;
+    }
+    const video = engineRef.current?.kind === 'video' ? engineRef.current.video : null;
+    if (!video) return;
+    try {
+      await startClipOn(video);
+    } catch (e) {
+      setError('Clip audio: ' + (e as Error).message);
     }
   };
 
@@ -231,15 +423,13 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
     try { localStorage.setItem(PRESETS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
   };
 
-  const savePreset = () => {
-    const engine = engineRef.current;
-    const name = presetName.trim();
-    if (!engine || !name) return;
+  /** the whole rack as a preset */
+  const captureChain = (engine: SynEngine, name: string): ChainPreset => {
     const bools: Record<string, number> = {};
     engine.chain.forEach((n) => n.params.forEach((p) => {
       if (p.type === 'boolean') bools[`${n.id}.${p.key}`] = Number(n.getParam(p.key));
     }));
-    const preset: ChainPreset = {
+    return {
       name,
       savedAt: Date.now(),
       order: engine.chain.map((n) => n.id as ModuleId),
@@ -247,7 +437,13 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
       bools,
       bus: busRef.current!.serialize(),
     };
-    writePresets([...presets.filter((p) => p.name !== name), preset]);
+  };
+
+  const savePreset = () => {
+    const engine = engineRef.current;
+    const name = presetName.trim();
+    if (!engine || !name) return;
+    writePresets([...presets.filter((p) => p.name !== name), captureChain(engine, name)]);
     setPresetName('');
   };
 
@@ -277,81 +473,352 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
 
   const deletePreset = (name: string) => writePresets(presets.filter((p) => p.name !== name));
 
-  /* ── Gemini pilots the native chain: the whole rack is exposed as one
-        namespaced ParamSchema (nodeId.param) and the returned preset is
-        written back through the ParamBus — same §4.4 contract as manual ── */
-
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [aiBusy, setAiBusy] = useState(false);
-  const [aiMsg, setAiMsg] = useState('');
-
-  const chainParameters = (): Record<string, { label: string; value: number; min: number; max: number; step: number; hint: string }> => {
-    const engine = engineRef.current;
-    const out: ReturnType<typeof chainParameters> = {};
-    if (!engine) return out;
-    engine.chain.forEach((node) => {
-      out[`${node.id}.enabled`] = {
-        label: `${node.name} — ENABLED`, value: node.enabled ? 1 : 0, min: 0, max: 1, step: 1,
-        hint: `(on/off switch) Enables the ${node.name} effect in the chain`,
-      };
-      node.params.forEach((p) => {
-        out[`${node.id}.${p.key}`] = {
-          label: `${node.name} — ${p.label}`,
-          value: p.type === 'boolean' ? Number(node.getParam(p.key)) : busRef.current!.getBase(node, p.key),
-          min: p.min ?? 0, max: p.max ?? 1, step: p.step ?? 1,
-          hint: `${p.type === 'boolean' ? '(on/off switch) ' : ''}${p.aiHint ?? ''}`.trim(),
+  /* ── the LabHandle (src/ai/contract.ts) ──────────────────────────
+     The Gemini panel's Agent and Optimizer work through this, never on the
+     engine directly. Built once: every method reads refs (and helpers that
+     only read refs), so the same object stays valid for the Lab's life and
+     can sit on window.__SYN in DEV. Capture is one-shot, on a button press,
+     downscaled (D10) — nothing here samples in the background. */
+  const labRef = useRef<LabHandle | null>(null);
+  if (!labRef.current) {
+    labRef.current = {
+      whenReady: (timeoutMs = 8000) => new Promise<boolean>((resolve) => {
+        const t0 = performance.now();
+        const poll = () => {
+          const engine = engineRef.current;
+          if (engine && engine.kind !== 'none' && engine.isReady()) return resolve(true);
+          if (performance.now() - t0 >= timeoutMs) return resolve(false);
+          window.setTimeout(poll, 100);
         };
-      });
-    });
-    return out;
-  };
+        poll();
+      }),
 
-  const applyAiPreset = (preset: Record<string, unknown>): number => {
-    const engine = engineRef.current;
-    if (!engine) return 0;
-    let applied = 0;
-    Object.entries(preset).forEach(([k, raw]) => {
-      const dot = k.indexOf('.');
-      if (dot < 1) return;
-      const node = engine.chain.find((n) => n.id === k.slice(0, dot));
-      const key = k.slice(dot + 1);
-      const v = Number(raw);
-      if (!node || isNaN(v)) return;
-      if (key === 'enabled') { node.enabled = v >= 0.5; applied++; return; }
-      const p = node.params.find((x) => x.key === key);
-      if (!p) return;
-      if (p.type === 'boolean') node.setParam(key, v);
-      else busRef.current!.setBase(node, key, Math.max(p.min ?? -Infinity, Math.min(p.max ?? Infinity, v)));
-      applied++;
-    });
-    bump();
-    return applied;
-  };
+      sourceKind: () => engineRef.current?.kind ?? 'none',
 
-  const runAiOptimize = async () => {
-    if (aiBusy) return;
-    setAiBusy(true);
-    setAiMsg('consulting gemini…');
-    try {
-      const res = await fetch('/api/gemini/optimize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activeModule: 'chain', parameters: chainParameters(), prompt: aiPrompt }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const applied = applyAiPreset(data.preset ?? {});
-      setAiMsg(applied > 0
-        ? `✓ ${applied} parameters set${data.isFallback ? ' (offline preset)' : ''}`
-        : '✗ no matching parameters in the reply');
-    } catch (e) {
-      setAiMsg('✗ ' + (e as Error).message);
-    } finally {
-      setAiBusy(false);
-    }
-  };
+      // SOURCE and OUTPUT of the same frame: both stills are drawn in the
+      // microtask right after a render (see beforeFrame) — elementToJpeg
+      // draws synchronously, before its first await
+      grabPair: (maxSide = 768) => new Promise((resolve) => {
+        const none = { source: null, output: null };
+        if (!engineRef.current?.source || exportingRef.current) return resolve(none);
+        const deadline = performance.now() + GRAB_WAIT_MS;
+        let done = false;
+        let timer = 0;
+        // one try per drawn frame (or per fallback tick), whichever comes first
+        const attempt = () => {
+          if (done) return;
+          window.clearTimeout(timer);
+          afterRenderRef.current = afterRenderRef.current.filter((f) => f !== attempt);
+          const e = engineRef.current;
+          const src = e?.source;
+          if (!e || !src || exportingRef.current) { done = true; return resolve(none); }
+          if (!e.isReady()) {
+            // a looping video re-seeking to 0 has no frame for a moment: next one
+            if (performance.now() < deadline) return arm();
+            done = true;
+            return resolve(none);
+          }
+          done = true;
+          const at = frameAt(e);
+          const source = elementToJpeg(src, maxSide, `SOURCE frame ${at}`);
+          const output = elementToJpeg(e.canvas, maxSide, `OUTPUT frame ${at}`);
+          void Promise.all([source, output]).then(([s, o]) => resolve({ source: s, output: o }));
+        };
+        const arm = () => {
+          afterRenderRef.current.push(attempt);
+          timer = window.setTimeout(attempt, GRAB_FALLBACK_MS);
+        };
+        arm();
+      }),
 
-  const loadVideo = async (file: File | null) => {
+      grabSourceFrames: async (n, maxSide = 768) => {
+        const out: MediaPart[] = [];
+        const engine = engineRef.current;
+        const count = clamp(Math.floor(Number(n)) || 0, 0, MAX_LIVE_FRAMES);
+        const el = engine?.source;
+        if (!engine || !el || !count || exportingRef.current || !engine.isReady()) return out;
+        if (engine.kind === 'image') {
+          const part = await elementToJpeg(el, maxSide, 'SOURCE photo');
+          return part ? [part] : out;
+        }
+        const webcam = engine.kind === 'webcam';
+        const gap = webcam ? (count > 1 ? WEBCAM_SPAN_MS / (count - 1) : 0) : VIDEO_FRAME_GAP_MS;
+        let lastT = -1;
+        for (let i = 0; i < count; i++) {
+          if (i > 0) await wait(gap);
+          // the source was swapped (or an export began) mid-capture: keep what we have
+          if (engineRef.current !== engine || engine.source !== el || exportingRef.current) break;
+          let part: MediaPart | null;
+          if (webcam) {
+            part = await elementToJpeg(el, maxSide, `SOURCE webcam frame ${i + 1}/${count} (+${((i * gap) / 1000).toFixed(1)}s)`);
+          } else {
+            const t = (el as HTMLVideoElement).currentTime;
+            if (Math.abs(t - lastT) < 0.04) continue; // a paused/stalled video: the same frame says nothing new
+            lastT = t;
+            part = await elementToJpeg(el, maxSide, `SOURCE frame at ${t.toFixed(1)}s`);
+          }
+          if (part) out.push(part);
+        }
+        return out;
+      },
+
+      recordOutputClip: async (sec) => {
+        const engine = engineRef.current;
+        if (!engine || exportingRef.current || !engine.isReady()) return null;
+        const audio = audioRef.current!;
+        const stream = audio.getOutputStream();
+        const s = Number.isFinite(sec) && sec > 0 ? sec : 4;
+        const what = !stream ? ' (no audio)' : audio.mode === 'mic' ? ' with mic audio' : ' with music';
+        return recordClip(engine.canvas, stream, s, `OUTPUT clip ${s}s${what}`);
+      },
+
+      signalSummary: (sec) => new Promise<SignalSummary>((resolve) => {
+        const windowSec = clamp(Number.isFinite(sec) ? sec : 0, 0, 30);
+        const audio = audioRef.current!;
+        const va = videoAnRef.current!;
+        const xs = { bass: [] as number[], treble: [] as number[], loud: [] as number[], motion: [] as number[], bright: [] as number[] };
+        // onsets: diff AudioEngine's monotonic counter — it sees every frame,
+        // where rising edges of the decaying pulse sampled at 10Hz would
+        // merge hits closer than a sample apart
+        const count0 = audio.beatCount;
+        const sample = () => {
+          const lv = audio.levels;
+          xs.bass.push(lv.bass);
+          xs.treble.push(lv.treble);
+          xs.loud.push(lv.loud);
+          xs.motion.push(va.motion);
+          xs.bright.push(va.bright);
+        };
+        const finish = () => {
+          const counted = audio.beatCount - count0;
+          const tp = audio.transport;
+          const clipVideo = audio.mode === 'clip' ? engineRef.current?.video ?? null : null;
+          resolve({
+            windowSec,
+            audio: {
+              active: audio.active,
+              mode: audio.mode,
+              bpm: audio.active ? audio.levels.bpm : null,
+              bass: statOf(xs.bass), treble: statOf(xs.treble), loud: statOf(xs.loud),
+              beats: audio.active ? Math.max(0, counted) : 0,
+              track: tp
+                ? { name: tp.name, currentTime: round3(tp.currentTime), duration: round3(tp.duration) }
+                : clipVideo
+                  ? {
+                      name: sourceNameRef.current || 'source clip',
+                      currentTime: round3(clipVideo.currentTime),
+                      duration: isFinite(clipVideo.duration) ? round3(clipVideo.duration) : 0,
+                    }
+                  : null,
+            },
+            video: { motion: statOf(xs.motion), bright: statOf(xs.bright) },
+          });
+        };
+        sample();
+        if (windowSec <= 0) return finish();
+        const id = window.setInterval(sample, 100);
+        window.setTimeout(() => { window.clearInterval(id); sample(); finish(); }, windowSec * 1000);
+      }),
+
+      chainState: (): ChainState => {
+        const engine = engineRef.current;
+        const audio = audioRef.current!;
+        if (!engine) {
+          return {
+            order: [], params: [], fps: 0, resScale: 1, sourceKind: 'none',
+            audioActive: audio.active, audioMode: audio.mode, maskState: null,
+          };
+        }
+        const bus = busRef.current!;
+        const enabled = engine.chain.filter((n) => n.enabled);
+        const params: ParamDesc[] = [];
+        enabled.forEach((node) => node.params.forEach((p) => {
+          const key = `${node.id}.${p.key}`;
+          const type: ParamDesc['type'] = p.type === 'boolean' ? 'boolean' : ENUM_KEYS.includes(key) ? 'enum' : 'number';
+          const mod = type === 'number' ? bus.getMod(node, p.key) : null;
+          const hint = (p.aiHint ?? '').trim();
+          const r = type === 'boolean' ? { min: 0, max: 1, step: 1 } : rangeOf(p);
+          params.push({
+            key,
+            label: p.label,
+            type,
+            min: r.min,
+            max: r.max,
+            step: r.step,
+            value: type === 'boolean' ? (Number(node.getParam(p.key)) >= 0.5 ? 1 : 0) : bus.getBase(node, p.key),
+            hint: hint.length > HINT_MAX ? `${hint.slice(0, HINT_MAX - 1).trimEnd()}…` : hint,
+            reactive: type === 'number' && !!p.reactive,
+            route: mod ? { source: mod.source, amount: mod.amount } : null,
+            carrier: CARRIER_KEYS.includes(key),
+            locked: PROTECTED_KEYS.includes(key),
+          });
+        }));
+        return {
+          order: enabled.map((n) => n.id as ModuleId),
+          params,
+          fps: engine.fps,
+          resScale: engine.resScale,
+          sourceKind: engine.kind,
+          audioActive: audio.active,
+          audioMode: audio.mode,
+          maskState: wantsPersonMask(engine) ? maskRef.current!.state : null,
+        };
+      },
+
+      // The server already validated the plan against chainState(); the
+      // safety lists are enforced again here (defence in depth) because a
+      // plan can be applied later than it was made (Optimizer fixes).
+      // Numbers go to the BUS base — node.setParam would be overwritten by
+      // ParamBus.apply on the very next frame.
+      // Every key it changes is first written down as it was (PlanUndo), so
+      // Undo can put back exactly those keys and nothing the operator did
+      // around them — not their other edits, not order, not bypass.
+      applyPlan: (plan: AgentPlan) => {
+        const engine = engineRef.current;
+        const skipped: string[] = [];
+        if (!engine) return { applied: 0, skipped: ['the Lab engine is not running'], undo: null };
+        // a plan landing mid-encode would show as a jump in the exported file
+        if (exportingRef.current) return { applied: 0, skipped: ['a Master export is running'], undo: null };
+        const bus = busRef.current!;
+        let applied = 0;
+        // first-seen previous state per key: a key listed twice still
+        // undoes to what it was before the plan, not to its first edit
+        const undo = new Map<string, PlanUndo['entries'][number]>();
+        const entryOf = (key: string) => {
+          let u = undo.get(key);
+          if (!u) { u = { key }; undo.set(key, u); }
+          return u;
+        };
+
+        for (const e of Array.isArray(plan?.params) ? plan.params : []) {
+          const key = e?.key;
+          const value = e?.value;
+          const hit = typeof key === 'string' ? findParam(engine, key) : null;
+          if (!hit) { skipped.push(`${String(key)}: not a parameter of this chain`); continue; }
+          if (PROTECTED_KEYS.includes(key)) { skipped.push(`${key}: protected`); continue; }
+          if (CARRIER_KEYS.includes(key)) { skipped.push(`${key}: carrier — only its route amount can change`); continue; }
+          const v = typeof value === 'boolean' ? (value ? 1 : 0) : Number(value);
+          if (!Number.isFinite(v)) { skipped.push(`${key}: value is not a number`); continue; }
+          const { node, p } = hit;
+          const u = entryOf(key);
+          if (p.type === 'boolean') {
+            if (u.bool === undefined) u.bool = Number(node.getParam(p.key)) >= 0.5 ? 1 : 0;
+            node.setParam(p.key, v >= 0.5 ? 1 : 0); // booleans are not on the bus
+          } else {
+            if (u.base === undefined) u.base = bus.getBase(node, p.key);
+            const { min, max, step } = rangeOf(p);
+            // a floor keeps a param that scales the whole music response off 0
+            const floor = PARAM_FLOORS[key];
+            const snapped = ENUM_KEYS.includes(key)
+              ? clamp(Math.round(v), Math.ceil(min), Math.floor(max))
+              : snapTo(v, min, max, step);
+            bus.setBase(node, p.key, floor !== undefined ? clamp(Math.max(snapped, floor), min, max) : snapped);
+          }
+          applied++;
+        }
+
+        for (const e of Array.isArray(plan?.routes) ? plan.routes : []) {
+          const key = e?.key;
+          const source = e?.source;
+          const amount = e?.amount;
+          const hit = typeof key === 'string' ? findParam(engine, key) : null;
+          if (!hit) { skipped.push(`${String(key)}: not a parameter of this chain`); continue; }
+          const { node, p } = hit;
+          if (PROTECTED_KEYS.includes(key)) { skipped.push(`${key}: protected`); continue; }
+          if (ENUM_KEYS.includes(key)) { skipped.push(`${key}: enum parameters are never routed`); continue; }
+          if (p.type !== 'number' || !p.reactive) { skipped.push(`${key}: not routable`); continue; }
+          const isSource = (MOD_SOURCE_IDS as readonly string[]).includes(source);
+          if (!isSource && source !== 'off') { skipped.push(`${key}: unknown signal "${String(source)}"`); continue; }
+          const cur = bus.getMod(node, p.key);
+          let next: { source: ModSource; amount: number } | null;
+          if (CARRIER_KEYS.includes(key)) {
+            // a carrier's route IS the effect's music response: only its depth moves
+            const fixed = cur?.source ?? p.defaultRoute?.source;
+            if (source === 'off') { skipped.push(`${key}: carrier route cannot be switched off`); continue; }
+            if (fixed && source !== fixed) { skipped.push(`${key}: carrier route stays on ${fixed}`); continue; }
+            const a = Number(amount);
+            if (!Number.isFinite(a)) { skipped.push(`${key}: amount is not a number`); continue; }
+            next = { source: source as ModSource, amount: clamp(a, CARRIER_AMOUNT_MIN, CARRIER_AMOUNT_MAX) };
+          } else if (source === 'off') {
+            next = null;
+          } else {
+            const a = Number(amount);
+            if (!Number.isFinite(a)) { skipped.push(`${key}: amount is not a number`); continue; }
+            next = { source: source as ModSource, amount: clamp(a, -MAX_ROUTE_AMOUNT, MAX_ROUTE_AMOUNT) };
+          }
+          const u = entryOf(key);
+          if (u.route === undefined) u.route = cur ? { source: cur.source, amount: cur.amount } : null;
+          bus.setMod(node, p.key, next);
+          applied++;
+        }
+
+        bump();
+        return { applied, skipped, undo: undo.size ? { entries: [...undo.values()] } : null };
+      },
+
+      // Undo of one plan: only the keys it recorded, straight onto the bus /
+      // the switch / the route — no safety lists (these are the operator's
+      // own earlier values), no order or bypass, no emitChain
+      revertPlan: (undo: PlanUndo) => {
+        const engine = engineRef.current;
+        if (!engine || exportingRef.current || !Array.isArray(undo?.entries)) return { reverted: 0 };
+        const bus = busRef.current!;
+        let reverted = 0;
+        for (const u of undo.entries) {
+          const hit = typeof u?.key === 'string' ? findParam(engine, u.key) : null;
+          if (!hit || PROTECTED_KEYS.includes(u.key)) continue; // a plan never touches a locked key
+          const { node, p } = hit;
+          let did = false;
+          if (p.type === 'boolean') {
+            if (typeof u.bool === 'number' && Number.isFinite(u.bool)) {
+              node.setParam(p.key, u.bool >= 0.5 ? 1 : 0);
+              did = true;
+            }
+          } else {
+            if (typeof u.base === 'number' && Number.isFinite(u.base)) {
+              bus.setBase(node, p.key, u.base);
+              did = true;
+            }
+            if (u.route === null) {
+              bus.setMod(node, p.key, null);
+              did = true;
+            } else if (
+              u.route && (MOD_SOURCE_IDS as readonly string[]).includes(u.route.source) && Number.isFinite(u.route.amount)
+            ) {
+              bus.setMod(node, p.key, { source: u.route.source as ModSource, amount: u.route.amount });
+              did = true;
+            }
+          }
+          if (did) reverted++;
+        }
+        bump();
+        return { reverted };
+      },
+
+      // Agent / Optimizer on a music video: they must hear the music, and
+      // the Lab's default is audio off. Called from inside the panel's click
+      // (startClipOn creates the AudioContext before its first await, so the
+      // gesture still counts). True when audio is on now — whatever input.
+      startClipAudio: async () => {
+        try {
+          const audio = audioRef.current!;
+          if (audio.active) return true;
+          const engine = engineRef.current;
+          const video = engine?.kind === 'video' ? engine.video : null;
+          // an audio switch mid-encode would change the exported modulation
+          if (!video || exportingRef.current) return false;
+          pendingRetapRef.current = false;
+          await startClipOn(video);
+          return true;
+        } catch {
+          return false; // no audio track / cannot tap: the caller goes on without
+        }
+      },
+    };
+  }
+  useImperativeHandle(ref, () => labRef.current!, []);
+
+  const loadSourceFile = async (file: File | null) => {
     if (!file) return;
     // when embedded in the dashboard, hand the pick to the shell; it becomes
     // the shared source and flows back through initialSource (single path)
@@ -359,13 +826,28 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
       onSourcePicked(file);
       return;
     }
-    if (!engineRef.current) return;
+    const engine = engineRef.current;
+    if (!engine) return;
+    const url = URL.createObjectURL(file);
+    const seq = ++pickSeqRef.current;
     try {
-      await engineRef.current.loadVideoFile(file);
-      setSourceKind('video');
+      releaseClip();
+      if (file.type.startsWith('image/')) await engine.loadImageUrl(url);
+      else await engine.loadVideoUrl(url);
+      if (seq !== pickSeqRef.current) { // a later pick overtook this one: it owns the source
+        URL.revokeObjectURL(url);
+        return;
+      }
+      // the engine never revokes a caller's URL: the previous pick is ours
+      if (ownUrlRef.current) URL.revokeObjectURL(ownUrlRef.current);
+      ownUrlRef.current = url;
+      sourceNameRef.current = file.name;
+      setSourceKind(engine.kind);
       setError(null);
+      void retapClip();
     } catch (e) {
-      setError((e as Error).message);
+      URL.revokeObjectURL(url);
+      if (seq === pickSeqRef.current) setError((e as Error).message);
     }
   };
 
@@ -378,8 +860,12 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
       return;
     }
     try {
+      releaseClip();
+      pendingRetapRef.current = false; // the webcam has no soundtrack to follow
       await engine.startWebcam();
-      setSourceKind('webcam');
+      sourceNameRef.current = 'webcam';
+      // read back, not assumed: a start overtaken by another load leaves that one
+      setSourceKind(engine.kind);
       setError(null);
     } catch (e) {
       setError('Webcam: ' + (e as Error).message);
@@ -395,12 +881,18 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
   const runMasterExport = async () => {
     const engine = engineRef.current;
     if (!engine || exporting) return;
-    const video = engine.source;
-    if (engine.kind !== 'video' || !video || !isFinite(video.duration) || !video.duration) {
-      setExportMsg('✗ load a video file first');
+    // a photo or the webcam has no timeline to step through
+    const video = engine.kind === 'video' ? engine.video : null;
+    if (!video) {
+      setExportMsg('✗ Master export needs a video source');
+      return;
+    }
+    if (!isFinite(video.duration) || !video.duration) {
+      setExportMsg('✗ the video has no readable duration yet');
       return;
     }
     setExporting(true);
+    exportingRef.current = true; // the Gemini handle refuses grabs meanwhile
     setExportMsg('preparing…');
     try {
       const loadScript = (src: string) =>
@@ -453,6 +945,7 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
     } catch (e) {
       setExportMsg('✗ ' + (e as Error).message);
     } finally {
+      exportingRef.current = false;
       setExporting(false);
     }
   };
@@ -602,7 +1095,7 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
         <div className="flex items-center gap-4 font-mono text-[10px] uppercase tracking-widest">
           <span className={`flex items-center gap-1.5 font-extrabold ${isDayMode ? 'text-neutral-900' : 'text-white'}`}>
             <Link2 className="w-3 h-3 text-violet-500" />
-            AI LAB <span className="text-violet-500">// SYNENGINE</span>
+            LAB <span className="text-violet-500">// SYNENGINE</span>
           </span>
           <span className={isDayMode ? 'text-neutral-600' : 'text-neutral-400'}>
             FPS <b className="text-violet-500" data-testid="chain-fps">{fps}</b>
@@ -618,6 +1111,7 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
             data-testid="chain-master"
             onClick={runMasterExport}
             disabled={exporting}
+            title={sourceKind === 'video' ? 'Render the whole chain to MP4 at native resolution' : 'Master export needs a video source'}
             className="flex items-center gap-1.5 font-mono text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 rounded bg-violet-500 text-black hover:bg-violet-400 disabled:opacity-40 cursor-pointer"
           >
             <Diamond className="w-3 h-3" /> Master MP4
@@ -635,7 +1129,7 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
           {sourceKind === 'none' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
               <div className="font-mono text-[11px] tracking-[0.3em] text-violet-500 font-bold">NO SIGNAL</div>
-              <div className="font-mono text-[9px] tracking-widest text-neutral-500 uppercase">Load a video or start the webcam →</div>
+              <div className="font-mono text-[9px] tracking-widest text-neutral-500 uppercase">Load a video or photo, or start the webcam →</div>
             </div>
           )}
         </div>
@@ -647,9 +1141,10 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
             <div className="flex gap-2">
               <button
                 onClick={() => fileRef.current?.click()}
+                title="Load a video or a photo"
                 className="flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase px-2 py-2 rounded border border-violet-500/30 text-violet-500 hover:bg-violet-500/10 cursor-pointer"
               >
-                <Film className="w-3 h-3" /> Video
+                <Film className="w-3 h-3" /> Video / Photo
               </button>
               <button
                 onClick={toggleWebcam}
@@ -661,29 +1156,42 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
             <input
               ref={fileRef}
               type="file"
-              accept="video/*"
+              accept="video/*,image/*"
               data-testid="chain-file"
               className="hidden"
-              onChange={(e) => loadVideo(e.target.files?.[0] ?? null)}
+              onChange={(e) => loadSourceFile(e.target.files?.[0] ?? null)}
             />
             <div className="flex gap-2">
               <button
                 onClick={toggleAudio}
                 data-testid="audio-toggle"
-                className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase px-2 py-2 rounded border cursor-pointer ${
-                  audioOn && !transport ? 'border-amber-400 bg-amber-400/15 text-amber-400' : 'border-violet-500/30 text-violet-500 hover:bg-violet-500/10'
+                title="React to the microphone"
+                className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase whitespace-nowrap px-2 py-2 rounded border cursor-pointer ${
+                  audioMode === 'mic' ? 'border-amber-400 bg-amber-400/15 text-amber-400' : 'border-violet-500/30 text-violet-500 hover:bg-violet-500/10'
                 }`}
               >
-                <Mic className="w-3 h-3" /> {audioOn && !transport ? 'Mic: Live' : 'Mic'}
+                <Mic className="w-3 h-3" /> {audioMode === 'mic' ? 'Live' : 'Mic'}
               </button>
               <button
                 onClick={() => audioFileRef.current?.click()}
                 data-testid="audio-file-btn"
-                className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase px-2 py-2 rounded border cursor-pointer ${
+                title="React to a music track"
+                className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase whitespace-nowrap px-2 py-2 rounded border cursor-pointer ${
                   transport ? 'border-amber-400 bg-amber-400/15 text-amber-400' : 'border-violet-500/30 text-violet-500 hover:bg-violet-500/10'
                 }`}
               >
                 <Music className="w-3 h-3" /> Track
+              </button>
+              <button
+                onClick={toggleClipAudio}
+                data-testid="audio-clip"
+                disabled={sourceKind !== 'video'}
+                title={sourceKind === 'video' ? "React to the source video's own soundtrack" : 'Needs a video source'}
+                className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase whitespace-nowrap px-2 py-2 rounded border cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+                  audioMode === 'clip' ? 'border-amber-400 bg-amber-400/15 text-amber-400' : 'border-violet-500/30 text-violet-500 hover:bg-violet-500/10'
+                }`}
+              >
+                <AudioLines className="w-3 h-3" /> Clip
               </button>
             </div>
             <input
@@ -776,33 +1284,6 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
             {error && <div className="font-mono text-[9px] text-red-400">{error}</div>}
           </div>
 
-          {/* Gemini drives the whole chain: decision #6 — AI is one of the automations */}
-          <div className="space-y-2">
-            <div className="font-mono text-[9px] font-extrabold tracking-widest text-violet-500 uppercase border-b border-violet-500/15 pb-1">AI Optimizer</div>
-            <div className="flex gap-1.5">
-              <input
-                type="text"
-                data-testid="ai-prompt"
-                value={aiPrompt}
-                onChange={(e) => setAiPrompt(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') runAiOptimize(); }}
-                placeholder="e.g. cinematic VHS nightmare"
-                className={`flex-1 min-w-0 font-mono text-[9px] px-2 py-1.5 rounded border bg-transparent outline-none ${
-                  isDayMode ? 'border-neutral-300 text-neutral-800 placeholder-neutral-400' : 'border-violet-500/25 text-white placeholder-neutral-600'
-                }`}
-              />
-              <button
-                onClick={runAiOptimize}
-                data-testid="ai-optimize"
-                disabled={aiBusy}
-                className="flex items-center gap-1 font-mono text-[9px] font-bold uppercase px-2 py-1.5 rounded bg-violet-500 text-black hover:bg-violet-400 disabled:opacity-40 cursor-pointer"
-              >
-                <Sparkle className="w-3 h-3" /> Go
-              </button>
-            </div>
-            {aiMsg && <div data-testid="ai-msg" className="font-mono text-[8px] text-violet-500">{aiMsg}</div>}
-          </div>
-
           {/* chain presets: full rack state in localStorage (decision #9) */}
           <div className="space-y-2">
             <div className="font-mono text-[9px] font-extrabold tracking-widest text-violet-500 uppercase border-b border-violet-500/15 pb-1">Presets</div>
@@ -870,4 +1351,6 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
       </div>
     </div>
   );
-}
+});
+
+export default ChainLab;

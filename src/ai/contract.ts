@@ -60,15 +60,32 @@ export const CARRIER_KEYS: readonly string[] = [
   'blob_tracker.connGlow', 'blob_tracker.rippleForce',
 ];
 
-/** Params the AI must never touch: A/B split, a no-op LUT, a perf knob, and
- *  bokeh's person mask (off = the whole node becomes a pass-through). */
+/** Params the AI must never touch: A/B split, a no-op LUT, a perf knob,
+ *  bokeh's person mask (off = the whole node becomes a pass-through), and
+ *  analog's reactivity gate (off zeroes all three carriers, analog.ts:372-376). */
 export const PROTECTED_KEYS: readonly string[] = [
   'anamorphic_lab.compare', 'anamorphic_lab.lutMix', 'blob_reveal.segN', 'bokeh.segEnabled',
+  'analog.reactEnabled',
 ];
 
+/** Lowest base the AI may set on a param that scales an effect's whole music
+ *  response — at 0 the carriers still run but move nothing. */
+export const PARAM_FLOORS: Readonly<Record<string, number>> = {
+  'analog.modDepth': 0.1,
+};
+
 /** Route depth is amount × the param's FULL range (params.ts:58-59), so the
- *  AI is capped here on ordinary params. Carriers may go to 1. */
-export const MAX_ROUTE_AMOUNT = 0.5;
+ *  AI is capped here on ordinary params. 0.6 is the deepest factory route
+ *  (blob_tracker.panelTurb), so the AI can always restore a default. */
+export const MAX_ROUTE_AMOUNT = 0.6;
+/** The band a carrier's amount may be retuned within (same source only). */
+export const CARRIER_AMOUNT_MIN = 0.05;
+export const CARRIER_AMOUNT_MAX = 1;
+
+/** Sampling rate asked of Gemini for short INLINE clips (the Optimizer's and
+ *  the Agent's output clips). Its default is 1 fps — four stills for a 4s
+ *  clip, useless for judging whether hits land on the beat. Max allowed is 24. */
+export const INLINE_VIDEO_FPS = 12;
 
 /* ── errors ─────────────────────────────────────────────────── */
 
@@ -76,7 +93,7 @@ export type AiErrorKind =
   | 'no_key'            // no key in the browser and none on the server
   | 'invalid_key'       // Google: 400 API_KEY_INVALID / 403 PERMISSION_DENIED
   | 'model_unavailable' // Google: 404 for the configured model id
-  | 'quota'             // Google: 429 RESOURCE_EXHAUSTED (free-tier limit)
+  | 'quota'             // Google: 429 RESOURCE_EXHAUSTED (per-day, per-minute or token limit)
   | 'too_large'         // payload / upload over our or Google's limit
   | 'no_media'          // a role was called without pixels or audio
   | 'bad_request'       // other 400 from Google (media type, schema…)
@@ -156,6 +173,8 @@ export interface ParamDesc {
   locked: boolean;           // in PROTECTED_KEYS
 }
 
+export type AudioModeT = 'off' | 'mic' | 'file' | 'clip';
+
 export interface ChainState {
   order: ModuleId[];         // enabled effects, render order
   params: ParamDesc[];       // ENABLED nodes only
@@ -163,7 +182,18 @@ export interface ChainState {
   resScale: number;
   sourceKind: SourceKindT;
   audioActive: boolean;
+  audioMode: AudioModeT;
   maskState: string | null;  // PersonMask state, if any node uses it
+}
+
+/** The Art Director proposal the director chose with "Use this chain" — the
+ *  creative brief the Agent executes and the Optimizer checks against. */
+export interface ArtDirection {
+  title: string;
+  chain: ModuleId[];
+  why: string;
+  audioIdea: string;
+  music: ArtDirectorResult['read']['music'];
 }
 
 /* ── role: ART DIRECTOR ─────────────────────────────────────── */
@@ -203,8 +233,12 @@ export interface AgentPlan {
 
 export interface AgentRequest {
   intent?: string;
+  direction?: ArtDirection | null;
+  /** fileUri set when the source video is uploaded (Gemini hears the song and
+   *  sees the motion of the whole clip). */
   source: SourceRef;
-  media: MediaPart[];        // SOURCE/OUTPUT frame pair(s) from the Lab
+  /** SOURCE/OUTPUT frame pair + an OUTPUT clip with the music when audio is on. */
+  media: MediaPart[];
   signals: SignalSummary;
   chain: ChainState;
 }
@@ -221,6 +255,8 @@ export interface CheckResult { id: string; ok: boolean; detail: string }
 
 export interface OptimizerRequest {
   intent?: string;
+  direction?: ArtDirection | null;
+  /** null when there is no Agent run, or it was undone. */
   lastAgent: { intent: string; plan: AgentPlan; at: string } | null;
   media: MediaPart[];        // OUTPUT clip (webm, with music when audio is on) + frame pairs
   signals: SignalSummary;
@@ -268,8 +304,24 @@ export interface LabHandle {
   /** Samples the live signals at ~10Hz for `sec` seconds. */
   signalSummary(sec: number): Promise<SignalSummary>;
   chainState(): ChainState;
-  /** Applies a validated plan through the ParamBus; returns what it did. */
-  applyPlan(plan: AgentPlan): { applied: number; skipped: string[] };
-  snapshot(): unknown;
-  restore(snap: unknown): void;
+  /** Applies a validated plan through the ParamBus; returns what it did and
+   *  the previous value of every key it touched. Refused (applied 0) while a
+   *  Master export runs. */
+  applyPlan(plan: AgentPlan): { applied: number; skipped: string[]; undo: PlanUndo | null };
+  /** Puts back exactly the keys a plan touched — never the operator's other
+   *  edits, never chain order or enabled. Refused while a Master export runs. */
+  revertPlan(undo: PlanUndo): { reverted: number };
+  /** Switches on the Clip audio (the source video's own soundtrack) when the
+   *  source is a video and no audio is on. Resolves true when audio is now on. */
+  startClipAudio(): Promise<boolean>;
+}
+
+/** The previous state of each key a plan touched (see LabHandle.applyPlan). */
+export interface PlanUndo {
+  entries: {
+    key: string;                       // 'nodeId.param'
+    base?: number;                     // previous ParamBus base (numbers, enums)
+    bool?: number;                     // previous switch value (booleans)
+    route?: RouteT | null;             // previous route, when the plan set one
+  }[];
 }
