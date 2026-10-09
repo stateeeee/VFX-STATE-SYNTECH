@@ -92,10 +92,24 @@ Fatto così, e già usato in questa stessa sessione:
 - `CLAUDE.md` (regola 9), `07-SESSION-PROTOCOL.md` (passo 0 = revisione Opus) e
   `docs/workflow/README.md` puntano al nuovo documento.
 
-Le richieste di prodotto della stessa sessione (fullscreen nella shell, Source +
-sezioni chiuse in blob reveal, sezione Body e tracking reattivo nel blob
-tracker) sono in lavorazione dagli agenti e arrivano in un commit separato,
-dopo la revisione.
+Le richieste di prodotto della stessa sessione arrivano in commit separati,
+ognuno dopo il PASS della revisione Opus:
+
+**Fullscreen del riquadro centrale (Sonnet → revisione Opus: PASS).** Accanto al
+bottone giorno/notte c'è un bottone Maximize (`data-testid="hero-fullscreen"`):
+mette a schermo intero SOLO l'apertura centrale — brain graph, effetto aperto,
+AI Lab o video sorgente — con la Fullscreen API (fallback `webkit*` per Safari).
+Esc è l'uscita del browser; lo stato si rilegge da `fullscreenchange`, quindi
+l'icona resta vera anche quando esce il browser. In fullscreen l'apertura perde
+raggio e bordo (`.syn-hero-fs` in `index.css`), lo sfondo resta quello del tema.
+L'AI Lab riempie lo schermo (wrapper `flex flex-col` solo in fullscreen). L'iframe
+degli effetti ha anche `allowFullScreen` (per WebKit vecchi; in Chromium il
+fullscreen interno degli effetti funzionava già). Verificato in Chromium 1440×900
+in tutti e quattro gli stati, notte e giorno, fullscreen annidato (effetto dentro
+hero) e ritorno al layout identico. La revisione ha trovato un solo punto: con
+`fullscreen` anche nell'attributo `allow`, Chrome stampava un warning a ogni
+apertura di effetto — tolto. Esc reale non è simulabile headless: usato
+`document.exitFullscreen()`, che passa dallo stesso evento.
 
 ### 2026-07-31 — Il dev server non partiva sul Mac; l'AI diventa sostituibile
 

@@ -5,6 +5,8 @@ import {
   RefreshCw,
   Sun,
   Moon,
+  Maximize,
+  Minimize,
   MoreHorizontal,
   Search,
   Cpu,
@@ -57,6 +59,9 @@ const walkChain = (nodes: ModuleId[], wires: WireMap): ModuleId[] => {
   return cur === 'OUT' ? path : [];
 };
 interface SavedSession { activeModule?: ModuleId; isDayMode?: boolean; savedAt?: number }
+// Safari-prefixed Fullscreen API surface (the operator is on a Mac)
+type FsDoc = Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => Promise<void> | void };
+type FsEl = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void };
 const readSession = (): SavedSession => {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) ?? '{}') ?? {}; } catch { return {}; }
 };
@@ -162,6 +167,40 @@ export default function App() {
   const [chainPresetToOpen, setChainPresetToOpen] = useState<string | null>(null);
   const [systemSearch, setSystemSearch] = useState(''); // Phase 10: filter the effect cards by name
   const effectHostRef = useRef<EffectHostHandle | null>(null);
+
+  // ── HERO FULLSCREEN (YouTube-style): only the big central opening — brain graph,
+  // open effect or AI Lab — goes true fullscreen; the shell chrome is left behind.
+  // Esc is the browser's own exit. State is read back from `fullscreenchange` so the
+  // icon stays honest when the browser (not the button) leaves fullscreen.
+  const heroRef = useRef<HTMLDivElement | null>(null);
+  const [isHeroFullscreen, setIsHeroFullscreen] = useState(false);
+  useEffect(() => {
+    const sync = () => {
+      const d = document as FsDoc;
+      const el = d.fullscreenElement ?? d.webkitFullscreenElement ?? null;
+      setIsHeroFullscreen(!!el && el === heroRef.current);
+    };
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync); // Safari
+    return () => {
+      document.removeEventListener('fullscreenchange', sync);
+      document.removeEventListener('webkitfullscreenchange', sync);
+    };
+  }, []);
+  const toggleHeroFullscreen = () => {
+    const d = document as FsDoc;
+    const hero = heroRef.current as FsEl | null;
+    const active = d.fullscreenElement ?? d.webkitFullscreenElement ?? null;
+    try {
+      // rejections (no user gesture, policy-blocked, ...) are swallowed: the button just does nothing
+      if (active && active === hero) {
+        Promise.resolve((d.exitFullscreen ?? d.webkitExitFullscreen)?.call(d)).catch(() => {});
+      } else if (hero) {
+        Promise.resolve((hero.requestFullscreen ?? hero.webkitRequestFullscreen)?.call(hero)).catch(() => {});
+      }
+    } catch { /* synchronous throw on very old engines */ }
+  };
+
   const flashSaved = () => {
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1800);
@@ -614,14 +653,27 @@ export default function App() {
             system online
           </div>
 
-          <button
-            type="button"
-            title="Toggle day / night"
-            onClick={() => setIsDayMode((v) => !v)}
-            className={`p-1.5 rounded-md transition-colors cursor-pointer ${isDayMode ? 'hover:bg-neutral-200 text-neutral-500' : 'hover:bg-ink-800 text-neutral-400'}`}
-          >
-            {isDayMode ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              title="Toggle day / night"
+              onClick={() => setIsDayMode((v) => !v)}
+              className={`p-1.5 rounded-md transition-colors cursor-pointer ${isDayMode ? 'hover:bg-neutral-200 text-neutral-500' : 'hover:bg-ink-800 text-neutral-400'}`}
+            >
+              {isDayMode ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+            </button>
+
+            {/* fullscreen the central opening only (see HERO FULLSCREEN above) */}
+            <button
+              type="button"
+              title="Fullscreen (Esc to exit)"
+              data-testid="hero-fullscreen"
+              onClick={toggleHeroFullscreen}
+              className={`p-1.5 rounded-md transition-colors cursor-pointer ${isDayMode ? 'hover:bg-neutral-200 text-neutral-500' : 'hover:bg-ink-800 text-neutral-400'}`}
+            >
+              {isHeroFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
+            </button>
+          </div>
         </div>
 
         {/* The wordmark sits at the RIGHT end of the left slot, hard against the
@@ -809,13 +861,16 @@ export default function App() {
                 <Panel defaultSize={62} minSize={20}>
                   {/* the big rounded opening */}
                   <div
-                    className={`syn-hole relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col`}
+                    ref={heroRef}
+                    className={`syn-hole relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col${isHeroFullscreen ? ' syn-hero-fs' : ''}`}
                     style={cageBox(HOLES.hero)}
                   >
                     {/* armed AI Lab stays mounted under an open effect so its
-                        composition (nodes, wiring, params) survives navigation */}
+                        composition (nodes, wiring, params) survives navigation.
+                        Fullscreen only: a flex column lets the lab's own `flex-1` fill
+                        the screen (normally it keeps its natural height, opening clips it) */}
                     {chainOpen && (
-                      <div className={openEffectId ? 'hidden' : 'w-full h-full'}>
+                      <div className={openEffectId ? 'hidden' : isHeroFullscreen ? 'w-full h-full flex flex-col' : 'w-full h-full'}>
                         <ChainLab
                           isDayMode={isDayMode}
                           onBack={() => setChainOpen(false)}

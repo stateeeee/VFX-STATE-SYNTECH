@@ -456,3 +456,13 @@ body {
   box-shadow: none;
   border-radius: 16px;
 }
+
+/* Hero fullscreen (top-bar button): the browser already stretches the element to the
+   screen (UA `:fullscreen` pins position/inset/size with !important), but the cage
+   rule above still rounds it and keeps a 1px border. Fullscreen is the bare surface —
+   square, borderless — and its background stays the hero's own themed one (white by
+   day, ink by night). Class-driven (App.tsx) so Safari's prefixed pseudo-class is moot. */
+.syn-cage .syn-hole.syn-hero-fs {
+  border-radius: 0;
+  border-width: 0;
+}
