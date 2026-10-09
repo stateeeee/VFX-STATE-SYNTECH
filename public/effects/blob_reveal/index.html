@@ -652,6 +652,56 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
   box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 4px 12px rgba(0,0,0,.8);transition:all .15s}
 #fs-close:hover{border-color:rgba(232,192,0,.5);color:var(--amber);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 0 16px rgba(232,192,0,.2),0 4px 12px rgba(0,0,0,.8)}
+
+/* SYNTECH-SOURCE-START — "Source" section styles (same markup/classes as the other effects, blob_reveal tokens) */
+.seg-row{display:flex;gap:2px}
+.seg-btn{flex:1;height:27px;
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.20) 0%,rgba(255,255,255,.07) 40%,transparent 72%),
+    linear-gradient(180deg,#181618 0%,#0c0a0c 35%,#060406 65%,#0a080a 100%);
+  border:1px solid rgba(255,255,255,.09);border-bottom-color:rgba(0,0,0,.65);
+  font-family:var(--mono);font-size:8.5px;letter-spacing:1.5px;color:var(--text-mid);
+  cursor:pointer;text-transform:uppercase;transition:all .12s;
+  position:relative;overflow:hidden;border-radius:1px;
+  box-shadow:inset 0 2px 10px rgba(255,255,255,.13),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 4px rgba(0,0,0,.6)}
+.seg-btn::before{content:'';position:absolute;top:0;left:0;right:0;height:45%;
+  background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.02));pointer-events:none}
+.seg-btn::after{content:'';position:absolute;top:0;left:-100%;width:50%;height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent);
+  transform:skewX(-15deg);pointer-events:none}
+.seg-btn:hover::after{animation:shimmer-pass .5s ease-out forwards}
+.seg-btn:hover{color:var(--text-hi);
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.28) 0%,rgba(255,255,255,.10) 40%,transparent 72%),
+    linear-gradient(180deg,#222022 0%,#141214 35%,#0c0a0c 65%,#121012 100%);
+  border-color:rgba(255,255,255,.16);
+  box-shadow:inset 0 3px 14px rgba(255,255,255,.18),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 8px rgba(0,0,0,.7)}
+.seg-btn.on{
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.36) 0%,rgba(255,255,255,.16) 40%,transparent 72%),
+    linear-gradient(180deg,#282428 0%,#1a161a 35%,#100e10 65%,#181418 100%);
+  border-color:rgba(232,192,0,.48);border-bottom-color:rgba(0,0,0,.65);
+  color:var(--text-hi);animation:iri-glow 5s linear infinite;
+  box-shadow:inset 0 3px 14px rgba(255,255,255,.24),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 5px rgba(0,0,0,.65);
+  text-shadow:0 0 8px rgba(255,255,255,.2)}
+.vu-row{display:flex;align-items:center;gap:7px}
+.vu-lbl{width:44px;font-size:7.5px;letter-spacing:1px;color:var(--text-lo);flex-shrink:0;text-transform:uppercase}
+.vu-track{flex:1;height:5px;background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.08));
+  border:1px solid rgba(255,255,255,.08);overflow:hidden;border-radius:2px;box-shadow:inset 0 1px 0 rgba(0,0,0,.4)}
+.vu-bar{height:100%;width:0%;transition:width .05s;background:linear-gradient(90deg,#6a4800,var(--amber));
+  border-radius:0 2px 2px 0;box-shadow:0 0 6px rgba(232,192,0,.5)}
+.vu-val{width:28px;text-align:right;font-size:7.5px;color:var(--text-mid);font-variant-numeric:tabular-nums}
+.kbd-badge{margin-left:auto;padding:2px 5px;border:1px solid rgba(255,255,255,.15);font-size:7px;color:var(--text-mid);
+  background:rgba(0,0,0,.3);border-radius:2px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 2px 3px rgba(0,0,0,.4)}
+/* webcam LED reads red when the camera is live (as in the other effects) */
+#btn-webcam.on #webcam-led{background:radial-gradient(circle at 35% 30%,#ffd0c8,var(--red));
+  border-color:rgba(255,160,150,.6);animation:none;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 0 8px rgba(240,48,32,.8)}
+/* Input cell: resolution string must fit the 2-col cell (22px would clip "1920×1080") */
+#info-res{font-size:15px}
+#info-file{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* SYNTECH-SOURCE-END */
 </style>
 </head>
 <body translate="no">
@@ -662,6 +712,7 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 </div>
 
 <input type="file" id="file-input" accept="video/*" style="display:none">
+<input type="file" id="img-input" accept="image/*" style="display:none"><!-- SYNTECH-SOURCE: still-image source -->
 <video id="vid" style="display:none" playsinline loop muted></video>
 
 <!-- Off-screen compositing canvases — never shown directly -->
@@ -711,27 +762,34 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
   <!-- ══════════════════════════ PANEL ══════════════════════════ -->
   <div id="panel">
 
-    <!-- INPUT -->
+    <!-- SYNTECH-SOURCE-START: "Source" section (replaces the old "Input" section; same layout as the other effects) -->
     <div class="section">
-      <div class="sec-head" data-sec="input"><div class="sec-mark on"></div><div class="sec-title">Input</div><div class="sec-chevron">▼</div></div>
-      <div class="sec-body" id="sec-input">
-        <div class="row">
-          <button class="cam-btn" id="cam-btn" style="flex:1"><div class="cam-dot" style="background:var(--green)"></div><span>WEBCAM</span></button>
-          <button class="cam-btn" id="file-btn" style="flex:1"><div class="cam-dot" style="background:var(--blue)"></div><span>VIDEO FILE</span></button>
+      <div class="sec-head collapsed" data-sec="source"><div class="sec-mark on"></div><div class="sec-title">Source</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-body hidden" id="sec-source">
+        <div class="seg-row">
+          <button class="seg-btn" id="src-image">IMAGE</button>
+          <button class="seg-btn" id="src-video">VIDEO</button>
+          <button class="seg-btn" id="src-webcam">WEBCAM</button>
         </div>
+        <div class="vu-row"><span class="vu-lbl">MOTION</span><div class="vu-track"><div class="vu-bar" id="vu-motion"></div></div><span class="vu-val" id="vu-mv">0%</span></div>
         <div class="info-grid">
-          <div class="info-cell"><div class="ic-lbl">Sorgente</div><div class="ic-val dim" id="ic-src">—</div></div>
-          <div class="info-cell"><div class="ic-lbl">Risoluzione</div><div class="ic-val dim" id="ic-res">—</div></div>
+          <div class="info-cell"><div class="ic-lbl">File</div><div class="ic-val dim" id="info-file">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val amber" id="info-res">--</div></div>
           <div class="info-cell"><div class="ic-lbl">Durata</div><div class="ic-val dim" id="ic-dur">—</div></div>
           <div class="info-cell"><div class="ic-lbl">Blob rilevati</div><div class="ic-val amber" id="ic-blobs">0</div></div>
         </div>
+        <div class="row"><div class="lbl">Playback</div><div class="led-btn" id="btn-play"><div class="led"></div><div class="led-txt" id="play-label">PAUSED</div><div class="kbd-badge">SPC</div></div></div>
+        <div class="row"><div class="lbl">Loop</div><div class="led-btn" id="btn-loop"><div class="led"></div><div class="led-txt" id="loop-label">LOOP OFF</div></div></div>
+        <div class="row"><div class="lbl">Webcam</div><div class="led-btn" id="btn-webcam"><div class="led" id="webcam-led"></div><div class="led-txt" id="webcam-label">WEBCAM OFF</div></div></div>
+        <div class="row"><div class="lbl">Fullscreen</div><div class="led-btn" id="btn-fullscreen"><div class="led"></div><div class="led-txt">FULLSCREEN</div><div class="kbd-badge">F</div></div></div>
       </div>
     </div>
+    <!-- SYNTECH-SOURCE-END -->
 
     <!-- ROTOSCOPE -->
     <div class="section">
-      <div class="sec-head" data-sec="seg"><div class="sec-mark on" id="seg-mark"></div><div class="sec-title">Rotoscope · Seg</div><div class="sec-chevron">▼</div></div>
-      <div class="sec-body" id="sec-seg">
+      <div class="sec-head collapsed" data-sec="seg"><div class="sec-mark on" id="seg-mark"></div><div class="sec-title">Rotoscope · Seg</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-body hidden" id="sec-seg">
         <div class="row">
           <div class="lbl">Attivo</div>
           <div class="led-btn on" id="btn-seg"><div class="led"></div><div class="led-txt">ENABLED</div></div>
@@ -782,8 +840,8 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 
     <!-- BLOB -->
     <div class="section">
-      <div class="sec-head" data-sec="blob"><div class="sec-mark on"></div><div class="sec-title">Blob Detection</div><div class="sec-chevron">▼</div></div>
-      <div class="sec-body" id="sec-blob">
+      <div class="sec-head collapsed" data-sec="blob"><div class="sec-mark on"></div><div class="sec-title">Blob Detection</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-body hidden" id="sec-blob">
         <div class="ctrl-row">
           <div class="ctrl-lbl">Lum Thresh</div>
           <div class="ctrl-track"><input class="daw-slider" type="range" id="sl-lum" min="0" max="255" step="1" value="170"></div>
@@ -814,8 +872,8 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 
     <!-- AUDIO -->
     <div class="section">
-      <div class="sec-head" data-sec="audio"><div class="sec-mark amber" id="audio-mark"></div><div class="sec-title">Audio Reactive</div><div class="sec-chevron">▼</div></div>
-      <div class="sec-body" id="sec-audio">
+      <div class="sec-head collapsed" data-sec="audio"><div class="sec-mark amber" id="audio-mark"></div><div class="sec-title">Audio Reactive</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-body hidden" id="sec-audio">
         <div class="row">
           <div class="lbl">Audio</div>
           <div class="led-btn" id="btn-mic"><div class="led"></div><div class="led-txt">ATTIVA</div></div>
@@ -846,8 +904,8 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 
     <!-- XY PAD -->
     <div class="section">
-      <div class="sec-head" data-sec="xy"><div class="sec-mark on" style="background:var(--blue)"></div><div class="sec-title">XY Pad · Blob Control</div><div class="sec-chevron">▼</div></div>
-      <div class="sec-body" id="sec-xy" style="padding:8px 10px;gap:5px">
+      <div class="sec-head collapsed" data-sec="xy"><div class="sec-mark on" style="background:var(--blue)"></div><div class="sec-title">XY Pad · Blob Control</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-body hidden" id="sec-xy" style="padding:8px 10px;gap:5px">
         <div class="xy-axis-lbl"><span>BLOB MIN ←</span><span>X AXIS</span><span>→ BLOB MAX</span></div>
         <div id="xy-pad">
           <div id="xy-cross-h"></div>
@@ -863,8 +921,8 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 
     <!-- EXPORT -->
     <div class="section">
-      <div class="sec-head" data-sec="export"><div class="sec-mark"></div><div class="sec-title">Export / REC</div><div class="sec-chevron">▼</div></div>
-      <div class="sec-body" id="sec-export">
+      <div class="sec-head collapsed" data-sec="export"><div class="sec-mark"></div><div class="sec-title">Export / REC</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-body hidden" id="sec-export">
         <button class="fs-btn" id="btn-fs">⛶&nbsp;&nbsp;FULLSCREEN</button>
         <button class="rec-btn" id="rec-btn"><div class="rec-dot"></div><span>REC</span></button>
         <div id="rec-time">00:00:00</div>
@@ -951,6 +1009,19 @@ const wvCtx    = wvCvs.getContext('2d');
 const PW=320, PH=180;
 cProc.width=PW; cProc.height=PH;
 
+/* SYNTECH-SOURCE-START (state) — source indirection: the renderer reads activeSrc() instead of the <video>,
+   so a still image is processed exactly like a paused video frame. */
+let srcImg=null;       // HTMLImageElement while the active source is a still image, else null
+let srcMode='none';    // 'none' | 'video' | 'image' | 'webcam'
+let segGen=0;          // bumped on every source change; masks from an older source are dropped
+let segSendGen=0;      // value of segGen at the moment the in-flight seg.send() started
+let segBusy=false;     // true while frame() is parked on `await segObj.send()`
+let loopGen=0;         // bumped by startPlayback: a frame() parked on an older generation exits instead of re-arming
+let srcReq=0;          // bumped by every source request: a slow image decode / webcam prompt that lost the race is dropped
+function activeSrc(){ return srcImg||vid; }
+function srcSize(){ return srcImg ? {w:srcImg.naturalWidth,h:srcImg.naturalHeight} : {w:vid.videoWidth,h:vid.videoHeight}; }
+/* SYNTECH-SOURCE-END */
+
 /* ─── MEDIAPIPE ──────────────────────────────────────────────── */
 function initSeg() {
   document.getElementById('seg-loading').classList.add('show');
@@ -960,8 +1031,10 @@ function initSeg() {
   });
   segObj.setOptions({modelSelection: P.modelHQ?1:0, selfieMode:false});
   segObj.onResults(r => {
+    const gen = segSendGen; // SYNTECH-SOURCE: remember which source this mask belongs to
     // Store mask — just an ImageBitmap transfer, zero pixel copy
     createImageBitmap(r.segmentationMask).then(bm => {
+      if (gen !== segGen) { bm.close(); return; } // SYNTECH-SOURCE: source changed meanwhile — stale mask
       if (lastMaskBitmap) lastMaskBitmap.close();
       lastMaskBitmap = bm;
     });
@@ -984,7 +1057,8 @@ function fit() {
   const area=document.getElementById('canvas-area');
   const wrap=document.getElementById('canvas-wrap');
   const aw=area.clientWidth-24, ah=area.clientHeight-24;
-  const asp = (vid.videoWidth&&vid.videoHeight) ? vid.videoWidth/vid.videoHeight : 16/9;
+  const sz = srcSize(); // SYNTECH-SOURCE: video or still image
+  const asp = (sz.w&&sz.h) ? sz.w/sz.h : 16/9;
   let w,h;
   if(aw/ah>asp){h=ah;w=Math.round(h*asp);}else{w=aw;h=Math.round(w/asp);}
   wrap.style.width=w+'px'; wrap.style.height=h+'px';
@@ -1076,7 +1150,7 @@ function drawSubject() {
   ── */
   cSub.width=W; cSub.height=H;
   subCtx.clearRect(0,0,W,H);
-  subCtx.drawImage(vid,0,0,W,H);           // draw video
+  subCtx.drawImage(activeSrc(),0,0,W,H);   // draw video / still image
   subCtx.globalCompositeOperation='destination-in';
   subCtx.drawImage(cMask,0,0);             // knock out with mask — GPU only
   subCtx.globalCompositeOperation='source-over';
@@ -1089,7 +1163,7 @@ function drawSubject() {
 
 /* ─── BLOB DETECTION (low-res, BFS) ─────────────────────────── */
 function detectAndDrawBlobs() {
-  procCtx.drawImage(vid,0,0,PW,PH);
+  procCtx.drawImage(activeSrc(),0,0,PW,PH);
   const id = procCtx.getImageData(0,0,PW,PH);
   const px = id.data;
 
@@ -1167,7 +1241,7 @@ function detectAndDrawBlobs() {
     blobCtx.beginPath();
     blobCtx.rect(rx, ry, rw, rh);
     blobCtx.clip();
-    blobCtx.drawImage(vid,0,0,dc.width,dc.height);
+    blobCtx.drawImage(activeSrc(),0,0,dc.width,dc.height);
     blobCtx.restore();
   });
 
@@ -1310,8 +1384,9 @@ function tickAudio(now){
 
 /* ─── MAIN LOOP ──────────────────────────────────────────────── */
 async function frame(){
+  const g=loopGen; // SYNTECH-SOURCE: loop generation this call belongs to
   if(paused){animId=requestAnimationFrame(frame);return;}
-  if(vid.readyState<2){animId=requestAnimationFrame(frame);return;}
+  if(vid.readyState<2&&!srcImg){animId=requestAnimationFrame(frame);return;} // SYNTECH-SOURCE: a still image needs no video frame
 
   const now=performance.now();
 
@@ -1336,8 +1411,13 @@ async function frame(){
   // Segmentation — send every N frames
   if(segEnabled&&segReady&&segObj){
     segN++;
-    if(segN%P.segN===0){
-      try{ await segObj.send({image:vid}); }catch(_){}
+    /* SYNTECH-SOURCE: a still image only needs (re)segmenting while it has no mask yet
+       (new image, seg re-enabled, model switch) — video keeps segmenting every N frames. */
+    if(segN%P.segN===0&&!segBusy&&(!srcImg||!lastMaskBitmap)){ // never two sends in flight
+      segSendGen=segGen; segBusy=true;
+      try{ await segObj.send({image:activeSrc()}); }catch(_){}
+      segBusy=false;
+      if(g!==loopGen)return; // a newer loop took over while this one was parked
     }
   }
 
@@ -1362,11 +1442,13 @@ async function frame(){
 
 /* ─── PLAYBACK ───────────────────────────────────────────────── */
 function startPlayback(srcLabel){
+  document.getElementById('drop-overlay').style.display=''; // SYNTECH-SOURCE: drag-enter leaves an inline display:flex that would defeat .hidden
   document.getElementById('drop-overlay').classList.add('hidden');
   fit();
   if(animId)cancelAnimationFrame(animId);
   paused=false; lastFpsT=performance.now(); fc=0;
-  frame();
+  loopGen++; frame(); // SYNTECH-SOURCE: one loop only — a frame() still parked on `await seg.send()` sees the new generation and exits;
+                      // a send that never settles then only stalls segmentation, never the canvas
   document.getElementById('pill-input').classList.add('live');
   document.getElementById('pill-input-lbl').textContent=srcLabel;
   showTransport();
@@ -1378,6 +1460,7 @@ function startPlayback(srcLabel){
   if(vid.duration){
     document.getElementById('tl-dur').textContent=fmtTC(vid.duration);
   }
+  syncSourceUI(); // SYNTECH-SOURCE
 }
 
 /* ─── SLIDER BINDER ──────────────────────────────────────────── */
@@ -1430,48 +1513,134 @@ document.getElementById('btn-mic').addEventListener('click',()=>{
   if(!micEnabled)startMic();else stopMic();
 });
 
-// File
-document.getElementById('file-btn').addEventListener('click',()=>document.getElementById('file-input').click());
-document.getElementById('browse-btn').addEventListener('click',()=>document.getElementById('file-input').click());
-document.getElementById('file-input').addEventListener('change',function(){
-  const f=this.files?.[0];if(!f)return;loadFile(f);
-});
-function loadFile(f){
-  vid.srcObject=null; vid.src=URL.createObjectURL(f);
-  vid.play().catch(e=>console.warn('play() file bloccato:',e));
-  vid.addEventListener('loadedmetadata',()=>{
-    document.getElementById('ic-src').textContent=f.name.slice(0,14);
-    document.getElementById('ic-res').textContent=vid.videoWidth+'×'+vid.videoHeight;
-    document.getElementById('ic-dur').textContent=fmtDur(vid.duration);
-    fit();
-  },{once:true});
-  vid.addEventListener('loadeddata',()=>startPlayback('VIDEO'),{once:true});
+/* SYNTECH-SOURCE-START — source loading: VIDEO file / IMAGE file / WEBCAM
+   (replaces the old #file-btn / #cam-btn handlers; loadFile + the webcam logic are the original ones,
+   refactored so that every source change goes through endSource()) */
+let vidURL=null, imgURL=null;        // object URLs, revoked when the source changes
+let _vidMetaH=null, _vidDataH=null;  // pending one-shot load listeners (disarmed when the source changes)
+let camBusy=false;
+
+function armVideoLoad(onMeta,onData){
+  disarmVideoLoad();
+  _vidMetaH=()=>{_vidMetaH=null;onMeta();};
+  _vidDataH=()=>{_vidDataH=null;onData();};
+  vid.addEventListener('loadedmetadata',_vidMetaH,{once:true});
+  vid.addEventListener('loadeddata',_vidDataH,{once:true});
+}
+function disarmVideoLoad(){
+  if(_vidMetaH){vid.removeEventListener('loadedmetadata',_vidMetaH);_vidMetaH=null;}
+  if(_vidDataH){vid.removeEventListener('loadeddata',_vidDataH);_vidDataH=null;}
 }
 
-// Webcam
-document.getElementById('cam-btn').addEventListener('click',async function(){
-  if(this.classList.contains('cam-active')){
-    vid.srcObject?.getTracks().forEach(t=>t.stop());
-    vid.srcObject=null;
-    this.classList.remove('cam-active');
-    this.querySelector('span').textContent='WEBCAM';
-    return;
-  }
+// Tear down whatever is currently the source (webcam stream, still image, stale mask, pending listeners).
+function endSource(){
+  segGen++;                                                   // masks still in flight belong to the old source
+  if(lastMaskBitmap){lastMaskBitmap.close();lastMaskBitmap=null;}
+  disarmVideoLoad();
+  const s=vid.srcObject;
+  if(s){s.getTracks().forEach(t=>t.stop());vid.srcObject=null;} // releases a live webcam
+  srcImg=null;
+  if(imgURL){URL.revokeObjectURL(imgURL);imgURL=null;}
+  srcMode='none';
+  resetMotion();
+}
+
+function setInfo(file,res,dur){
+  const fe=document.getElementById('info-file');
+  fe.textContent=file; fe.title=file;
+  document.getElementById('info-res').textContent=res;
+  document.getElementById('ic-dur').textContent=dur;
+}
+
+// VIDEO
+document.getElementById('src-video').addEventListener('click',()=>document.getElementById('file-input').click());
+document.getElementById('file-input').addEventListener('change',function(){
+  const f=this.files?.[0];this.value='';if(!f)return;loadFile(f);
+});
+function loadFile(f){
+  ++srcReq;                                                   // a pending image / webcam request loses to this one
+  endSource();
+  const old=vidURL;
+  vidURL=URL.createObjectURL(f);
+  vid.srcObject=null; vid.src=vidURL;
+  if(old)URL.revokeObjectURL(old);
+  srcMode='video';
+  vid.play().catch(e=>console.warn('play() file bloccato:',e));
+  armVideoLoad(()=>{
+    setInfo(f.name,vid.videoWidth+'×'+vid.videoHeight,fmtDur(vid.duration));
+    fit();
+  },()=>startPlayback('VIDEO'));
+  syncSourceUI();
+}
+
+// IMAGE — a still is rendered exactly like a paused video frame (renderer reads activeSrc())
+document.getElementById('src-image').addEventListener('click',()=>document.getElementById('img-input').click());
+document.getElementById('img-input').addEventListener('change',function(){
+  const f=this.files?.[0];this.value='';if(!f)return;loadImage(f);
+});
+function loadImage(f){
+  const my=++srcReq;
+  const url=URL.createObjectURL(f);
+  const img=new Image();
+  img.onload=()=>{
+    if(my!==srcReq){URL.revokeObjectURL(url);return;}       // another source was picked while this decoded
+    endSource();                                              // only after the image decoded: a bad file keeps the old source
+    vid.pause(); vid.removeAttribute('src'); vid.load();      // release the video element
+    if(vidURL){URL.revokeObjectURL(vidURL);vidURL=null;}
+    imgURL=url; srcImg=img; srcMode='image';
+    setInfo(f.name,img.naturalWidth+'×'+img.naturalHeight,'—');
+    startPlayback('IMAGE');                                   // hides the drop overlay, fits canvas, starts the render loop
+    document.getElementById('transport').classList.remove('visible'); // no play/timeline for a still
+    document.getElementById('timecode').textContent='00:00:00';
+    fit();                                                    // stage grew back now that the transport is hidden
+    syncSourceUI();
+  };
+  img.onerror=()=>{URL.revokeObjectURL(url);console.warn('IMAGE: impossibile decodificare',f.name);};
+  img.src=url;
+}
+
+// WEBCAM (toggle: start / stop — same getUserMedia call as the old #cam-btn)
+document.getElementById('src-webcam').addEventListener('click',()=>toggleWebcam());
+document.getElementById('btn-webcam').addEventListener('click',()=>toggleWebcam());
+async function toggleWebcam(){
+  if(srcMode==='webcam'){stopWebcam();return;}
+  if(camBusy)return;
+  camBusy=true;
+  const my=++srcReq;
   try{
     const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280}}});
-    vid.src='';vid.srcObject=s;
+    if(my!==srcReq){s.getTracks().forEach(t=>t.stop());return;} // another source was picked while the permission prompt was open
+    endSource();
+    vid.removeAttribute('src');
+    if(vidURL){URL.revokeObjectURL(vidURL);vidURL=null;}
+    vid.srcObject=s;
+    srcMode='webcam';
     vid.play().catch(e=>console.warn('play() webcam bloccato:',e));
-    this.classList.add('cam-active');
-    this.querySelector('span').textContent='STOP';
-    document.getElementById('ic-src').textContent='WEBCAM';
-    document.getElementById('ic-dur').textContent='∞';
-    vid.addEventListener('loadedmetadata',()=>{
-      document.getElementById('ic-res').textContent=vid.videoWidth+'×'+vid.videoHeight;
+    setInfo('WEBCAM','--','∞');
+    armVideoLoad(()=>{
+      document.getElementById('info-res').textContent=vid.videoWidth+'×'+vid.videoHeight;
       fit();
-    },{once:true});
-    vid.addEventListener('loadeddata',()=>startPlayback('CAM'),{once:true});
+    },()=>startPlayback('CAM'));
+    syncSourceUI();
   }catch(e){alert('Webcam: '+e.message);}
+  finally{camBusy=false;}
+}
+function stopWebcam(){
+  endSource();                                                // stops the tracks, clears srcObject
+  setInfo('--','--','—');
+  document.getElementById('pill-input').classList.remove('live');
+  document.getElementById('pill-input-lbl').textContent='NO INPUT';
+  syncSourceUI();
+}
+
+// The panel's "SOURCE" button on the drop screen opens the Source section (as in the other effects)
+document.getElementById('browse-btn').addEventListener('click',()=>{
+  const head=document.querySelector('.sec-head[data-sec="source"]');
+  const body=document.getElementById('sec-source');
+  if(head&&body&&head.classList.contains('collapsed')){head.classList.remove('collapsed');body.classList.remove('hidden');}
+  if(head)head.scrollIntoView({behavior:'smooth',block:'nearest'});
 });
+/* SYNTECH-SOURCE-END */
 
 // REC — lossless-first strategy:
 // 1. Try VP9 lossless (webm, truly lossless, large files)
@@ -1704,8 +1873,73 @@ CA.addEventListener('dragleave',()=>{DO.classList.remove('drag-over');});
 CA.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';});
 CA.addEventListener('drop',e=>{
   e.preventDefault();DO.classList.remove('drag-over');
-  const f=e.dataTransfer.files?.[0];if(f)loadFile(f);
+  const f=e.dataTransfer.files?.[0];if(!f)return;
+  if(f.type&&f.type.startsWith('image/'))loadImage(f);else loadFile(f); // SYNTECH-SOURCE: images are accepted too
 });
+
+/* SYNTECH-SOURCE-START — Source panel wiring: MOTION meter, Playback / Loop / Webcam / Fullscreen rows, F key.
+   Playback <-> #btn-pause, Loop <-> #tl-loop, Fullscreen <-> #btn-fs: the rows only delegate to the existing
+   controls, and syncSourceUI() (run after their handlers, hence registered here) mirrors the state back. */
+function syncSourceUI(){
+  const $=id=>document.getElementById(id);
+  $('src-image').classList.toggle('on',srcMode==='image');
+  $('src-video').classList.toggle('on',srcMode==='video');
+  $('src-webcam').classList.toggle('on',srcMode==='webcam');
+  const playing=(srcMode==='video'||srcMode==='webcam')&&!paused&&!(srcMode==='video'&&vid.ended);
+  $('btn-play').classList.toggle('on',playing);
+  $('play-label').textContent=srcMode==='image'?'STILL':(playing?'PLAYING':'PAUSED');
+  $('btn-loop').classList.toggle('on',loopEnabled);
+  $('loop-label').textContent=loopEnabled?'LOOP ON':'LOOP OFF';
+  $('tl-loop').classList.toggle('on',loopEnabled);
+  $('btn-webcam').classList.toggle('on',srcMode==='webcam');
+  $('webcam-label').textContent=srcMode==='webcam'?'WEBCAM ON':'WEBCAM OFF';
+}
+document.getElementById('btn-play').addEventListener('click',()=>document.getElementById('btn-pause').click());
+document.getElementById('btn-loop').addEventListener('click',()=>document.getElementById('tl-loop').click());
+document.getElementById('btn-fullscreen').addEventListener('click',()=>document.getElementById('btn-fs').click());
+document.getElementById('btn-pause').addEventListener('click',syncSourceUI); // after the original handler
+document.getElementById('tl-loop').addEventListener('click',syncSourceUI);   // after the original handler
+vid.addEventListener('ended',syncSourceUI);                                   // loop off: the clip stopped by itself
+
+// F = fullscreen preview (toggle). Space = playback is the original handler above.
+document.addEventListener('keydown',e=>{
+  const t=e.target,tag=t&&t.tagName;
+  if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||(t&&t.isContentEditable))return;
+  if(e.ctrlKey||e.metaKey||e.altKey||e.code!=='KeyF')return;
+  e.preventDefault();
+  document.getElementById(document.getElementById('fs-ov').classList.contains('active')?'fs-close':'btn-fs').click();
+});
+// Space on a focused panel button must not also "click" that button on key-up
+document.addEventListener('keyup',e=>{if(e.code==='Space'&&e.target&&e.target.tagName==='BUTTON')e.preventDefault();});
+
+// MOTION meter — frame-difference energy on a 64x36 sample, attack/decay smoothed (same idea as blob_tracker)
+const mCv=document.createElement('canvas'); mCv.width=64; mCv.height=36;
+const mCtx=mCv.getContext('2d',{willReadFrequently:true});
+let prevMotion=null, rawEnergy=0, motionEnergy=0, lastMotionT=-1;
+function resetMotion(){prevMotion=null;rawEnergy=0;lastMotionT=-1;}
+function computeMotion(){
+  if((srcMode!=='video'&&srcMode!=='webcam')||paused||vid.readyState<2){rawEnergy=0;prevMotion=null;return;}
+  if(vid.currentTime===lastMotionT)return;           // same frame as the last sample: keep the last reading
+  lastMotionT=vid.currentTime;
+  try{
+    mCtx.drawImage(vid,0,0,64,36);
+    const c=mCtx.getImageData(0,0,64,36).data;
+    if(prevMotion){
+      let d=0;
+      for(let i=0;i<c.length;i+=4)d+=Math.abs(c[i]-prevMotion[i])+Math.abs(c[i+1]-prevMotion[i+1])+Math.abs(c[i+2]-prevMotion[i+2]);
+      rawEnergy=Math.min(d/(64*36*255*3*0.15),1);
+    }
+    prevMotion=new Uint8ClampedArray(c);
+  }catch(_){}
+}
+function updateMotionUI(){
+  motionEnergy+=(rawEnergy-motionEnergy)*(rawEnergy>motionEnergy?0.25:0.04);
+  const pct=Math.round(motionEnergy*100);
+  document.getElementById('vu-motion').style.width=pct+'%';
+  document.getElementById('vu-mv').textContent=pct+'%';
+}
+setInterval(()=>{computeMotion();updateMotionUI();},33);
+/* SYNTECH-SOURCE-END */
 
 /* ─── COLLAPSIBLES ───────────────────────────────────────────── */
 document.querySelectorAll('.sec-head').forEach(h=>{
@@ -1722,6 +1956,7 @@ function fmtDur(s){if(!s||isNaN(s))return '--';return String(Math.floor(s/60)).p
 /* ─── INIT ───────────────────────────────────────────────────── */
 fit();
 initSeg();
+syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on, nothing playing)
 </script>
 <!-- SYNTECH-BRIDGE-START (shell integration; standalone-safe) -->
 <script>

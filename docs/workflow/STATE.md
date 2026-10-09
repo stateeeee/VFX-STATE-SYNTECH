@@ -111,6 +111,35 @@ hero) e ritorno al layout identico. La revisione ha trovato un solo punto: con
 apertura di effetto — tolto. Esc reale non è simulabile headless: usato
 `document.exitFullscreen()`, che passa dallo stesso evento.
 
+**Blob reveal: sezione Source + sezioni chiuse (Sonnet → revisione Opus: PASS).**
+Su richiesta esplicita dell'operatore (deroga alla regola "non toccare gli HTML
+degli effetti", solo per questo file; tutto il nuovo codice è in blocchi
+`SYNTECH-SOURCE`, il blocco `SYNTECH-BRIDGE` è identico byte per byte):
+- tutte e 6 le sezioni partono chiuse, come negli altri effetti;
+- la vecchia sezione "Input" (solo WEBCAM / VIDEO FILE) è diventata **Source**,
+  uguale a quella degli altri effetti: IMAGE / VIDEO / WEBCAM, meter MOTION,
+  File / Input / Durata / Blob rilevati, righe Playback (SPC), Loop, Webcam,
+  Fullscreen (F) collegate ai controlli esistenti (trasporto, `#tl-loop`,
+  `#btn-fs`) e sincronizzate nei due sensi;
+- **immagini fisse supportate** (prima solo video): il renderer legge
+  `activeSrc()` invece del `<video>`; un'immagine viene segmentata finché non ha
+  una maschera, poi resta ferma;
+- tre difetti preesistenti corretti strada facendo: il bottone loop partiva
+  spento mentre il loop era attivo; l'overlay del drag restava sopra lo stage;
+  un cambio sorgente durante una segmentazione poteva far partire più loop di
+  rendering in parallelo (riprodotto: fino a 5).
+- La revisione Opus ha dato PASS con tre punti di robustezza, corretti dal
+  regista e riverificati con gli stessi script del revisore: una segmentazione
+  che non risponde più non congela più il canvas (generazione del loop:
+  `loopGen`, 0 → 25–29 fps al cambio sorgente); se due sorgenti vengono scelte
+  in fretta vince l'ultima (`srcReq`; la webcam scartata viene spenta); a fine
+  video con loop spento la riga Playback dice PAUSED.
+- Audit Haiku degli altri tre effetti (analog, bokeh, anamorphic_lab): Source in
+  prima posizione e tutte le sezioni chiuse all'apertura (resta aperta solo
+  "Info", come nel blob tracker di riferimento) — nessuna modifica necessaria.
+- Nota per i test: il Chromium di Playwright non decodifica H.264; per i test
+  video usare una copia VP9 (`.webm`).
+
 ### 2026-07-31 — Il dev server non partiva sul Mac; l'AI diventa sostituibile
 
 Due cose distinte, arrivate insieme.
