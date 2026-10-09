@@ -166,16 +166,28 @@ writes back (reads, proposals, summaries, findings) is in Italian.
   3.8 panel to unlock". Leaving ACTIVE closes whatever mode was open.
 - Once unlocked, a click toggles that mode; the panel header shows its name.
 
-### 9.3 Server key fallback (loopback only)
+### 9.3 Server key fallback (this machine only)
 
 - `GEMINI_API_KEY` in `.env.local` (or `.env`) lets this machine skip the
   paste. A pasted key always wins over it.
-- It is used only for requests whose socket is loopback (127.0.0.0/8, ::1).
-  A phone or laptop on the LAN opening `http://<ip>:3000` gets
-  `serverKey: false` from `/status` and must paste its own key — nobody on
-  the network spends the operator's quota.
-- `/api` answers only when the `Host` is `localhost` or an IP literal
-  (DNS-rebinding guard); anything else gets 403.
+- It is used only for a browser on this machine talking to the server
+  directly: a loopback socket (127.0.0.0/8, ::1), no relay header
+  (`Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host`, `X-Real-IP`) and a
+  `Host` of `localhost`, `*.localhost` or a loopback address. A phone or
+  laptop on the LAN opening `http://<ip>:3000`, a `.local` name, a name from
+  `ALLOWED_HOSTS`, or anyone coming through a reverse proxy or tunnel on this
+  machine gets `serverKey: false` from `/status` and must paste its own key —
+  nobody else spends the operator's quota.
+- `/api` answers only when the `Host` is `localhost`, `*.localhost`, an IP
+  literal, a `*.local` mDNS name (the Mac's Bonjour name, from the iPad) or a
+  name listed in `ALLOWED_HOSTS` (comma-separated; `.example.com` /
+  `*.example.com` for a domain and its subdomains; `*` turns the check off) —
+  the DNS-rebinding guard. Anything else gets 403 `bad_request` whose message
+  names the fix ("add <name> to ALLOWED_HOSTS … or open the app by IP address,
+  or at http://localhost:PORT"); the key form shows that message, and the
+  server logs one `[host] refused …` line per refused name. In dev the same
+  rule is Vite's `allowedHosts`, so the page and its API open on the same
+  names.
 
 ### 9.4 The three roles (the operator's definitions)
 
@@ -203,7 +215,7 @@ Google's products).
 |---|---|
 | Art Director | **Video ≤ 300 MB** (`MAX_UPLOAD_BYTES`) in an uploadable container: the whole file, uploaded once (`/api/gemini/upload` → Files API) and referenced by `fileUri` — Gemini sees the motion AND hears the music; reused from the upload cache (localStorage `syntech.geminiFiles`) while Google keeps it (~48h). **Larger, or MKV**: 12 sampled frames, no audio (the panel says so). **Photo**: 1 JPEG ≤ 1024 px. **Webcam** (Lab): 4 frames over ~2 s. In the Lab also 2 s of live signals and the current chain. Optional direction text (`ai-ad-intent`). |
 | Agent | The source video whole (cached upload, or uploaded now when ≤ 300 MB; above that it is not sent and the panel says the song is missing); a SOURCE/OUTPUT frame pair; a **4 s OUTPUT clip with the music** when audio is on; 3 s of live signals; the chain table (enabled effects in render order; every parameter's range, base, route and flags; fps, resolution scale, source kind, audio mode, person-mask state); the art direction (§9.7) when chosen; optional intent (`ai-agent-intent`). |
-| Optimizer | A 4 s OUTPUT clip (with the music when audio is on, silent otherwise); a SOURCE/OUTPUT frame pair; 2 s of live signals; the chain table; the Lab's deterministic checks (performance, audio routes, video routes, person mask, output exposure); the Agent's last plan when it ran on this Lab and was not undone; the art direction when chosen. |
+| Optimizer | A 4 s OUTPUT clip (with the music when audio is on, silent otherwise); a SOURCE/OUTPUT frame pair; 2 s of live signals; the chain table; the Lab's deterministic checks (performance, audio routes, video routes, person mask, output exposure — the output's mean luma against the source frame's, so an already dark night or club source is the footage, not a fault: "almost black" only when the output is ≤ 0.04 AND under half the source's, "blown out" by the mirrored rule); the Agent's last plan when that run is still in effect on this Lab, for this chain order (§9.8); the art direction when chosen. |
 
 Inline clips go with `videoMetadata.fps = 12` (`INLINE_VIDEO_FPS`) so a
 flash can be checked against a kick; an uploaded source is sampled at 1 fps
@@ -222,23 +234,46 @@ the recording's own load never shows up as a performance problem.
   (`ai-ad-apply-<i>`, §9.7).
 - **Agent** (`ai-agent-run` → `ai-agent-result`): a plan — summary, ≤ 12
   parameter bases, ≤ 6 routes — already validated by the server, plus what it
-  refused. **Applied at once.** The card lists every change "from → to" and a
-  "Not applied" list (server refusals + anything the Lab skipped), in plain
-  words.
+  refused (`dropped`) and what it kept but changed (`adjusted`: a base raised
+  to its floor or clamped to its range, a route depth capped). **Applied at
+  once.** The card lists every change "from → to" (`ai-agent-rows`), each
+  adjusted one with its note on the row itself ("Mod Depth: 0.4 → 0.1 ·
+  Gemini asked 0, raised to its floor 0.1"), and a "Not applied" list (server
+  refusals + anything the Lab skipped), in plain words — an applied change is
+  never listed as not applied. A plan the Lab refused whole (a Master export)
+  leaves the previous card and its Undo in place, with an error line.
 - **Optimizer** (`ai-opt-run` "Check output" → `ai-opt-result`): verdict
   ok / improve / broken, a summary, ≤ 6 issues (error / warning / tip, with
   finding, evidence and clip timestamp, and a fix = a validated plan, or none
-  when no parameter can fix it). Failed checks show in amber. **Apply fix**
-  per issue (`ai-opt-fix-<i>`) or **Apply all** (`ai-opt-fix-all`).
+  when no parameter can fix it). Failed checks show in amber. Issue cards are
+  numbered ("2 · tip", `ai-opt-issue-<i>`) the way the server's "fix N" lines
+  are, and each card holds its own refusals (`ai-opt-not-applied-<i>`). Each
+  fix lists its rows before it is applied ("Would change:",
+  `ai-opt-fix-rows-<i>`, with its adjusted notes) and after ("Changed:").
+  **Apply fix** per issue (`ai-opt-fix-<i>`, then a small Undo next to
+  "Applied", `ai-opt-fix-undo-<i>`) or **Apply all** (`ai-opt-fix-all`).
+- A result made on a Lab that has since closed (Agent, Optimizer) — or, for
+  the Art Director, a read of another source than the one loaded now — stays
+  readable but dimmed, opens with "Earlier run — on a Lab that has closed" /
+  "Read of <name>, not the current source — run Analyze again for this one."
+  (`ai-agent-stale`, `ai-opt-stale`, `ai-ad-stale`), and its actions are off.
+  When the Lab (or the source) changes, the tab scrolls back to its action
+  row.
 
 ### 9.7 Art Director → Agent handoff
 
 - **Use this chain** wires the proposal's chain in the node graph, opens the
-  Lab, and keeps the proposal as the **art direction** (title, chain, why,
-  audioIdea, music read) in the panel's state for the session.
-- Agent and Optimizer show one line "Direction: <title>" with a small × that
-  clears it (`ai-agent-direction`, `ai-opt-direction`, each with `-clear`),
-  and send it with every run. The server prompts treat it as the brief: the
+  Lab, keeps the proposal as the **art direction** (title, chain, why,
+  audioIdea, music read) in the panel's state for the session, marks its card
+  "In use" (check icon, full violet border, `data-in-use` on
+  `ai-ad-proposal-<i>`) and switches the panel to the **Agent** tab — the
+  director's pipeline: creative mind, then operator. Clearing or replacing
+  the direction removes the mark.
+- All three tabs show one line "Direction: <title>" with a small × that
+  clears it (`ai-ad-direction`, `ai-agent-direction`, `ai-opt-direction`,
+  each with `-clear`; the Art Director's also has an "Agent →" link,
+  `ai-ad-direction-next`). Agent and Optimizer send it with every run. The
+  server prompts treat it as the brief: the
   Agent turns its audioIdea into routes and its why into bases; the Optimizer
   flags a result that does not deliver it. A typed intent still wins where
   the two disagree. If the Lab chain changed since, the idea applies to the
@@ -251,14 +286,32 @@ the recording's own load never shows up as a performance problem.
   of every key it touches (`PlanUndo`).
 - **Undo** = `revertPlan` of that run's record: it puts back exactly those
   keys — never the operator's other edits, never chain order or enabled.
-  Agent Undo (`ai-agent-undo`) also forgets the Agent's last run, so the
-  Optimizer never judges an undone plan. Optimizer Undo (`ai-opt-undo`)
-  reverts every fix applied from that result, newest first.
+- **One undo stack per Lab, shared by the Agent and the Optimizer**, last in
+  first out: every applied Agent run and every applied fix is pushed on it.
+  A tab's Undo works only while its own newest entry is on top; otherwise it
+  is off and says what comes first ("Undo the Optimizer's fixes first",
+  "Undo the Agent's run first", "Undo fix 2 first"), so an undo can never
+  bring back a value another undo already took away. Agent Undo
+  (`ai-agent-undo`) reverts its run — or, once that is undone, offers the
+  earlier run still in effect ("Undo the 09:47 run"). Optimizer Undo
+  (`ai-opt-undo`) reverts the fixes on top of the stack, newest first.
+- The Optimizer judges the newest Agent run still on the stack for this Lab,
+  and only while the chain order is the one that run was made for; otherwise
+  it says "The Agent's last run was undone: judges the Lab as it is" / "The
+  Agent's last run was on another chain: judges the Lab as it is" (or "No
+  Agent run yet…", `ai-opt-agent-line`) and sends `lastAgent: null`.
 - A run is bound to the Lab it started on: if the Lab is closed or reopened
   mid-run, the run stops ("The Lab changed — run again"), and Undo / Apply
-  fix stay disabled on any other Lab.
-- Apply and Undo are both refused while a Master export runs (a change
-  mid-encode would show as a jump in the file).
+  fix stay disabled on any other Lab (the stale result, §9.6).
+- A Master export makes the Lab refuse grabs, plans and reverts. The panel
+  learns of it from those refusals only (a ready Lab giving no frame, a
+  refused apply or undo): it stops before any upload or request ("A Master
+  export is running — run again after it", `ai-agent-export` /
+  `ai-opt-export`), turns Run / Check output / Apply / Undo off, and polls
+  with a tiny grab until the export is over. The server also answers an
+  Agent or Optimizer request with no frame from the Lab with 400 `no_media`,
+  even when the whole source is already uploaded, so Gemini is never paid to
+  tune blind.
 
 ### 9.9 Audio: one rule, and auto Clip audio
 
@@ -271,8 +324,14 @@ the recording's own load never shows up as a performance problem.
   with audio off, the panel first calls `lab.startClipAudio()` — inside the
   click, before any await, so the browser lets the AudioContext start — and
   says so in one line: "Clip audio switched on so Gemini can hear the music"
-  (`ai-agent-note` / `ai-opt-note`). If the clip has no audio, the run goes on
-  without.
+  (`ai-agent-note` / `ai-opt-note`). If the clip has no audio track, the run
+  goes on without and says so: "This clip has no soundtrack: Gemini gets the
+  picture only. Start Track or Mic for music." The panel remembers that per
+  clip (it does not try again), and every line stops promising sound: Sends
+  reads "video only — it has no soundtrack" instead of "(video + audio)", the
+  Agent sends no output clip (it records one only with music on), the
+  Optimizer's is "4s output clip (silent)", and the context line reads "this
+  clip has no soundtrack — music routes wait for Track or Mic".
 - It is the same switch as the Lab's **Clip** button (`audio-clip`): the
   source video's own soundtrack drives the analysers. Clip is disabled for a
   photo or the webcam (Track or Mic instead).

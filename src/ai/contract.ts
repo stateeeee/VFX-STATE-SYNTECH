@@ -246,6 +246,9 @@ export interface AgentRequest {
 export interface AgentResult {
   plan: AgentPlan;           // already validated + clamped by the server
   dropped: string[];         // what the validator refused, and why
+  /** What it kept but changed (a base raised to its floor, a route depth
+   *  capped), one line each — shown on the applied rows, not as refusals. */
+  adjusted?: string[];
 }
 
 /* ── role: OPTIMIZER ────────────────────────────────────────── */
@@ -276,6 +279,7 @@ export interface OptimizerResult {
   summary: string;
   issues: OptimizerIssue[];
   dropped: string[];
+  adjusted?: string[];       // 'fix N · …', same meaning as AgentResult.adjusted
 }
 
 /* ── key status ─────────────────────────────────────────────── */

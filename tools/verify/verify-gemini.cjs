@@ -13,32 +13,48 @@
  *   3  a key Google accepts: ACTIVE (green), rail unlocked, survives a reload;
  *      the ACTIVE card's ai-pick-* buttons select each role
  *   4  photo on Home → Art Director: one ≤1024px JPEG + a response schema;
- *      validator filters the proposals; "Use this chain" opens the Lab and
- *      becomes the ART DIRECTION; the Optimizer on the photo (audio off):
- *      carriers are not audio routes, audio_routes is no FAIL, the direction
- *      reaches the prompt, the silent clip is sampled at 12 fps
- *   5  video on Home → Art Director: uploaded once (Files API) and referenced
+ *      validator filters the proposals; "Use this chain" opens the Lab,
+ *      becomes the ART DIRECTION, marks its card 'In use' and lands the panel
+ *      on the Agent tab (Direction line; the Art Director's 'Agent →' link);
+ *      the Optimizer on the photo (audio off): carriers are not audio routes,
+ *      audio_routes is no FAIL, exposure is judged against the source, the
+ *      direction reaches the prompt, the silent clip is sampled at 12 fps
+ *   5  video on Home → Art Director: the photo's read is flagged as another
+ *      source's (its buttons off); uploaded once (Files API) and referenced
  *      by fileUri + videoMetadata; a second run reuses the upload
  *   6  "Use this chain" on the video → Lab with audio OFF → Agent: the Run
  *      switches the Clip audio on itself and says so; Google gets the cached
  *      upload (fileUri, no new upload) + SOURCE/OUTPUT jpegs + a 4s OUTPUT clip
  *      with the music at 12 fps + the art direction; the plan lands on the
- *      ParamBus (floor raised, cap clamped, protected/invalid keys dropped);
- *      Undo reverts only the plan's keys (an edit made after the run stays)
- *      and the Optimizer forgets the undone run; a second run is kept
- *   7  Optimizer: output webm (music, 12 fps) + jpegs + checks + the Agent's
- *      plan + the art direction; issues rendered; "Apply fix"; Undo restores
- *   8  Google rejects the key mid-session (400 API_KEY_INVALID, then 401):
+ *      ParamBus (protected/invalid keys in `dropped`; the floor raise and the
+ *      depth cap in `adjusted`, shown on their applied rows, never under
+ *      'Not applied'); Undo reverts only the plan's keys (an edit made after
+ *      the run stays) and the Optimizer says the run was undone; a second
+ *      run is kept
+ *   7  Optimizer: output webm (music, 12 fps) + jpegs + the chain + checks +
+ *      the Agent's plan + the art direction; numbered issue cards with their
+ *      own refusals; each fix lists its rows before Apply (with its capped
+ *      route's note); ONE undo stack shared with the Agent, last in first
+ *      out: the Agent's Undo waits ("Undo the Optimizer's fixes first") until
+ *      the fix is undone, then restores the values from before its run; after
+ *      the Lab is closed and reopened both results say 'Earlier run — on a
+ *      Lab that has closed' and their actions are off
+ *   8  a clip with no soundtrack: the Agent's Run cannot switch music on, says
+ *      so, sends the picture only (no output clip) and its Sends / context
+ *      lines stop promising audio; the Optimizer's clip is '(silent)'
+ *   9  Google rejects the key mid-session (400 API_KEY_INVALID, then 401):
  *      STANDBY, key form back, rail locked again
- *   9  the HTTP contract: /status, 400 no_media, 401 no_key, a direction that
- *      is not an object, a SAFETY-blocked answer, the Host guard, old endpoints
- *  10  the key never reaches a log, a URL, or Google from the browser
+ *  10  the HTTP contract: /status, 400 no_media (also for an uploaded source
+ *      with no frame from the Lab), 401 no_key, a direction that is not an
+ *      object, a SAFETY-blocked answer, the Host guard (a .local name in, any
+ *      other name out with a message naming ALLOWED_HOSTS), old endpoints
+ *  11  the key never reaches a log, a URL, or Google from the browser
  *
  * Needs: the suite's port FREE — PORT from the environment, default 3000 (the
  *        suite starts its own server there and stops it at the end), ffmpeg,
  *        Playwright resolvable via NODE_PATH like the other suites.
  *        No real key, no network: everything Gemini answers comes from the mock.
- * Run:   node tools/verify/verify-gemini.cjs        (~3 min under SwiftShader)
+ * Run:   node tools/verify/verify-gemini.cjs        (~3.5 min under SwiftShader)
  *        PORT=3100 node tools/verify/verify-gemini.cjs   (next to a dev server)
  * Exit:  0 all PASS, 1 any FAIL.
  */
@@ -61,6 +77,8 @@ const BAD = 'BADKEY';
 const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const ROLE_TIMEOUT = 90_000;
 const CLIP_ON_NOTE = 'Clip audio switched on so Gemini can hear the music';
+const SILENT_NOTE = 'This clip has no soundtrack: Gemini gets the picture only. Start Track or Mic for music.';
+const STALE_LAB = 'Earlier run — on a Lab that has closed';
 const AUDIO_SOURCES = ['bass', 'treble', 'loud', 'beat'];
 /** contract.ts INLINE_VIDEO_FPS: the sampling rate asked for every inline clip */
 const INLINE_FPS = 12;
@@ -72,13 +90,14 @@ const STEPS = [
   [1, 'boot: standby, locked rail, renamed copy'],
   [2, 'bad key rejected, nothing stored; curly quote refused'],
   [3, 'good key → ACTIVE, rail unlocked, survives reload, ai-pick-*'],
-  [4, 'photo → Art Director → Use this chain → Optimizer, audio off'],
-  [5, 'video → Art Director: upload once, then reuse'],
-  [6, 'Use this chain → Agent: auto Clip, fileUri + clip, per-key Undo'],
-  [7, 'Optimizer: clip + checks + plan + direction, Apply fix, Undo'],
-  [8, 'key rejected mid-session → relocked'],
-  [9, 'HTTP contract'],
-  [10, 'the key never leaks'],
+  [4, 'photo → Art Director → Use this chain (In use, Agent tab) → Optimizer, audio off'],
+  [5, 'video → Art Director: stale read flagged, upload once, then reuse'],
+  [6, 'Use this chain → Agent: auto Clip, fileUri + clip, adjusted rows, per-key Undo'],
+  [7, 'Optimizer: numbered issues, fix rows, shared LIFO undo, stale results'],
+  [8, 'silent clip: no-soundtrack note, picture only, truthful Sends'],
+  [9, 'key rejected mid-session → relocked'],
+  [10, 'HTTP contract'],
+  [11, 'the key never leaks'],
 ];
 const stepOk = new Map(STEPS.map(([n]) => [n, true]));
 let current = 0;
@@ -160,6 +179,7 @@ function ffmpeg(args) {
 function makeFixtures(dir) {
   const video = path.join(dir, 'clip120.webm');
   const photo = path.join(dir, 'portrait.jpg');
+  const silent = path.join(dir, 'silent.webm');
   // 6s 1280x720: a bright square sweeping a dark frame; audio = a 120 BPM kick
   // (one every 0.5s, pitch-dropping sine) with an off-beat hat
   ffmpeg([
@@ -186,7 +206,15 @@ function makeFixtures(dir) {
     ].join(','),
     '-frames:v', '1', '-q:v', '3', photo,
   ]);
-  return { video, photo };
+  // 4s 640x360 with NO audio track at all: an orange square drifting on dark
+  ffmpeg([
+    '-f', 'lavfi', '-i', 'color=c=0x14100b:s=640x360:r=30:d=4',
+    '-f', 'lavfi', '-i', 'color=c=0xff8a2a:s=120x120:r=30:d=4',
+    '-filter_complex', "[0:v][1:v]overlay=x='60+400*(0.5+0.5*sin(2*PI*t/2))':y=120:shortest=1,format=yuv420p[v]",
+    '-map', '[v]', '-an',
+    '-c:v', 'libvpx', '-b:v', '600k', '-deadline', 'realtime', '-cpu-used', '8', '-t', '4', silent,
+  ]);
+  return { video, photo, silent };
 }
 
 /* ── the app server, started by the suite ────────────────────── */
@@ -198,7 +226,8 @@ function startServer(baseUrl) {
   // no server key (the panel's pasted key is the only one), default model.
   // DISABLE_HMR (vite.config.ts): no HMR and no file watcher, so the page
   // cannot be reloaded mid-run because some file in the tree changed.
-  const env = { ...process.env, PORT: String(PORT), GEMINI_BASE_URL: baseUrl, GEMINI_API_KEY: '', GEMINI_MODEL: '', DISABLE_HMR: 'true' };
+  // ALLOWED_HOSTS '' (set, so a .env.local cannot fill it): the Host guard's default rule
+  const env = { ...process.env, PORT: String(PORT), GEMINI_BASE_URL: baseUrl, GEMINI_API_KEY: '', GEMINI_MODEL: '', ALLOWED_HOSTS: '', DISABLE_HMR: 'true' };
   delete env.NODE_ENV; // dev mode, like `npm run dev`
   server = spawn('npx', ['tsx', 'server.ts'], { cwd: ROOT, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stdout.on('data', (d) => { serverOut += d.toString(); });
@@ -269,6 +298,38 @@ const panelAll = (page) => page.evaluate(() => {
 const sendsLine = (page) => page.evaluate(() => (document.body.innerText.match(/Sends: [^\n]+/) || [''])[0]);
 const audioState = (page) => page.evaluate(() => ({ mode: window.__SYN.audio.mode, active: !!window.__SYN.audio.active }));
 const gone = (page, tid) => page.evaluate((s) => !document.querySelector(s), sel(tid));
+const disabled = (page, tid) => page.evaluate((s) => { const el = document.querySelector(s); return el ? el.disabled : null; }, sel(tid));
+/** the panel's mode title (h2): 'Agent', 'Optimizer', 'Art Director' */
+const onTab = (page, title, timeout = 5000) => page.waitForFunction(
+  (t) => [...document.querySelectorAll('h2')].some((h) => h.textContent.trim() === t), title, { timeout },
+).then(() => true).catch(() => false);
+
+/** the Art Director's proposal cards: chosen ('In use', full violet border) or not */
+const proposalMarks = (page) => page.evaluate(() => [...document.querySelectorAll('[data-testid^="ai-ad-proposal-"]')].map((c) => ({
+  inUse: c.getAttribute('data-in-use') === 'true',
+  violet: /(^|\s)border-\[#8b5cf6\](\s|$)/.test(c.className),
+  btn: (c.querySelector('[data-testid^="ai-ad-apply-"]')?.textContent || '').trim(),
+})));
+const marksOk = (m) => m.length > 1 && m[0].inUse && m[0].violet && m[0].btn === 'In use'
+  && m.slice(1).every((x) => !x.inUse && !x.violet && x.btn === 'Use this chain');
+
+/** a ChangeList's rows (title = the key; a route row's label ends ' ~'), with
+ *  the validator's note shown on the row ([data-adjusted]) */
+const changeRows = (page, tid) => page.evaluate((s) => [...document.querySelectorAll(`${s} > li`)].map((li) => ({
+  key: li.getAttribute('title') || '',
+  text: li.textContent.replace(/\s+/g, ' ').trim(),
+  route: / ~: /.test(li.textContent),
+  note: (li.querySelector('[data-adjusted]')?.textContent || '').trim(),
+})), sel(tid));
+/** the text of every 'Not applied:' block inside `tid`, each with whether it
+ *  sits in an Optimizer issue card */
+const notAppliedBlocks = (page, tid) => page.evaluate((s) => [...(document.querySelector(s)?.querySelectorAll('span') || [])]
+  .filter((x) => x.textContent.trim() === 'Not applied:')
+  .map((x) => ({ text: x.parentElement.textContent, inIssue: !!x.closest('[data-testid^="ai-opt-issue-"]') })), sel(tid));
+/** the panel's number format (AiDirector fmtNum) */
+const fmtNum = (v) => { const a = Math.abs(v); return String(Number(v.toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2))); };
+/** keys whose base or route differ between two bus snapshots */
+const busDiff = (a, b, keys = Object.keys(a)) => keys.filter((k) => !a[k] || !b[k] || !near(a[k].base, b[k].base, 1e-9) || !sameMod(a[k].mod, b[k].mod));
 
 /** moves a rack slider the way a hand does: React sees an input event */
 const setRange = (page, tid, value) => page.evaluate(([s, v]) => {
@@ -386,7 +447,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'syntech-gemini-'));
   const fx = makeFixtures(tmp);
   const videoBytes = fs.statSync(fx.video).size;
-  console.log(`fixtures: ${path.basename(fx.video)} ${(videoBytes / 1024).toFixed(0)}KB, ${path.basename(fx.photo)} ${(fs.statSync(fx.photo).size / 1024).toFixed(0)}KB in ${tmp}`);
+  console.log(`fixtures: ${path.basename(fx.video)} ${(videoBytes / 1024).toFixed(0)}KB, ${path.basename(fx.photo)} ${(fs.statSync(fx.photo).size / 1024).toFixed(0)}KB, ${path.basename(fx.silent)} ${(fs.statSync(fx.silent).size / 1024).toFixed(0)}KB (no audio) in ${tmp}`);
 
   mock = await startMockGemini({ port: 0 });
   console.log(`mock gemini on ${mock.baseUrl}`);
@@ -434,6 +495,8 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
   /* shared across steps */
   let agentPicked = null;
   let agentPlan = null;
+  /** the bus right before the Agent's second run (step 6): what its Undo restores in step 7 */
+  let beforeRun2 = null;
   let lockedRail = null;
   let uploadedUri = null;
 
@@ -588,6 +651,21 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     }
     if (!opened) return;
 
+    // the handoff: creative mind → operator. The panel lands on the Agent with
+    // the direction on top; the chosen card reads 'In use'
+    check(" 'Use this chain' lands the panel on the Agent tab (title + Run)", (await onTab(page, 'Agent')) && await visible(page, 'ai-agent-run', 5000));
+    await sleep(1300); // the tab polls the Lab once a second
+    const adir = await text(page, 'ai-agent-direction');
+    check(" …with the line 'Direction: Notte analogica' on top", adir === 'Direction: Notte analogica' && !(await gone(page, 'ai-agent-direction-clear')), adir);
+    const marks = await proposalMarks(page);
+    check(" the chosen proposal reads 'In use' with a full violet border; the others 'Use this chain'", marksOk(marks), JSON.stringify(marks));
+    check(' Art Director tab back on screen (rail)', await openRole(page, 'art_director', 'ai-ad-run'));
+    const ddir = await text(page, 'ai-ad-direction');
+    check(" the Art Director shows 'Direction: Notte analogica' with an 'Agent →' link", ddir === 'Direction: Notte analogica' && (await text(page, 'ai-ad-direction-next')) === 'Agent →', ddir);
+    check(" …its read of this photo is current (no stale line, its buttons on)", (await gone(page, 'ai-ad-stale')) && (await disabled(page, 'ai-ad-apply-1')) === false);
+    await domClick(page, 'ai-ad-direction-next');
+    check(" 'Agent →' opens the Agent tab", (await onTab(page, 'Agent')) && await visible(page, 'ai-agent-run', 5000));
+
     // ── the Optimizer on the photo, audio OFF (the Lab's default) ──
     check(' audio is off in the Lab', !(await audioState(page)).active, JSON.stringify(await audioState(page)));
     check(' Optimizer tab on screen (Lab)', await openRole(page, 'optimizer', 'ai-opt-run'));
@@ -596,6 +674,11 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(" 'Use this chain' became the direction: 'Direction: Notte analogica' + a clear ×", dir === 'Direction: Notte analogica' && !(await gone(page, 'ai-opt-direction-clear')), dir);
     const pt = await panelAll(page);
     check(' a photo with audio off: music routes wait for Track or Mic (no Clip offered)', /No music on: music routes wait for it — start Track or Mic in the Lab\./.test(pt), short(pt.replace(/\s+/g, ' '), 200));
+    const al = await text(page, 'ai-opt-agent-line');
+    check(" no Agent run on this Lab: 'No Agent run yet: judges the Lab as it is'", al === 'No Agent run yet: judges the Lab as it is', al);
+    const os = await sendsLine(page);
+    check(" Sends: '4s output clip (silent) + 1 frame pair + 2s of live signals + the chain + the checks + the art direction'",
+      os === 'Sends: 4s output clip (silent) + 1 frame pair + 2s of live signals + the chain + the checks + the art direction', os);
     // the operator wires one ordinary music route by hand (the rack's ~ button:
     // off → bass): with audio off it is waiting for music, not an error
     const wired = await page.evaluate(() => {
@@ -637,6 +720,11 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
       !!ar && ar.ok === true && musicRoutes.length >= 1 && musicRoutes.some((p) => p.key === wired) && wantDetail.test(ar.detail),
       `${short(ar)} — non-carrier music routes: ${musicRoutes.map((p) => p.key).join(',')}`);
     check(" the prompt says '[ok] audio_routes'", /^- \[ok\] audio_routes: /m.test(orec.text));
+    // exposure is the chain's doing, judged against the source frame's own luma
+    const ex = ((ob.checks) || []).find((c) => c.id === 'output_exposure');
+    const exm = ex && /^output mean luma ([\d.]+) vs source ([\d.]+)( — (almost black|blown out|like the source))?$/.exec(ex.detail);
+    check(" output_exposure compares the output with the source ('output mean luma X vs source Y'); FAIL only for 'almost black' / 'blown out'",
+      !!exm && ex.ok === !/almost black|blown out/.test(ex.detail), short(ex));
     check(' the prompt says audio is OFF and its music routes are waiting', /audio OFF \(music routes are waiting for music\)/.test(orec.text) && /- audio: OFF — /.test(orec.text));
     check(' the art direction reached the Optimizer prompt (title, chain, why)', /ART DIRECTION chosen by the director/.test(orec.text)
       && orec.text.includes('- look: "Notte analogica" — chain analog → anamorphic_lab') && /- why: MOCK-WHY-0/.test(orec.text) && !/- music read:/.test(orec.text),
@@ -655,6 +743,21 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' Art Director tab on screen', await openRole(page, 'art_director', 'ai-ad-run'));
     const sends = await page.evaluate(() => (document.body.innerText.match(/Sends: [^\n]+/) || [''])[0]);
     check(" the panel says 'clip … (video + audio)'", /clip .*video \+ audio/.test(sends), sends);
+
+    // the photo's read is still on screen, but it is not a read of THIS source
+    const st = await page.evaluate(() => {
+      const r = document.querySelector('[data-testid="ai-ad-result"]');
+      return {
+        line: (document.querySelector('[data-testid="ai-ad-stale"]')?.textContent || '').trim(),
+        first: r ? (r.firstElementChild?.getAttribute('data-testid') || '') : '',
+        stale: r ? r.getAttribute('data-stale') : null,
+        dim: !!r?.querySelector('.opacity-50'),
+        apply: [...document.querySelectorAll('[data-testid^="ai-ad-apply-"]')].map((b) => b.disabled),
+      };
+    });
+    check(" the photo's read says 'Read of portrait.jpg, not the current source — run Analyze again for this one.' at its top",
+      st.line === 'Read of portrait.jpg, not the current source — run Analyze again for this one.' && st.first === 'ai-ad-stale' && st.stale === 'true', JSON.stringify(st));
+    check(" …dimmed, every 'Use this chain' off", st.dim && st.apply.length === 3 && st.apply.every((d) => d === true), JSON.stringify(st.apply));
 
     const g0 = mock.generate.length;
     const u0 = mock.uploads.length;
@@ -677,6 +780,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' and no inline frames on top (only what is needed)', m1.media.length === 0, `${m1.media.length} inline`);
     check(' context asks to watch AND listen', /watch it AND listen to it/.test(m1.text));
     check(' result card shows the music read', await page.evaluate(() => /120 BPM/.test(document.querySelector('[data-testid="ai-ad-result"]')?.textContent || '')));
+    check(' the new read is current: no stale line, its buttons on', (await gone(page, 'ai-ad-stale')) && (await disabled(page, 'ai-ad-apply-0')) === false);
     const cache = await page.evaluate(() => localStorage.getItem('syntech.geminiFiles') || '');
     check(' upload cached in localStorage (no key inside)', cache.includes(ups[0] ? ups[0].uri : '#') && !cache.includes(GOOD), short(cache, 120));
 
@@ -711,6 +815,9 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' audio is OFF in the Lab, even for a music video (the default)', !a0.active && a0.mode === 'off', JSON.stringify(a0));
     check(' Clip audio button present (not pressed by the suite)', await visible(page, 'audio-clip', 10_000));
 
+    check(" the panel landed on the Agent tab by itself (no rail click)", (await onTab(page, 'Agent')) && await page.locator(sel('ai-agent-run')).isVisible().catch(() => false));
+    const marks = await proposalMarks(page);
+    check(" the video's first proposal now reads 'In use' (violet border), the others not", marksOk(marks), JSON.stringify(marks));
     check(' Agent tab on screen (Lab)', await openRole(page, 'agent', 'ai-agent-run'));
     await sleep(1300); // the tab polls the Lab once a second
     const dir = await text(page, 'ai-agent-direction');
@@ -800,10 +907,18 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
       gate && `${gate}: protected`,
       agentPicked.enum && `${agentPicked.enum}: enum parameters are never routed`,
       agentPicked.carrier && `${agentPicked.carrier}: carrier route cannot be switched off`,
-      floor && `${floor}: 0 raised to ${agentPicked.floorValue}`,
     ].filter(Boolean);
-    check(' validator dropped/raised every bad entry, with a reason (analog.reactEnabled protected)', !!gate && want.every((w) => dropped.some((d) => d.startsWith(w))),
+    check(' validator dropped every bad entry, with a reason (analog.reactEnabled protected)', !!gate && want.every((w) => dropped.some((d) => d.startsWith(w))),
       `missing: ${short(want.filter((w) => !dropped.some((d) => d.startsWith(w))))} | ${short(dropped, 300)}`);
+    // kept but changed: `adjusted`, never `dropped` (it WAS applied)
+    const adjusted = (r.json && r.json.adjusted) || [];
+    const wantAdj = [
+      floor && `${floor}: Gemini asked 0, raised to its floor ${agentPicked.floorValue}`,
+      R3 && `${R3}: route depth: Gemini asked 0.9, capped at 0.6`,
+    ].filter(Boolean);
+    check(' adjusted: the floor raise and the depth cap, one line each', wantAdj.length === 2 && wantAdj.every((w) => adjusted.some((a) => a.startsWith(w))) && adjusted.length === wantAdj.length,
+      `missing: ${short(wantAdj.filter((w) => !adjusted.some((a) => a.startsWith(w))))} | ${short(adjusted, 300)}`);
+    check(' …and neither of them in dropped', !dropped.some((d) => (floor && d.startsWith(`${floor}:`)) || (R3 && d.startsWith(`${R3}:`)) || /raised to|capped at/.test(d)), short(dropped, 300));
 
     // applied to the ParamBus
     await sleep(300);
@@ -818,6 +933,17 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const n = plan.params.length + plan.routes.length;
     check(" the card lists what was not applied ('Not applied:', the ghost key)", /Not applied:/.test(ui) && ui.includes('nope.ghost: not a parameter of this chain') && !/muted:/.test(ui), short(ui, 240));
     check(` the card says 'Applied ${n} changes' and shows the summary`, new RegExp(`Applied ${n} changes`).test(ui) && /MOCK-AGENT/.test(ui), short(ui, 120));
+    // the adjustments sit on the rows that were applied, never under 'Not applied'
+    const rows = await changeRows(page, 'ai-agent-rows');
+    const fRow = rows.find((x) => x.key === floor && !x.route);
+    const cRow = rows.find((x) => x.key === R3 && x.route);
+    check(` the applied row of ${floor} carries its note: '→ ${agentPicked.floorValue} · Gemini asked 0, raised to its floor ${agentPicked.floorValue} …'`,
+      !!fRow && fRow.text.includes(`→ ${agentPicked.floorValue}`) && fRow.note.startsWith(`· Gemini asked 0, raised to its floor ${agentPicked.floorValue}`), short(fRow));
+    check(` the route row of ${R3} carries the cap: '→ treble 0.6 · Gemini asked 0.9, capped at 0.6 …'`,
+      !!cRow && cRow.text.includes('→ treble 0.6') && cRow.note.startsWith('· Gemini asked 0.9, capped at 0.6'), short(cRow));
+    check(` one row per kept change (${n}), no other note`, rows.length === n && rows.filter((x) => x.note).length === 2, `${rows.length} rows, ${rows.filter((x) => x.note).length} notes`);
+    const na = await notAppliedBlocks(page, 'ai-agent-result');
+    check(" 'Not applied' lists no floor raise and no cap", na.length === 1 && !/raised to|capped at|its floor/.test(na[0].text), short(na, 300));
 
     // ── Undo reverts the plan's keys only: an edit made after the run stays ──
     const planKeys = new Set(keptKeys);
@@ -855,12 +981,14 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' the music stays on after Undo', (await audioState(page)).active);
     check(' Optimizer tab on screen', await openRole(page, 'optimizer', 'ai-opt-run'));
     await sleep(1300);
-    const opt = await panelAll(page);
+    const optLine = await text(page, 'ai-opt-agent-line');
     const optSends = await sendsLine(page);
-    check(" the Optimizer forgot the undone run: 'No Agent run yet', not in Sends", /No Agent run yet/.test(opt) && !/Agent's last plan/.test(optSends), optSends);
+    check(" the Optimizer knows the run was undone: 'The Agent's last run was undone: judges the Lab as it is', not in Sends",
+      optLine === "The Agent's last run was undone: judges the Lab as it is" && !/Agent's last plan/.test(optSends), `${optLine} | ${optSends}`);
 
     // ── run again (music already on): this plan stays for the Optimizer ──
     check(' Agent tab on screen', await openRole(page, 'agent', 'ai-agent-run'));
+    beforeRun2 = await busState(page);
     const g1 = mock.generate.length;
     const r2 = await roleCall(page, '/api/gemini/agent', 'ai-agent-run');
     check(' second run: 200, applied again', r2.status === 200 && new RegExp(`Applied ${n} changes`).test(await text(page, 'ai-agent-result')), `${r2.status} in ${r2.sec}s`);
@@ -875,8 +1003,10 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' Optimizer tab on screen (Lab)', await openRole(page, 'optimizer', 'ai-opt-run'));
     await sleep(1300);
     const sends = await sendsLine(page);
-    check(" Sends: '4s output clip with music' + the Agent's last plan + the art direction", /^Sends: 4s output clip with music \+ /.test(sends) && /the Agent's last plan/.test(sends) && /the art direction/.test(sends), sends);
-    check(" it names the Agent run it checks", /Checks the Agent's run of/.test(await panelAll(page)));
+    check(" Sends: '4s output clip with music + 1 frame pair + 2s of live signals + the chain + the checks + the Agent's last plan + the art direction'",
+      sends === "Sends: 4s output clip with music + 1 frame pair + 2s of live signals + the chain + the checks + the Agent's last plan + the art direction", sends);
+    const al = await text(page, 'ai-opt-agent-line');
+    check(" it names the Agent run it checks (run 2, the one still in effect)", /^Checks the Agent's run of \S+/.test(al), al);
     check(" 'Direction: Notte analogica' on the Optimizer too", (await text(page, 'ai-opt-direction')) === 'Direction: Notte analogica');
     const g0 = mock.generate.length;
     const r = await roleCall(page, '/api/gemini/optimizer', 'ai-opt-run', 120_000);
@@ -910,20 +1040,47 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
       && JSON.stringify(ob.lastAgent.plan) === JSON.stringify(agentPlan) && ob.chain && ob.chain.audioMode === 'clip',
       short({ direction: ob.direction && ob.direction.title, lastAgent: !!ob.lastAgent, audioMode: ob.chain && ob.chain.audioMode }));
 
-    const res = r.json || { issues: [], dropped: [] };
+    const res = r.json || { issues: [], dropped: [], adjusted: [] };
     check(' validator: 3 issues, unknown severity → tip, empty fix → null', res.issues.length === 3 && res.issues[1].severity === 'tip' && res.issues[1].fix === null && !!res.issues[0].fix && res.verdict === 'improve',
       short(res.issues.map((i) => `${i.severity}:${i.fix ? 'fix' : 'null'}`)));
     check(' validator: the dead fix is reported', res.dropped.some((d) => d.startsWith('fix 2 · nope.ghost')) && res.dropped.some((d) => d === 'fix 2 · nothing left to apply'), short(res.dropped, 200));
+    const R4 = (rec && rec.picked && rec.picked.R4) || null;
+    const oadj = res.adjusted || [];
+    check(" validator: fix 1's capped route is in adjusted ('fix 1 · <key>: route depth: Gemini asked 0.9, capped at 0.6 …'), not in dropped",
+      !!R4 && oadj.length === 1 && oadj[0].startsWith(`fix 1 · ${R4}: route depth: Gemini asked 0.9, capped at 0.6`) && !res.dropped.some((d) => /capped at|raised to/.test(d)),
+      `${short(oadj, 200)} | ${short(res.dropped, 200)}`);
     const ui = await page.evaluate(() => ({
       text: document.querySelector('[data-testid="ai-opt-result"]')?.textContent || '',
-      fixes: [...document.querySelectorAll('[data-testid^="ai-opt-fix-"]')].map((b) => b.getAttribute('data-testid')),
+      fixes: [...document.querySelectorAll('button[data-testid^="ai-opt-fix-"]')].map((b) => b.getAttribute('data-testid')),
+      heads: [...document.querySelectorAll('[data-testid^="ai-opt-issue-"]')].map((c) => (c.firstElementChild?.textContent || '').trim()),
     }));
     check(' issues rendered (finding + verdict + summary)', ['MOCK-ISSUE-0', 'MOCK-ISSUE-1', 'MOCK-ISSUE-2', 'improve', 'MOCK-OPT'].every((s) => ui.text.includes(s)), short(ui.text, 160));
-    check(" one 'Apply fix' (issue 0) + 'Apply all'", ui.fixes.includes('ai-opt-fix-0') && ui.fixes.includes('ai-opt-fix-all') && !ui.fixes.includes('ai-opt-fix-1') && !ui.fixes.includes('ai-opt-fix-2'), JSON.stringify(ui.fixes));
+    check(" one 'Apply fix' (issue 0) + 'Apply all', no fix Undo before Apply", JSON.stringify([...ui.fixes].sort()) === JSON.stringify(['ai-opt-fix-0', 'ai-opt-fix-all']), JSON.stringify(ui.fixes));
+    check(" issue cards numbered like the server's 'fix N': '1 · warning', '2 · tip', '3 · tip'", JSON.stringify(ui.heads) === JSON.stringify(['1 · warning', '2 · tip', '3 · tip']), JSON.stringify(ui.heads));
+    // each issue's refusals sit in its own card: nothing left in a shared list
+    const na2 = await text(page, 'ai-opt-not-applied-1');
+    const naOpt = await notAppliedBlocks(page, 'ai-opt-result');
+    check(" issue 2's refusals inside its own card (the ghost key, 'nothing left to apply'), no 'fix 2 ·' prefix",
+      na2.includes('nope.ghost: not a parameter of this chain') && na2.includes('nothing left to apply') && !/fix \d+ · /.test(na2), na2);
+    check(" no 'Not applied' list outside the issue cards", naOpt.length === 1 && naOpt.every((b) => b.inIssue), short(naOpt));
 
+    // ── what a fix changes, listed BEFORE it is applied ──
     const fix = res.issues[0] && res.issues[0].fix;
     const P2 = fix && fix.params[0] && fix.params[0].key;
     const R2 = fix && fix.routes[0] && fix.routes[0].key;
+    const issue0 = await text(page, 'ai-opt-issue-0');
+    const fr = await changeRows(page, 'ai-opt-fix-rows-0');
+    const nFix = fix ? fix.params.length + fix.routes.length : 0;
+    const pRow = fr.find((x) => x.key === P2 && !x.route);
+    const r2Row = fr.find((x) => x.key === R2 && x.route);
+    const r4Row = fr.find((x) => x.key === R4 && x.route);
+    check(" before Apply the fix lists what it would change ('Would change:', one row per change)", /Would change:/.test(issue0) && !/Changed:/.test(issue0) && nFix === 3 && fr.length === nFix,
+      `${fr.length} rows of ${nFix} | ${short(fr.map((x) => x.text), 300)}`);
+    check(` …${P2}: '→ ${fix && fix.params[0] ? fmtNum(fix.params[0].value) : '?'}'; ${R2} ~: '→ bass 0.15'`,
+      !!pRow && pRow.text.includes(`→ ${fmtNum(fix.params[0].value)}`) && !!r2Row && r2Row.text.includes('→ bass 0.15'), short([pRow, r2Row]));
+    check(` …${R4} ~: '→ loud 0.6' with its note on the row ('Gemini asked 0.9, capped at 0.6'), not under 'Not applied'`,
+      !!r4Row && r4Row.text.includes('→ loud 0.6') && r4Row.note.startsWith('· Gemini asked 0.9, capped at 0.6') && (await gone(page, 'ai-opt-not-applied-0')), short(r4Row));
+
     const before = await busState(page);
     await domClick(page, 'ai-opt-fix-0');
     await sleep(400);
@@ -931,18 +1088,156 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(` Apply fix: ${P2} base changed on the bus`, !!P2 && after[P2] && near(after[P2].base, fix.params[0].value, 1e-6) && !near(before[P2] && before[P2].base, fix.params[0].value, 1e-9),
       `${before[P2] && before[P2].base} → ${after[P2] && after[P2].base} (fix ${fix && fix.params[0] && fix.params[0].value})`);
     check(` Apply fix: ${R2} routed bass × 0.15`, !R2 || (after[R2] && sameMod(after[R2].mod, { source: 'bass', amount: 0.15 })), short(after[R2] && after[R2].mod));
-    check(" the button now says 'Applied'", /Applied/.test(await text(page, 'ai-opt-fix-0')));
+    check(` Apply fix: ${R4} routed loud × 0.6 (the capped depth)`, !!R4 && after[R4] && sameMod(after[R4].mod, { source: 'loud', amount: 0.6 }), short(after[R4] && after[R4].mod));
+    const fixBtn = await text(page, 'ai-opt-fix-0');
+    const fixUndo = await text(page, 'ai-opt-fix-undo-0');
+    check(" the button says 'Applied', the rows 'Changed:', a small Undo next to it", /Applied/.test(fixBtn) && /Changed:/.test(await text(page, 'ai-opt-issue-0'))
+      && fixUndo === 'Undo' && (await disabled(page, 'ai-opt-fix-undo-0')) === false, `${fixBtn} | ${fixUndo}`);
+
+    // ── ONE undo stack with the Agent, last in first out ──
+    check(' Agent tab on screen', await openRole(page, 'agent', 'ai-agent-run'));
+    await sleep(300);
+    const blocked = await text(page, 'ai-agent-undo');
+    check(" the Agent's Undo waits for the fix on top of it: off, 'Undo the Optimizer's fixes first'", blocked === "Undo the Optimizer's fixes first" && (await disabled(page, 'ai-agent-undo')) === true, blocked);
+    await domClick(page, 'ai-agent-undo');
+    await sleep(300);
+    const still = busDiff(after, await busState(page));
+    check(' …a click on it changes nothing on the bus', still.length === 0, still.join(','));
+    check(' Optimizer tab on screen', await openRole(page, 'optimizer', 'ai-opt-run'));
+    await domClick(page, 'ai-opt-fix-undo-0');
+    await sleep(400);
+    const d1 = busDiff(before, await busState(page));
+    check(" the fix's own Undo puts every key back to before the fix", d1.length === 0, d1.join(','));
+    check(" …and the fix offers 'Apply fix' again ('Would change:', no small Undo)", (await text(page, 'ai-opt-fix-0')) === 'Apply fix' && (await gone(page, 'ai-opt-fix-undo-0')) && /Would change:/.test(await text(page, 'ai-opt-issue-0')));
+    await domClick(page, 'ai-opt-fix-all');
+    await sleep(400);
+    const again = busDiff(after, await busState(page));
+    check(" 'Apply all' applies it again (the same values as 'Apply fix')", again.length === 0 && /Applied/.test(await text(page, 'ai-opt-fix-0')), again.join(','));
     await domClick(page, 'ai-opt-undo');
     await sleep(400);
     const undone = await busState(page);
     check(` Undo: ${P2} restored`, !!P2 && undone[P2] && before[P2] && near(undone[P2].base, before[P2].base, 1e-9), `${undone[P2] && undone[P2].base} vs ${before[P2] && before[P2].base}`);
-    check(` Undo: ${R2} route restored`, !R2 || (undone[R2] && before[R2] && sameMod(undone[R2].mod, before[R2].mod)));
-    const others = Object.keys(before).filter((k) => k !== P2 && k !== R2 && (!near(undone[k] && undone[k].base, before[k].base, 1e-9) || !sameMod(undone[k] && undone[k].mod, before[k].mod)));
+    check(` Undo: ${R2} and ${R4} routes restored`, (!R2 || (undone[R2] && before[R2] && sameMod(undone[R2].mod, before[R2].mod))) && !!R4 && undone[R4] && before[R4] && sameMod(undone[R4].mod, before[R4].mod));
+    const others = busDiff(before, undone);
     check(' Undo touched nothing else on the bus', others.length === 0, others.join(','));
+
+    check(' Agent tab on screen', await openRole(page, 'agent', 'ai-agent-run'));
+    await sleep(300);
+    const free = await text(page, 'ai-agent-undo');
+    check(" with the fix undone, the Agent's Undo is on again ('Undo')", free === 'Undo' && (await disabled(page, 'ai-agent-undo')) === false, free);
+    await domClick(page, 'ai-agent-undo');
+    await sleep(400);
+    const back = await busState(page);
+    const d2 = beforeRun2 ? busDiff(beforeRun2, back) : ['(no snapshot from step 6)'];
+    check(' Agent Undo: the whole bus is back to its values before the run (no undone value came back)', d2.length === 0,
+      d2.map((k) => `${k}: ${short(back[k])} vs ${short(beforeRun2 && beforeRun2[k])}`).join('; '));
+    check(" the card says 'Undone', nothing left to undo (Undo off)", /Undone/.test(await text(page, 'ai-agent-result')) && (await disabled(page, 'ai-agent-undo')) === true);
+    check(' Optimizer tab on screen', await openRole(page, 'optimizer', 'ai-opt-run'));
+    await sleep(1300);
+    const al2 = await text(page, 'ai-opt-agent-line');
+    check(" the Optimizer: 'The Agent's last run was undone: judges the Lab as it is', no plan in Sends",
+      al2 === "The Agent's last run was undone: judges the Lab as it is" && !/Agent's last plan/.test(await sendsLine(page)), al2);
+
+    // ── the Lab closes and reopens: both results belong to a Lab that is gone ──
+    await domClick(page, 'nav-ailab');
+    const closed = await page.waitForSelector(sel('chain-canvas'), { state: 'detached', timeout: 10_000 }).then(() => true).catch(() => false);
+    const reopened = closed && await openLabVia(page, () => domClick(page, 'nav-ailab'));
+    check(' the Lab closed and reopened (a new Lab handle)', reopened);
+    if (!reopened) return;
+    await page.evaluate(() => window.__SYN.lab.whenReady(20_000)).catch(() => false);
+    const ov = await page.waitForSelector(sel('ai-opt-stale'), { state: 'visible', timeout: 6000 }).then(() => true).catch(() => false);
+    const ost = await page.evaluate(() => {
+      const r = document.querySelector('[data-testid="ai-opt-result"]');
+      return {
+        line: (document.querySelector('[data-testid="ai-opt-stale"]')?.textContent || '').trim(),
+        first: r?.firstElementChild?.getAttribute('data-testid') || '',
+        dim: !!r?.querySelector('.opacity-50'),
+        off: ['ai-opt-fix-0', 'ai-opt-fix-all', 'ai-opt-undo'].map((t) => document.querySelector(`[data-testid="${t}"]`)?.disabled ?? null),
+      };
+    });
+    check(` Optimizer: its result opens with '${STALE_LAB}', dimmed, Apply fix / Apply all / Undo off`,
+      ov && ost.line === STALE_LAB && ost.first === 'ai-opt-stale' && ost.dim && ost.off.every((d) => d === true), JSON.stringify(ost));
+    check(' Agent tab on screen', await openRole(page, 'agent', 'ai-agent-run'));
+    const av = await page.waitForSelector(sel('ai-agent-stale'), { state: 'visible', timeout: 6000 }).then(() => true).catch(() => false);
+    const ast = await page.evaluate(() => {
+      const r = document.querySelector('[data-testid="ai-agent-result"]');
+      return {
+        line: (document.querySelector('[data-testid="ai-agent-stale"]')?.textContent || '').trim(),
+        first: r?.firstElementChild?.getAttribute('data-testid') || '',
+        dim: !!r?.querySelector('.opacity-50'),
+        label: /\d+ changes? on that Lab/.test(r?.textContent || ''),
+        undo: document.querySelector('[data-testid="ai-agent-undo"]')?.disabled ?? null,
+      };
+    });
+    check(` Agent: its card opens with '${STALE_LAB}', '… on that Lab', dimmed, its Undo off`,
+      av && ast.line === STALE_LAB && ast.first === 'ai-agent-stale' && ast.label && ast.dim && ast.undo === true, JSON.stringify(ast));
   });
 
   /* ── 8 ── */
   await step(8, async () => {
+    // a clip with no audio track on the INPUT node, then the Lab on it
+    if (await page.$(sel('chain-canvas'))) {
+      await domClick(page, 'nav-ailab');
+      await page.waitForSelector(sel('chain-canvas'), { state: 'detached', timeout: 10_000 }).catch(() => {});
+    }
+    const prev = await page.evaluate(() => document.querySelector('[data-testid="hero-video"]')?.src || '');
+    await page.locator(sel('source-file')).setInputFiles(fx.silent);
+    const shown = await page.waitForFunction((p) => { const v = document.querySelector('[data-testid="hero-video"]'); return !!v && !!v.src && v.src !== p; }, prev, { timeout: 10_000 })
+      .then(() => true).catch(() => false);
+    check(' the silent clip is the INPUT source (hero-video, a new URL)', shown);
+    const opened = await openLabVia(page, () => domClick(page, 'nav-ailab'));
+    check(' the Lab opens on it', opened);
+    if (!opened) return;
+    const ready = await page.evaluate(() => window.__SYN.lab.whenReady(20_000));
+    const kind = await page.evaluate(() => window.__SYN.lab.sourceKind());
+    const a0 = await audioState(page);
+    check(' Lab source is the video, audio off', ready === true && kind === 'video' && !a0.active, `ready=${ready} kind=${kind} ${JSON.stringify(a0)}`);
+    check(' Agent tab on screen (Lab)', await openRole(page, 'agent', 'ai-agent-run'));
+    await sleep(1300);
+    const pt0 = await panelAll(page);
+    check(" before Run nothing is known yet: 'Run switches on the clip's own audio'", /No music on: Run switches on the clip's own audio/.test(pt0), short(pt0.replace(/\s+/g, ' '), 200));
+    const s0 = await sendsLine(page);
+    check(" Sends before the upload: 'clip N KB (video + audio)' (a small clip in KB, not '0.0 MB')", /^Sends: clip \d+ KB \(video \+ audio\) \+ 1 frame pair \(source \+ output\) \+ /.test(s0), s0);
+
+    const g0 = mock.generate.length;
+    const u0 = mock.uploads.length;
+    const r = await roleCall(page, '/api/gemini/agent', 'ai-agent-run');
+    check(' server answered 200', r.status === 200, `${r.status} in ${r.sec}s ${short(r.json, 90)}`);
+    const note = await text(page, 'ai-agent-note');
+    check(` the Run says why there is no music: '${SILENT_NOTE}'`, note === SILENT_NOTE, note);
+    const a1 = await audioState(page);
+    check(' no music came on (AudioEngine still off)', !a1.active, JSON.stringify(a1));
+    const recs = mock.generate.slice(g0);
+    check(' Google got exactly one generateContent, role Agent', recs.length === 1 && recs[0].role === 'agent', recs.map((x) => x.role).join(','));
+    const m = mediaOf(recs[0]);
+    const ups = mock.uploads.slice(u0);
+    check(' the silent clip was uploaded whole, once, and referenced by fileUri', ups.length === 1 && ups[0].displayName === 'silent.webm' && m.files.length === 1 && m.files[0].fileData.fileUri === ups[0].uri,
+      short({ uploads: ups.map((u) => u.displayName), files: m.files.map((f) => f.fileData.fileUri) }));
+    check(' inline: the picture only — SOURCE + OUTPUT frames, no output clip', m.media.length === 2 && m.media.every((x) => x.mime === 'image/jpeg')
+      && /^SOURCE frame/.test(m.media[0].label) && /^OUTPUT frame/.test(m.media[1].label), JSON.stringify(m.media.map((x) => `${x.mime}|${x.label}`)));
+    const ab = lastBody('/api/gemini/agent') || {};
+    check(' the browser sent 2 media and audio off (chain.audioActive false)', ab.chain && ab.chain.audioActive === false && Array.isArray(ab.media) && ab.media.length === 2,
+      short({ audioActive: ab.chain && ab.chain.audioActive, media: ab.media && ab.media.length }));
+    const ui = await text(page, 'ai-agent-result');
+    check(' the result is current on this Lab (no stale line) and applied', (await gone(page, 'ai-agent-stale')) && /Applied \d+ changes?/.test(ui), short(ui, 120));
+    await sleep(1300); // the tab polls the Lab, and re-reads the upload cache
+    const s1 = await sendsLine(page);
+    check(" Sends now: 'the uploaded clip (video only — it has no soundtrack, already on Google)', no output clip promised",
+      s1 === 'Sends: the uploaded clip (video only — it has no soundtrack, already on Google) + 1 frame pair (source + output) + 3s of live signals + the chain + the art direction', s1);
+    const pt1 = await panelAll(page);
+    check(" the context line: 'No music on: this clip has no soundtrack — music routes wait for Track or Mic in the Lab.'",
+      /No music on: this clip has no soundtrack — music routes wait for Track or Mic in the Lab\./.test(pt1) && !/Run switches on the clip's own audio/.test(pt1), short(pt1.replace(/\s+/g, ' '), 200));
+    check(' Optimizer tab on screen', await openRole(page, 'optimizer', 'ai-opt-run'));
+    await sleep(1300);
+    const os = await sendsLine(page);
+    check(" Optimizer Sends: '4s output clip (silent) + 1 frame pair + 2s of live signals + the chain + the checks + the Agent's last plan + the art direction'",
+      os === "Sends: 4s output clip (silent) + 1 frame pair + 2s of live signals + the chain + the checks + the Agent's last plan + the art direction", os);
+    const al = await text(page, 'ai-opt-agent-line');
+    check(' …and it checks the run just made on this Lab', /^Checks the Agent's run of /.test(al), al);
+  });
+
+  /* ── 9 ── */
+  await step(9, async () => {
     // (a) Google answers 400 API_KEY_INVALID to a role call
     check(' Agent tab on screen', await openRole(page, 'agent', 'ai-agent-run'));
     mock.failNext({ status: 400, body: KEY_INVALID_BODY });
@@ -967,8 +1262,8 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' rail locked again', (await rail(page)).every((d) => d === true), JSON.stringify(await rail(page)));
   });
 
-  /* ── 9 ── */
-  await step(9, async () => {
+  /* ── 10 ── */
+  await step(10, async () => {
     const st = await fetch(`${APP}/api/gemini/status`);
     const stj = await st.json().catch(() => null);
     check(' GET /api/gemini/status → 200 {serverKey:false, model}', st.status === 200 && stj && stj.serverKey === false && stj.model === MODEL, `${st.status} ${short(stj)}`);
@@ -996,6 +1291,17 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const bdj = await bd.json().catch(() => null);
     check(' POST /agent with direction as a string → 400 bad_request, Google not called', bd.status === 400 && bdj && bdj.error === 'bad_request' && /direction/.test(bdj.message) && mock.generate.length === g0, `${bd.status} ${short(bdj)}`);
 
+    // the whole source already uploaded, but not one frame from the Lab (a
+    // Master export holds the capture): the Agent would tune blind — refused
+    // before Gemini is paid
+    const fu = await fetch(`${APP}/api/gemini/agent`, {
+      method: 'POST', headers: keyed,
+      body: JSON.stringify({ source: { kind: 'video', name: 'clip120.webm', fileUri: uploadedUri || `${mock.baseUrl}/v1beta/files/mock1`, fileMimeType: 'video/webm' }, media: [], chain: { order: ['analog'], params: [] } }),
+    });
+    const fuj = await fu.json().catch(() => null);
+    check(' POST /agent with a fileUri but no frame from the Lab → 400 no_media "No picture arrived from the Lab…", Google not called',
+      fu.status === 400 && fuj && fuj.error === 'no_media' && /^No picture arrived from the Lab/.test(fuj.message) && mock.generate.length === g0, `${fu.status} ${short(fuj)}`);
+
     // Google refuses the media (finishReason SAFETY): a clear 400, not 'empty answer, try again'
     mock.failNext({ status: 200, body: SAFETY_BLOCKED_BODY });
     const sf = await fetch(`${APP}/api/gemini/art-director`, { method: 'POST', headers: keyed, body: JSON.stringify({ source: { kind: 'image', name: 'x.jpg' }, media: photoMedia }) });
@@ -1003,11 +1309,22 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' a SAFETY-blocked answer → 400 bad_request "Gemini declined this media (SAFETY)…", no retry',
       sf.status === 400 && sfj && sfj.error === 'bad_request' && /declined this media \(SAFETY\)/.test(sfj.message) && mock.generate.length === g0 + 1, `${sf.status} ${short(sfj)} calls=${mock.generate.length - g0}`);
 
-    // DNS-rebinding guard: /api answers only to localhost or an IP literal
+    // DNS-rebinding guard: /api answers on localhost, IP literals and *.local
+    // (the Mac's mDNS name, from the iPad) — plus ALLOWED_HOSTS, empty here
     const rb = await rawGet('/api/gemini/status', 'rebind.attacker.example');
     check(' Host: rebind.attacker.example → 403 JSON', rb.status === 403 && rb.json && rb.json.error === 'bad_request', `${rb.status} ${short(rb.json)}`);
+    const ev = await rawGet('/api/gemini/status', `evil.example:${PORT}`);
+    check(' Host: evil.example → 403 bad_request whose message says how to get in (add evil.example to ALLOWED_HOSTS, or open by IP / localhost)',
+      ev.status === 403 && ev.json && ev.json.error === 'bad_request' && typeof ev.json.message === 'string'
+      && ev.json.message.includes('does not answer on "evil.example"') && ev.json.message.includes('add evil.example to ALLOWED_HOSTS') && ev.json.message.includes(`http://localhost:${PORT}`),
+      `${ev.status} ${short(ev.json, 220)}`);
+    const md = await rawGet('/api/gemini/status', `studio-mac.local:${PORT}`);
+    check(' Host: studio-mac.local (mDNS) → 200, and no server key for it', md.status === 200 && md.json && md.json.model === MODEL && md.json.serverKey === false, `${md.status} ${short(md.json)}`);
     const lh = await rawGet('/api/gemini/status', `localhost:${PORT}`);
     check(' Host: localhost → 200', lh.status === 200 && lh.json && lh.json.model === MODEL, `${lh.status} ${short(lh.json)}`);
+    await sleep(200);
+    check(" the terminal names the refused host and the fix ('[host] refused /api on \"evil.example\" … ALLOWED_HOSTS')",
+      /\[host\] refused \/api on "evil\.example" — to allow that name, add it to ALLOWED_HOSTS/.test(serverOut), short((serverOut.match(/\[host\][^\n]*/g) || []).join(' | '), 240));
 
     for (const old of ['/api/gemini/chat', '/api/gemini/analyze', '/api/gemini/analyze-video', '/api/gemini/optimize']) {
       const o = await fetch(`${APP}${old}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
@@ -1019,8 +1336,8 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' no Groq left in the server code or dependencies', !/groq/i.test(src));
   });
 
-  /* ── 10 ── */
-  await step(10, async () => {
+  /* ── 11 ── */
+  await step(11, async () => {
     await sleep(300);
     const leaks = [GOOD, BAD].filter((k) => serverOut.includes(k));
     check(' server stdout/stderr never contains MOCKKEY or BADKEY', leaks.length === 0, leaks.length ? `found ${leaks.join(',')}` : `${serverOut.split('\n').length} log lines`);

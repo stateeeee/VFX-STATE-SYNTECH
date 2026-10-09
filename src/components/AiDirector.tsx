@@ -9,6 +9,7 @@ import {
   EyeOff,
   Undo2,
   ChevronRight,
+  Check,
   Cpu,
   X,
 } from 'lucide-react';
@@ -59,8 +60,10 @@ import { elementToJpeg, sampleVideoFrames } from '../ai/capture';
      ART DIRECTOR  watches the source (the whole clip with its music when
                    it can be uploaded, else frames; a photo; the Lab's
                    webcam) and proposes effect chains. "Use this chain"
-                   wires it, opens the Lab, and keeps the proposal as the
-                   ART DIRECTION the Agent and the Optimizer work to.
+                   wires it, opens the Lab, keeps the proposal as the ART
+                   DIRECTION the Agent and the Optimizer work to (the card
+                   reads 'In use') and hands over to the Agent tab — the
+                   director's pipeline: creative mind, then operator.
      AGENT         Lab only. Hears and sees the source (the uploaded clip,
                    with its song), a SOURCE/OUTPUT frame pair, 4s of OUTPUT
                    with the music when audio is on, and 3s of live signals;
@@ -75,8 +78,24 @@ import { elementToJpeg, sampleVideoFrames } from '../ai/capture';
    click, so the browser lets the AudioContext start) and say so.
 
    A run is bound to the Lab handle it started on: if the Lab is closed or
-   reopened meanwhile, the run stops ("The Lab changed — run again"), and
-   Undo / Apply fix stay off on any other Lab.
+   reopened meanwhile, the run stops ("The Lab changed — run again"). A
+   result made on a Lab that has closed (or, for the Art Director, on
+   another source) stays readable but dimmed, says so at its top, and its
+   actions are off.
+
+   ONE undo stack per Lab, shared by the Agent and the Optimizer: every
+   applied Agent run and every applied fix is pushed on it, and Undo works
+   last-in-first-out — a tab's Undo is on only while its newest entry is on
+   top ("Undo the Optimizer's fixes first"), so reverting can never bring
+   back a value another undo already took away. The Optimizer judges the
+   newest Agent run still on that stack, and only while the chain order is
+   the one the run was made for.
+
+   A Master export makes the Lab refuse grabs and plans. The panel sees it
+   only through those refusals (a grab with no picture on a ready Lab, a
+   refused apply or undo): it then stops before any upload or request,
+   turns Run / Apply / Undo off, and polls with a tiny grab until the
+   export is over.
 
    Capture happens only on a button press, once, downscaled (D10). The
    three tabs stay mounted and are only hidden, so a result survives a
@@ -101,9 +120,53 @@ export interface CompSource {
   file: File;
 }
 
-/** What the Optimizer is told about the Agent's last move — and the Lab it
- *  was applied to (a reopened Lab starts from its own values). */
-interface LastAgentRun { intent: string; plan: AgentPlan; at: string; lab: LabHandle }
+/** What the Optimizer is told about the Agent's last move — the Lab it was
+ *  applied to (a reopened Lab starts from its own values) and the chain
+ *  order it was made for (a new 'Use this chain' makes it another chain). */
+interface LastAgentRun { intent: string; plan: AgentPlan; at: string; lab: LabHandle; order: ModuleId[] }
+
+/** One applied plan on the shared undo stack (see the header). */
+interface UndoEntry {
+  id: number;
+  role: 'agent' | 'optimizer';
+  lab: LabHandle;
+  undo: PlanUndo;
+  /** which result card it came from (AgentOut.id / OptimizerOut.id) */
+  outId: number;
+  /** "the Agent's run of 09:47" / "fix 2" */
+  label: string;
+  /** Agent: the run, as the Optimizer is told about it */
+  run?: LastAgentRun;
+  /** Optimizer: the issue index whose fix it is */
+  fix?: number;
+}
+type NewUndoEntry = Omit<UndoEntry, 'id'>;
+
+/** The stack and the panel-wide Lab facts every Lab tab reads. */
+interface LabShared {
+  stack: UndoEntry[];
+  /** the stack as it is now (for a run, after its awaits) */
+  latest: () => UndoEntry[];
+  /** the Lab the newest Agent entry was pushed on (an Agent run there, all
+   *  undone, reads 'undone', not 'no run yet') */
+  agentLab: LabHandle | null;
+  push: (entries: NewUndoEntry[]) => void;
+  drop: (ids: number[]) => void;
+  /** the Lab a Master export was seen running on (null: none seen) */
+  exportLab: LabHandle | null;
+  onExport: (lab: LabHandle) => void;
+  /** source video URLs whose Clip audio could not start: no soundtrack */
+  silentClips: ReadonlySet<string>;
+  onSilentClip: (url: string) => void;
+}
+
+/** this Lab's entries, oldest first */
+const labEntries = (stack: UndoEntry[], lab: LabHandle | null) => (lab ? stack.filter((e) => e.lab === lab) : []);
+/** the newest Agent run still applied on this Lab */
+const newestAgent = (stack: UndoEntry[], lab: LabHandle | null): UndoEntry | null =>
+  [...labEntries(stack, lab)].reverse().find((e) => e.role === 'agent' && e.run) ?? null;
+const sameOrder = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+const clockOf = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 interface AiDirectorProps {
   isDayMode?: boolean;
@@ -112,6 +175,9 @@ interface AiDirectorProps {
   status: GeminiStatus;
   /** why the last validation failed, as an AiErrorKind */
   error: string | null;
+  /** the server's own words for it, when they say more than the kind (the
+   *  Host guard's 403: which name to add to ALLOWED_HOSTS) */
+  errorMessage?: string | null;
   /** where the active key lives */
   source: 'browser' | 'server' | null;
   /** validate (and, if Google accepts it, store) a pasted key */
@@ -161,13 +227,25 @@ const MODES: readonly GeminiMode[] = ['art_director', 'agent', 'optimizer'];
 
 const LAB_CHANGED = 'The Lab changed — run again';
 const CLIP_ON_NOTE = 'Clip audio switched on so Gemini can hear the music';
+const SILENT_CLIP_NOTE = 'This clip has no soundtrack: Gemini gets the picture only. Start Track or Mic for music.';
+const NO_TAP_NOTE = "This browser cannot play the clip's audio into the Lab (Chrome can): music routes wait for Track or Mic.";
+/** Clip audio taps the <video> through captureStream — Chromium only (Safari
+ *  has none, Firefox only mozCaptureStream). Where it is missing, a failed
+ *  Clip start says nothing about the clip, so it is never marked silent. */
+const canTapClipAudio = () => typeof (HTMLMediaElement.prototype as { captureStream?: unknown }).captureStream === 'function';
+const EXPORT_TEXT = 'A Master export is running — run again after it';
+const STALE_LAB_TEXT = 'Earlier run — on a Lab that has closed';
+/** ChainLab's applyPlan refusal while a Master export runs */
+const isExportRefusal = (skipped: string[]) => skipped.some((s) => /master export/i.test(s));
 const KEY_CHARS_TEXT = 'The key contains invalid characters — copy it again';
 const RETENTION_TEXT = 'Google keeps uploaded clips ~48h; on a free key it may use what you send to improve its products.';
 
 const effectName = (id: string) => (EFFECT_META as Record<string, { name: string } | undefined>)[id]?.name ?? id;
 const chainLabel = (chain: string[]) => (chain.length ? chain.map(effectName).join(' → ') : 'empty chain');
 const MB = 1024 * 1024;
-const fmtMB = (bytes: number) => `${(bytes / MB).toFixed(bytes < 10 * MB ? 1 : 0)} MB`;
+// under 0.1 MB in KB: a 39 KB clip is not '0.0 MB'
+const fmtMB = (bytes: number) =>
+  bytes < MB / 10 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / MB).toFixed(bytes < 10 * MB ? 1 : 0)} MB`;
 const fmtNum = (v: number) => {
   const a = Math.abs(v);
   return String(Number(v.toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2)));
@@ -201,6 +279,8 @@ async function uploadOnce(src: CompSource, meta: UploadMeta, step: (l: string) =
 
 const ink = (day?: boolean) => ({
   card: `p-3 rounded-xl border ${day ? 'bg-white border-[#8b5cf6]/20' : 'bg-[#8b5cf6]/10 border-[#8b5cf6]/40'} flex flex-col gap-2`,
+  // the same card, chosen: the Art Director proposal that is the direction
+  cardOn: `p-3 rounded-xl border ${day ? 'bg-white border-[#8b5cf6]' : 'bg-[#8b5cf6]/10 border-[#8b5cf6]'} flex flex-col gap-2`,
   label: `font-mono text-[9px] uppercase tracking-widest ${day ? 'text-neutral-500' : 'text-neutral-400'}`,
   head: 'font-mono text-[10px] font-bold tracking-widest uppercase text-[#8b5cf6]',
   text: `font-mono text-[10px] leading-relaxed ${day ? 'text-neutral-700' : 'text-neutral-300'}`,
@@ -217,13 +297,16 @@ const ink = (day?: boolean) => ({
   // the hero gradient on cream (#a16207) — amber-400 is ~1.6:1 there
   amberInk: day ? 'text-[#a16207]' : 'text-amber-400',
   amber: `font-mono text-[9px] leading-snug ${day ? 'text-[#a16207]' : 'text-amber-400'}`,
-  error: 'font-mono text-[9px] leading-snug text-red-400',
+  // red like the amber: red-400 by night; by day the deep stop (#b91c1c,
+  // red-700) — red-400 is ~2.6:1 on the cream panel
+  redInk: day ? 'text-red-700' : 'text-red-400',
+  error: `font-mono text-[9px] leading-snug ${day ? 'text-red-700' : 'text-red-400'}`,
   // pills: the node panel's ACTIVE / STANDBY, plus the amber/red the Lab uses
   pillBase: 'inline-flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded',
   green: day ? 'bg-green-500/10 text-green-700 border border-green-500/30' : 'bg-green-500/10 text-green-400 border border-green-500/40',
   grey: day ? 'bg-neutral-500/10 text-neutral-600 border border-neutral-500/30' : 'bg-neutral-500/10 text-neutral-400 border border-neutral-500/40',
   amberPill: day ? 'bg-amber-400/15 text-[#a16207] border border-[#a16207]/40' : 'bg-amber-400/15 text-amber-400 border border-amber-400/40',
-  redPill: 'bg-red-400/10 text-red-400 border border-red-400/40',
+  redPill: day ? 'bg-red-400/10 text-red-700 border border-red-700/40' : 'bg-red-400/10 text-red-400 border border-red-400/40',
 });
 type Ink = ReturnType<typeof ink>;
 
@@ -310,7 +393,7 @@ function autoClipAudio(lab: LabHandle): Promise<boolean> | null {
  *  a motion/brightness route on a provably dead signal (a still photo) is
  *  flagged. Carriers (the effects' built-in music response, which the AI may
  *  never switch off) are not counted at all. */
-function computeChecks(chain: ChainState, signals: SignalSummary, luma: number | null): CheckResult[] {
+function computeChecks(chain: ChainState, signals: SignalSummary, luma: number | null, sourceLuma: number | null): CheckResult[] {
   const audioOn = chain.audioActive || signals.audio.active;
   const routed = chain.params.filter((p) => p.route && !p.carrier);
   const audioRoutes = routed.filter((p) => AUDIO_SOURCES.includes(p.route!.source));
@@ -348,14 +431,26 @@ function computeChecks(chain: ChainState, signals: SignalSummary, luma: number |
       ok: chain.maskState === null || chain.maskState === 'ready',
       detail: chain.maskState === null ? 'no node uses the person mask' : `person mask is ${chain.maskState}`,
     },
-    {
-      id: 'output_exposure',
-      ok: luma !== null && luma > 0.04 && luma < 0.92,
-      detail: luma === null
-        ? 'the output frame could not be read'
-        : `output mean luma ${luma.toFixed(2)}${luma <= 0.04 ? ' — almost black' : luma >= 0.92 ? ' — blown out' : ''}`,
-    },
+    exposureCheck(luma, sourceLuma),
   ];
+}
+
+/** Whether the CHAIN crushed or blew the picture: the output's mean luma
+ *  against the source's at the same instant. A night or club video whose
+ *  source is already ~0.03 is the footage, not a fault — it is flagged only
+ *  when the output is well below (or above) what came in. Without a source
+ *  frame, the fixed thresholds alone. */
+function exposureCheck(out: number | null, src: number | null): CheckResult {
+  if (out === null) return { id: 'output_exposure', ok: false, detail: 'the output frame could not be read' };
+  const dark = out <= 0.04 && (src === null || out < 0.5 * src);
+  const blown = out >= 0.92 && (src === null || 1 - out < 0.5 * (1 - src));
+  const extreme = out <= 0.04 || out >= 0.92;
+  const vs = src === null ? '' : ` vs source ${src.toFixed(2)}`;
+  return {
+    id: 'output_exposure',
+    ok: !dark && !blown,
+    detail: `output mean luma ${out.toFixed(2)}${vs}${dark ? ' — almost black' : blown ? ' — blown out' : extreme ? ' — like the source' : ''}`,
+  };
 }
 
 interface ChangeRow { key: string; label: string; from: string; to: string }
@@ -391,6 +486,55 @@ function describePlan(before: ChainState | null, plan: AgentPlan): ChangeRow[] {
   return rows;
 }
 
+/** The server's `adjusted` lines ("key: note", a route's note starting with
+ *  "route depth"), put on the rows they belong to: `key` for a base, `~key`
+ *  for a route — the ChangeRow keys. `prefix` picks one fix's lines
+ *  ("fix 2 · "). A line no row claims comes back in `rest`. */
+function notesByRow(lines: string[] | undefined, prefix = ''): { byRow: Map<string, string>; rest: string[] } {
+  const byRow = new Map<string, string>();
+  const rest: string[] = [];
+  for (const line of lines ?? []) {
+    if (typeof line !== 'string' || (prefix && !line.startsWith(prefix))) continue;
+    const text = line.slice(prefix.length);
+    const m = /^([A-Za-z_]\w*\.\w+):\s*(.+)$/.exec(text);
+    if (!m) { rest.push(text); continue; }
+    const [, key, note] = m;
+    const route = /^route depth\b/i.test(note);
+    byRow.set(route ? `~${key}` : key, route ? note.replace(/^route depth:?\s*/i, '') : note);
+  }
+  return { byRow, rest };
+}
+
+/** A plan's rows, "label: from → to", each with the validator's note when it
+ *  changed what Gemini asked (a floor, a depth cap) — on the row itself, so
+ *  the same change is never listed as both done and not done. */
+function ChangeList({ k, rows, notes, extra = [], struck, testid }: { k: Ink; rows: ChangeRow[]; notes: Map<string, string>; extra?: string[]; struck?: boolean; testid?: string }) {
+  if (!rows.length && !extra.length) return null;
+  const claimed = new Set(rows.map((r) => r.key));
+  const orphans = [...notes].filter(([key]) => !claimed.has(key));
+  return (
+    <ul data-testid={testid} className="flex flex-col gap-0.5">
+      {rows.map((r) => {
+        const note = notes.get(r.key);
+        return (
+          <li key={r.key} title={r.key.replace(/^~/, '')} className={`${k.sub} ${struck ? 'line-through opacity-60' : ''}`}>
+            {r.label}: {r.from} <span className="text-[#8b5cf6]">→</span> <b>{r.to}</b>
+            {note && <span data-adjusted className={k.amberInk}> · {note}</span>}
+          </li>
+        );
+      })}
+      {orphans.map(([key, note]) => (
+        <li key={`adj-${key}`} title={key.replace(/^~/, '')} className={`${k.sub} ${struck ? 'line-through opacity-60' : ''}`}>
+          {key.replace(/^~/, '')} <span className={k.amberInk}>· {note}</span>
+        </li>
+      ))}
+      {extra.map((line, i) => (
+        <li key={`extra-${i}`} className={`${k.sub} ${k.amberInk} ${struck ? 'line-through opacity-60' : ''}`}>{line}</li>
+      ))}
+    </ul>
+  );
+}
+
 /* The validator's / the Lab's refusal reasons, in the director's words:
    'carrier' and 'enum' are code words. The key stays in a tooltip. */
 const REFUSAL_WORDS: [RegExp, string][] = [
@@ -412,11 +556,11 @@ function plainRefusal(text: string, desc: Map<string, ParamDesc>): { text: strin
   return { text: `${pre}${paramName(key, desc)}${reason ? `: ${reason}` : ''}`, key };
 }
 
-function NotApplied({ k, items, chain }: { k: Ink; items: string[]; chain: ChainState | null }) {
+function NotApplied({ k, items, chain, testid }: { k: Ink; items: string[]; chain: ChainState | null; testid?: string }) {
   if (!items.length) return null;
   const desc = descOf(chain);
   return (
-    <div className="flex flex-col gap-0.5 opacity-70">
+    <div data-testid={testid} className="flex flex-col gap-0.5 opacity-70">
       <span className={k.label}>Not applied:</span>
       <ul className="flex flex-col gap-0.5">
         {items.map((d, i) => {
@@ -492,6 +636,21 @@ function useReveal(dep: unknown, on: boolean) {
   return ref;
 }
 
+/** The tab's scroll box, put back on its action row whenever `key` (the Lab
+ *  handle, the source) changes to another real value while the tab is on
+ *  screen: a result from before must not open scrolled to its middle, with
+ *  the Run row and the context out of view. */
+function useScrollReset(key: unknown, visible: boolean) {
+  const box = useRef<HTMLDivElement>(null);
+  const seen = useRef<unknown>(null);
+  useEffect(() => {
+    if (!visible || key === null || key === undefined) return;
+    if (seen.current !== null && seen.current !== key && box.current) box.current.scrollTop = 0;
+    seen.current = key;
+  }, [key, visible]);
+  return box;
+}
+
 /* ═══════════════════════════════════════════════════════════════ */
 
 export default function AiDirector(props: AiDirectorProps) {
@@ -501,12 +660,89 @@ export default function AiDirector(props: AiDirectorProps) {
   const active = status === 'active';
   const mode = active ? activeGeminiMode : null;
   const panelInk = isDayMode ? 'bg-[#fbfaf7]' : 'bg-ink-900';
-  // the Agent's last run, kept here so the Optimizer can be told about it (D11)
-  const [lastAgentRun, setLastAgentRun] = useState<LastAgentRun | null>(null);
   // the Art Director proposal chosen with "Use this chain": the brief the
   // Agent executes and the Optimizer judges against (the typed intent still
   // wins where they disagree)
   const [direction, setDirection] = useState<ArtDirection | null>(null);
+  // the source that proposal was a read of: its music read (energy, tempo,
+  // '0:42 drop') belongs to that clip only. On another picked file the look
+  // still goes out, the music read does not, and the line says where it is from.
+  const [directionFrom, setDirectionFrom] = useState<SourceId | null>(null);
+  const pickedId = props.compSource ? `${props.compSource.name}|${props.compSource.size}|${props.compSource.lastModified}` : null;
+  const directionStale = !!direction && !!directionFrom && directionFrom.id.includes('|') && directionFrom.id !== pickedId;
+  const sentDirection = direction && directionStale ? { ...direction, music: null } : direction;
+
+  // ONE undo stack for the Agent and the Optimizer (see the header). Kept
+  // here, above the tabs, so each tab knows what the other applied — and the
+  // Optimizer knows which Agent run is still in effect (D11).
+  const [undoState, setUndoState] = useState<{ stack: UndoEntry[]; agentLab: LabHandle | null }>({ stack: [], agentLab: null });
+  const undoSeq = useRef(0);
+  const push = (entries: NewUndoEntry[]) => {
+    if (!entries.length) return;
+    const lab = entries[entries.length - 1].lab;
+    const added = entries.map((e) => ({ ...e, id: ++undoSeq.current }));
+    const agent = added.some((e) => e.role === 'agent');
+    // entries of a Lab that has closed are dead: its engine is gone
+    setUndoState((prev) => ({
+      stack: [...prev.stack.filter((e) => e.lab === lab), ...added],
+      agentLab: agent ? lab : prev.agentLab,
+    }));
+  };
+  const drop = (ids: number[]) => {
+    if (!ids.length) return;
+    setUndoState((prev) => ({ ...prev, stack: prev.stack.filter((e) => !ids.includes(e.id)) }));
+  };
+
+  // a Master export, seen through a refusal; polled with a tiny grab until
+  // the Lab answers again (or closes)
+  const [exportLab, setExportLab] = useState<LabHandle | null>(null);
+  const { labRef } = props;
+  useEffect(() => {
+    if (!exportLab) return;
+    let alive = true;
+    let timer = 0;
+    const tick = async () => {
+      let over = labRef.current !== exportLab;
+      if (!over) {
+        try {
+          if (exportLab.sourceKind() === 'none') over = true;
+          else {
+            const p = await exportLab.grabPair(16);
+            over = !!(p.source || p.output);
+          }
+        } catch {
+          over = true;
+        }
+      }
+      if (!alive) return;
+      if (over) setExportLab(null);
+      else timer = window.setTimeout(tick, 1500);
+    };
+    timer = window.setTimeout(tick, 1500);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [exportLab, labRef]);
+
+  // source videos whose Clip audio would not start: they have no soundtrack
+  const [silentClips, setSilentClips] = useState<ReadonlySet<string>>(() => new Set());
+  const onSilentClip = (url: string) => setSilentClips((prev) => (prev.has(url) ? prev : new Set(prev).add(url)));
+
+  // the newest stack, for a run that reads it after its awaits
+  const stackRef = useRef<UndoEntry[]>(undoState.stack);
+  stackRef.current = undoState.stack;
+  const labShared: LabShared = {
+    stack: undoState.stack,
+    latest: () => stackRef.current,
+    agentLab: undoState.agentLab,
+    push,
+    drop,
+    exportLab,
+    onExport: setExportLab,
+    silentClips,
+    onSilentClip,
+  };
 
   /** an error for the tab's inline line; tells the shell when the key died */
   const reportError = (e: unknown): string => {
@@ -517,7 +753,12 @@ export default function AiDirector(props: AiDirectorProps) {
     return e instanceof Error && e.message ? e.message : 'Something went wrong';
   };
 
-  const shared = { ...props, k, reportError, direction, onClearDirection: () => setDirection(null) };
+  const shared = {
+    ...props, k, reportError, desk: labShared,
+    direction: sentDirection,
+    directionFrom: directionStale ? directionFrom!.name : null,
+    onClearDirection: () => { setDirection(null); setDirectionFrom(null); },
+  };
 
   return (
     <div className={`flex-1 flex flex-col h-full w-full overflow-hidden ${panelInk}`}>
@@ -549,7 +790,7 @@ export default function AiDirector(props: AiDirectorProps) {
         </div>
       </div>
 
-      {!active && <KeyForm k={k} status={status} error={error} model={model} onSubmitKey={onSubmitKey} />}
+      {!active && <KeyForm k={k} status={status} error={error} errorMessage={props.errorMessage ?? null} model={model} onSubmitKey={onSubmitKey} />}
 
       {active && !mode && (
         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
@@ -584,9 +825,9 @@ export default function AiDirector(props: AiDirectorProps) {
       )}
 
       {/* the three roles: always mounted, only hidden (D11) */}
-      <ArtDirectorTab {...shared} visible={mode === 'art_director'} onChooseDirection={setDirection} />
-      <AgentTab {...shared} visible={mode === 'agent'} onAgentRun={setLastAgentRun} />
-      <OptimizerTab {...shared} visible={mode === 'optimizer'} lastAgentRun={lastAgentRun} />
+      <ArtDirectorTab {...shared} visible={mode === 'art_director'} onChooseDirection={(d, from) => { setDirection(d); setDirectionFrom(from); }} />
+      <AgentTab {...shared} visible={mode === 'agent'} />
+      <OptimizerTab {...shared} visible={mode === 'optimizer'} />
     </div>
   );
 }
@@ -596,7 +837,11 @@ type TabProps = AiDirectorProps & {
   reportError: (e: unknown) => string;
   visible: boolean;
   direction: ArtDirection | null;
+  /** the old source's name when the direction was read from another file */
+  directionFrom: string | null;
   onClearDirection: () => void;
+  /** the shared undo stack, the export flag, the silent clips */
+  desk: LabShared;
 };
 
 /** a tab's scroll box: the element reveal() moves */
@@ -604,14 +849,18 @@ const tabBox = (visible: boolean) => (visible ? 'flex-1 overflow-y-auto p-4 cust
 
 /* ── the key form (any status but 'active') ──────────────────── */
 
-function KeyForm({ k, status, error, model, onSubmitKey }: { k: Ink; status: GeminiStatus; error: string | null; model: string; onSubmitKey: (key: string) => Promise<boolean> }) {
+function KeyForm({ k, status, error, errorMessage, model, onSubmitKey }: { k: Ink; status: GeminiStatus; error: string | null; errorMessage: string | null; model: string; onSubmitKey: (key: string) => Promise<boolean> }) {
   const [value, setValue] = useState('');
   const [show, setShow] = useState(false);
   // a key that cannot even travel in a header (a curly quote, a non-ASCII
   // space): caught here, before fetch throws and reads as 'Server not reachable'
   const [charsErr, setCharsErr] = useState(false);
   const checking = status === 'checking';
-  const errText = charsErr ? KEY_CHARS_TEXT : keyErrorText(error, model);
+  // the server's own words when it gave any (the Host guard: which name to
+  // add to ALLOWED_HOSTS) — 'Gemini refused the request' would be untrue there
+  const errText = charsErr ? KEY_CHARS_TEXT : errorMessage || keyErrorText(error, model);
+  // a long explanation gets its own full-width line, still above the field
+  const errLong = !!errText && errText.length > 48;
   return (
     <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
       <form
@@ -634,8 +883,9 @@ function KeyForm({ k, status, error, model, onSubmitKey }: { k: Ink; status: Gem
             opening (295x169) a line under the link would be scrolled away */}
         <div className="flex items-baseline justify-between gap-x-2 flex-wrap">
           <label htmlFor="ai-key-input" className={k.label}>API Key</label>
-          {errText && (!checking || charsErr) && <span data-testid="ai-key-error" className={`${k.error} text-right`}>{errText}</span>}
+          {errText && !errLong && (!checking || charsErr) && <span data-testid="ai-key-error" className={`${k.error} text-right`}>{errText}</span>}
         </div>
+        {errText && errLong && (!checking || charsErr) && <p data-testid="ai-key-error" className={`${k.error} break-words`}>{errText}</p>}
         <div className="flex gap-2">
           <div className={k.box}>
             <input
@@ -695,15 +945,27 @@ function NeedsLab({ k, what, openEffectId, hasSource, onOpenLab }: { k: Ink; wha
   );
 }
 
-/** "Direction: <title>" + a small × — the Art Director's chosen proposal */
-function DirectionLine({ k, direction, onClear, testid }: { k: Ink; direction: ArtDirection | null; onClear: () => void; testid: string }) {
+/** "Direction: <title>" + a small × — the Art Director's chosen proposal.
+ *  `onNext` adds a small 'Agent →' (the Art Director tab: the next step). */
+function DirectionLine({ k, direction, from, onClear, testid, onNext }: { k: Ink; direction: ArtDirection | null; from: string | null; onClear: () => void; testid: string; onNext?: () => void }) {
   if (!direction) return null;
   const title = direction.title || chainLabel(direction.chain);
+  const tip = [direction.why, direction.audioIdea].filter(Boolean).join(' · ♪ ');
   return (
-    <div data-testid={testid} className="flex items-center gap-1.5 min-w-0">
-      <span className={`${k.sub} truncate`} title={[direction.why, direction.audioIdea].filter(Boolean).join(' · ♪ ')}>
-        Direction: <b className="text-[#8b5cf6]">{title}</b>
+    <div className="flex items-center gap-1.5 min-w-0">
+      <span
+        data-testid={testid}
+        data-from={from ?? undefined}
+        className={`${k.sub} truncate`}
+        title={from ? `Read of ${from}: the look still applies, its music read is not sent. ${tip}` : tip}
+      >
+        Direction{from && <span className={k.amberInk}> (from {from})</span>}: <b className="text-[#8b5cf6]">{title}</b>
       </span>
+      {onNext && (
+        <button type="button" data-testid={`${testid}-next`} onClick={onNext} className={`${k.link} shrink-0`}>
+          Agent →
+        </button>
+      )}
       <button
         type="button"
         data-testid={`${testid}-clear`}
@@ -736,14 +998,29 @@ function useCachedUpload(meta: UploadMeta | null, tick: unknown): boolean {
 
 /* ── ART DIRECTOR ────────────────────────────────────────────── */
 
-function ArtDirectorTab({ k, visible, surface, labRef, compSource, graphChain, onUseChain, reportError, onChooseDirection }: TabProps & { onChooseDirection: (d: ArtDirection) => void }) {
+/** Which source a read is of: the picked file (name|size|lastModified), the
+ *  Lab's webcam, or what the Lab plays when the shell has no file. */
+interface SourceId { id: string; name: string }
+function sourceIdOf(src: CompSource | null, webcam: boolean, labKind: string): SourceId | null {
+  if (webcam) return { id: 'webcam', name: 'the webcam' };
+  if (src) return { id: `${src.name}|${src.size}|${src.lastModified}`, name: src.name };
+  return labKind !== 'none' ? { id: `lab:${labKind}`, name: `the Lab's ${labKind}` } : null;
+}
+
+/** An Art Director result, with the source it is a read of. */
+interface AdOut { result: ArtDirectorResult; source: SourceId | null }
+
+function ArtDirectorTab({ k, visible, surface, labRef, compSource, graphChain, onUseChain, onPickMode, reportError, onChooseDirection, direction, directionFrom, onClearDirection, desk }: TabProps & { onChooseDirection: (d: ArtDirection, from: SourceId | null) => void }) {
   const [intent, setIntent] = useState('');
-  const [result, setResult] = useState<ArtDirectorResult | null>(null);
+  const [out, setOut] = useState<AdOut | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // the proposal made the direction ("In use"): which result, which card,
+  // and the direction object it became (cleared or replaced: no longer in use)
+  const [chosen, setChosen] = useState<{ out: AdOut; idx: number; direction: ArtDirection } | null>(null);
   const b = useBusy();
   const busyRef = useReveal(b.busy, visible);
-  const resultRef = useReveal(result, visible);
+  const resultRef = useReveal(out, visible);
 
   const lab = surface === 'lab' ? labRef.current : null;
   const labKind = lab ? lab.sourceKind() : 'none';
@@ -751,13 +1028,19 @@ function ArtDirectorTab({ k, visible, surface, labRef, compSource, graphChain, o
   const meta = compSource?.kind === 'video' ? uploadMetaOf(compSource) : null;
   const cached = useCachedUpload(meta, `${b.busy}|${visible}`);
   const hasSource = webcam || !!compSource || labKind !== 'none';
+  const silent = compSource?.kind === 'video' && desk.silentClips.has(compSource.url);
+  const current = sourceIdOf(compSource, webcam, labKind);
+  // a read of another source than the one loaded now: readable, never usable
+  const stale = !!out && out.source?.id !== current?.id;
+  const boxRef = useScrollReset(current?.id ?? null, visible);
 
   /** the one line that says what leaves the machine (D10) */
+  const clipKind = silent ? 'video only — it has no soundtrack' : 'video + audio';
   const what = webcam
     ? '4 webcam frames'
     : compSource?.kind === 'video'
       ? meta
-        ? cached ? 'the uploaded clip (video + audio, already on Google)' : `clip ${fmtMB(compSource.size)} (video + audio)`
+        ? cached ? `the uploaded clip (${clipKind}, already on Google)` : `clip ${fmtMB(compSource.size)} (${clipKind})`
         : `12 frames (${framesOnlyWhy(compSource)}: frames only, no audio)`
       : compSource?.kind === 'image'
         ? '1 photo (≤1024px)'
@@ -772,8 +1055,10 @@ function ArtDirectorTab({ k, visible, surface, labRef, compSource, graphChain, o
     const l = surface === 'lab' ? labRef.current : null;
     // a run that reads the Lab stops if that Lab is closed or replaced meanwhile
     const guard = () => { if (l && labRef.current !== l) throw new Error(LAB_CHANGED); };
+    let readOf: SourceId | null = null;
     try {
       const kind = l ? l.sourceKind() : 'none';
+      readOf = sourceIdOf(compSource, kind === 'webcam', kind);
       if (l && kind === 'webcam') {
         b.step('Watching the webcam…');
         await l.whenReady();
@@ -815,7 +1100,7 @@ function ArtDirectorTab({ k, visible, surface, labRef, compSource, graphChain, o
       }
       b.step('Gemini is watching…');
       const res = await aiPost<ArtDirectorResult>('/api/gemini/art-director', req);
-      setResult(res);
+      setOut({ result: res, source: readOf });
     } catch (e) {
       // Google deleted the cached upload, or refuses its type: forget it, so
       // the next Analyze uploads again instead of re-sending a dead URI
@@ -826,9 +1111,21 @@ function ArtDirectorTab({ k, visible, surface, labRef, compSource, graphChain, o
     }
   };
 
-  const read = result?.read;
+  /** "Use this chain": the proposal becomes the ART DIRECTION the Agent and
+   *  the Optimizer receive (not just its module ids), the chain is wired and
+   *  the Lab opens — and the panel moves on to the Agent, the operator. */
+  const use = (o: AdOut, idx: number, chain: ModuleId[]) => {
+    const p = o.result.proposals[idx];
+    const d: ArtDirection = { title: p.title, chain, why: p.why, audioIdea: p.audioIdea, music: o.result.read.music ?? null };
+    setChosen({ out: o, idx, direction: d });
+    onChooseDirection(d, o.source);
+    onUseChain(chain);
+    onPickMode('agent');
+  };
+
+  const read = out?.result.read;
   return (
-    <div data-ai-scroll className={tabBox(visible)}>
+    <div ref={boxRef} data-ai-scroll className={tabBox(visible)}>
       <div className="flex flex-col gap-2.5">
         {/* the action row first: in the smallest opening it must be on screen */}
         <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void run(); }}>
@@ -850,6 +1147,7 @@ function ArtDirectorTab({ k, visible, surface, labRef, compSource, graphChain, o
         {b.busy && <div ref={busyRef}><BusyLine label={b.label} elapsed={b.elapsed} /></div>}
         {note && <span className={k.amber}>{note}</span>}
         {err && <span className={k.error}>{err}</span>}
+        <DirectionLine k={k} direction={direction} from={directionFrom} onClear={onClearDirection} testid="ai-ad-direction" onNext={() => onPickMode('agent')} />
         {sends ? (
           <div className="flex flex-col gap-0.5">
             <span className={k.sub}>{sends}</span>
@@ -861,73 +1159,77 @@ function ArtDirectorTab({ k, visible, surface, labRef, compSource, graphChain, o
           </span>
         )}
 
-        {result && read && (
-          <div ref={resultRef} data-testid="ai-ad-result" className="flex flex-col gap-2">
-            <div className={k.card}>
-              <span className={k.head}>Read</span>
-              {([['Subject', read.subject], ['Setting', read.setting], ['Mood', read.mood], ['Motion', read.motion]] as const).map(([l, v]) =>
-                v ? (
-                  <p key={l} className={k.text}><span className={k.label}>{l} </span>{v}</p>
-                ) : null,
-              )}
-              {read.palette?.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {read.palette.map((c, i) => (
-                    <span key={i} className={`${k.pillBase} ${k.grey}`}>{c}</span>
-                  ))}
-                </div>
-              )}
-              {read.music && (
-                <div className="flex flex-col gap-1">
-                  <p className={k.text}>
-                    <span className={k.label}>Music </span>{read.music.energy}{read.music.tempoFeel ? ` · ${read.music.tempoFeel}` : ''}
-                  </p>
-                  {read.music.moments?.length > 0 && (
-                    <ul className="flex flex-col gap-0.5">
-                      {read.music.moments.map((m, i) => (
-                        <li key={i} className={k.sub}><b className={k.amberInk}>{m.at}</b> {m.label}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {result.proposals.map((p, i) => {
-              const chain = p.chain.filter((id): id is ModuleId => (MODULE_IDS as readonly string[]).includes(id));
-              return (
-                <div key={i} className={k.card}>
-                  <span className={k.head}>{p.title}</span>
-                  <div className="flex flex-wrap items-center gap-1">
-                    {chain.map((id, j) => (
-                      <React.Fragment key={id}>
-                        {j > 0 && <ChevronRight className="w-3 h-3 text-neutral-500" />}
-                        <span className={`${k.pillBase} ${k.grey}`}>
-                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: EFFECT_META[id].color }} />
-                          {EFFECT_META[id].name}
-                        </span>
-                      </React.Fragment>
+        {out && read && (
+          <div ref={resultRef} data-testid="ai-ad-result" data-stale={stale || undefined} className="flex flex-col gap-2">
+            {stale && (
+              <span data-testid="ai-ad-stale" className={k.amber}>
+                Read of {out.source?.name ?? 'an earlier source'}, not the current source — run Analyze again for this one.
+              </span>
+            )}
+            <div className={stale ? 'flex flex-col gap-2 opacity-50' : 'contents'}>
+              <div className={k.card}>
+                <span className={k.head}>Read</span>
+                {([['Subject', read.subject], ['Setting', read.setting], ['Mood', read.mood], ['Motion', read.motion]] as const).map(([l, v]) =>
+                  v ? (
+                    <p key={l} className={k.text}><span className={k.label}>{l} </span>{v}</p>
+                  ) : null,
+                )}
+                {read.palette?.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {read.palette.map((c, i) => (
+                      <span key={i} className={`${k.pillBase} ${k.grey}`}>{c}</span>
                     ))}
                   </div>
-                  <p className={k.text}>{p.why}</p>
-                  {p.audioIdea && <p className={k.sub}><span className={k.amberInk}>♪ </span>{p.audioIdea}</p>}
-                  <button
-                    type="button"
-                    data-testid={`ai-ad-apply-${i}`}
-                    disabled={!chain.length}
-                    onClick={() => {
-                      // the proposal becomes the ART DIRECTION the Agent and
-                      // the Optimizer receive — not just its module ids
-                      onChooseDirection({ title: p.title, chain, why: p.why, audioIdea: p.audioIdea, music: read.music ?? null });
-                      onUseChain(chain);
-                    }}
-                    className={`${k.secondary} self-start`}
-                  >
-                    <ChevronRight className="w-3 h-3" /> Use this chain
-                  </button>
-                </div>
-              );
-            })}
+                )}
+                {read.music && (
+                  <div className="flex flex-col gap-1">
+                    <p className={k.text}>
+                      <span className={k.label}>Music </span>{read.music.energy}{read.music.tempoFeel ? ` · ${read.music.tempoFeel}` : ''}
+                    </p>
+                    {read.music.moments?.length > 0 && (
+                      <ul className="flex flex-col gap-0.5">
+                        {read.music.moments.map((m, i) => (
+                          <li key={i} className={k.sub}><b className={k.amberInk}>{m.at}</b> {m.label}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {out.result.proposals.map((p, i) => {
+                const chain = p.chain.filter((id): id is ModuleId => (MODULE_IDS as readonly string[]).includes(id));
+                const inUse = !!chosen && chosen.out === out && chosen.idx === i && direction === chosen.direction;
+                return (
+                  <div key={i} data-testid={`ai-ad-proposal-${i}`} data-in-use={inUse || undefined} className={inUse ? k.cardOn : k.card}>
+                    <span className={k.head}>{p.title}</span>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {chain.map((id, j) => (
+                        <React.Fragment key={id}>
+                          {j > 0 && <ChevronRight className="w-3 h-3 text-neutral-500" />}
+                          <span className={`${k.pillBase} ${k.grey}`}>
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: EFFECT_META[id].color }} />
+                            {EFFECT_META[id].name}
+                          </span>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                    <p className={k.text}>{p.why}</p>
+                    {p.audioIdea && <p className={k.sub}><span className={k.amberInk}>♪ </span>{p.audioIdea}</p>}
+                    <button
+                      type="button"
+                      data-testid={`ai-ad-apply-${i}`}
+                      disabled={!chain.length || stale}
+                      onClick={() => use(out, i, chain)}
+                      title={inUse ? 'This is the direction: click to wire it again and open the Lab' : undefined}
+                      className={`${k.secondary} self-start`}
+                    >
+                      {inUse ? <><Check className="w-3 h-3" /> In use</> : <><ChevronRight className="w-3 h-3" /> Use this chain</>}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -959,7 +1261,9 @@ function useLab(labRef: React.RefObject<LabHandle | null>, on: boolean): LabView
   return on ? view : NO_LAB;
 }
 
-function ContextLine({ k, ctx, verb }: { k: Ink; ctx: ChainState | null; verb: string }) {
+/** `silent`: the Lab's video is known to have no soundtrack (its Clip audio
+ *  would not start) — Run cannot switch music on for it. */
+function ContextLine({ k, ctx, verb, silent }: { k: Ink; ctx: ChainState | null; verb: string; silent: boolean }) {
   if (!ctx) return <span className={k.sub}>Waiting for the Lab…</span>;
   const music = !ctx.audioActive ? 'music off' : ctx.audioMode === 'mic' ? 'mic on' : 'music on';
   return (
@@ -969,41 +1273,75 @@ function ContextLine({ k, ctx, verb }: { k: Ink; ctx: ChainState | null; verb: s
       </span>
       {!ctx.audioActive && (
         <span className={k.amber}>
-          {ctx.sourceKind === 'video'
-            ? `No music on: ${verb} switches on the clip's own audio (or start Track or Mic in the Lab).`
-            : 'No music on: music routes wait for it — start Track or Mic in the Lab.'}
+          {ctx.sourceKind === 'video' && silent
+            ? 'No music on: this clip has no soundtrack — music routes wait for Track or Mic in the Lab.'
+            : ctx.sourceKind === 'video'
+              ? `No music on: ${verb} switches on the clip's own audio (or start Track or Mic in the Lab).`
+              : 'No music on: music routes wait for it — start Track or Mic in the Lab.'}
         </span>
       )}
     </>
   );
 }
 
-/** the output clip a Lab run records: with what audio (null: none recorded) */
-function clipWords(ctx: ChainState | null, alwaysRecord: boolean): string | null {
+/** the output clip a Lab run records: with what audio (null: none recorded).
+ *  The Agent records only with music on (`alwaysRecord` false); a clip
+ *  known to be silent gets no music from Run. */
+function clipWords(ctx: ChainState | null, alwaysRecord: boolean, silent: boolean): string | null {
   if (!ctx) return null;
   if (ctx.audioActive) return `4s output clip ${audioWords(ctx.audioMode)}`;
   // audio off on a video: Run switches the clip's own soundtrack on first
-  if (ctx.sourceKind === 'video') return "4s output clip with the clip's music, if it has any";
+  if (ctx.sourceKind === 'video' && !silent) return "4s output clip with the clip's music, if it has any";
   return alwaysRecord ? '4s output clip (silent)' : null;
 }
+
+/** "Undo" for a tab, governed by the shared stack: on only while `target` is
+ *  on top; otherwise it names what has to be undone first. */
+function blockedBy(top: UndoEntry | null, target: UndoEntry | null): string | null {
+  if (!target || !top || top === target) return null;
+  if (top.role === 'agent') return target.role === 'agent' ? 'Undo the later Agent run first' : "Undo the Agent's run first";
+  return target.role === 'agent' ? "Undo the Optimizer's fixes first" : `Undo ${top.label} first`;
+}
+
+/** The dimmed body of a result made on a Lab that has closed. */
+const staleBody = (stale: boolean) => (stale ? 'flex flex-col gap-2 opacity-50' : 'contents');
+
+
+/** A result card's id (AgentOut / OptimizerOut): what the stack's entries
+ *  point back to. */
+let resultSeq = 0;
+
+/** The source video the Lab plays, when it is the shell's picked file. */
+function labVideo(lab: LabHandle, src: CompSource | null): CompSource | null {
+  try {
+    return lab.sourceKind() === 'video' && src?.kind === 'video' ? src : null;
+  } catch {
+    return null;
+  }
+}
+
+/** An error line that only says a Master export blocked something: it goes
+ *  once the export is over. */
+const isExportText = (e: string | null) => !!e && /Master export/.test(e);
 
 /* ── AGENT ───────────────────────────────────────────────────── */
 
 interface AgentOut {
+  id: number;
   result: AgentResult;
   chain: ChainState;
   rows: ChangeRow[];
   applied: number;
   skipped: string[];
-  /** the Lab the plan landed on, and what it changed there */
+  /** the Lab the plan landed on */
   lab: LabHandle;
-  undo: PlanUndo | null;
+  /** it changed something, so it went on the undo stack */
+  pushed: boolean;
 }
 
-function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpenLab, reportError, onAgentRun, direction, onClearDirection }: TabProps & { onAgentRun: (r: LastAgentRun | null) => void }) {
+function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpenLab, reportError, direction, directionFrom, onClearDirection, desk }: TabProps) {
   const [intent, setIntent] = useState('');
   const [out, setOut] = useState<AgentOut | null>(null);
-  const [undone, setUndone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const b = useBusy();
@@ -1011,22 +1349,32 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
   const { ctx, handle } = useLab(labRef, visible && inLab);
   const busyRef = useReveal(b.busy, visible);
   const resultRef = useReveal(out, visible);
+  const boxRef = useScrollReset(handle, visible);
   // the source video goes whole (motion + song) when the Lab plays it
   const videoSrc = ctx?.sourceKind === 'video' && compSource?.kind === 'video' ? compSource : null;
   const meta = uploadMetaOf(videoSrc);
   const cached = useCachedUpload(meta, `${b.busy}|${visible}`);
   const hasSource = !!compSource || (labRef.current?.sourceKind() ?? 'none') !== 'none';
+  const silent = !!videoSrc && desk.silentClips.has(videoSrc.url);
+  const exporting = !!handle && desk.exportLab === handle;
+  useEffect(() => {
+    if (!exporting) setErr((e) => (isExportText(e) ? null : e));
+  }, [exporting]);
 
   const run = async () => {
     const lab = labRef.current;
-    if (!inLab || !lab || !b.start('Waiting for the Lab…')) return;
+    if (!inLab || !lab || desk.exportLab === lab || !b.start('Waiting for the Lab…')) return;
     setErr(null);
     setNote(null);
+    // a clip already found silent is not tapped again
+    const video0 = labVideo(lab, compSource);
+    const knownSilent = !!video0 && desk.silentClips.has(video0.url);
     // before ANY await: the click's gesture is what lets the audio start
-    const clipOn = autoClipAudio(lab);
+    const clipOn = knownSilent ? null : autoClipAudio(lab);
     const guard = () => { if (labRef.current !== lab) throw new Error(LAB_CHANGED); };
     let fileUri: string | undefined;
     try {
+      let clipFailed = knownSilent;
       if (clipOn) {
         const on = await clipOn;
         guard();
@@ -1034,17 +1382,48 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
           setNote(CLIP_ON_NOTE);
           await wait(800); // let the analysers fill before the signal window
           guard();
-        }
+        } else clipFailed = true;
       }
       const ready = await lab.whenReady();
       guard(); // a Lab closed meanwhile is 'changed', not 'no picture'
       if (!ready) throw new AiError('no_media', 'The Lab has no picture yet: load a source or start the webcam.');
-      if (!lab.chainState().order.length) throw new AiError('bad_request', 'The Lab chain is empty: enable at least one effect.');
+      // read BEFORE anything records: a recording slows the engine (fps,
+      // adaptive resolution) — and right before capture, so the bases are fresh
+      const chain = lab.chainState();
+      if (!chain.order.length) throw new AiError('bad_request', 'The Lab chain is empty: enable at least one effect.');
+      b.step('Grabbing frames…');
+      const pair = await lab.grabPair(768);
+      guard();
+      // a ready Lab that gives no picture is running a Master export: stop
+      // here, before any upload or request — its plan could not land anyway
+      if (!pair.source && !pair.output) {
+        if (lab.sourceKind() !== 'none') {
+          desk.onExport(lab);
+          return;
+        }
+        throw new AiError('no_media', 'The Lab has no picture yet: load a source or start the webcam.');
+      }
+      const kind = lab.sourceKind();
+      const video = kind === 'video' && compSource?.kind === 'video' ? compSource : null;
+      if (video && clipFailed && !chain.audioActive) {
+        // its Clip audio would not start: no soundtrack (remembered per clip)
+        // — unless this browser cannot tap any clip at all
+        if (canTapClipAudio()) {
+          desk.onSilentClip(video.url);
+          setNote(SILENT_CLIP_NOTE);
+        } else setNote(NO_TAP_NOTE);
+      }
+      b.step(chain.audioActive ? `Recording 4s ${audioWords(chain.audioMode)}…` : 'Listening to the Lab…');
+      // the signal window overlaps the recording: same music, same seconds
+      const [signals, clip] = await Promise.all([
+        lab.signalSummary(3),
+        chain.audioActive ? lab.recordOutputClip(4) : Promise.resolve(null),
+      ]);
+      guard();
 
       // the whole source clip, with its song: the cached upload, or a new one
-      const kind = lab.sourceKind();
+      // (after the capture: the frames, the clip and the chain are one moment)
       const source: SourceRef = { kind, name: kind === 'webcam' ? 'webcam' : compSource?.name };
-      const video = kind === 'video' && compSource?.kind === 'video' ? compSource : null;
       const m = uploadMetaOf(video);
       if (video && m) {
         source.durationSec = await probeDuration(video.url);
@@ -1062,19 +1441,6 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
         guard();
       }
 
-      // read BEFORE anything records: a recording slows the engine (fps,
-      // adaptive resolution) — and right before capture, so the bases are fresh
-      const chain = lab.chainState();
-      b.step('Grabbing frames…');
-      const pair = await lab.grabPair(768);
-      guard();
-      b.step(chain.audioActive ? `Recording 4s ${audioWords(chain.audioMode)}…` : 'Listening to the Lab…');
-      // the signal window overlaps the recording: same music, same seconds
-      const [signals, clip] = await Promise.all([
-        lab.signalSummary(3),
-        chain.audioActive ? lab.recordOutputClip(4) : Promise.resolve(null),
-      ]);
-      guard();
       const media = [pair.source, pair.output, clip].filter((x): x is MediaPart => !!x);
       const req: AgentRequest = {
         intent: intent.trim() || undefined,
@@ -1090,9 +1456,27 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
       // applied at once (D1); applyPlan writes down what each key was — that,
       // and only that, is the Undo
       const r = lab.applyPlan(result.plan);
-      setUndone(false);
-      setOut({ result, chain, rows: describePlan(chain, result.plan), applied: r.applied, skipped: r.skipped, lab, undo: r.undo });
-      if (r.undo) onAgentRun({ intent: intent.trim(), plan: result.plan, at: new Date().toISOString(), lab });
+      const planned = (result.plan?.params?.length ?? 0) + (result.plan?.routes?.length ?? 0);
+      if (!r.undo && r.applied === 0 && planned > 0) {
+        // nothing landed: the previous result (and its Undo) stays on screen
+        if (isExportRefusal(r.skipped)) {
+          desk.onExport(lab);
+          setErr('Gemini answered, but a Master export started meanwhile: nothing was applied — run again after it');
+        } else {
+          const first = r.skipped[0] ? plainRefusal(r.skipped[0], descOf(chain)).text : '';
+          setErr(`Gemini's plan changed nothing on this Lab${first ? ` — ${first}` : ''}${r.skipped.length > 1 ? ` (+${r.skipped.length - 1} more)` : ''}`);
+        }
+        return;
+      }
+      const id = ++resultSeq;
+      const at = new Date().toISOString();
+      setOut({ id, result, chain, rows: describePlan(chain, result.plan), applied: r.applied, skipped: r.skipped, lab, pushed: !!r.undo });
+      if (r.undo) {
+        desk.push([{
+          role: 'agent', lab, undo: r.undo, outId: id, label: `the Agent's run of ${clockOf(at)}`,
+          run: { intent: intent.trim(), plan: result.plan, at, lab, order: [...chain.order] },
+        }]);
+      }
     } catch (e) {
       if (fileUri && isUnusableUpload(e)) forgetUpload(fileUri);
       setErr(reportError(e));
@@ -1101,41 +1485,56 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
     }
   };
 
-  const sameLab = !!out && handle === out.lab;
+  // a result from a Lab that has closed: readable, dimmed, no actions
+  const stale = !!out && out.lab !== handle;
+  const entries = labEntries(desk.stack, handle);
+  const top = entries[entries.length - 1] ?? null;
+  const mine = out && !stale ? entries.find((e) => e.role === 'agent' && e.outId === out.id) ?? null : null;
+  // what Undo reverts: this run — or, once it is undone, an earlier run still in effect
+  const target = stale ? null : mine ?? newestAgent(desk.stack, handle);
+  const block = blockedBy(top, target);
+  const undone = !!out && out.pushed && !stale && !mine;
+  const undoLabel = block ?? (target && target !== mine && target.run ? `Undo the ${clockOf(target.run.at)} run` : 'Undo');
+
   const undo = () => {
-    if (!out?.undo || undone) return;
-    if (labRef.current !== out.lab) {
+    if (!target || block || b.busy || exporting) return;
+    if (labRef.current !== target.lab) {
       setErr(LAB_CHANGED);
       return;
     }
-    const { reverted } = out.lab.revertPlan(out.undo);
+    const { reverted } = target.lab.revertPlan(target.undo);
     if (!reverted) {
-      setErr('Nothing was undone — a Master export may be running; try again after it');
+      desk.onExport(target.lab);
+      setErr('Nothing was undone — a Master export is running; undo again after it');
       return;
     }
     setErr(null);
-    setUndone(true);
-    // the Optimizer must not judge a plan that is no longer there
-    onAgentRun(null);
+    // off the stack: the Optimizer now judges the run below it, if any
+    desk.drop([target.id]);
   };
 
   /** the one line that says what leaves the machine (D10) */
   const sends = (() => {
     if (!ctx) return null;
     const parts: string[] = [];
-    if (videoSrc && meta) parts.push(cached ? 'the uploaded clip (video + audio, already on Google)' : `clip ${fmtMB(videoSrc.size)} (video + audio)`);
+    if (videoSrc && meta) {
+      const what = silent ? 'video only — it has no soundtrack' : 'video + audio';
+      parts.push(cached ? `the uploaded clip (${what}, already on Google)` : `clip ${fmtMB(videoSrc.size)} (${what})`);
+    }
     parts.push('1 frame pair (source + output)');
-    const clip = clipWords(ctx, false);
+    const clip = clipWords(ctx, false, silent);
     if (clip) parts.push(clip);
     parts.push('3s of live signals');
     parts.push('the chain');
     if (direction) parts.push('the art direction');
-    const tail = videoSrc && !meta ? ` — ${framesOnlyWhy(videoSrc)}, so not the whole song` : '';
+    const tail = videoSrc && !meta ? ` — ${framesOnlyWhy(videoSrc)}${silent ? '' : ', so not the whole song'}` : '';
     return `Sends: ${parts.join(' + ')}${tail}`;
   })();
 
+  const adjusted = out ? notesByRow(out.result.adjusted) : null;
+
   return (
-    <div data-ai-scroll className={tabBox(visible)}>
+    <div ref={boxRef} data-ai-scroll className={tabBox(visible)}>
       {visible && !inLab ? (
         <NeedsLab k={k} what="Agent" openEffectId={openEffectId} hasSource={hasSource} onOpenLab={onOpenLab} />
       ) : (
@@ -1153,15 +1552,16 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
                 className={k.input}
               />
             </div>
-            <button type="submit" data-testid="ai-agent-run" disabled={b.busy || !inLab} className={k.primary}>
+            <button type="submit" data-testid="ai-agent-run" disabled={b.busy || !inLab || exporting} className={k.primary}>
               Run
             </button>
           </form>
           {b.busy && <div ref={busyRef}><BusyLine label={b.label} elapsed={b.elapsed} /></div>}
+          {exporting && <span data-testid="ai-agent-export" className={k.amber}>{EXPORT_TEXT}</span>}
           {note && <span data-testid="ai-agent-note" className={k.amber}>{note}</span>}
-          {err && <span className={k.error}>{err}</span>}
-          <DirectionLine k={k} direction={direction} onClear={onClearDirection} testid="ai-agent-direction" />
-          <ContextLine k={k} ctx={ctx} verb="Run" />
+          {err && <span data-testid="ai-agent-error" className={k.error}>{err}</span>}
+          <DirectionLine k={k} direction={direction} from={directionFrom} onClear={onClearDirection} testid="ai-agent-direction" />
+          <ContextLine k={k} ctx={ctx} verb="Run" silent={silent} />
           {sends && (
             <div className="flex flex-col gap-0.5">
               <span className={k.sub}>{sends}</span>
@@ -1170,33 +1570,27 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
           )}
 
           {out && (
-            <div ref={resultRef} data-testid="ai-agent-result" className={k.card}>
-              <p className={k.text}>{out.result.plan.summary}</p>
-              <span className={k.label}>
-                {undone ? 'Undone' : `Applied ${out.applied} change${out.applied === 1 ? '' : 's'}`}
-              </span>
-              {out.rows.length > 0 && (
-                <ul className="flex flex-col gap-0.5">
-                  {out.rows.map((r) => (
-                    <li key={r.key} title={r.key.replace(/^~/, '')} className={`${k.sub} ${undone ? 'line-through opacity-60' : ''}`}>
-                      {r.label}: {r.from} <span className="text-[#8b5cf6]">→</span> <b>{r.to}</b>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <NotApplied k={k} items={[...out.result.dropped, ...out.skipped]} chain={out.chain} />
-              <button
-                type="button"
-                data-testid="ai-agent-undo"
-                onClick={undo}
-                disabled={b.busy || undone || !out.undo || !inLab || !sameLab}
-                className={`${k.secondary} self-start`}
-              >
-                <Undo2 className="w-3 h-3" /> Undo
-              </button>
-              {inLab && !sameLab && !undone && out.undo && (
-                <span className={k.sub}>Made on a Lab that has since closed: Undo is off.</span>
-              )}
+            <div ref={resultRef} data-testid="ai-agent-result" data-stale={stale || undefined} className={k.card}>
+              {stale && <span data-testid="ai-agent-stale" className={k.amber}>{STALE_LAB_TEXT}</span>}
+              <div className={staleBody(stale)}>
+                <p className={k.text}>{out.result.plan.summary}</p>
+                <span className={k.label}>
+                  {stale
+                    ? `${plural(out.applied, 'change')} on that Lab`
+                    : undone ? 'Undone' : out.applied ? `Applied ${plural(out.applied, 'change')}` : 'No changes'}
+                </span>
+                <ChangeList k={k} rows={out.rows} notes={adjusted!.byRow} extra={adjusted!.rest} struck={undone} testid="ai-agent-rows" />
+                <NotApplied k={k} items={[...out.result.dropped, ...out.skipped]} chain={out.chain} />
+                <button
+                  type="button"
+                  data-testid="ai-agent-undo"
+                  onClick={undo}
+                  disabled={b.busy || exporting || !inLab || !target || !!block}
+                  className={`${k.secondary} self-start`}
+                >
+                  <Undo2 className="w-3 h-3" /> {undoLabel}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1208,6 +1602,7 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
 /* ── OPTIMIZER ───────────────────────────────────────────────── */
 
 interface OptimizerOut {
+  id: number;
   result: OptimizerResult;
   checks: CheckResult[];
   chain: ChainState;
@@ -1215,13 +1610,10 @@ interface OptimizerOut {
   lab: LabHandle;
 }
 
-function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, onOpenLab, reportError, lastAgentRun, direction, onClearDirection }: TabProps & { lastAgentRun: LastAgentRun | null }) {
+function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, onOpenLab, reportError, direction, directionFrom, onClearDirection, desk }: TabProps) {
   const [out, setOut] = useState<OptimizerOut | null>(null);
-  const [applied, setApplied] = useState<Record<number, true>>({});
-  const [fixNotes, setFixNotes] = useState<string[]>([]);
-  // what each applied fix changed, in the order applied: Undo reverts them
-  // newest first, so a key two fixes touched lands back on its first value
-  const [undos, setUndos] = useState<PlanUndo[]>([]);
+  // what the Lab refused of each applied fix (applyPlan's skipped), per issue
+  const [fixNotes, setFixNotes] = useState<Record<number, string[]>>({});
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const b = useBusy();
@@ -1229,20 +1621,41 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
   const { ctx, handle } = useLab(labRef, visible && inLab);
   const busyRef = useReveal(b.busy, visible);
   const resultRef = useReveal(out, visible);
+  const boxRef = useScrollReset(handle, visible);
   const hasSource = !!compSource || (labRef.current?.sourceKind() ?? 'none') !== 'none';
-  // an Agent run counts only on the Lab it was applied to
-  const agentRun = lastAgentRun && handle && lastAgentRun.lab === handle ? lastAgentRun : null;
+  const videoSrc = ctx?.sourceKind === 'video' && compSource?.kind === 'video' ? compSource : null;
+  const silent = !!videoSrc && desk.silentClips.has(videoSrc.url);
+  const exporting = !!handle && desk.exportLab === handle;
+  useEffect(() => {
+    if (!exporting) setErr((e) => (isExportText(e) ? null : e));
+  }, [exporting]);
+
+  // the Agent run it checks: the newest one still applied on this Lab, and
+  // only while the chain is still the one that run was made for
+  const agentEntry = newestAgent(desk.stack, handle);
+  const agentRun = agentEntry?.run && ctx && sameOrder(agentEntry.run.order, ctx.order) ? agentEntry.run : null;
+  const agentLine = !ctx
+    ? null
+    : agentRun
+      ? `Checks the Agent's run of ${clockOf(agentRun.at)}${agentRun.intent ? ` (“${agentRun.intent}”)` : ''}`
+      : agentEntry
+        ? "The Agent's last run was on another chain: judges the Lab as it is"
+        : desk.agentLab === handle
+          ? "The Agent's last run was undone: judges the Lab as it is"
+          : 'No Agent run yet: judges the Lab as it is';
 
   const run = async () => {
     const lab = labRef.current;
-    if (!inLab || !lab || !b.start('Waiting for the Lab…')) return;
+    if (!inLab || !lab || desk.exportLab === lab || !b.start('Waiting for the Lab…')) return;
     setErr(null);
     setNote(null);
+    const video0 = labVideo(lab, compSource);
+    const knownSilent = !!video0 && desk.silentClips.has(video0.url);
     // before ANY await: the click's gesture is what lets the audio start
-    const clipOn = autoClipAudio(lab);
+    const clipOn = knownSilent ? null : autoClipAudio(lab);
     const guard = () => { if (labRef.current !== lab) throw new Error(LAB_CHANGED); };
-    const last = lastAgentRun && lastAgentRun.lab === lab ? lastAgentRun : null;
     try {
+      let clipFailed = knownSilent;
       if (clipOn) {
         const on = await clipOn;
         guard();
@@ -1250,7 +1663,7 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
           setNote(CLIP_ON_NOTE);
           await wait(800); // let the analysers fill before the signal window
           guard();
-        }
+        } else clipFailed = true;
       }
       const ready = await lab.whenReady();
       guard(); // a Lab closed meanwhile is 'changed', not 'no picture'
@@ -1259,17 +1672,36 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
       // performance check would blame the look for the panel's own load
       const chain = lab.chainState();
       if (!chain.order.length) throw new AiError('bad_request', 'The Lab chain is empty: enable at least one effect.');
+      // the frames first: a ready Lab that gives no picture is running a
+      // Master export — stop before recording, before the request
+      b.step('Grabbing frames…');
+      const pair = await lab.grabPair(768);
+      guard();
+      if (!pair.source && !pair.output) {
+        if (lab.sourceKind() !== 'none') {
+          desk.onExport(lab);
+          return;
+        }
+        throw new AiError('no_media', 'The Lab has no picture yet: load a source or start the webcam.');
+      }
+      const video = lab.sourceKind() === 'video' && compSource?.kind === 'video' ? compSource : null;
+      if (video && clipFailed && !chain.audioActive) {
+        if (canTapClipAudio()) {
+          desk.onSilentClip(video.url);
+          setNote(SILENT_CLIP_NOTE);
+        } else setNote(NO_TAP_NOTE);
+      }
       b.step(chain.audioActive ? `Recording 4s of output ${audioWords(chain.audioMode)}…` : 'Recording 4s of output…');
       // the signal window overlaps the recording: same music, same seconds
       const [clip, signals] = await Promise.all([lab.recordOutputClip(4), lab.signalSummary(2)]);
       guard();
-      b.step('Grabbing frames…');
-      const pair = await lab.grabPair(768);
+      const [luma, sourceLuma] = await Promise.all([meanLuma(pair.output), meanLuma(pair.source)]);
       guard();
-      const luma = await meanLuma(pair.output);
-      guard();
-      const checks = computeChecks(chain, signals, luma);
+      const checks = computeChecks(chain, signals, luma, sourceLuma);
       const media = [clip, pair.source, pair.output].filter((x): x is MediaPart => !!x);
+      // the Agent run in effect on this Lab, for this very chain — else none
+      const e = newestAgent(desk.latest(), lab);
+      const last = e?.run && sameOrder(e.run.order, chain.order) ? e.run : null;
       const req: OptimizerRequest = {
         ...(direction ? { direction } : {}),
         lastAgent: last ? { intent: last.intent, plan: last.plan, at: last.at } : null,
@@ -1281,10 +1713,8 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
       b.step('Gemini is judging the output…');
       const result = await aiPost<OptimizerResult>('/api/gemini/optimizer', req);
       guard();
-      setOut({ result, checks, chain, lab });
-      setApplied({});
-      setFixNotes([]);
-      setUndos([]);
+      setOut({ id: ++resultSeq, result, checks, chain, lab });
+      setFixNotes({});
     } catch (e) {
       setErr(reportError(e));
     } finally {
@@ -1292,56 +1722,81 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
     }
   };
 
-  const sameLab = !!out && handle === out.lab;
+  // a result from a Lab that has closed: readable, dimmed, no actions
+  const stale = !!out && out.lab !== handle;
+  const entries = labEntries(desk.stack, handle);
+  const top = entries[entries.length - 1] ?? null;
+  /** the stack entry of issue i's applied fix (this result, this Lab) */
+  const fixEntry = (i: number): UndoEntry | null =>
+    out && !stale ? entries.find((e) => e.role === 'optimizer' && e.outId === out.id && e.fix === i) ?? null : null;
+  // the fixes on top of the stack, newest first: what the summary Undo reverts
+  const topFixes: UndoEntry[] = [];
+  for (let j = entries.length - 1; j >= 0 && entries[j].role === 'optimizer'; j--) topFixes.push(entries[j]);
+  const anyFix = entries.some((e) => e.role === 'optimizer');
+  const undoBlock = !topFixes.length && anyFix ? "Undo the Agent's run first" : null;
+  const off = b.busy || exporting || !inLab || stale;
 
-  /** applies the given issues' fixes on the judged Lab, keeping each one's undo */
+  /** applies the given issues' fixes on the judged Lab, each one an entry on the stack */
   const applyFixes = (idx: number[]) => {
-    if (!out) return;
+    if (!out || off) return;
     if (labRef.current !== out.lab) {
       setErr(LAB_CHANGED);
       return;
     }
-    const todo = idx.filter((i) => out.result.issues[i]?.fix && !applied[i]);
+    const todo = idx.filter((i) => out.result.issues[i]?.fix && !fixEntry(i));
     if (!todo.length) return;
-    const notes: string[] = [];
-    const added: PlanUndo[] = [];
-    const done: Record<number, true> = { ...applied };
+    const added: NewUndoEntry[] = [];
+    const notes: Record<number, string[]> = {};
+    let refused = false;
     for (const i of todo) {
       const r = out.lab.applyPlan(out.result.issues[i].fix as AgentPlan);
-      notes.push(...r.skipped.map((s) => `fix ${i + 1} · ${s}`));
-      if (r.undo) added.push(r.undo);
-      if (r.applied > 0) done[i] = true;
+      if (!r.undo && r.applied === 0 && isExportRefusal(r.skipped)) {
+        refused = true;
+        break;
+      }
+      notes[i] = r.skipped;
+      if (r.undo) added.push({ role: 'optimizer', lab: out.lab, undo: r.undo, outId: out.id, fix: i, label: `fix ${i + 1}` });
     }
-    setErr(null);
-    setApplied(done);
-    setUndos((prev) => [...prev, ...added]);
-    setFixNotes((prev) => [...prev, ...notes]);
+    if (refused) {
+      desk.onExport(out.lab);
+      setErr('Nothing was applied — a Master export is running; apply again after it');
+    } else setErr(null);
+    desk.push(added);
+    setFixNotes((prev) => ({ ...prev, ...notes }));
   };
 
-  const undo = () => {
-    if (!out || !undos.length) return;
-    if (labRef.current !== out.lab) {
+  /** reverts `list` (newest first) and takes it off the stack */
+  const undoEntries = (list: UndoEntry[]) => {
+    if (!list.length || b.busy || exporting) return;
+    if (labRef.current !== list[0].lab) {
       setErr(LAB_CHANGED);
       return;
     }
-    let reverted = 0;
-    for (let i = undos.length - 1; i >= 0; i--) reverted += out.lab.revertPlan(undos[i]).reverted;
-    if (!reverted) {
-      setErr('Nothing was undone — a Master export may be running; try again after it');
-      return;
+    const done: UndoEntry[] = [];
+    for (const e of list) {
+      if (!e.lab.revertPlan(e.undo).reverted) {
+        desk.onExport(e.lab);
+        setErr('Nothing was undone — a Master export is running; undo again after it');
+        break;
+      }
+      done.push(e);
     }
-    setErr(null);
-    setUndos([]);
-    setApplied({});
-    setFixNotes([]);
+    if (done.length === list.length) setErr(null);
+    desk.drop(done.map((e) => e.id));
+    setFixNotes((prev) => {
+      const next = { ...prev };
+      for (const e of done) if (out && e.outId === out.id && e.fix !== undefined) delete next[e.fix];
+      return next;
+    });
   };
 
   /** the one line that says what leaves the machine (D10) */
   const sends = ctx
     ? `Sends: ${[
-        clipWords(ctx, true),
+        clipWords(ctx, true, silent),
         '1 frame pair',
         '2s of live signals',
+        'the chain',
         'the checks',
         ...(agentRun ? ["the Agent's last plan"] : []),
         ...(direction ? ['the art direction'] : []),
@@ -1353,93 +1808,119 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
     ? out.result.verdict === 'ok' ? k.green : out.result.verdict === 'improve' ? k.amberPill : k.redPill
     : '';
   const failed = out ? out.checks.filter((c) => !c.ok) : [];
-  const severityText = (s: string) => (s === 'error' ? 'text-red-400' : s === 'warning' ? k.amberInk : 'text-[#8b5cf6]');
+  const severityText = (s: string) => (s === 'error' ? k.redInk : s === 'warning' ? k.amberInk : 'text-[#8b5cf6]');
+  /** the validator's refusals for issue i ("fix 2 · …"), prefix off */
+  const droppedFor = (i: number) => {
+    const pre = `fix ${i + 1} · `;
+    return (out?.result.dropped ?? []).filter((d) => d.startsWith(pre)).map((d) => d.slice(pre.length));
+  };
+  const loose = (out?.result.dropped ?? []).filter((d) => !/^fix \d+ · /.test(d));
 
   return (
-    <div data-ai-scroll className={tabBox(visible)}>
+    <div ref={boxRef} data-ai-scroll className={tabBox(visible)}>
       {visible && !inLab ? (
         <NeedsLab k={k} what="Optimizer" openEffectId={openEffectId} hasSource={hasSource} onOpenLab={onOpenLab} />
       ) : (
         <div className="flex flex-col gap-2.5">
           {/* the action row first: in the smallest opening it must be on screen */}
-          <button type="button" data-testid="ai-opt-run" onClick={() => void run()} disabled={b.busy || !inLab} className={`${k.primary} self-start`}>
+          <button type="button" data-testid="ai-opt-run" onClick={() => void run()} disabled={b.busy || !inLab || exporting} className={`${k.primary} self-start`}>
             <Cpu className="w-3.5 h-3.5" /> Check output
           </button>
           {b.busy && <div ref={busyRef}><BusyLine label={b.label} elapsed={b.elapsed} /></div>}
+          {exporting && <span data-testid="ai-opt-export" className={k.amber}>{EXPORT_TEXT}</span>}
           {note && <span data-testid="ai-opt-note" className={k.amber}>{note}</span>}
-          {err && <span className={k.error}>{err}</span>}
-          <DirectionLine k={k} direction={direction} onClear={onClearDirection} testid="ai-opt-direction" />
-          <ContextLine k={k} ctx={ctx} verb="Check output" />
-          <span className={k.sub}>
-            {agentRun
-              ? `Checks the Agent's run of ${new Date(agentRun.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${agentRun.intent ? ` (“${agentRun.intent}”)` : ''}`
-              : 'No Agent run yet: judges the Lab as it is'}
-          </span>
+          {err && <span data-testid="ai-opt-error" className={k.error}>{err}</span>}
+          <DirectionLine k={k} direction={direction} from={directionFrom} onClear={onClearDirection} testid="ai-opt-direction" />
+          <ContextLine k={k} ctx={ctx} verb="Check output" silent={silent} />
+          {agentLine && <span data-testid="ai-opt-agent-line" className={k.sub}>{agentLine}</span>}
           {sends && <span className={k.sub}>{sends}</span>}
 
           {out && (
-            <div ref={resultRef} data-testid="ai-opt-result" className="flex flex-col gap-2">
-              <div className={k.card}>
-                <div className="flex items-center gap-2">
-                  <span className={`${k.pillBase} ${verdictPill}`}>{out.result.verdict}</span>
-                  <span className={k.label}>{out.checks.length - failed.length}/{out.checks.length} checks ok</span>
-                </div>
-                <p className={k.text}>{out.result.summary}</p>
-                {failed.map((c) => (
-                  <span key={c.id} className={k.amber}>{c.detail}</span>
-                ))}
-                {(fixable.length > 0 || undos.length > 0) && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {fixable.length > 0 && (
+            <div ref={resultRef} data-testid="ai-opt-result" data-stale={stale || undefined} className="flex flex-col gap-2">
+              {stale && <span data-testid="ai-opt-stale" className={k.amber}>{STALE_LAB_TEXT}</span>}
+              <div className={staleBody(stale)}>
+                <div className={k.card}>
+                  <div className="flex items-center gap-2">
+                    <span className={`${k.pillBase} ${verdictPill}`}>{out.result.verdict}</span>
+                    <span className={k.label}>{out.checks.length - failed.length}/{out.checks.length} checks ok</span>
+                  </div>
+                  <p className={k.text}>{out.result.summary}</p>
+                  {failed.map((c) => (
+                    <span key={c.id} className={k.amber}>{c.detail}</span>
+                  ))}
+                  {(fixable.length > 0 || anyFix) && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {fixable.length > 0 && (
+                        <button
+                          type="button"
+                          data-testid="ai-opt-fix-all"
+                          onClick={() => applyFixes(fixable)}
+                          disabled={off || fixable.every((i) => fixEntry(i))}
+                          className={k.secondary}
+                        >
+                          Apply all
+                        </button>
+                      )}
                       <button
                         type="button"
-                        data-testid="ai-opt-fix-all"
-                        onClick={() => applyFixes(fixable)}
-                        disabled={b.busy || !inLab || !sameLab || fixable.every((i) => applied[i])}
+                        data-testid="ai-opt-undo"
+                        onClick={() => undoEntries(topFixes)}
+                        disabled={off || !topFixes.length}
+                        title={topFixes.length ? `Undo ${topFixes.map((e) => e.label).join(', ')}` : undefined}
                         className={k.secondary}
                       >
-                        Apply all
+                        <Undo2 className="w-3 h-3" /> {undoBlock ?? (topFixes.length > 1 ? `Undo ${topFixes.length} fixes` : 'Undo')}
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      data-testid="ai-opt-undo"
-                      onClick={undo}
-                      disabled={b.busy || !undos.length || !inLab || !sameLab}
-                      className={k.secondary}
-                    >
-                      <Undo2 className="w-3 h-3" /> Undo
-                    </button>
-                  </div>
-                )}
-                {inLab && !sameLab && (
-                  <span className={k.sub}>Judged on a Lab that has since closed: fixes and Undo are off.</span>
-                )}
-              </div>
-
-              {out.result.issues.map((x, i) => (
-                <div key={i} className={k.card}>
-                  <span className={`font-mono text-[9px] font-bold uppercase tracking-widest ${severityText(x.severity)}`}>{x.severity}</span>
-                  <p className={k.text}>{x.finding}</p>
-                  {x.evidence && <p className={k.sub}>{x.evidence}</p>}
-                  {x.fix && (
-                    <>
-                      <p className={k.sub}><span className="text-[#8b5cf6]">fix: </span>{x.fix.summary}</p>
-                      <button
-                        type="button"
-                        data-testid={`ai-opt-fix-${i}`}
-                        onClick={() => applyFixes([i])}
-                        disabled={b.busy || !inLab || !sameLab || !!applied[i]}
-                        className={`${k.secondary} self-start`}
-                      >
-                        {applied[i] ? 'Applied' : 'Apply fix'}
-                      </button>
-                    </>
+                    </div>
                   )}
                 </div>
-              ))}
 
-              <NotApplied k={k} items={[...out.result.dropped, ...fixNotes]} chain={out.chain} />
+                {out.result.issues.map((x, i) => {
+                  const entry = fixEntry(i);
+                  const block = entry ? blockedBy(top, entry) : null;
+                  const notes = notesByRow(out.result.adjusted, `fix ${i + 1} · `);
+                  return (
+                    <div key={i} data-testid={`ai-opt-issue-${i}`} className={k.card}>
+                      {/* numbered: 'Not applied' and the server speak of 'fix N' */}
+                      <span className={`font-mono text-[9px] font-bold uppercase tracking-widest ${severityText(x.severity)}`}>{i + 1} · {x.severity}</span>
+                      <p className={k.text}>{x.finding}</p>
+                      {x.evidence && <p className={k.sub}>{x.evidence}</p>}
+                      {x.fix && (
+                        <>
+                          <p className={k.sub}><span className="text-[#8b5cf6]">fix: </span>{x.fix.summary}</p>
+                          <span className={k.label}>{entry ? 'Changed:' : 'Would change:'}</span>
+                          <ChangeList k={k} rows={describePlan(out.chain, x.fix)} notes={notes.byRow} extra={notes.rest} testid={`ai-opt-fix-rows-${i}`} />
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <button
+                              type="button"
+                              data-testid={`ai-opt-fix-${i}`}
+                              onClick={() => applyFixes([i])}
+                              disabled={off || !!entry}
+                              className={k.secondary}
+                            >
+                              {entry ? <><Check className="w-3 h-3" /> Applied</> : 'Apply fix'}
+                            </button>
+                            {entry && (
+                              <button
+                                type="button"
+                                data-testid={`ai-opt-fix-undo-${i}`}
+                                onClick={() => undoEntries([entry])}
+                                disabled={off || !!block}
+                                className={k.secondary}
+                              >
+                                <Undo2 className="w-3 h-3" /> {block ?? 'Undo'}
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                      <NotApplied k={k} items={[...droppedFor(i), ...(fixNotes[i] ?? [])]} chain={out.chain} testid={`ai-opt-not-applied-${i}`} />
+                    </div>
+                  );
+                })}
+
+                <NotApplied k={k} items={loose} chain={out.chain} />
+              </div>
             </div>
           )}
         </div>

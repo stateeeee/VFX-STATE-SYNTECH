@@ -11,8 +11,10 @@
  *      browser keeps it in localStorage and sends it to OUR server only;
  *   2. GEMINI_API_KEY from .env.local / .env — optional, for a machine that
  *      should not need the paste. Used ONLY for requests from this machine
- *      (loopback): the server listens on 0.0.0.0, and a phone or laptop on the
- *      same Wi-Fi must not spend the operator's quota without pasting a key;
+ *      (loopback, opened at localhost, not relayed by a proxy or tunnel): the
+ *      server listens on 0.0.0.0, and a phone or laptop on the same Wi-Fi —
+ *      or a visitor through a tunnel — must not spend the operator's quota
+ *      without pasting a key;
  *   3. nothing — every role answers 401 `no_key` and the panel stays locked.
  *      Nothing that is not AI ever needs a key.
  *
@@ -55,9 +57,40 @@ export function isLoopback(req: Request): boolean {
   return addr === '::1' || /^(::ffff:)?127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/i.test(addr);
 }
 
-/** The server's own key, for a request allowed to use it (loopback only). */
+/** "Host: [::1]:3000" → "::1", "Studio-Mac.local.:3000" → "studio-mac.local";
+ *  null when it is not a host at all. Shared with server.ts's Host guard. */
+export function hostnameOf(hostHeader: string | undefined): string | null {
+  const host = (hostHeader || '').trim().toLowerCase();
+  if (!host) return null;
+  if (host.startsWith('[')) {
+    const end = host.indexOf(']');
+    return end > 1 ? host.slice(1, end) : null;
+  }
+  const name = host.replace(/:\d*$/, '').replace(/\.$/, '');
+  return name || null;
+}
+
+/* A loopback socket is not always a browser on this machine: a reverse proxy
+   or a tunnel (nginx, cloudflared, ngrok, ssh -R) on this machine connects
+   from 127.0.0.1 on behalf of anyone on the internet, once ALLOWED_HOSTS lets
+   its name through. So the server key also needs the request to look direct:
+   none of the headers a relay adds (anyone can write them, but writing one
+   only takes the server key AWAY), and a Host that only this machine's own
+   browser uses — localhost, *.localhost or a loopback address. */
+const RELAY_HEADERS = ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-real-ip'];
+function isDirectLocal(req: Request): boolean {
+  if (RELAY_HEADERS.some((h) => req.headers[h] !== undefined)) return false;
+  const name = hostnameOf(req.headers.host);
+  if (!name) return false;
+  return name === 'localhost' || name.endsWith('.localhost')
+    || name === '::1' || name === '0.0.0.0'
+    || /^(::ffff:)?127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(name);
+}
+
+/** The server's own key, for a request allowed to use it: a browser on this
+ *  machine, talking to it directly. */
 function serverKeyFor(req: Request): string | null {
-  return isLoopback(req) ? process.env.GEMINI_API_KEY?.trim() || null : null;
+  return isLoopback(req) && isDirectLocal(req) ? process.env.GEMINI_API_KEY?.trim() || null : null;
 }
 
 /** Whether THIS client may fall back on the server key (GET /status). A LAN

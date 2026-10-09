@@ -63,7 +63,7 @@ could only guess from a filename. Product behavior: 03-SPEC-SHELL §9.
 | `src/ai/capture.ts` | browser | One-shot capture on a button press: JPEG stills, frames sampled from a video URL through a hidden `<video>`, a short webm of the Lab canvas with its audio. Releases everything it made before returning. |
 | `src/components/AiDirector.tsx` | browser | The panel: key form, the three role tabs, Apply/Undo, the art-direction handoff. |
 | `src/components/ChainLab.tsx` | browser | Implements `LabHandle` for the panel: frame pair, source frames, output clip, signal summary, chain state, `applyPlan` / `revertPlan`, `startClipAudio`. |
-| `ai-provider.ts` | server | Key resolution (header → `GEMINI_API_KEY` for loopback clients only → none), one client per key, Google errors → `AiErrorKind`, `generateJson`, Files API upload + wait. `GEMINI_BASE_URL` is a test hook (the mock), never set in real use. |
+| `ai-provider.ts` | server | Key resolution (header → `GEMINI_API_KEY` only for a browser on this machine: loopback socket, no relay header, `Host` localhost / loopback → none), one client per key, Google errors → `AiErrorKind`, `generateJson`, Files API upload + wait. `GEMINI_BASE_URL` is a test hook (the mock), never set in real use. |
 | `ai-roles.ts` | server | Per role: system prompt, response JSON schema built per request (parameter-key enums from the chain actually sent, plus a loose schema for one retry), the parts builder (every media item labelled; inline video at `INLINE_VIDEO_FPS`), and the validator that clamps and filters every answer. |
 | `server.ts` | server | The endpoints, the host guard, upload streaming to a temp file (stale ones swept at boot). |
 
@@ -74,9 +74,14 @@ Endpoints: `GET /api/gemini/status`, `POST /api/gemini/key`,
 `/optimize`, `/analyze` are gone).
 
 Key: pasted in the panel (normal way), or `GEMINI_API_KEY` in `.env.local`
-(see `.env.example`) — used only for requests from this machine (loopback),
-so a LAN client must paste its own. `/api` answers only on a `localhost` or
-IP-literal `Host` (DNS rebinding). The key is never logged, never in a URL.
+(see `.env.example`) — used only by a browser on this machine talking to the
+server directly (loopback socket, no `Forwarded` / `X-Forwarded-*` /
+`X-Real-IP` header, `Host` localhost / `*.localhost` / a loopback address),
+so a LAN client, or anyone through a proxy or tunnel, must paste its own.
+`/api` answers only on a `localhost` / `*.localhost`, IP-literal or `*.local`
+`Host`, plus the names in `ALLOWED_HOSTS` (`*` disables the check) — the
+DNS-rebinding guard; any other name gets a 403 whose message says what to
+add. The key is never logged, never in a URL.
 
 ## The engine service layer (currently stubs — the core porting prerequisite)
 

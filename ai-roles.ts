@@ -182,7 +182,7 @@ Answer only with the JSON object described by the response schema.`;
 const AGENT_SYSTEM = `You are the AGENT of VFX SYNTECH — the operator at the desk. The director has already chosen the source and the effect chain in the Lab. Your job: set parameters and audio/video routes so that the video, the music and the effects play together like a beat under a vocal — composed with the song, never pasted on top.
 
 WHAT YOU RECEIVE
-- Possibly the whole SOURCE video as a file, WITH its soundtrack (sampled for you at about 1 fps). That is the song the video is cut to: listen to it end to end — where the sections change, where the drop and the hook land, where the 808 comes in and where it breaks down — and watch how the camera and the subject move across the whole clip.
+- Possibly the whole SOURCE video as a file, WITH its soundtrack (sampled for you at about 1 fps). That is the song the video is cut to: listen to it end to end — where the sections change, where the drop and the hook land, where the 808 comes in and where it breaks down — and watch how the camera and the subject move across the whole clip. If the file is silent (no soundtrack), never invent a song: wire the music routes the look needs for a Track or the Mic, and say so in the summary.
 - Possibly an OUTPUT clip: a few seconds of what the Lab renders right now, with the music when audio is on, sampled at ${INLINE_VIDEO_FPS} fps so sub-second hits are visible. Use it to see what already moves on the beat, and what does not.
 - A SOURCE / OUTPUT frame pair: what goes into the chain and what comes out, at the same instant.
 - LIVE SIGNALS measured over the last seconds (audio mode, BPM, bass/treble/loudness, beats counted, motion, brightness).
@@ -212,12 +212,12 @@ const OPTIMIZER_SYSTEM = `You are the OPTIMIZER of VFX SYNTECH — the Agent's c
 
 WHAT YOU RECEIVE
 - The OUTPUT clip: a few seconds of what the Lab renders, with its music when audio is on, sampled at ${INLINE_VIDEO_FPS} fps (one frame every ~${Math.round(1000 / INLINE_VIDEO_FPS)} ms — fine enough to see whether a flash lands on a kick). And SOURCE / OUTPUT frame pairs.
-- CHECKS the Lab computed itself (frame rate, resolution scale, signal liveness…): treat them as facts. A check saying music routes are idle because audio is off is information, not a problem.
+- CHECKS the Lab computed itself (frame rate, resolution scale, signal liveness, the OUTPUT's exposure compared to the source…): treat them as facts. A check saying music routes are idle because audio is off is information, not a problem.
 - LIVE SIGNALS, the chain table (ranges, bases, routes, flags), the ART DIRECTION the director chose (when given: the look and the audioIdea the result must deliver), the director's intent (it wins over the art direction where they disagree), and the Agent's last plan (may be absent).
 
 LOOK FOR
 1. Subject lost or unreadable: the face/artist dissolved by glitch, feedback, blur or black windows; a cutout on the wrong thing; halos.
-2. Blown or crushed image: highlights clipped to white, blacks crushed so detail is gone (unless clearly intended).
+2. Blown or crushed image, compared to the source: highlights the chain clipped to white, blacks it crushed so detail is gone (unless clearly intended). A SOURCE that is already dark (night, club, a fade from black) or already bright is the footage, not a fault of the chain — judge what the chain did to it, never brighten a dark look the source already has.
 3. Effect invisible: OUTPUT ≈ SOURCE (a mask-based effect whose person mask has not loaded yet, thresholds that catch nothing, amounts near 0, a stage switched off). Not the same thing: bokeh with NO person in frame is very visible — the whole frame becomes blurred background with the background FX on top. Report that as "no subject for this effect" with fix null (it needs a shot with a person, or another chain), never as bokeh that is too weak.
 4. Not following the beat — only when audio is on and you hear the music in the clip: the visual hits do not land on the kicks/snares you hear, nothing moves with the music, or everything jitters constantly instead of moving musically. With audio OFF the clip is silent: judge what you see, and do not report the silence or the still music routes as a problem.
 5. Routes on dead VIDEO signals: motion on a locked-off shot or a still photo, bright on a black frame. A route on bass, treble, loud or beat while audio is OFF is NOT an issue — it is waiting for music; never remove or "fix" it for that.
@@ -723,12 +723,21 @@ const round2 = (x: number) => Math.round(x * 100) / 100;
  * carriers keep base 0, their source and their route (only the amount moves,
  * CARRIER_AMOUNT_MIN..MAX); routes on non-routable or enum params go; ordinary
  * route depth is capped at ±MAX_ROUTE_AMOUNT; duplicate keys keep the last;
- * at most 12 params and 6 routes. Every refusal or adjustment is reported
- * with a short reason.
+ * at most 12 params and 6 routes.
+ * Every refusal goes to `dropped` ("key: reason"). Every change it KEPT but
+ * altered — a base out of its range or under its floor, a route deeper than
+ * the cap — goes to `adjusted`, one line per kept entry, also "key: reason";
+ * a route's reason starts with "route depth", so the panel can put each
+ * line on its row (key for a base, ~key for a route). Snapping to the
+ * slider's step is not an adjustment.
  * Applied to the Agent's plan AND to every Optimizer fix.
  */
-export function validatePlan(plan: unknown, chain: ChainState): AgentResult {
+export function validatePlan(plan: unknown, chain: ChainState): AgentResult & { adjusted: string[] } {
   const dropped: string[] = [];
+  /* key → reason, for the entry that is kept: a later mention of the same
+     key replaces the entry, and with it its note. */
+  const paramNotes = new Map<string, string>();
+  const routeNotes = new Map<string, string>();
   const byKey = new Map<string, ParamDesc>();
   for (const raw of arr(chain?.params)) {
     const d = normalizeParam(raw);
@@ -750,15 +759,23 @@ export function validatePlan(plan: unknown, chain: ChainState): AgentResult {
     let value = d.type === 'boolean' ? (v >= 0.5 ? 1 : 0)
       : isEnum(d) ? clamp(Math.round(v), Math.ceil(d.min), Math.floor(d.max))
       : snapNumber(v, d);
+    let note: string | null = null;
+    const asked = isEnum(d) ? Math.round(v) : v;
+    if (d.type !== 'boolean' && (asked < d.min || asked > d.max) && n2(asked) !== n2(value)) {
+      note = `Gemini asked ${n2(asked)}, clamped to ${n2(value)} (its range is ${n2(d.min)}..${n2(d.max)})`;
+    }
     const floor = PARAM_FLOORS[key];
     if (floor !== undefined && d.type === 'number' && value < floor) {
       let f = snapNumber(floor, d);
       if (f < floor && d.step > 0) f = snapNumber(f + d.step, d); // the grid point at or above the floor
-      dropped.push(`${key}: ${n2(value)} raised to ${n2(f)}, its floor (it scales the effect's whole music response)`);
+      /* 0.099 snapped under the floor and raised back to 0.1 is a snap, not news */
+      if (n2(v) !== n2(f)) note = `Gemini asked ${n2(v)}, raised to its floor ${n2(f)} (it scales the effect's whole music response)`;
       value = f;
     }
     params.delete(key); // last wins, in the position of the last mention
     params.set(key, value);
+    if (note) paramNotes.set(key, note);
+    else paramNotes.delete(key);
   }
 
   const routes = new Map<string, AgentPlan['routes'][number]>();
@@ -780,14 +797,19 @@ export function validatePlan(plan: unknown, chain: ChainState): AgentResult {
       if (fixed && source !== fixed) { dropped.push(`${key}: carrier route stays on ${fixed}`); continue; }
       const a = toNumber(e.amount);
       if (a === null) { dropped.push(`${key}: amount is not a number`); continue; }
+      const amount = round2(clamp(a, CARRIER_AMOUNT_MIN, CARRIER_AMOUNT_MAX));
       routes.delete(key);
-      routes.set(key, { key, source, amount: round2(clamp(a, CARRIER_AMOUNT_MIN, CARRIER_AMOUNT_MAX)) });
+      routes.set(key, { key, source, amount });
+      if ((a < CARRIER_AMOUNT_MIN || a > CARRIER_AMOUNT_MAX) && n2(a) !== n2(amount)) {
+        routeNotes.set(key, `route depth: Gemini asked ${n2(a)}, kept at ${n2(amount)} (the effect's own music response stays within ${CARRIER_AMOUNT_MIN}..${CARRIER_AMOUNT_MAX})`);
+      } else routeNotes.delete(key);
       continue;
     }
 
     if (source === 'off') {
       routes.delete(key);
       routes.set(key, { key, source, amount: 0 });
+      routeNotes.delete(key);
       continue;
     }
     const a = toNumber(e.amount);
@@ -797,6 +819,9 @@ export function validatePlan(plan: unknown, chain: ChainState): AgentResult {
     if (amount < 0 && PARAM_FLOORS[key] !== undefined) { dropped.push(`${key}: a negative route would pull it under its floor`); continue; }
     routes.delete(key);
     routes.set(key, { key, source, amount });
+    if (Math.abs(a) > MAX_ROUTE_AMOUNT && n2(a) !== n2(amount)) {
+      routeNotes.set(key, `route depth: Gemini asked ${n2(a)}, capped at ${n2(amount)} (no route goes deeper than ±${MAX_ROUTE_AMOUNT})`);
+    } else routeNotes.delete(key);
   }
 
   let paramList = [...params].map(([key, value]) => ({ key, value }));
@@ -810,7 +835,13 @@ export function validatePlan(plan: unknown, chain: ChainState): AgentResult {
     routeList = routeList.slice(0, MAX_PLAN_ROUTES);
   }
 
-  return { plan: { summary: str(src.summary, 900), params: paramList, routes: routeList }, dropped };
+  /* Notes only for what survived the limits, in the order of the rows. */
+  const adjusted = [
+    ...paramList.filter((p) => paramNotes.has(p.key)).map((p) => `${p.key}: ${paramNotes.get(p.key)}`),
+    ...routeList.filter((r) => routeNotes.has(r.key)).map((r) => `${r.key}: ${routeNotes.get(r.key)}`),
+  ];
+
+  return { plan: { summary: str(src.summary, 900), params: paramList, routes: routeList }, dropped, adjusted };
 }
 
 /** A proposal's chain made renderable: valid ids only, no repeats, at most one
@@ -853,30 +884,40 @@ export function validateArtDirector(raw: unknown): ArtDirectorResult {
 const SEVERITIES: readonly OptimizerIssue['severity'][] = ['error', 'warning', 'tip'];
 const VERDICTS: readonly OptimizerResult['verdict'][] = ['ok', 'improve', 'broken'];
 
-export function validateOptimizer(raw: unknown, chain: ChainState): OptimizerResult {
+/** "fix N" in `dropped` and `adjusted` is the N-th issue of the RETURNED list
+ *  (1-based): issues without a finding are removed before numbering, so the
+ *  panel can number its cards the same way. */
+export function validateOptimizer(raw: unknown, chain: ChainState): OptimizerResult & { adjusted: string[] } {
   const r = obj(raw);
   const dropped: string[] = [];
-  const issues: OptimizerIssue[] = arr(r.issues).slice(0, MAX_ISSUES).map((x, i) => {
-    const it = obj(x);
-    let fix: AgentPlan | null = null;
-    if (it.fix && typeof it.fix === 'object') {
-      const v = validatePlan(it.fix, chain);
-      for (const d of v.dropped) dropped.push(`fix ${i + 1} · ${d}`);
-      if (v.plan.params.length || v.plan.routes.length) fix = v.plan;
-      else dropped.push(`fix ${i + 1} · nothing left to apply`);
-    }
-    return {
-      severity: SEVERITIES.includes(it.severity as OptimizerIssue['severity']) ? (it.severity as OptimizerIssue['severity']) : 'tip',
-      finding: str(it.finding, 600),
-      evidence: str(it.evidence, 600),
-      fix,
-    };
-  }).filter((it) => it.finding);
+  const adjusted: string[] = [];
+  const issues: OptimizerIssue[] = arr(r.issues)
+    .map((x) => obj(x))
+    .filter((it) => str(it.finding, 600))
+    .slice(0, MAX_ISSUES)
+    .map((it, i) => {
+      let fix: AgentPlan | null = null;
+      if (it.fix && typeof it.fix === 'object') {
+        const v = validatePlan(it.fix, chain);
+        for (const d of v.dropped) dropped.push(`fix ${i + 1} · ${d}`);
+        if (v.plan.params.length || v.plan.routes.length) {
+          fix = v.plan;
+          for (const a of v.adjusted) adjusted.push(`fix ${i + 1} · ${a}`);
+        } else dropped.push(`fix ${i + 1} · nothing left to apply`);
+      }
+      return {
+        severity: SEVERITIES.includes(it.severity as OptimizerIssue['severity']) ? (it.severity as OptimizerIssue['severity']) : 'tip',
+        finding: str(it.finding, 600),
+        evidence: str(it.evidence, 600),
+        fix,
+      };
+    });
   return {
     verdict: VERDICTS.includes(r.verdict as OptimizerResult['verdict']) ? (r.verdict as OptimizerResult['verdict']) : 'improve',
     summary: str(r.summary, 900),
     issues,
     dropped,
+    adjusted,
   };
 }
 
@@ -885,6 +926,11 @@ export function validateOptimizer(raw: unknown, chain: ChainState): OptimizerRes
    ═══════════════════════════════════════════════════════════════ */
 
 const NO_MEDIA = 'Nothing to look at: send frames, a photo, a clip or an uploaded video.';
+/* The Agent and the Optimizer work on what the Lab renders: without a single
+   frame from it (the Lab has no picture, or a Master export holds the
+   capture) Gemini would be paid to tune or judge blind — refuse before the
+   call, even when the whole source video is already uploaded. */
+const NO_LAB_FRAMES = 'No picture arrived from the Lab (no source in it, or a Master export is running)';
 
 export function artDirectorJob(body: unknown): RoleJob<ArtDirectorResult> {
   const b = obj(body);
@@ -924,7 +970,7 @@ export function agentJob(body: unknown): RoleJob<AgentResult> {
   const b = obj(body);
   const source = readSource(b.source);
   const media = readMedia(b.media);
-  if (!media.length && !source.fileUri) throw new GeminiFailure('no_media', NO_MEDIA);
+  if (!media.length) throw new GeminiFailure('no_media', `${NO_LAB_FRAMES}: nothing to tune. Run again when the Lab shows the picture.`);
   const chain = readChain(b.chain);
   const direction = readDirection(b.direction);
   const hasIntent = !!str(b.intent, 600);
@@ -954,7 +1000,7 @@ function describeAgentMedia(source: SourceRef, media: MediaPart[], audioOn: bool
   const items: string[] = [];
   if (source.fileUri) {
     items.push(isVideoFile(source)
-      ? `the WHOLE source video${source.durationSec ? ` (${clock(source.durationSec)})` : ''} attached above WITH its soundtrack, sampled at ${sourceFps(source)} fps — listen to the song (sections, drop, hook, where the 808 hits) and watch how the shot moves`
+      ? `the WHOLE source video${source.durationSec ? ` (${clock(source.durationSec)})` : ''} attached above WITH its soundtrack (if it has one), sampled at ${sourceFps(source)} fps — listen to the song (sections, drop, hook, where the 808 hits) and watch how the shot moves`
       : 'the source file attached above');
   }
   for (const c of media.filter((m) => m.mimeType.startsWith('video/'))) {
@@ -978,7 +1024,7 @@ function describeChecks(raw: unknown): string {
 }
 
 function describeLastAgent(raw: unknown): string {
-  if (!raw || typeof raw !== 'object') return 'LAST AGENT RUN: none (never run, or undone) — judge the chain as it is now, against the intent and the art direction.';
+  if (!raw || typeof raw !== 'object') return 'LAST AGENT RUN: none in effect (never run, undone, or made for a different chain) — judge the chain as it is now, against the intent and the art direction.';
   const l = obj(raw);
   const plan = obj(l.plan);
   const params = arr(plan.params).map((x) => obj(x)).map((p) => `${str(p.key, 60)}=${n2(p.value)}`).join(', ') || 'none';
@@ -996,7 +1042,7 @@ function describeLastAgent(raw: unknown): string {
 export function optimizerJob(body: unknown): RoleJob<OptimizerResult> {
   const b = obj(body);
   const media = readMedia(b.media);
-  if (!media.length) throw new GeminiFailure('no_media', 'Nothing to judge: send the output clip and/or frame pairs from the Lab.');
+  if (!media.length) throw new GeminiFailure('no_media', `${NO_LAB_FRAMES}: nothing to judge. Run again when the Lab shows the picture.`);
   const chain = readChain(b.chain);
   const direction = readDirection(b.direction);
   const hasIntent = !!str(b.intent, 600);

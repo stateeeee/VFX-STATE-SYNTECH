@@ -41,7 +41,7 @@ la vecchia interfaccia. Dodici giri di preview, poi una implementazione.
    nessun numero va toccato a mano.
 1b. **Gemini 3.8 con la SUA chiave vera — la prima prova tocca a lui.** Groq è
    sparito (2026-10-08). Tutto il percorso è verificato contro un Google finto
-   (`tools/verify/verify-gemini.cjs`, 205/205) e la chiave sbagliata contro il
+   (`tools/verify/verify-gemini.cjs`, 11 step / 274 controlli) e la chiave sbagliata contro il
    Google vero; una risposta vera di `gemini-3.8-flash` no, perché qui non c'è
    una chiave. Lui: incolla la chiave nel pannello Gemini 3.8 → badge ACTIVE
    verde → Art Director su un suo video → "Use this chain" → Agent → Optimizer.
@@ -80,6 +80,42 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-10-09 — Gemini 3.8: il giro di rifinitura
+
+Una seconda revisione (due revisori + giudice) sulle correzioni del giorno
+prima ha confermato 16 punti, tutti di uso reale; più due trovati dal controllo
+scettico finale. Cosa cambia per lui:
+- **Un solo Annulla, in ordine.** Agent e Optimizer condividono una pila: si
+  annulla dall'ultima cosa fatta. Prima i due Annulla erano separati e uno poteva
+  rimettere un valore che l'altro aveva appena tolto.
+- **"Use this chain" porta dritto all'Agent**, la proposta scelta si legge "In
+  use", e la direzione si vede anche nell'Art Director.
+- **Risultati vecchi segnalati.** Un piano fatto su un Lab chiuso, o una lettura
+  di un'altra sorgente, appare spento con la scritta in cima e i pulsanti
+  disattivati. Una direzione scelta su un altro video manda ancora il look ma
+  **non la lettura musicale di quel video** ("Direction (from clipA.webm)").
+- **Clip senza audio**: lo dice ("This clip has no soundtrack…") e il "Sends:"
+  smette di promettere l'audio. Se invece è il browser a non saperlo leggere
+  (Safari/Firefox), lo dice in modo diverso e non marca il clip come muto.
+- **Le correzioni dell'Optimizer non sono più una scatola chiusa**: ogni fix
+  elenca cosa cambierà, poi cosa ha cambiato, con il suo Annulla accanto; le
+  carte sono numerate. I valori alzati al minimo o le route tagliate a 0.6 si
+  vedono sulla riga applicata, non più tra i "Not applied".
+- **Esposizione** giudicata rispetto alla sorgente: un video notturno non viene
+  più segnalato "quasi nero" se è la ripresa a essere scura.
+- **Nomi host.** Dal Mac via `studio-mac.local` dall'iPad funziona; per altri
+  nomi c'è `ALLOWED_HOSTS` in `.env.local`, e il messaggio dice come fare.
+- Il rosso degli errori leggibile anche di giorno.
+
+**Verificato:** lint pulito; `npm run build` ok; `verify-gemini.cjs` **11/11
+step, 274 controlli**, due volte di fila nel giro e una terza dopo le ultime due
+correzioni; un controllo mirato per quelle due (direzione da un altro video,
+browser senza `captureStream`) tutto PASS; cage 18/18; phase2 26/26;
+graph-highlight 7/7; search 6/6; phase8-chain 6/6; phase3 14/14 (al secondo
+tentativo: il canary BPM sotto SwiftShader resta ballerino, 189 poi 112).
+**Non verificato**, come prima: una risposta vera di `gemini-3.8-flash`, e un
+Master export vero durante un run (simulato sull'handle del Lab).
 
 ### 2026-10-08 — Gemini 3.8 vede davvero: Art Director, Agent, Optimizer
 

@@ -30,15 +30,24 @@ import {
 } from './contract';
 
 /** Every failure the panel sees. `message` is the server's own wording when
- *  it answered (human-readable, safe to show), else a short local one. */
+ *  it answered (human-readable, safe to show), else a short local one.
+ *  `status` is the HTTP status when our server answered at all: a 403 is its
+ *  Host guard (server.ts hostAllowed), whose message says how to get in. */
 export class AiError extends Error {
   kind: AiErrorKind;
-  constructor(kind: AiErrorKind, message: string) {
+  status?: number;
+  constructor(kind: AiErrorKind, message: string, status?: number) {
     super(message);
     this.name = 'AiError';
     this.kind = kind;
+    if (status !== undefined) this.status = status;
   }
 }
+
+/** True for the server's Host-guard refusal: the page is open under a name
+ *  the API does not answer on. Its message names the fix (ALLOWED_HOSTS). */
+export const isHostRefusal = (e: unknown): e is AiError =>
+  e instanceof AiError && e.status === 403 && e.kind === 'bad_request';
 
 const AI_ERROR_KINDS: readonly AiErrorKind[] = [
   'no_key', 'invalid_key', 'model_unavailable', 'quota', 'too_large',
@@ -114,13 +123,13 @@ async function failureOf(res: Response): Promise<AiError> {
   let body: Partial<AiErrorResponse> | null = null;
   try { body = (await res.json()) as Partial<AiErrorResponse>; } catch { /* not JSON */ }
   if (body && isAiErrorKind(body.error)) {
-    return new AiError(body.error, typeof body.message === 'string' && body.message ? body.message : body.error);
+    return new AiError(body.error, typeof body.message === 'string' && body.message ? body.message : body.error, res.status);
   }
   const kind: AiErrorKind = res.status === 413 ? 'too_large'
     : res.status === 429 ? 'quota'
       : res.status >= 500 ? 'server_error'
         : 'bad_request';
-  return new AiError(kind, `Server answered ${res.status}`);
+  return new AiError(kind, `Server answered ${res.status}`, res.status);
 }
 
 async function send<T>(path: string, init: RequestInit): Promise<T> {

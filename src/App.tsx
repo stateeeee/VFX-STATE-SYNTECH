@@ -30,7 +30,7 @@ import { gelMaterialTile } from './lib/gelTexture';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { HOLES, DAY_BACKDROPS, VIDEO_BOX, CAGE_BED, CAGE_SURFACE, cageBox, cagePlane } from './cage/cage';
 import { GEMINI_MODEL_DEFAULT, type AiErrorKind, type KeyResponse, type LabHandle, type StatusResponse } from './ai/contract';
-import { AiError, aiGet, forgetKey, getStoredKey, storeKey, validateKey } from './ai/client';
+import { AiError, aiGet, forgetKey, getStoredKey, isHostRefusal, storeKey, validateKey } from './ai/client';
 
 // explicit session snapshot for the SAVE nav action (decision #9: localStorage)
 const GEL_TILE = 640; // gel material tile edge (px) — also its background-size
@@ -392,6 +392,10 @@ export default function App() {
   const [activeGeminiMode, setActiveGeminiMode] = useState<GeminiMode | null>(null);
   const [geminiStatus, setGeminiStatus] = useState<GeminiStatus>('checking');
   const [geminiError, setGeminiError] = useState<AiErrorKind | null>(null);
+  // the server's own words, kept only when they say more than the kind: the
+  // Host guard's 403 ("this API does not answer on <name> — add it to
+  // ALLOWED_HOSTS…"), which would otherwise read as 'Gemini refused the request'
+  const [geminiErrorMsg, setGeminiErrorMsg] = useState<string | null>(null);
   const [geminiSource, setGeminiSource] = useState<'browser' | 'server' | null>(null);
   // the model the server runs (GEMINI_MODEL may override the default): the
   // panel names it when Google says this key cannot use it
@@ -409,10 +413,12 @@ export default function App() {
       setGeminiStatus(r.error === 'invalid_key' ? 'invalid' : 'standby');
       setGeminiSource(null);
       setGeminiError(r.error);
+      setGeminiErrorMsg(null);
     } else {
       setGeminiStatus('active');
       setGeminiSource(r.source);
       setGeminiError(null);
+      setGeminiErrorMsg(null);
       if (r.model) setGeminiModel(r.model);
     }
   };
@@ -420,6 +426,7 @@ export default function App() {
     setGeminiStatus('standby');
     setGeminiSource(null);
     setGeminiError(err instanceof AiError ? err.kind : 'server_error');
+    setGeminiErrorMsg(isHostRefusal(err) ? err.message : null);
   };
 
   /** the browser's key if one is stored, else the server's if it has one.
@@ -444,6 +451,7 @@ export default function App() {
           setGeminiStatus('standby');
           setGeminiSource(null);
           setGeminiError(null);
+          setGeminiErrorMsg(null);
           return;
         }
       }
@@ -466,6 +474,7 @@ export default function App() {
     const key = typed.trim();
     setGeminiStatus('checking');
     setGeminiError(null);
+    setGeminiErrorMsg(null);
     try {
       const r = await validateKey(key || getStoredKey());
       if (r.active && key) storeKey(key);
@@ -486,10 +495,12 @@ export default function App() {
       setGeminiStatus('invalid');
       setGeminiSource(null);
       setGeminiError(kind);
+      setGeminiErrorMsg(null);
     } else if (kind === 'no_key') {
       setGeminiStatus('standby');
       setGeminiSource(null);
       setGeminiError(kind);
+      setGeminiErrorMsg(null);
     }
   };
   // leaving 'active' closes whatever mode was open (the rail locks again)
@@ -1062,6 +1073,7 @@ export default function App() {
                           activeGeminiMode={activeGeminiMode}
                           status={geminiStatus}
                           error={geminiError}
+                          errorMessage={geminiErrorMsg}
                           source={geminiSource}
                           onSubmitKey={submitGeminiKey}
                           onForgetKey={forgetGeminiKey}

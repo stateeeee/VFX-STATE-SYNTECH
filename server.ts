@@ -20,9 +20,11 @@ dotenv.config({ path: [".env.local", ".env"], quiet: true });
      POST /optimizer     judge the Lab's OUTPUT, propose fixes       → OptimizerResult
 
    Every failure is an AiErrorResponse {error, message} with a 4xx/5xx status.
-   Only Host names this machine answers to directly (localhost or an IP
-   literal) reach /api — see hostGuard. The server's own GEMINI_API_KEY is used
-   for loopback clients only (ai-provider.ts resolveKey).
+   Only Host names that cannot be rebound by a web page (localhost, an IP
+   literal, a *.local mDNS name) or that ALLOWED_HOSTS lists reach /api — see
+   hostAllowed. The server's own GEMINI_API_KEY is used only by a browser on
+   this machine, opened at localhost and not relayed by a proxy or a tunnel
+   (ai-provider.ts resolveKey).
    There are no offline answers any more: without a key the panel simply stays
    locked, and nothing that is not AI ever needs one. The prompts, schemas and
    validators live in ai-roles.ts; the Gemini client, key handling and error
@@ -33,6 +35,7 @@ import {
   generateJson,
   geminiModel,
   GeminiFailure,
+  hostnameOf,
   isSchemaRejection,
   reportFailure,
   resolveKey,
@@ -62,29 +65,68 @@ function sendFailure(res: Response, f: AiFailure) {
 
 /* DNS-rebinding guard. A web page on some evil.example can re-point its own
    name at 127.0.0.1 and then call this API "same-origin" — but its requests
-   still carry Host: evil.example. Vite's host check only covers Vite's own
-   routes, and /api is mounted before Vite, so it gets its own: a hostname must
-   be localhost or an IP literal (a rebinding attack needs a DNS name; the
-   operator on a phone or another laptop types an IP). Runs before the body
-   parser, so a refused request is never read. */
-function hostAllowed(hostHeader: string | undefined): boolean {
-  const host = (hostHeader || "").trim().toLowerCase();
-  if (!host) return false;
-  let name: string;
-  if (host.startsWith("[")) {
-    const end = host.indexOf("]");
-    if (end < 0) return false;
-    name = host.slice(1, end);
-  } else {
-    name = host.replace(/:\d*$/, "");
+   still carry Host: evil.example. /api is mounted before Vite (and in a
+   production build nothing else checks the Host at all), so it gets its own
+   check. Allowed:
+     - localhost and *.localhost (browsers resolve them to this machine);
+     - any IP literal (a rebinding attack needs a DNS name; the operator on a
+       phone or another laptop can type an IP);
+     - *.local — the Mac's own Bonjour/mDNS name (studio-mac.local from the
+       iPad). Those names are answered on the LAN only, never by a DNS server
+       a web page on the internet controls;
+     - whatever ALLOWED_HOSTS lists (comma-separated, .env.local): exact names,
+       or ".example.com" / "*.example.com" for a domain and all its
+       subdomains — Vite's own allowedHosts rule. ALLOWED_HOSTS="*" turns the
+       check off (a deploy behind a proxy that checks the Host itself).
+       Letting a name in never lends it the server's key: a request through a
+       proxy or tunnel must paste its own (ai-provider.ts serverKeyFor).
+   The same rule is handed to Vite's dev host check below, so in dev the page
+   and its API open on the same names. Runs before the body parser, so a
+   refused request is never read. */
+interface HostRule { any: boolean; names: string[] }
+
+function readHostRule(raw = process.env.ALLOWED_HOSTS || ""): HostRule {
+  const names: string[] = [];
+  for (const part of raw.split(",")) {
+    const entry = part.trim().toLowerCase()
+      .replace(/^[a-z][a-z0-9+.-]*:\/\//, "") // a pasted URL: keep only its host
+      .replace(/\/.*$/, "");
+    if (!entry) continue;
+    if (entry === "*") return { any: true, names: [] };
+    const wildcard = entry.startsWith("*.") || entry.startsWith(".");
+    const name = hostnameOf(entry.replace(/^\*?\./, ""));
+    if (name) names.push(wildcard ? `.${name}` : name);
   }
-  return name === "localhost" || net.isIP(name) !== 0;
+  return { any: false, names: [...new Set(names)] };
 }
+
+const HOST_RULE = readHostRule();
+
+function hostAllowed(hostHeader: string | undefined, rule: HostRule = HOST_RULE): boolean {
+  if (rule.any) return true;
+  const name = hostnameOf(hostHeader);
+  if (!name) return false;
+  if (net.isIP(name) !== 0) return true;
+  if (name === "localhost" || name.endsWith(".localhost") || name.endsWith(".local")) return true;
+  return rule.names.some((n) => (n.startsWith(".") ? name === n.slice(1) || name.endsWith(n) : name === n));
+}
+
+/** One log line per refused name (up to 20), so the operator who opened the
+ *  app under a new name sees in the terminal what to add. */
+const refusedHosts = new Set<string>();
 
 app.use("/api", (req, res, next) => {
   if (hostAllowed(req.headers.host)) return next();
+  const shown = (hostnameOf(req.headers.host) ?? "").replace(/[^a-z0-9.:_-]/g, "").slice(0, 100);
+  if (shown && refusedHosts.size < 20 && !refusedHosts.has(shown)) {
+    refusedHosts.add(shown);
+    console.warn(`[host] refused /api on "${shown}" — to allow that name, add it to ALLOWED_HOSTS in .env.local and restart.`);
+  }
   res.set("Connection", "close");
-  sendFailure(res, { ...failure("bad_request", "This API only answers on localhost or an IP address. Open the app at http://localhost:" + PORT + "."), status: 403 });
+  const message = shown
+    ? `This server's API does not answer on "${shown}" — only on localhost, an IP address or a .local name. To use this name, add ${shown} to ALLOWED_HOSTS (in .env.local or the server's environment) and restart the server; or open the app by IP address, or at http://localhost:${PORT} on the server's own machine.`
+    : `This server's API needs a Host name: open the app by IP address, or at http://localhost:${PORT} on the server's own machine.`;
+  sendFailure(res, { ...failure("bad_request", message), status: 403 });
 });
 
 /* Frames and a 4s clip arrive inline as base64; 40MB is far above what the
@@ -335,7 +377,10 @@ const startServer = async () => {
     app.use("/effects", express.static(path.join(process.cwd(), "public/effects")));
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      /* Vite already accepts localhost, *.localhost and IP literals; add what
+         hostAllowed adds, so the page never loads on a name its API refuses
+         (or the reverse). */
+      server: { middlewareMode: true, allowedHosts: HOST_RULE.any ? true : [".local", ...HOST_RULE.names] },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -349,6 +394,7 @@ const startServer = async () => {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server launched on port ${PORT} // Full-stack core ready.`);
+    console.log(`API hosts: ${HOST_RULE.any ? "any (ALLOWED_HOSTS=*)" : ["localhost", "IP addresses", "*.local", ...HOST_RULE.names.map((n) => (n.startsWith(".") ? `*${n}` : n))].join(", ")}`);
     console.log(`Gemini: model=${geminiModel()}, server key: ${process.env.GEMINI_API_KEY?.trim() ? "set (used only by browsers on this machine)" : "not set (a key can be pasted in the panel)"}`);
   });
 };

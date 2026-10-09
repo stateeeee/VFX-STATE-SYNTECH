@@ -25,7 +25,8 @@
  * request carries: keys that exist (the validator keeps them) plus
  * deliberately invalid ones (unknown key, a carrier's base, a locked key, an
  * enum route, a base under its floor, a route over the depth cap…) that the
- * validator must drop, raise or clamp.
+ * validator must drop (`dropped`) or keep changed (`adjusted`: the floor, the
+ * cap — in the Agent's plan and in the Optimizer's first fix).
  *
  * Use it in-process:
  *   const { startMockGemini } = require('./mock-gemini.cjs');
@@ -208,7 +209,13 @@ function optimizerAnswer(body) {
   const r = routable(rows);
   const P2 = t[1] || t[0] || null;
   const R2 = r.find((x) => !P2 || x.key !== P2.key) || null;
-  const fix = { params: P2 ? [{ key: P2.key, value: farFrom(P2) }] : [], routes: R2 ? [{ key: R2.key, source: 'bass', amount: 0.15 }] : [], summary: 'MOCK-FIX-0: meno invadente.' };
+  // a second route, deeper than the cap: kept at 0.6 — the server reports it
+  // in `adjusted` ('fix 1 · key: route depth: …'), the panel on the fix's row
+  const R4 = r.find((x) => (!P2 || x.key !== P2.key) && (!R2 || x.key !== R2.key)) || null;
+  const routes = [];
+  if (R2) routes.push({ key: R2.key, source: 'bass', amount: 0.15 });
+  if (R4) routes.push({ key: R4.key, source: 'loud', amount: 0.9 });
+  const fix = { params: P2 ? [{ key: P2.key, value: farFrom(P2) }] : [], routes, summary: 'MOCK-FIX-0: meno invadente.' };
   return {
     answer: {
       issues: [
@@ -220,7 +227,7 @@ function optimizerAnswer(body) {
       verdict: 'improve',
       summary: 'MOCK-OPT: quasi, una correzione.',
     },
-    picked: { P2: P2 && P2.key, R2: R2 && R2.key },
+    picked: { P2: P2 && P2.key, R2: R2 && R2.key, R4: R4 && R4.key },
   };
 }
 

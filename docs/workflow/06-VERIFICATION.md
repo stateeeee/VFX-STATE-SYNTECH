@@ -50,10 +50,16 @@ Useful checks (the shell already ships `data-testid`s — keep them working):
 - Gemini 3.8 panel: `ai-status` (STANDBY / ACTIVE pill), `ai-key-input`,
   `ai-key-submit`, `ai-key-error`, `ai-key-forget`, `ai-pick-<mode>`,
   `ai-open-lab`; Art Director `ai-ad-intent`, `ai-ad-run`, `ai-ad-result`,
-  `ai-ad-apply-<i>`; Agent `ai-agent-intent`, `ai-agent-run`,
-  `ai-agent-note`, `ai-agent-direction(-clear)`, `ai-agent-result`,
-  `ai-agent-undo`; Optimizer `ai-opt-run`, `ai-opt-note`,
-  `ai-opt-direction(-clear)`, `ai-opt-result`, `ai-opt-fix-<i>`,
+  `ai-ad-stale`, `ai-ad-proposal-<i>` (`data-in-use` on the chosen one),
+  `ai-ad-apply-<i>`, `ai-ad-direction(-next/-clear)`; Agent
+  `ai-agent-intent`, `ai-agent-run`, `ai-agent-note`, `ai-agent-export`,
+  `ai-agent-error`, `ai-agent-direction(-clear)` (the text span),
+  `ai-agent-result`, `ai-agent-stale`, `ai-agent-rows` (applied rows; an
+  adjusted note is `[data-adjusted]` on its row), `ai-agent-undo`; Optimizer
+  `ai-opt-run`, `ai-opt-note`, `ai-opt-export`, `ai-opt-error`,
+  `ai-opt-direction(-clear)`, `ai-opt-agent-line`, `ai-opt-result`,
+  `ai-opt-stale`, `ai-opt-issue-<i>`, `ai-opt-fix-rows-<i>`,
+  `ai-opt-fix-<i>`, `ai-opt-fix-undo-<i>`, `ai-opt-not-applied-<i>`,
   `ai-opt-fix-all`, `ai-opt-undo`
 
 Feed deterministic media in headless runs: launch Chromium with
@@ -68,7 +74,7 @@ statistics rather than exact pixels.
 ### Gemini 3.8 suite (no real key, no network)
 
 ```bash
-node tools/verify/verify-gemini.cjs                # ~3 min under SwiftShader; exit 0 = all PASS
+node tools/verify/verify-gemini.cjs                # ~3.5 min under SwiftShader; exit 0 = all PASS
 PORT=3100 node tools/verify/verify-gemini.cjs      # its own server next to a dev server
 ```
 
@@ -80,19 +86,33 @@ PORT=3100 node tools/verify/verify-gemini.cjs      # its own server next to a de
   media with ffmpeg, and drives the real UI in Chromium. Its port (`PORT`,
   default 3000) must be free — it refuses to start otherwise; Playwright must
   resolve, as for the other suites.
-- Ten steps: (1) boot STANDBY + locked rail + renamed copy; (2) bad key
+- Eleven steps: (1) boot STANDBY + locked rail + renamed copy; (2) bad key
   rejected and not stored, a curly-quote key refused in the browser; (3) good
   key → ACTIVE, survives a reload, `ai-pick-*` work; (4) photo → Art
-  Director → Use this chain → art direction, then the Optimizer on the photo
-  with audio off (no false audio FAIL, 12 fps clip); (5) video uploaded once,
+  Director → Use this chain → art direction, the card "In use" and the panel
+  on the Agent tab (Direction line; the Art Director's "Agent →"), then the
+  Optimizer on the photo with audio off (no false audio FAIL, exposure
+  judged against the source, 12 fps clip, "the chain" in Sends); (5) video:
+  the photo's read flagged as another source's, the video uploaded once,
   then reused; (6) Use this chain on the video → Agent with audio OFF: auto
   Clip audio + its note, cached `fileUri` + OUTPUT clip + direction sent,
-  plan on the ParamBus (floor raised, cap clamped, locked keys dropped),
-  per-key Undo that keeps a later edit and makes the Optimizer forget the
-  run; (7) Optimizer clip + checks + plan + direction, Apply fix, Undo;
-  (8) key rejected mid-session → relocked; (9) the HTTP contract (`/status`,
-  400 `no_media`, 401 `no_key`, the Host guard, old endpoints 404…); (10) the
-  key never reaches a log, a URL, or Google from the browser.
+  plan on the ParamBus (locked keys in `dropped`; floor raise and depth cap
+  in `adjusted`, on their applied rows, never under "Not applied"), per-key
+  Undo that keeps a later edit, then the Optimizer says the run was undone;
+  (7) Optimizer clip + checks + plan + direction, numbered issue cards with
+  their own refusals, fix rows listed before Apply (with the capped route's
+  note), then the shared last-in-first-out undo: the Agent's Undo waits
+  ("Undo the Optimizer's fixes first") until the fix is undone, then
+  restores the whole bus to before its run; after the Lab is closed and
+  reopened both results read "Earlier run — on a Lab that has closed" with
+  their actions off; (8) a clip with no audio track: the no-soundtrack note,
+  the picture only (2 JPEGs, no output clip), truthful Sends and context
+  lines, the Optimizer's "(silent)" clip; (9) key rejected mid-session →
+  relocked; (10) the HTTP contract (`/status`, 400 `no_media` — also for an
+  uploaded source with no frame from the Lab —, 401 `no_key`, the Host
+  guard: a `.local` name in, any other name 403 with a message naming
+  `ALLOWED_HOSTS`, old endpoints 404…); (11) the key never reaches a log, a
+  URL, or Google from the browser.
 - It asserts what actually reached "Google" (the mock records every request
   body), not only what the panel shows.
 - The mock proves the plumbing, not Gemini's judgement: what only the
