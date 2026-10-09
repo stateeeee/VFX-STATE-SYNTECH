@@ -77,6 +77,26 @@ Non riaprirle.
 
 ## Log
 
+### 2026-10-09 — Workflow multi-modello: Haiku / Sonnet / Opus + revisione Opus obbligatoria
+
+L'operatore ha chiesto un workflow che scelga per ogni compito il modello
+migliore tra Opus, Sonnet e Haiku, con Opus che controlla sempre il lavoro.
+Fatto così, e già usato in questa stessa sessione:
+- `docs/workflow/09-MODEL-ROUTING.md`: tabella compito → modello, il ciclo
+  della sessione (regista → builder in parallelo → audit → revisione Opus →
+  commit) e la checklist della revisione.
+- `.claude/agents/`: quattro agenti con il modello scritto nel file —
+  `syn-scout` (Haiku: audit, conteggi, lint/build), `syn-builder` (Sonnet:
+  compiti chiari su 1–3 file), `syn-architect` (Opus: motori, ML, port 1:1,
+  file enormi), `syn-reviewer` (Opus: cancello obbligatorio prima del commit).
+- `CLAUDE.md` (regola 9), `07-SESSION-PROTOCOL.md` (passo 0 = revisione Opus) e
+  `docs/workflow/README.md` puntano al nuovo documento.
+
+Le richieste di prodotto della stessa sessione (fullscreen nella shell, Source +
+sezioni chiuse in blob reveal, sezione Body e tracking reattivo nel blob
+tracker) sono in lavorazione dagli agenti e arrivano in un commit separato,
+dopo la revisione.
+
 ### 2026-07-31 — Il dev server non partiva sul Mac; l'AI diventa sostituibile
 
 Due cose distinte, arrivate insieme.

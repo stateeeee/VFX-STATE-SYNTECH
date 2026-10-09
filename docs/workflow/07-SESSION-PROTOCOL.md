@@ -18,6 +18,10 @@ from `08-PROMPTS.md`; this protocol carries the rest.
 
 ## During the session
 
+- **Model routing**: split the request into tasks and hand each one to the
+  model `09-MODEL-ROUTING.md` assigns (Haiku = mechanical/audit, Sonnet =
+  scoped builds, Opus = hard/cross-cutting builds). Parallel agents never
+  share a file; only the main session commits.
 - **Scope**: the current phase only. Bugs found outside scope → fix if
   trivial and risk-free, otherwise log under "Open items" in STATE.md.
 - **Ask the operator** (AskUserQuestion) only for: product decisions the spec
@@ -33,6 +37,8 @@ from `08-PROMPTS.md`; this protocol carries the rest.
 
 ## Session end (always, in order)
 
+0. **Opus review gate**: run `syn-reviewer` (Opus) on the full diff. FAIL →
+   fix and re-review. Only a PASS goes on to step 1.
 1. Run verification per `06-VERIFICATION.md` (static gates + the phase's
    acceptance criteria + regression sweep).
 2. Update `docs/workflow/STATE.md`:
