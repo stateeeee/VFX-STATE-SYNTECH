@@ -4,7 +4,8 @@ Machine-first workflow docs driving all Claude Code sessions on this repo.
 Reading order for a new session: root `CLAUDE.md` (auto-loaded) → `STATE.md`
 (live progress + next step) → the current phase in `05-ROADMAP.md` → the spec
 sections it references (`01`–`04`) → verify per `06` → operate per `07`.
-Operator prompts live in `08-PROMPTS.md`.
+Operator prompts live in `08-PROMPTS.md`; which model does which task (and
+the mandatory Opus review gate) lives in `09-MODEL-ROUTING.md`.
 
 | File | Role |
 |---|---|
@@ -17,3 +18,4 @@ Operator prompts live in `08-PROMPTS.md`.
 | `06-VERIFICATION.md` | Verification & 1:1 parity protocol |
 | `07-SESSION-PROTOCOL.md` | How sessions start, run, and end |
 | `08-PROMPTS.md` | Copy-paste prompts for the operator |
+| `09-MODEL-ROUTING.md` | Haiku / Sonnet / Opus routing + Opus review gate |

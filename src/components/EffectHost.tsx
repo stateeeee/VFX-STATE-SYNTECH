@@ -86,6 +86,7 @@ const EffectHost = forwardRef<EffectHostHandle, EffectHostProps>(function Effect
         className="w-full h-full border-none block"
         title={module?.name || 'Effect'}
         allow="camera; microphone"
+        allowFullScreen
       />
     </div>
   );

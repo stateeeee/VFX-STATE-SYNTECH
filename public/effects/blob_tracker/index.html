@@ -1182,6 +1182,27 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
   width:100%; height:100%;
 }
 
+/* SYNTECH-BODY-START ═══════════════════════════════════
+   DETECT row (Tracker) + BODY section (face / hands / body)
+   ═══════════════════════════════════════════════════════ */
+.det-lbl { font-size:7px; letter-spacing:2px; color:var(--amber); opacity:.7; margin:2px 0 4px 1px; text-transform:uppercase; }
+.det-hint { font-size:6.5px; letter-spacing:1px; color:var(--t2); margin:4px 1px 2px; line-height:1.5; text-transform:uppercase; }
+.det-hint b { color:var(--t3); font-weight:400; }
+.body-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2px; background:rgba(0,0,0,.8); border:1px solid rgba(255,255,255,.07); margin-top:2px; }
+.body-cell {
+  background:linear-gradient(180deg,rgba(255,255,255,.14) 0%,rgba(255,255,255,.04) 45%,rgba(255,255,255,0) 50%,rgba(255,255,255,.03) 100%),
+             linear-gradient(180deg,#141214 0%,#080608 50%,#0e0c0e 100%);
+  padding:7px 7px 6px; border-radius:1px; box-shadow:inset 0 1px 0 rgba(255,255,255,.10);
+}
+.body-cell .bc-lbl { font-size:6.5px; letter-spacing:2px; color:var(--t2); text-transform:uppercase; }
+.body-cell .bc-n { font-size:18px; font-weight:300; line-height:1.1; margin:3px 0 2px; color:var(--t4); font-variant-numeric:tabular-nums; }
+.body-cell .bc-st { font-size:6.5px; letter-spacing:1.5px; color:var(--t2); text-transform:uppercase; }
+.body-cell .bc-st.loading { color:var(--amber); animation:blink 1s linear infinite; }
+.body-cell .bc-st.ready   { color:var(--green); }
+.body-cell .bc-st.error   { color:var(--red); }
+#body-perf { font-size:6.5px; letter-spacing:1.5px; color:var(--t2); margin-top:4px; text-transform:uppercase; font-variant-numeric:tabular-nums; }
+/* SYNTECH-BODY-END */
+
 </style>
 <body>
 <!-- FULLSCREEN OVERLAY -->
@@ -1358,6 +1379,15 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
     <div class="section">
       <div class="sec-head closed" data-sec="detect"><div class="sec-mark amber"></div><span class="sec-title">Tracker</span><span class="sec-chev">▾</span></div>
       <div class="sec-body hidden" id="sb-detect">
+        <!-- SYNTECH-BODY: DETECT source — LUMA (classic threshold) / MOTION (frame diff) / BODY (face·hands·body landmarks) -->
+        <div class="det-lbl">DETECT</div>
+        <div class="seg-row">
+          <button class="seg-btn" id="det-luma">LUMA</button>
+          <button class="seg-btn on" id="det-motion">MOTION</button>
+          <button class="seg-btn" id="det-body">BODY</button>
+        </div>
+        <div class="det-hint" id="det-hint">MOTION · i blob seguono il movimento</div>
+        <!-- /SYNTECH-BODY -->
         <div class="ctrl-row"><span class="ctrl-lbl">Threshold</span><div class="ctrl-track"><input type="range" class="daw-sl" id="sThr" min="0" max="255" value="127" step="1"></div><span class="ctrl-val" id="vThr">127</span></div>
         <div class="ctrl-row"><span class="ctrl-lbl">Brightness</span><div class="ctrl-track"><input type="range" class="daw-sl" id="sBri" min="-100" max="100" value="31" step="1"></div><span class="ctrl-val" id="vBri">31</span></div>
         <div class="ctrl-row"><span class="ctrl-lbl">Contrast</span><div class="ctrl-track"><input type="range" class="daw-sl" id="sCon" min="0.5" max="5" value="2.15" step="0.05"></div><span class="ctrl-val" id="vCon">2.15</span></div>
@@ -1381,6 +1411,26 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
         <div class="ctrl-row"><span class="ctrl-lbl">Trail Length</span><div class="ctrl-track"><input type="range" class="daw-sl" id="flow-trail-sl" min="0" max="10" value="0" step="1"></div><span class="ctrl-val" id="flow-tr-v">0</span></div>
       </div>
     </div>
+
+    <!-- SYNTECH-BODY-START: BODY section — face / hands / body landmarks (MediaPipe Tasks, offline) -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="body"><div class="sec-mark amber"></div><span class="sec-title">Body</span><span class="sec-chev">▾</span></div>
+      <div class="sec-body hidden" id="sb-body">
+        <div class="lrow">
+          <div class="led-btn" id="body-face-btn" title="Riconoscimento faccia (mesh 478 punti)"><div class="led"></div><span class="led-txt">FACE</span></div>
+          <div class="led-btn" id="body-hands-btn" title="Riconoscimento mani (21 punti, fino a 4 mani)"><div class="led"></div><span class="led-txt">HANDS</span></div>
+          <div class="led-btn" id="body-pose-btn" title="Riconoscimento corpo (scheletro 33 punti, fino a 5 persone)"><div class="led"></div><span class="led-txt">BODY</span></div>
+        </div>
+        <div class="body-grid">
+          <div class="body-cell"><div class="bc-lbl">Faces</div><div class="bc-n" id="body-n-face">0</div><div class="bc-st" id="body-st-face">OFF</div></div>
+          <div class="body-cell"><div class="bc-lbl">Hands</div><div class="bc-n" id="body-n-hands">0</div><div class="bc-st" id="body-st-hands">OFF</div></div>
+          <div class="body-cell"><div class="bc-lbl">Bodies</div><div class="bc-n" id="body-n-pose">0</div><div class="bc-st" id="body-st-pose">OFF</div></div>
+        </div>
+        <div id="body-perf">--</div>
+        <div class="det-hint">Overlay sul video (anche in REC) · modalità TRACKER<br>Tracker › DETECT <b>BODY</b> → blob su faccia / mani / corpo</div>
+      </div>
+    </div>
+    <!-- SYNTECH-BODY-END -->
 
     <!-- PANELS params -->
     <div class="section">
@@ -1934,13 +1984,13 @@ function getBinary(data){
   for(let i=0;i<bin.length;i++){const v=(data[i*4]>thr)?1:0;bin[i]=FX.invert?1-v:v;}
   return bin;
 }
-function findBlobs(bin){
+function findBlobs(bin,minCirc){ /* SYNTECH-BODY: optional minCirc (MOTION relaxes it); LUMA calls findBlobs(bin) → 0.15 as before */
   const vis=new Uint8Array(PW*PH),blobs=[];
   for(let y=0;y<PH;y++)for(let x=0;x<PW;x++){
     const idx=y*PW+x;if(!bin[idx]||vis[idx])continue;
     const stack=[idx];vis[idx]=1;let mnX=x,mxX=x,mnY=y,mxY=y,sx=0,sy=0,area=0;
     while(stack.length){const ci=stack.pop(),cx2=ci%PW,cy2=(ci/PW)|0;sx+=cx2;sy+=cy2;area++;if(cx2<mnX)mnX=cx2;if(cx2>mxX)mxX=cx2;if(cy2<mnY)mnY=cy2;if(cy2>mxY)mxY=cy2;for(const ni of[ci-1,ci+1,ci-PW,ci+PW]){if(ni<0||ni>=bin.length||vis[ni]||!bin[ni])continue;if(Math.abs(ni%PW-cx2)>1)continue;vis[ni]=1;stack.push(ni);}}
-    if(area<P.minArea)continue;const bw=mxX-mnX+1,bh=mxY-mnY+1,per=2*(bw+bh);if((4*Math.PI*area)/(per*per)<0.15)continue;
+    if(area<P.minArea)continue;const bw=mxX-mnX+1,bh=mxY-mnY+1,per=2*(bw+bh);if((4*Math.PI*area)/(per*per)<(minCirc===undefined?0.15:minCirc))continue;
     blobs.push({x:mnX,y:mnY,w:bw,h:bh,cx:sx/area,cy:sy/area,area});
   }
   return blobs;
@@ -2257,16 +2307,50 @@ function drawBlobMarker(b,ctx,scX,scY,idx){
 // ── bgFxMode: when true, FX on background video, blobs clean ──────────────
 let bgFxMode=false;
 
+/* SYNTECH-FIT-START ═══════════════════════════════════════════════════════
+   The source keeps its aspect ratio: fitted inside the canvas (contain), centred, black bars on the free sides.
+   ONE rect is the single source of truth for every mapping: the dc picture (_drawSrc), the 320×180 detection
+   canvas (_detDrawProc, panels pass), the smart-contour mask, Body overlays and BODY blobs. Proc space stays
+   "canvas space" (letterboxed the same way), so the existing proc→dc scaling (scX/scY) is unchanged.
+   Source aspect == canvas aspect → the rect is the whole canvas → identical to the previous (stretched) drawing. */
+let _fitSW=0,_fitSH=0; // last known source size (updated by every caller that has the source)
+function _fitRect(W,H,src){
+  if(src){const w=src.videoWidth||src.naturalWidth||src.width,h=src.videoHeight||src.naturalHeight||src.height;if(w>0&&h>0){_fitSW=w;_fitSH=h;}}
+  if(!(_fitSW>0&&_fitSH>0))return{x:0,y:0,w:W,h:H};
+  const a=_fitSW/_fitSH;let w=W,h=W/a;
+  if(h>H){h=H;w=H*a;}
+  if(Math.abs(w-W)<0.5)w=W;if(Math.abs(h-H)<0.5)h=H;
+  return{x:(W-w)/2,y:(H-h)/2,w,h};
+}
+// The same rect in proc space (PW×PH is a non-uniform scale of the canvas, so it is the canvas rect scaled — not a fit of its own)
+function _fitProc(src){const W=dc.width||PW,H=dc.height||PH,r=_fitRect(W,H,src),kx=PW/W,ky=PH/H;
+  return(r.w>=W&&r.h>=H)?{x:0,y:0,w:PW,h:PH}:{x:r.x*kx,y:r.y*ky,w:r.w*kx,h:r.h*ky};}
+function _fitBars(W,H){ // (re)paint the bars black — also after whole-canvas FX so they never tint them
+  const r=_fitRect(W,H);if(r.w>=W&&r.h>=H)return;
+  dCtx.save();dCtx.globalAlpha=1;dCtx.globalCompositeOperation='source-over';dCtx.fillStyle='#000';
+  if(r.x>0){dCtx.fillRect(0,0,Math.ceil(r.x),H);dCtx.fillRect(Math.floor(r.x+r.w),0,W,H);}
+  if(r.y>0){dCtx.fillRect(0,0,W,Math.ceil(r.y));dCtx.fillRect(0,Math.floor(r.y+r.h),W,H);}
+  dCtx.restore();
+}
+function _fitMaskBin(bin){ // LUMA: nothing is detected in the bars (with INVERT they would read as "white")
+  const r=_fitProc();if(r.w>=PW&&r.h>=PH)return bin;
+  const x0=Math.round(r.x),x1=Math.round(r.x+r.w),y0=Math.round(r.y),y1=Math.round(r.y+r.h);
+  for(let y=0;y<PH;y++)for(let x=0;x<PW;x++)if(x<x0||x>=x1||y<y0||y>=y1)bin[y*PW+x]=0;
+  return bin;
+}
+/* SYNTECH-FIT-END */
+
 /* Draw source to dc canvas. Webcam is flipped horizontally so user
    sees themselves un-mirrored (as the camera records, not as a mirror). */
 function _drawSrc(src,dW,dH){
+  const R=_fitRect(dW,dH,src);_fitBars(dW,dH); // SYNTECH-FIT hook: letterboxed rect R (was the whole dW×dH, stretched)
   if(srcMode==='webcam'){
     dCtx.save();
     dCtx.scale(-1,1);
-    dCtx.drawImage(src,-dW,0,dW,dH);
+    dCtx.drawImage(src,-(R.x+R.w),R.y,R.w,R.h);
     dCtx.restore();
   } else {
-    dCtx.drawImage(src,0,0,dW,dH);
+    dCtx.drawImage(src,R.x,R.y,R.w,R.h);
   }
 }
 function _applyFxBg(dW,dH){
@@ -2352,18 +2436,26 @@ function trackerFrame(){
       drawTextFill(b,1,1,i);drawBlobMarker(b,dCtx,1,1,i);
       blobShape=_ss; connStyle=_sc; Object.assign(FX,_sf); padY=_sp; xyBlobScale=_sbs;
     });
+    _fitBars(dW,dH); /* SYNTECH-FIT: per-point FX must not tint the black bars */
     const _scw=connWidth; connWidth=Math.min(connWidth,4);
     drawConnections(sc,dCtx); connWidth=_scw;
+    _bodyTick(src); _bodyDraw(dCtx,dW,dH); /* SYNTECH-BODY hook: face/hands/body overlay also over the chaos points */
     if(src!==activeImg)computeMotion(src); updateMotionUI();
     trackerRafId=requestAnimationFrame(trackerFrame); return;
   }
 
   // 2) Detect blobs (separate processing canvas)
-  pCtx.drawImage(src,0,0,PW,PH);
+  /* SYNTECH-BODY hook: face/hands/body inference (no-op while all OFF) + DETECT switch.
+     LUMA runs exactly the original sequence; MOTION/BODY live in the SYNTECH-BODY block. */
+  _bodyTick(src);
+  const _dm=_detEffMode(src);
+  _detDrawProc(src); // SYNTECH-FIT: all modes in display space (letterbox; webcam mirrored — LUMA too, so its blobs sit on the person)
   const id=pCtx.getImageData(0,0,PW,PH);
   if(flowOn) _flowUpdateGray(id.data);   // ← raw gray BEFORE processForDetect
-  processForDetect(id.data);
-  const bin=getBinary(id.data),blobs=findBlobs(bin);
+  let bin,blobs;
+  if(_dm==='luma'){ processForDetect(id.data); bin=_fitMaskBin(getBinary(id.data)); blobs=findBlobs(bin); } // SYNTECH-FIT: bars masked
+  else { const _dr=_detRun(_dm,id.data); bin=_dr.bin; blobs=_dr.blobs; }
+  /* /SYNTECH-BODY hook */
   if(ctMode){ _ctBinMask=bin; _ctComputeContours(blobs); }
   if(ctMode==='smart'){ _ctRunSmartSeg(src); }
   if(flowOn) _flowComputeVel(blobs);
@@ -2386,9 +2478,11 @@ function trackerFrame(){
     _applyFxBg(dW,dH);
     _patches.forEach(p=>{if(p)dCtx.putImageData(p.data,p.x,p.y);});
   }
+  _fitBars(dW,dH); // SYNTECH-FIT: FX never tint the bars
   drawConnections(sc,dCtx);
   sc.forEach((b,i)=>drawBlobMarker(b,dCtx,scX,scY,i));
   if(flowOn) _drawFlowViz(sc,dCtx,scX,scY);
+  _bodyDraw(dCtx,dW,dH); /* SYNTECH-BODY hook: face mesh / hands / skeleton overlay on dc (also captured by REC) */
   document.getElementById('ic-blobs').textContent=blobs.length;
   if(src!==activeImg)computeMotion(src);
   if(vrOn||autoMode){videoReactiveFrame(src);}
@@ -2824,11 +2918,11 @@ function _panelsBlobFxPass(){
   let sc=[];
   // Blob detection (for markers/connections/flow)
   if(FX.blob||FX.conn||flowOn){
-    try{pCtx.drawImage(src,0,0,PW,PH);}catch(e){return;}
+    try{_detDrawProc(src,true);}catch(e){return;} // SYNTECH-FIT: letterboxed like the picture (panels keep their un-mirrored detection)
     const id=pCtx.getImageData(0,0,PW,PH);
     if(flowOn) _flowUpdateGray(id.data);
     processForDetect(id.data);
-    const bin=getBinary(id.data);
+    const bin=_fitMaskBin(getBinary(id.data));
     const blobs=findBlobs(bin);
     if(ctMode){ _ctBinMask=bin; _ctComputeContours(blobs); }
     if(ctMode==='smart'){ _ctRunSmartSeg(src); }
@@ -2840,6 +2934,7 @@ function _panelsBlobFxPass(){
     fxOvCv.style.display='none';
     fxOvCtx.clearRect(0,0,fxOvCv.width,fxOvCv.height);
     _applyFxBg(dW,dH);
+    _fitBars(dW,dH); // SYNTECH-FIT
   } else {
     // BG Mode ON: FX sull'overlay clippato ai pannelli (FX dentro i pannelli)
     fxOvCv.style.display='block';
@@ -4356,47 +4451,27 @@ function _drawVRFlowField(cv) {
 
 // ── MediaPipe Pose lazy loader ─────────────────────────────────────────────
 function _vrLoadPose() {
+  /* SYNTECH-BODY hook — replaces the legacy loader, which injected ../vendor/mediapipe/pose/pose.js and drove
+     window.Pose {modelComplexity:0, smoothLandmarks:true} through send()/onResults. That solution froze or broke when
+     it shared the page with tasks-vision, so VR POSE now reads the BODY section's tasks-vision PoseLandmarker (same
+     normalised 33-point landmarks; it loads even with the BODY LED off). _vrPoseNet just marks "ready". */
   if (_vrPoseLoading || _vrPoseNet) return;
   _vrPoseLoading = true;
   toast('POSE: caricamento MediaPipe Pose…');
-  const script = document.createElement('script');
-  script.src = '../vendor/mediapipe/pose/pose.js';
-  script.onload = () => {
-    const pose = new window.Pose({locateFile: f =>
-      `../vendor/mediapipe/pose/${f}`});
-    pose.setOptions({modelComplexity:0, smoothLandmarks:true, minDetectionConfidence:0.5, minTrackingConfidence:0.4});
-    pose.onResults(results => {
-      _vrPoseLM = results.poseLandmarks || null;
-    });
-    _vrPoseNet = pose;
-    _vrPoseLoading = false;
-    toast('POSE: MediaPipe Pose pronto ✓');
-  };
-  script.onerror = () => { _vrPoseLoading=false; toast('POSE: errore caricamento'); };
-  document.head.appendChild(script);
+  _bodyEnsure('pose', true).then(() => { _vrPoseNet = _body.pose; _vrPoseLoading = false; toast('POSE: MediaPipe Pose pronto ✓'); },
+    () => { _vrPoseLoading = false; toast('POSE: errore caricamento'); });
 }
 
 // ── MediaPipe Face lazy loader ─────────────────────────────────────────────
 function _vrLoadFace() {
+  /* SYNTECH-BODY hook — replaces the legacy loader (../vendor/mediapipe/face_mesh/face_mesh.js, window.FaceMesh
+     {maxNumFaces:1, refineLandmarks:true}): VR FACE reads the BODY section's tasks-vision FaceLandmarker (478 points,
+     same as refineLandmarks). _vrFaceNet just marks "ready". */
   if (_vrFaceLoading || _vrFaceNet) return;
   _vrFaceLoading = true;
   toast('FACE: caricamento MediaPipe FaceMesh…');
-  const script = document.createElement('script');
-  script.src = '../vendor/mediapipe/face_mesh/face_mesh.js';
-  script.onload = () => {
-    const fm = new window.FaceMesh({locateFile: f =>
-      `../vendor/mediapipe/face_mesh/${f}`});
-    fm.setOptions({maxNumFaces:1, refineLandmarks:true, minDetectionConfidence:0.5, minTrackingConfidence:0.4});
-    fm.onResults(results => {
-      _vrFaceLM = (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0)
-        ? results.multiFaceLandmarks[0] : null;
-    });
-    _vrFaceNet = fm;
-    _vrFaceLoading = false;
-    toast('FACE: MediaPipe FaceMesh pronto ✓');
-  };
-  script.onerror = () => { _vrFaceLoading=false; toast('FACE: errore caricamento'); };
-  document.head.appendChild(script);
+  _bodyEnsure('face', true).then(() => { _vrFaceNet = _body.face; _vrFaceLoading = false; toast('FACE: MediaPipe FaceMesh pronto ✓'); },
+    () => { _vrFaceLoading = false; toast('FACE: errore caricamento'); });
 }
 
 // ── Run pose/face on current source (throttled) ────────────────────────────
@@ -4405,8 +4480,10 @@ async function _vrRunPoseAndFace(src) {
   _vrPFFrame++;
   if (_vrPFFrame % 3 !== 0) return; // run every 3 frames
   if (!src || (src.readyState !== undefined && src.readyState < 2)) return;
-  if (_vrPoseNet && vrPoseOn) { try { await _vrPoseNet.send({image:src}); } catch(e) {} }
-  if (_vrFaceNet && vrFaceOn) { try { await _vrFaceNet.send({image:src}); } catch(e) {} }
+  // SYNTECH-BODY hook — was `try { await _vrPoseNet.send({image:src}); } catch(e) {}` (+ the same for _vrFaceNet),
+  // results arriving in onResults. Now the shared landmarkers fill _vrPoseLM / _vrFaceLM directly.
+  if (_vrPoseNet && vrPoseOn) _bodyVrRun('pose', src);
+  if (_vrFaceNet && vrFaceOn) _bodyVrRun('face', src);
 }
 
 // ── Draw pose skeleton on canvas overlay ──────────────────────────────────
@@ -4862,13 +4939,13 @@ async function _loadMediaPipe() {
     const vision = await FilesetResolver.forVisionTasks(
       '../vendor/mediapipe/tasks-vision/wasm'
     );
-    _mpSeg = await ImageSegmenter.createFromOptions(vision, {
+    _mpSeg = await _tvCreate(() => ImageSegmenter.createFromOptions(vision, { // SYNTECH-BODY hook: one tasks-vision creation at a time (see _tvCreate)
       baseOptions: {
         modelAssetPath: '../vendor/mediapipe/tasks-vision/selfie_segmenter.tflite',
         delegate: 'GPU'
       },
       outputCategoryMask: true, runningMode: 'VIDEO',
-    });
+    }));
     _mpReady = true; _mpLoading = false;
     if (badge) { badge.className='ready'; badge.textContent='READY'; }
     toast('✓ Smart Segmentation ready', 2000);
@@ -4890,24 +4967,556 @@ function _ctRunSmartSeg(src) {
   if (now - _ctSmartTs < 50) return; // ~20 fps cap
   _ctSmartTs = now;
   try {
-    const ts = src.currentTime ? Math.round(src.currentTime * 1000) : Math.round(now);
+    const _pr = _fitProc(src); // SYNTECH-FIT hook: the mask lands on the letterboxed picture in proc space
+    const ts = _bodyTs(); // SYNTECH-BODY: strictly increasing (video currentTime went backwards on loop/seek → "Packet timestamp mismatch", segmenter dead)
     _mpSeg.segmentForVideo(src, ts, result => {
       if (!result.categoryMask) return;
       const maskArr = result.categoryMask.getAsUint8Array();
       const mW = result.categoryMask.width;
       const mH = result.categoryMask.height;
       if (!_ctSmartMask) _ctSmartMask = new Uint8Array(PW * PH);
+      const _mir = _bodySegMirror(); // SYNTECH-BODY hook: tracker detection runs in mirrored (display) space on webcam → mirror the mask too
       for (let y=0; y<PH; y++) {
         for (let x=0; x<PW; x++) {
-          const mx = Math.min(mW-1, (x*mW/PW)|0);
-          const my = Math.min(mH-1, (y*mH/PH)|0);
-          _ctSmartMask[y*PW+x] = maskArr[my*mW+mx] > 0 ? 1 : 0;
+          const ux = x-_pr.x, uy = y-_pr.y; // SYNTECH-FIT: outside the picture rect → 0
+          if (ux<0 || ux>=_pr.w || uy<0 || uy>=_pr.h) { _ctSmartMask[y*PW+(_mir?PW-1-x:x)] = 0; continue; }
+          const mx = Math.min(mW-1, (ux*mW/_pr.w)|0);
+          const my = Math.min(mH-1, (uy*mH/_pr.h)|0);
+          _ctSmartMask[y*PW+(_mir?PW-1-x:x)] = maskArr[my*mW+mx] > 0 ? 1 : 0;
         }
       }
       _ctSmartDirty = true;
     });
   } catch(e) {}
 }
+
+/* SYNTECH-BODY-START ════════════════════════════════════════════════════════
+   BODY — face / hands / body landmarks + DETECT modes for the tracker
+   · FACE / HANDS / BODY LEDs lazy-load MediaPipe Tasks Vision landmarkers
+     (vendored, offline: ../vendor/mediapipe/tasks-vision/) in VIDEO mode and
+     draw mesh / hands / skeleton on dc (so REC captures them). Tracker mode only.
+   · DETECT row (Tracker): LUMA = original threshold + flood fill (untouched),
+     MOTION = blobs on moving pixels (frame difference, camera-pan compensated),
+     BODY = one blob per face / hand / person box from the landmarks.
+     MOTION and BODY blobs are tracked over time (nearest-centre match, EMA,
+     short hold) so markers follow the performer instead of flickering.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const _BODY_VENDOR='../vendor/mediapipe/tasks-vision/';
+const _BODY_KINDS=['face','hands','pose'];
+const _BODY_LBL={face:'FACE',hands:'HANDS',pose:'BODY'};
+const _BODY_MODEL={face:'face_landmarker.task',hands:'hand_landmarker.task',pose:'pose_landmarker_lite.task'};
+const _BODY_BTN={face:'body-face-btn',hands:'body-hands-btn',pose:'body-pose-btn'};
+const _body={};
+_BODY_KINDS.forEach(k=>{_body[k]={on:false,state:'off',lm:null,deleg:'',sets:[],n:0,ms:0,runs:0,last:-99,vt:-1,img:null,imgRuns:0,errs:0,slow:0};});
+let _bodyMod=null,_bodyFs=null,_bodyVisionP=null,_bodyChain=Promise.resolve(),_bodyConn=null;
+let _bodyTickN=0,_bodyLastTs=0,_bodyNextAt=0,_bodyUiT=0,_bodyNextId=1,_bodyCpuOnly=null;
+let _detMode='motion';   // 'luma' | 'motion' | 'body' — default MOTION (reactive); LUMA = classic
+
+// Fallback topology (used only if the bundle does not expose its static connection lists)
+const _BODY_POSE_PAIRS=[0,1,1,2,2,3,3,7,0,4,4,5,5,6,6,8,9,10,11,12,11,13,13,15,15,17,15,19,15,21,17,19,12,14,14,16,16,18,16,20,16,22,18,20,11,23,12,24,23,24,23,25,24,26,25,27,26,28,27,29,28,30,29,31,30,32,27,31,28,32];
+const _BODY_HAND_PAIRS=[0,1,1,2,2,3,3,4,0,5,5,6,6,7,7,8,5,9,9,10,10,11,11,12,9,13,13,14,14,15,15,16,13,17,0,17,17,18,18,19,19,20];
+const _BODY_FACE_OVAL=[10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
+const _BODY_POSE_JOINTS=[11,12,13,14,15,16,23,24,25,26,27,28,29,30,31,32];
+const _BODY_TIPS=[4,8,12,16,20];
+
+function _bodyPairs(list,fallback){
+  if(!Array.isArray(list)||!list.length)return fallback?fallback.slice():[];
+  const out=[];list.forEach(c=>{if(c&&typeof c.start==='number')out.push(c.start,c.end);});
+  return out.length?out:(fallback?fallback.slice():[]);
+}
+// Shared tasks-vision module + wasm fileset (same vendored bundle the smart-contour segmenter uses)
+function _bodyVision(){
+  if(!_bodyVisionP){
+    _bodyVisionP=(async()=>{
+      const mod=await import(_BODY_VENDOR+'vision_bundle.mjs');
+      const fs=await mod.FilesetResolver.forVisionTasks(_BODY_VENDOR+'wasm');
+      const FL=mod.FaceLandmarker||{};
+      const pose=_bodyPairs(mod.PoseLandmarker&&mod.PoseLandmarker.POSE_CONNECTIONS,_BODY_POSE_PAIRS);
+      const poseBody=[];for(let i=0;i<pose.length;i+=2)if(pose[i]>=11&&pose[i+1]>=11)poseBody.push(pose[i],pose[i+1]);
+      const nh=l=>{const o=[];for(let i=0;i<l.length;i+=2)if(!(l[i]>=17&&l[i]<=22)&&!(l[i+1]>=17&&l[i+1]<=22))o.push(l[i],l[i+1]);return o;}; // without pose finger stubs
+      _bodyConn={pose,poseBody,poseNH:nh(pose),poseBodyNH:nh(poseBody),
+        hand:_bodyPairs(mod.HandLandmarker&&mod.HandLandmarker.HAND_CONNECTIONS,_BODY_HAND_PAIRS),
+        tess:_bodyPairs(FL.FACE_LANDMARKS_TESSELATION,null),
+        cont:_bodyPairs(FL.FACE_LANDMARKS_CONTOURS,null)};
+      if(!_bodyConn.cont.length){const o=_BODY_FACE_OVAL;for(let i=0;i<o.length;i++)_bodyConn.cont.push(o[i],o[(i+1)%o.length]);}
+      _bodyMod=mod;_bodyFs=fs;return mod;
+    })();
+    _bodyVisionP.catch(()=>{_bodyVisionP=null;}); // allow a retry on the next click
+  }
+  return _bodyVisionP;
+}
+// Software WebGL (SwiftShader / llvmpipe) makes the GPU delegate 10-20× slower than CPU → go straight to CPU there
+function _bodyPreferCPU(){
+  if(_bodyCpuOnly!==null)return _bodyCpuOnly;
+  let r='';
+  try{const c=document.createElement('canvas');const gl=c.getContext('webgl2')||c.getContext('webgl');
+    if(gl){const ext=gl.getExtension('WEBGL_debug_renderer_info');r=String(gl.getParameter(ext?ext.UNMASKED_RENDERER_WEBGL:gl.RENDERER)||'');
+      const lc=gl.getExtension('WEBGL_lose_context');if(lc)lc.loseContext();}
+    else r='none';
+  }catch(e){r='none';}
+  _bodyCpuOnly=/swiftshader|llvmpipe|softpipe|software|basic render|^none$/i.test(r);
+  return _bodyCpuOnly;
+}
+function _bodyCreate(kind,deleg){
+  const base={baseOptions:{modelAssetPath:_BODY_VENDOR+_BODY_MODEL[kind],delegate:deleg},runningMode:'VIDEO'};
+  if(kind==='pose')return _bodyMod.PoseLandmarker.createFromOptions(_bodyFs,Object.assign(base,{numPoses:5,
+    minPoseDetectionConfidence:0.5,minPosePresenceConfidence:0.5,minTrackingConfidence:0.5,outputSegmentationMasks:false}));
+  if(kind==='hands')return _bodyMod.HandLandmarker.createFromOptions(_bodyFs,Object.assign(base,{numHands:4,
+    minHandDetectionConfidence:0.5,minHandPresenceConfidence:0.5,minTrackingConfidence:0.5}));
+  return _bodyMod.FaceLandmarker.createFromOptions(_bodyFs,Object.assign(base,{numFaces:3,
+    minFaceDetectionConfidence:0.5,minFacePresenceConfidence:0.5,minTrackingConfidence:0.5,
+    outputFaceBlendshapes:false,outputFacialTransformationMatrixes:false}));
+}
+// Strictly increasing ms timestamps for detectForVideo (shared by all landmarkers, also for still images)
+function _bodyTs(){let t=Math.round(performance.now());if(t<=_bodyLastTs)t=_bodyLastTs+1;_bodyLastTs=t;return t;}
+const _bodyWarmCv=Object.assign(document.createElement('canvas'),{width:64,height:64});
+// One tasks-vision createFromOptions at a time on this page (Body models + smart-contour segmenter): the wasm
+// loader hands its factory over through the globals ModuleFactory / Module, so concurrent creations would race.
+// (The legacy @mediapipe/pose + face_mesh solutions that also used those globals are no longer loaded at all:
+// Video Reactive POSE / FACE read these same landmarkers — see _bodyVrRun.)
+let _tvLock=Promise.resolve();
+function _tvCreate(fn){const p=_tvLock.then(fn,fn);_tvLock=p.then(()=>{},()=>{});return p;}
+// Promise that a landmarker is ready (loads it if needed). `quiet`: no BODY toasts (VR shows its own).
+function _bodyEnsure(kind,quiet){
+  const st=_body[kind];
+  if(st.state==='ready'&&st.lm)return Promise.resolve(st.lm);
+  return new Promise((res,rej)=>{(st.waiters=st.waiters||[]).push([res,rej]);if(st.state!=='loading')_bodyLoad(kind,undefined,quiet);});
+}
+// Lazy load (serialised: the wasm loader shares a global ModuleFactory between concurrent creations)
+function _bodyLoad(kind,forceDeleg,quiet){
+  const st=_body[kind];
+  if(st.state==='loading'||(st.state==='ready'&&!forceDeleg))return;
+  if(st.lm){try{st.lm.close();}catch(e){}st.lm=null;}
+  st.state='loading';_bodyUi(true);
+  if(!quiet)toast(forceDeleg?'BODY: '+_BODY_LBL[kind]+' → '+forceDeleg+'…':'BODY: caricamento '+_BODY_LBL[kind]+'…',6000);
+  _bodyChain=_bodyChain.then(async()=>{
+    try{
+      await _bodyVision();
+      const prefs=forceDeleg?[forceDeleg]:(_bodyPreferCPU()?['CPU']:['GPU','CPU']);
+      let lm=null,deleg='',err=null;
+      for(const d of prefs){
+        try{lm=await _tvCreate(()=>_bodyCreate(kind,d));deleg=d;}catch(e){err=e;} // serialised (see _tvCreate)
+        if(lm)break;
+      }
+      if(!lm)throw err||new Error('createFromOptions failed');
+      try{_bodyWarmCv.getContext('2d').fillRect(0,0,64,64);lm.detectForVideo(_bodyWarmCv,_bodyTs());}catch(e){} // compile/allocate now, not mid-performance
+      Object.assign(st,{lm,deleg,state:'ready',errs:0,slow:0,runs:0,ms:0,last:-99,vt:-1,img:null,imgRuns:0});
+      if(!quiet)toast('BODY: '+_BODY_LBL[kind]+' pronto ✓',2000);
+      const w=st.waiters||[];st.waiters=[];w.forEach(f=>f[0](lm));
+    }catch(e){
+      console.warn('[BST] BODY '+kind+' load failed',e);
+      st.state='error';st.lm=null;_bodySetOn(kind,false,true);
+      if(!quiet)toast('BODY: errore caricamento '+_BODY_LBL[kind],3500);
+      const w=st.waiters||[];st.waiters=[];w.forEach(f=>f[1](e));
+    }
+    _bodyUi(true);
+  });
+}
+function _bodySetOn(kind,on,silent){
+  const st=_body[kind];st.on=!!on;
+  const btn=document.getElementById(_BODY_BTN[kind]);if(btn)btn.classList.toggle('on',st.on);
+  st.img=null;st.imgRuns=0;st.vt=-1;
+  if(st.on){if(st.state!=='ready')_bodyLoad(kind);else if(!silent)toast('BODY: '+_BODY_LBL[kind]+' ON');}
+  else{st.sets=[];st.n=0;st.vrList=null;if(!silent)toast('BODY: '+_BODY_LBL[kind]+' OFF');}
+  _bodyUi(true);
+}
+_BODY_KINDS.forEach(k=>{const b=document.getElementById(_BODY_BTN[k]);if(b)b.addEventListener('click',()=>_bodySetOn(k,!_body[k].on));});
+
+// Results → landmark sets matched to the previous ones (stable order, smoothed in _bodyStep)
+function _bodyIngest(kind,r){
+  let list=[];
+  if(kind==='pose')list=(r&&r.landmarks||[]).map(p=>({pts:p}));
+  else if(kind==='face')list=(r&&r.faceLandmarks||[]).map(p=>({pts:p}));
+  else{
+    const hd=(r&&(r.handedness||r.handednesses))||[];
+    // MediaPipe labels handedness for a mirrored (selfie) input; we feed the raw frame → swap to the performer's real side
+    list=(r&&r.landmarks||[]).map((p,i)=>{const c=hd[i]&&hd[i][0];const nm=c?(c.categoryName||c.displayName||''):'';return{pts:p,side:nm==='Left'?'R':nm==='Right'?'L':''};})
+      .filter(e=>{const p=e.pts;if(p.length<21)return false;let x0=1,y0=1,x1=0,y1=0;for(const q of p){x0=Math.min(x0,q.x);x1=Math.max(x1,q.x);y0=Math.min(y0,q.y);y1=Math.max(y1,q.y);}
+        const W=_fitSW||dc.width||16,H=_fitSH||dc.height||9;return Math.hypot((p[0].x-p[9].x)*W,(p[0].y-p[9].y)*H)>=0.2*Math.max((x1-x0)*W,(y1-y0)*H);}); // collapsed (degenerate) hand → drop
+  }
+  if(kind==='pose'&&list.length)list=_bodyPoseFilter(list);
+  _body[kind].vrList=list; // last result, kept even while VR is off (a still image is analysed only 3 times)
+  if((kind==='pose'&&vrPoseOn&&_vrPoseNet)||(kind==='face'&&vrFaceOn&&_vrFaceNet))_bodyVrFill(kind,list); // Video Reactive gets it too
+  const st=_body[kind];st.n=list.length;
+  const prev=st.sets,used=new Uint8Array(prev.length),pairs=[],snap=(srcMode==='image');
+  list.forEach((e,i)=>{let sx=0,sy=0;for(const p of e.pts){sx+=p.x;sy+=p.y;}e.c=[sx/e.pts.length,sy/e.pts.length];
+    prev.forEach((s,j)=>{const d=Math.hypot(e.c[0]-s.c[0],e.c[1]-s.c[1]);if(d<0.25)pairs.push([d,i,j]);});});
+  pairs.sort((a,b)=>a[0]-b[0]);
+  const li=new Array(list.length).fill(-1);
+  for(const[,i,j]of pairs){if(li[i]>=0||used[j])continue;li[i]=j;used[j]=1;}
+  const out=[];
+  list.forEach((e,i)=>{
+    const n=e.pts.length;let s=li[i]>=0?prev[li[i]]:null;
+    if(!s||s.pts.length!==n*3)s={id:_bodyNextId++,pts:new Float32Array(n*3),tgt:new Float32Array(n*3),fresh:true};
+    s.seen=performance.now();s.side=e.side||'';s.c=e.c;
+    for(let q=0;q<n;q++){const p=e.pts[q];s.tgt[q*3]=p.x;s.tgt[q*3+1]=p.y;
+      // tasks-vision 0.10.3 gives pose points no visibility → a point predicted outside the frame counts as hidden
+      let v=1;if(kind==='pose'){if(p.x<-0.02||p.x>1.02||p.y<-0.02||p.y>1.02)v=0;else if(typeof p.visibility==='number')v=p.visibility;}
+      s.tgt[q*3+2]=v;}
+    if(kind==='pose'&&n>=33){ // hips collapsed onto the shoulders = hallucinated lower body (half-body framing) → hide 23..32
+      const t=s.tgt,sw=Math.hypot(t[33]-t[36],t[34]-t[37]),tl=Math.hypot((t[33]+t[36]-t[69]-t[72])/2,(t[34]+t[37]-t[70]-t[73])/2);
+      if(tl<0.6*sw)for(let q=23;q<33;q++)t[q*3+2]=0;}
+    if(s.fresh||snap){s.pts.set(s.tgt);s.fresh=false;}
+    out.push(s);
+  });
+  const now=performance.now();prev.forEach((s,j)=>{if(!used[j]&&now-s.seen<160)out.push(s);}); // bridge a missed inference (no flicker), never a scene change
+  out.sort((a,b)=>a.id-b.id);
+  st.sets=out;
+}
+// ── Video Reactive POSE / FACE on the shared landmarkers ────────────────────
+// While the BODY scheduler runs the detector (its LED on, TRACKER mode) VR receives every result via _bodyIngest;
+// otherwise (LED off, Panels mode) VR runs it here at its own legacy cadence (every 3rd frame).
+function _bodyVrRun(kind,src){
+  const st=_body[kind];
+  if(st.state!=='ready'||!st.lm)return;
+  if(st.on&&appMode==='tracker'){_bodyVrFill(kind,st.vrList||[]);return;} // the scheduler owns it: reuse its last result (also when it holds a still image)
+  try{
+    const r=st.lm.detectForVideo(src,_bodyTs());
+    let list=(kind==='pose'?(r&&r.landmarks):(r&&r.faceLandmarks)||[]);list=(list||[]).map(p=>({pts:p}));
+    if(kind==='pose'&&list.length)list=_bodyPoseFilter(list);
+    _bodyVrFill(kind,list);st.errs=0;
+  }catch(e){if(++st.errs===3&&st.deleg==='GPU')_bodyLoad(kind,'CPU',true);} // same GPU→CPU fallback as the BODY scheduler
+}
+// Most prominent detection → the legacy landmark shape VR expects ({x,y,z,visibility}; null when nobody is found).
+// tasks-vision 0.10.3 pose points carry no visibility: 1 in frame, 0 when predicted outside (as the BODY overlay).
+function _bodyVrFill(kind,list){
+  let best=null,ba=-1;
+  for(const e of list){let x0=1,y0=1,x1=0,y1=0;for(const p of e.pts){if(p.x<x0)x0=p.x;if(p.x>x1)x1=p.x;if(p.y<y0)y0=p.y;if(p.y>y1)y1=p.y;}
+    const a=(x1-x0)*(y1-y0);if(a>ba){ba=a;best=e;}}
+  const lm=best?best.pts.map(p=>({x:p.x,y:p.y,z:p.z,visibility:(kind==='pose'&&(p.x<-0.02||p.x>1.02||p.y<-0.02||p.y>1.02))?0:(typeof p.visibility==='number'?p.visibility:1)})):null;
+  if(kind==='pose'){if(vrPoseOn)_vrPoseLM=lm;}else if(vrFaceOn)_vrFaceLM=lm;
+}
+// The lite pose model sometimes "sees" tiny bodies inside a close-up hand, or the same person twice:
+// drop duplicates (bbox IoU > .45, keep the larger) and bodies no bigger than a detected hand lying on it.
+function _bodyPoseFilter(list){
+  const bb=e=>{let x0=1,y0=1,x1=0,y1=0;for(const p of e.pts){if(p.x<-0.02||p.x>1.02||p.y<-0.02||p.y>1.02)continue;
+    x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y);}return x1>x0&&y1>y0?[x0,y0,x1,y1]:null;};
+  const area=b=>(b[2]-b[0])*(b[3]-b[1]);
+  const inter=(a,b)=>Math.max(0,Math.min(a[2],b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[3],b[3])-Math.max(a[1],b[1]));
+  const hands=_body.hands.on?_body.hands.sets.map(s=>_bodyBox(s,0)).filter(Boolean):[];
+  const L=list.map(e=>({e,b:bb(e)})).filter(o=>o.b).sort((p,q)=>area(q.b)-area(p.b)),keep=[];
+  for(const o of L){const a=area(o.b);
+    if(keep.some(k=>{const i=inter(o.b,k.b);return i/(a+area(k.b)-i)>0.45;}))continue;
+    if(hands.some(h=>a<=1.5*area(h)&&inter(o.b,h)>0.6*a))continue;
+    keep.push(o);}
+  return keep.map(o=>o.e);
+}
+function _bodyStep(){
+  const a=(srcMode==='image')?1:0.6;
+  for(const k of _BODY_KINDS){const st=_body[k];if(!st.on)continue;
+    for(const s of st.sets){const p=s.pts,t=s.tgt;for(let i=0;i<p.length;i++)p[i]+=(t[i]-p[i])*a;}}
+}
+// Hard-cut detector on a 32×18 thumbnail. It looks at STRUCTURE, not brightness: Pearson correlation of the
+// mean-centred frame with the last structured one (gain/offset-invariant → strobes, flashes and exposure pumps are
+// not cuts); a flat frame (white flash / black) carries no structure → never a cut and never the new reference.
+const _bodyCutCv=Object.assign(document.createElement('canvas'),{width:32,height:18});
+const _bodyCutCtx=_bodyCutCv.getContext('2d',{willReadFrequently:true});
+let _bodyCutPrev=null,_bodyCutSrc=null;
+function _bodySceneCut(src){
+  try{_bodyCutCtx.drawImage(src,0,0,32,18);}catch(e){return false;}
+  const d=_bodyCutCtx.getImageData(0,0,32,18).data,g=new Float32Array(576);
+  let m=0;for(let i=0;i<576;i++){g[i]=0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2];m+=g[i];}m/=576;
+  let v=0;for(let i=0;i<576;i++){g[i]-=m;v+=g[i]*g[i];}const sd=Math.sqrt(v/576);
+  const key=srcMode+'|'+(src===activeImg?(activeImg&&activeImg.src):(vidEl.srcObject?'cam':vidEl.currentSrc));
+  const switched=(_bodyCutSrc!==null&&_bodyCutSrc!==key);_bodyCutSrc=key; // image ↔ video ↔ webcam, new image or new video file
+  if(switched){_bodyCutPrev=sd>=6?{g,sd}:null;return true;}
+  if(sd<6)return false;
+  let cut=false;
+  if(_bodyCutPrev){let c=0;const p=_bodyCutPrev.g;for(let i=0;i<576;i++)c+=g[i]*p[i];cut=c/(576*sd*_bodyCutPrev.sd)<0.35;}
+  _bodyCutPrev={g,sd};return cut;
+}
+// Per-frame scheduler (called from trackerFrame): V2-style cadence — pose every frame alone / every 2nd,
+// hands every 2nd, face every 3rd — most-overdue first, ~10 ms budget per frame, inference duty cycle ≤ ~60%.
+function _bodyTick(src){
+  _bodyUi(false);
+  const act=_BODY_KINDS.filter(k=>_body[k].on&&_body[k].state==='ready'&&_body[k].lm);
+  if(!act.length)return;
+  _bodyTickN++;
+  const now=performance.now();
+  if(src&&_bodySceneCut(src)){
+    // VIDEO-mode landmarkers keep tracking the old ROI across a cut (loop, seek, new image) → feed one blank
+    // frame so they drop it and re-detect on the next real frame; forget the old sets too.
+    for(const k of act){const st=_body[k];try{st.lm.detectForVideo(_bodyWarmCv,_bodyTs());}catch(e){}st.sets=[];st.n=0;st.last=-99;st.vt=-1;st.img=null;st.vrList=null;}
+  }
+  if(now>=_bodyNextAt&&src){
+    const isImg=(src===activeImg),vt=(!isImg&&srcMode==='video')?vidEl.currentTime:-1,alone=act.length===1;
+    const cand=[];
+    for(const k of act){
+      const st=_body[k];
+      if(isImg){if(st.img!==src){st.img=src;st.imgRuns=0;}if(st.imgRuns>=3)continue;} // a still image converges in 3 runs → hold
+      else{st.img=null;if(vt>=0&&vt===st.vt)continue;}                                   // same video frame already analysed
+      const iv=alone?1:(k==='face'?3:2),due=(_bodyTickN-st.last)/iv;
+      if(due>=1)cand.push([due+(k==='pose'?0.02:k==='hands'?0.01:0),k]);
+    }
+    cand.sort((a,b)=>b[0]-a[0]);
+    let spent=0;
+    for(const[,k]of cand){
+      if(spent>10)break;
+      const st=_body[k],t0=performance.now();
+      try{_bodyIngest(k,st.lm.detectForVideo(src,_bodyTs()));st.errs=0;}
+      catch(e){if(++st.errs===3){console.warn('[BST] BODY '+k+' inference error',e);if(st.deleg==='GPU')_bodyLoad(k,'CPU');}}
+      const dt=performance.now()-t0;spent+=dt;
+      st.ms=st.runs?st.ms*0.8+dt*0.2:dt;st.runs++;st.last=_bodyTickN;st.vt=vt;if(isImg)st.imgRuns++;
+      if(st.deleg==='GPU'&&st.runs>4){if(dt>250){if(++st.slow>=3)_bodyLoad(k,'CPU');}else st.slow=0;} // GPU slower than usable → CPU
+    }
+    if(spent>0)_bodyNextAt=performance.now()+spent*0.6;
+  }
+  _bodyStep();
+}
+
+// ── Landmark geometry helpers ───────────────────────────────────────────────
+function _bodyBox(s,minV){ // normalised bbox [x0,y0,x1,y1] of a landmark set (source frame, un-mirrored)
+  const p=s.pts;let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9,n=0;
+  for(let i=0;i<p.length;i+=3){if(minV&&p[i+2]<minV)continue;const x=p[i],y=p[i+1];if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;n++;}
+  return n?[x0,y0,x1,y1]:null;
+}
+function _bodyPoseBox(s){
+  const b=_bodyBox(s,0.5);if(!b)return null;const p=s.pts;
+  if(p[2]>0.5&&p[11*3+2]>0.5&&p[12*3+2]>0.5){ // extend up to the top of the head (pose stops at the eyes)
+    const neck=(p[11*3+1]+p[12*3+1])/2;b[1]=Math.min(b[1],p[1]-0.7*Math.abs(neck-p[1]));}
+  return b;
+}
+// BODY detect → proc-space blobs {x,y,w,h,cx,cy,area} in display space (webcam mirrored like _drawSrc)
+function _bodyBlobs(){
+  const out=[],mir=(srcMode==='webcam'),pr=_fitProc();
+  const push=(b,pad,kind)=>{
+    if(!b)return;const pw=(b[2]-b[0])*pad,ph=(b[3]-b[1])*pad;
+    let x0=Math.max(0,b[0]-pw),y0=Math.max(0,b[1]-ph),x1=Math.min(1,b[2]+pw),y1=Math.min(1,b[3]+ph);
+    if(x1-x0<0.004||y1-y0<0.004)return;
+    if(mir){const t=x0;x0=1-x1;x1=1-t;}
+    const X=pr.x+x0*pr.w,Y=pr.y+y0*pr.h,w=(x1-x0)*pr.w,h=(y1-y0)*pr.h; // SYNTECH-FIT: inside the picture rect
+    out.push({x:X,y:Y,w,h,cx:X+w/2,cy:Y+h/2,area:Math.round(w*h),kind});
+  };
+  if(_body.face.on)_body.face.sets.forEach(s=>push(_bodyBox(s,0),0.06,'face'));
+  if(_body.hands.on)_body.hands.sets.forEach(s=>push(_bodyBox(s,0),0.12,'hand'));
+  if(_body.pose.on)_body.pose.sets.forEach(s=>push(_bodyPoseBox(s),0.05,'pose'));
+  return out;
+}
+// BODY detect + Contour mode: silhouette-ish mask painted from the landmarks (so contours hug face/hands/body)
+const _bmCv=Object.assign(document.createElement('canvas'),{width:PW,height:PH});
+const _bmCtx=_bmCv.getContext('2d',{willReadFrequently:true});
+const _bmBin=new Uint8Array(PW*PH);
+function _bodyMask(){
+  const c=_bmCtx;c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,PW,PH);
+  const pr=_fitProc(); // SYNTECH-FIT: normalised coords → the picture rect
+  if(srcMode==='webcam')c.setTransform(-pr.w,0,0,pr.h,pr.x+pr.w,pr.y);else c.setTransform(pr.w,0,0,pr.h,pr.x,pr.y); // draw in normalised coords
+  c.fillStyle=c.strokeStyle='#fff';c.lineCap=c.lineJoin='round';
+  const poly=(p,idx)=>{c.beginPath();idx.forEach((i,n)=>{n?c.lineTo(p[i*3],p[i*3+1]):c.moveTo(p[i*3],p[i*3+1]);});c.closePath();c.fill();};
+  const limbs=(p,pairs,w,minV)=>{c.lineWidth=w;c.beginPath();for(let i=0;i<pairs.length;i+=2){const a=pairs[i]*3,b=pairs[i+1]*3;if(minV&&(p[a+2]<minV||p[b+2]<minV))continue;c.moveTo(p[a],p[a+1]);c.lineTo(p[b],p[b+1]);}c.stroke();};
+  if(_body.face.on)_body.face.sets.forEach(s=>{if(s.pts.length>=468*3)poly(s.pts,_BODY_FACE_OVAL);});
+  if(_body.hands.on&&_bodyConn)_body.hands.sets.forEach(s=>{const p=s.pts;poly(p,[0,1,2,5,9,13,17]);
+    limbs(p,_bodyConn.hand,Math.hypot(p[0]-p[9*3],p[1]-p[9*3+1])*0.28);});
+  if(_body.pose.on&&_bodyConn)_body.pose.sets.forEach(s=>{const p=s.pts;
+    const sw=Math.max(0.01,Math.hypot(p[11*3]-p[12*3],p[11*3+1]-p[12*3+1]));
+    if(p[11*3+2]>0.5&&p[12*3+2]>0.5&&p[23*3+2]>0.3&&p[24*3+2]>0.3)poly(p,[11,12,24,23]);
+    limbs(p,_bodyConn.poseBody,sw*0.3,0.5);
+    if(p[2]>0.5){c.beginPath();c.arc(p[0],p[1],sw*0.33,0,Math.PI*2);c.fill();}});
+  c.setTransform(1,0,0,1,0,0);
+  const d=c.getImageData(0,0,PW,PH).data;
+  for(let i=0;i<_bmBin.length;i++)_bmBin[i]=d[i*4+3]>64?1:0;
+  return _bmBin;
+}
+
+// ── MOTION detect ────────────────────────────────────────────────────────────
+const _mN=PW*PH;
+const _mG=new Uint8Array(_mN),_mH=new Uint16Array(_mN),_mCur=new Uint8Array(_mN),_mPrev=new Uint8Array(_mN);
+const _mE=new Uint8Array(_mN),_mE2=new Uint8Array(_mN),_mBin=new Uint8Array(_mN),_mDil=new Uint8Array(_mN),_mT=new Uint8Array(_mN);
+const _gW=PW>>2,_gH=PH>>2,_gA=new Uint8Array(_gW*_gH),_gB=new Uint8Array(_gW*_gH);
+let _mHas=false,_mKey='',_mLast=[],_mShift=[0,0],_mFrac=0;
+function _motionReset(){_mHas=false;_mE.fill(0);_mDil.fill(0);_mLast=[];_mShift=[0,0];_mFrac=0;}
+function _mDown(src,dst){for(let gy=0;gy<_gH;gy++)for(let gx=0;gx<_gW;gx++){let s=0;const x0=gx<<2,y0=gy<<2;
+  for(let y=0;y<4;y++){const r=(y0+y)*PW+x0;s+=src[r]+src[r+1]+src[r+2]+src[r+3];}dst[gy*_gW+gx]=s>>4;}}
+// Mean abs difference cur(x,y) vs prev(x-dx,y-dy) over the frame border ring (performers are usually centred,
+// the ring mostly sees background → estimates the camera pan, not the person)
+let _mFR={x:0,y:0,w:PW,h:PH}; // SYNTECH-FIT: picture rect in proc space (the bars carry no motion and no camera pan)
+function _mRingSAD(A,B,W,H,dx,dy,step){
+  const k=W/PW,X0=Math.ceil(_mFR.x*k),X1=Math.floor((_mFR.x+_mFR.w)*k),Y0=Math.ceil(_mFR.y*k),Y1=Math.floor((_mFR.y+_mFR.h)*k);
+  let s=0,n=0;const xl=X0+(((X1-X0)*0.3)|0),xr=X0+(((X1-X0)*0.7)|0),yt=Y0+(((Y1-Y0)*0.15)|0);
+  for(let y=Y0;y<Y1;y+=step){const py=y-dy;if(py<Y0||py>=Y1)continue;
+    for(let x=X0;x<X1;x+=step){if(x>=xl&&x<xr&&y>=yt)continue;const px=x-dx;if(px<X0||px>=X1)continue;
+      const d=A[y*W+x]-B[py*W+px];s+=d<0?-d:d;n++;}}
+  return n>50?s/n:1e9;
+}
+function _mEstimateShift(){
+  _mDown(_mCur,_gA);_mDown(_mPrev,_gB);
+  const z=_mRingSAD(_gA,_gB,_gW,_gH,0,0,1);let best=z,bx=0,by=0;
+  for(let dy=-6;dy<=6;dy++)for(let dx=-6;dx<=6;dx++){if(!dx&&!dy)continue;const v=_mRingSAD(_gA,_gB,_gW,_gH,dx,dy,1);if(v<best){best=v;bx=dx;by=dy;}}
+  if(best>=z*0.8)return[0,0];                       // no clear global motion → static camera
+  let fb=1e9,fx=bx*4,fy=by*4;const cx=fx,cy=fy;      // refine at full resolution (sparse)
+  for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++){const v=_mRingSAD(_mCur,_mPrev,PW,PH,cx+dx,cy+dy,2);if(v<fb){fb=v;fx=cx+dx;fy=cy+dy;}}
+  return[fx,fy];
+}
+function _motionDetect(data){
+  _mFR=_fitProc(); // SYNTECH-FIT
+  const key=srcMode+'|'+(srcMode==='video'?vidEl.currentSrc:'');
+  if(key!==_mKey){_mKey=key;_motionReset();}
+  // 1) luma + 3×3 box blur (kills sensor / codec speckle)
+  for(let i=0;i<_mN;i++){const j=i<<2;_mG[i]=(77*data[j]+150*data[j+1]+29*data[j+2])>>8;}
+  for(let y=0;y<PH;y++){const r=y*PW;for(let x=0;x<PW;x++){const i=r+x;_mH[i]=_mG[i]+_mG[x>0?i-1:i]+_mG[x<PW-1?i+1:i];}}
+  for(let y=0;y<PH;y++){const up=y>0?-PW:0,dn=y<PH-1?PW:0,r=y*PW;for(let x=0;x<PW;x++){const i=r+x;_mCur[i]=((_mH[i+up]+_mH[i]+_mH[i+dn])*7282)>>16;}}
+  if(!_mHas){_mPrev.set(_mCur);_mHas=true;return{bin:_mDil,blobs:[],fresh:false};}
+  // 2) same frame again (rAF faster than the video) → keep last result, don't age the tracks
+  let same=true;for(let i=0;i<_mN;i+=13){if(_mCur[i]!==_mPrev[i]){same=false;break;}}
+  if(same)return{bin:_mDil,blobs:_mLast,fresh:false};
+  // 3) camera-pan compensation + frame difference, threshold from the Threshold slider (same knob as LUMA)
+  const sh=_mEstimateShift(),dx=sh[0],dy=sh[1];_mShift=sh;
+  const thrL=autoMode?_autoThresh:P.threshold+Math.round((1-padY)*(255-P.threshold));
+  const mThr=6+thrL*0.12; // 0→6 · 127→21 · 255→37 grey levels of change
+  if(dx||dy){ // move the motion history with the camera
+    _mE2.fill(0);for(let y=0;y<PH;y++){const py=y-dy;if(py<0||py>=PH)continue;for(let x=0;x<PW;x++){const px=x-dx;if(px>=0&&px<PW)_mE2[y*PW+x]=_mE[py*PW+px];}}
+    _mE.set(_mE2);
+  }
+  let moving=0;const bx0=Math.ceil(_mFR.x),bx1=Math.floor(_mFR.x+_mFR.w),by0=Math.ceil(_mFR.y),by1=Math.floor(_mFR.y+_mFR.h);
+  for(let y=0;y<PH;y++){const py=y-dy,r=y*PW;
+    for(let x=0;x<PW;x++){const i=r+x,px=x-dx;let d=0;
+      if(py>=by0&&py<by1&&px>=bx0&&px<bx1&&y>=by0&&y<by1&&x>=bx0&&x<bx1){d=_mCur[i]-_mPrev[py*PW+px];if(d<0)d=-d;}
+      if(d>mThr){_mE[i]=255;moving++;}else{const e=_mE[i];_mE[i]=e>80?e-80:0;}
+    }}
+  _mPrev.set(_mCur);
+  _mFrac=moving/Math.max(1,(bx1-bx0)*(by1-by0)); // SYNTECH-FIT: share of the PICTURE that changed (letterbox bars never move)
+  if(_mFrac>0.5){_mE.fill(0);_mDil.fill(0);_mLast=[];return{bin:_mDil,blobs:[],fresh:true};} // scene cut / flash / zoom
+  // 4) motion history (current + 1 frame: bridges dropped frames, little trail) → binary → dilate r=3 so a moving arm / head becomes one blob
+  for(let i=0;i<_mN;i++)_mBin[i]=_mE[i]>=128?1:0;
+  const R=3;
+  for(let y=0;y<PH;y++){const r=y*PW;for(let x=0;x<PW;x++){let v=0;const a=Math.max(0,x-R),b=Math.min(PW-1,x+R);for(let k=a;k<=b;k++)if(_mBin[r+k]){v=1;break;}_mT[r+x]=v;}}
+  for(let x=0;x<PW;x++){for(let y=0;y<PH;y++){let v=0;const a=Math.max(0,y-R),b=Math.min(PH-1,y+R);for(let k=a;k<=b;k++)if(_mT[k*PW+x]){v=1;break;}_mDil[y*PW+x]=v;}}
+  // 5) connected components via the tracker's own findBlobs (circularity relaxed: motion shapes are outlines)
+  let bl=findBlobs(_mDil,0.04);
+  if(bl.length>16)bl=bl.sort((a,b)=>b.area-a.area).slice(0,16);
+  _mLast=bl;
+  return{bin:_mDil,blobs:bl,fresh:true};
+}
+
+// ── Temporal tracking for MOTION / BODY blobs (LUMA stays frame-by-frame like the original) ──
+const _trk={mode:'',key:'',tracks:[],nextId:1};
+function _trkReset(){_trk.tracks=[];_trk.mode='';}
+function _trkUpdate(list,mode,fresh){
+  if(_trk.mode!==mode){_trk.tracks=[];_trk.mode=mode;}
+  const T=_trk.tracks;
+  if(fresh){
+    const A=mode==='motion'?0.5:0.55,HOLD=mode==='motion'?4:3;
+    const used=new Uint8Array(T.length),taken=new Uint8Array(list.length),pairs=[];
+    for(let i=0;i<list.length;i++){const b=list[i];
+      for(let j=0;j<T.length;j++){const t=T[j];if(t.kind!==b.kind)continue;
+        const d=Math.hypot(b.cx-t.cx,b.cy-t.cy),gate=Math.max(18,0.6*Math.max(t.w,t.h,b.w,b.h));
+        if(d<=gate)pairs.push([d,i,j]);}}
+    pairs.sort((a,b)=>a[0]-b[0]);
+    for(const[,i,j]of pairs){if(taken[i]||used[j])continue;taken[i]=1;used[j]=1;const t=T[j],b=list[i];
+      t.x+=(b.x-t.x)*A;t.y+=(b.y-t.y)*A;t.w+=(b.w-t.w)*A;t.h+=(b.h-t.h)*A;t.cx+=(b.cx-t.cx)*A;t.cy+=(b.cy-t.cy)*A;
+      t.area=b.area;t.miss=0;t.hits++;}
+    for(let j=T.length-1;j>=0;j--)if(!used[j]&&++T[j].miss>HOLD)T.splice(j,1);   // held (not faded) a few frames
+    for(let i=0;i<list.length;i++)if(!taken[i]){const b=list[i];
+      T.push({id:_trk.nextId++,x:b.x,y:b.y,w:b.w,h:b.h,cx:b.cx,cy:b.cy,area:b.area,kind:b.kind,miss:0,hits:1});}
+  }
+  const minHits=mode==='motion'?2:1; // a motion blob must survive 2 frames → no single-frame noise
+  return T.filter(t=>t.hits>=minHits).map(t=>({x:t.x,y:t.y,w:t.w,h:t.h,cx:t.cx,cy:t.cy,area:Math.round(t.area)}));
+}
+
+// ── DETECT switch (hooks in trackerFrame) ──────────────────────────────────
+function _detEffMode(src){return(_detMode==='motion'&&src===activeImg)?'luma':_detMode;} // still image: no motion → LUMA
+// Smart-contour mask orientation: tracker detection on webcam works mirrored (like _drawSrc, every DETECT mode); Panels stay raw
+function _bodySegMirror(){return appMode==='tracker'&&srcMode==='webcam';}
+function _detDrawProc(src,noMirror){ // detection canvas in display space: same letterbox rect as dc (SYNTECH-FIT), webcam mirrored like _drawSrc
+  const r=_fitProc(src);
+  if(r.w<PW||r.h<PH){pCtx.fillStyle='#000';pCtx.fillRect(0,0,PW,PH);}
+  if(srcMode==='webcam'&&!noMirror){pCtx.save();pCtx.setTransform(-1,0,0,1,PW,0);pCtx.drawImage(src,r.x,r.y,r.w,r.h);pCtx.restore();}
+  else pCtx.drawImage(src,r.x,r.y,r.w,r.h);
+}
+const _detNoBin=new Uint8Array(PW*PH);
+function _detRun(dm,data){
+  const key=srcMode+'|'+(srcMode==='image'&&activeImg?activeImg.src:'')+'|'+(srcMode==='video'?vidEl.currentSrc:'');
+  if(key!==_trk.key){_trk.key=key;_trkReset();}
+  if(dm==='motion'){const r=_motionDetect(data);return{bin:r.bin,blobs:_trkUpdate(r.blobs,'motion',r.fresh)};}
+  return{bin:ctMode?_bodyMask():_detNoBin,blobs:_trkUpdate(_bodyBlobs(),'body',true)};
+}
+function _detSet(m,silent){
+  if(m!=='luma'&&m!=='motion'&&m!=='body')return;
+  _detMode=m;
+  ['luma','motion','body'].forEach(x=>{const el=document.getElementById('det-'+x);if(el)el.classList.toggle('on',x===m);});
+  _trkReset();_motionReset();
+  if(m==='body'&&!_BODY_KINDS.some(k=>_body[k].on))_bodySetOn('pose',true,true); // BODY needs a detector: default to the skeleton
+  if(!silent)toast(m==='luma'?'DETECT: LUMA — zone luminose (classico)':m==='motion'?'DETECT: MOTION — i blob seguono il movimento':'DETECT: BODY — blob su faccia / mani / corpo');
+  _bodyUi(true);
+}
+['luma','motion','body'].forEach(m=>{const el=document.getElementById('det-'+m);if(el)el.addEventListener('click',()=>_detSet(m));});
+
+// ── Status panel (≈5 Hz) ────────────────────────────────────────────────────
+function _bodyUi(force){
+  const now=performance.now();if(!force&&now-_bodyUiT<200)return;_bodyUiT=now;
+  const perf=[];
+  for(const k of _BODY_KINDS){
+    const st=_body[k],sEl=document.getElementById('body-st-'+k),nEl=document.getElementById('body-n-'+k);
+    const lab=st.state==='loading'?'LOADING':st.state==='error'?'ERROR':(st.on&&st.state==='ready')?'READY':'OFF';
+    if(sEl){sEl.textContent=lab+(lab==='READY'&&st.deleg?' · '+st.deleg:'');sEl.className='bc-st '+lab.toLowerCase();}
+    if(nEl)nEl.textContent=(st.on&&st.state==='ready')?st.n:0;
+    if(st.on&&st.state==='ready'&&st.runs)perf.push(_BODY_LBL[k]+' '+Math.round(st.ms)+'MS');
+  }
+  const pf=document.getElementById('body-perf');if(pf)pf.textContent=perf.length?'INFER · '+perf.join(' · '):'--';
+  const h=document.getElementById('det-hint');
+  if(h){let t;
+    if(_detMode==='luma')t='LUMA · blob = zone luminose (classico)';
+    else if(_detMode==='motion')t=srcMode==='image'?'MOTION · immagine ferma → LUMA':'MOTION · i blob seguono il movimento'+(_mShift[0]||_mShift[1]?' · PAN COMP':'');
+    else t=_BODY_KINDS.some(k=>_body[k].on)?'BODY · blob su faccia / mani / corpo':'BODY · accendi FACE / HANDS / BODY';
+    if(h.textContent!==t)h.textContent=t;}
+}
+
+// ── Overlay: face mesh · hands · skeleton on dc (same stretch + webcam mirror as _drawSrc) ──
+function _bodyTag(ctx,x,y,txt,col,k,align){
+  const fs=Math.max(9,Math.round(9*k));ctx.font=fs+'px JetBrains Mono,monospace';
+  const w=ctx.measureText(txt).width+fs*0.9,h=fs+5;let x0=align==='left'?x:x-w/2;
+  x0=Math.max(2,Math.min(dc.width-w-2,x0));const y0=Math.max(2,y-h);
+  ctx.globalAlpha=0.72;ctx.fillStyle='#04020a';ctx.fillRect(x0,y0,w,h);
+  ctx.globalAlpha=0.9;ctx.strokeStyle=col;ctx.lineWidth=1;ctx.strokeRect(x0+0.5,y0+0.5,w-1,h-1);
+  ctx.globalAlpha=1;ctx.fillStyle=col;ctx.textBaseline='middle';ctx.fillText(txt,x0+fs*0.45,y0+h/2+0.5);ctx.textBaseline='alphabetic';
+}
+function _bodyDraw(ctx,dW,dH){
+  const F=_body.face,H=_body.hands,Q=_body.pose,C=_bodyConn;
+  if(!C||!((F.on&&F.sets.length)||(H.on&&H.sets.length)||(Q.on&&Q.sets.length)))return;
+  const R=_fitRect(dW,dH),mir=(srcMode==='webcam'),sx=mir?-R.w:R.w,ox=mir?R.x+R.w:R.x,sy=R.h,oy=R.y; // x = ox + nx·sx , y = oy + ny·sy (SYNTECH-FIT)
+  const k=Math.max(1,Math.min(dW,dH)/600);
+  const main=trackerColorActive?trackerColor:'#ffffff',acc=trackerColorActive?trackerColor:'#e8c000',hcol=trackerColorActive?trackerColor:'#00e0c0';
+  const pad2=n=>String(n).padStart(2,'0');
+  const path=(p,pairs,minV)=>{ctx.beginPath();for(let i=0;i<pairs.length;i+=2){const a=pairs[i]*3,b=pairs[i+1]*3;
+    if(minV&&(p[a+2]<minV||p[b+2]<minV))continue;ctx.moveTo(ox+p[a]*sx,(oy+p[a+1]*sy));ctx.lineTo(ox+p[b]*sx,(oy+p[b+1]*sy));}};
+  const line=(col,w)=>{ // dark under-stroke keeps it readable on bright skin/clothes, then coloured core with a soft glow
+    ctx.shadowBlur=0;ctx.globalAlpha=0.32;ctx.strokeStyle='#000';ctx.lineWidth=w+2.2*k;ctx.stroke();
+    ctx.globalAlpha=0.92;ctx.strokeStyle=col;ctx.lineWidth=w;ctx.shadowColor=col;ctx.shadowBlur=7*k;ctx.stroke();ctx.shadowBlur=0;};
+  const dot=(x,y,r,col)=>{ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();};
+  ctx.save();ctx.setLineDash([]);ctx.lineCap='round';ctx.lineJoin='round';ctx.globalCompositeOperation='source-over';
+  // FACE — hairline tesselation + glowing contours (oval, eyes, brows, lips) + irises
+  if(F.on)F.sets.forEach((s,i)=>{const p=s.pts;
+    if(C.tess.length){path(p,C.tess);ctx.globalAlpha=0.14;ctx.strokeStyle=main;ctx.lineWidth=0.6*k;ctx.stroke();}
+    path(p,C.cont);line(main,1.1*k);
+    if(p.length>=478*3)[[468,469],[473,474]].forEach(([c,e])=>{const x=ox+p[c*3]*sx,y=(oy+p[c*3+1]*sy);
+      const r=Math.max(1.5*k,Math.hypot(ox+p[e*3]*sx-x,(oy+p[e*3+1]*sy)-y));
+      ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.globalAlpha=0.95;ctx.strokeStyle=acc;ctx.lineWidth=1.1*k;ctx.stroke();dot(x,y,1.2*k,acc);});
+    const b=_bodyBox(s,0);if(b)_bodyTag(ctx,ox+((b[0]+b[2])/2)*sx,(oy+b[1]*sy)-6*k,'FACE '+pad2(i+1),acc,k);
+  });
+  // BODY — 33-kp skeleton (face lines left to the mesh when FACE is on) + glowing joints
+  if(Q.on)Q.sets.forEach((s,i)=>{const p=s.pts;
+    path(p,F.on?(H.on?C.poseBodyNH:C.poseBody):(H.on?C.poseNH:C.pose),0.5);line(main,1.6*k); // mesh/hands own the face & fingers when ON
+    ctx.globalAlpha=1;
+    const J=F.on?_BODY_POSE_JOINTS:[0].concat(_BODY_POSE_JOINTS);
+    J.forEach(j=>{if(p[j*3+2]<0.5)return;if(H.on&&j>=15&&j<=22)return;const x=ox+p[j*3]*sx,y=(oy+p[j*3+1]*sy);
+      ctx.globalAlpha=0.35;dot(x,y,4.2*k,acc);ctx.globalAlpha=1;dot(x,y,2.2*k,acc);dot(x,y,0.9*k,'#ffffff');});
+    const b=_bodyPoseBox(s);if(b){ // tag above the head; beside the box when the FACE tag already sits there
+      if(!F.on&&p[2]>0.5)_bodyTag(ctx,ox+p[0]*sx,(oy+b[1]*sy)-4*k,'BODY '+pad2(i+1),main,k);
+      else{const xl=mir?1-b[2]:b[0];_bodyTag(ctx,R.x+xl*R.w,(oy+b[1]*sy)-4*k,'BODY '+pad2(i+1),main,k,'left');}}
+  });
+  // HANDS — 21-kp per hand, fingertips emphasised, L/R tag at the wrist
+  if(H.on)H.sets.forEach(s=>{const p=s.pts;
+    path(p,C.hand);line(hcol,1.3*k);
+    ctx.globalAlpha=1;
+    for(let j=0;j<21;j++){const x=ox+p[j*3]*sx,y=(oy+p[j*3+1]*sy);
+      if(_BODY_TIPS.indexOf(j)>=0){ctx.beginPath();ctx.arc(x,y,3.4*k,0,Math.PI*2);ctx.strokeStyle=acc;ctx.lineWidth=1.2*k;ctx.stroke();dot(x,y,1.3*k,'#ffffff');}
+      else dot(x,y,(j===0?2.2:1.3)*k,j===0?acc:'#ffffff');}
+    if(s.side){const wy=(oy+p[1]*sy),my=(oy+p[9*3+1]*sy),below=wy>=my;
+      _bodyTag(ctx,ox+p[0]*sx,below?wy+20*k:wy-6*k,s.side,hcol,k);}
+  });
+  ctx.restore();
+}
+_bodyUi(true);
+/* SYNTECH-BODY-END ═══════════════════════════════════════════════════════ */
 
 // ══════════════════════════════════════════════════════════
 //  AUDIO REACTIVE — section initializers
@@ -6567,14 +7176,16 @@ const PRESET_LEDS=[
   'fx-thermal','fx-security','fx-liquid','fx-panels',
   'fx-nums','fx-letters','fx-tmix',
   'ar-on-btn','vr-on-btn','flow-on-btn',
-  'btn-plabels','btn-pconnlines','btn-ripple','cam-af-btn','cam-awb-btn'
+  'btn-plabels','btn-pconnlines','btn-ripple','cam-af-btn','cam-awb-btn',
+  'body-face-btn','body-hands-btn','body-pose-btn' /* SYNTECH-BODY */
 ];
 const PRESET_SEGS=[
   ['mode-tracker','mode-panels'],
   ['drive-manual','drive-auto'],
   ['bs-square','bs-rect','bs-circle','bs-corner','bs-mix'],
   ['ls-solid','ls-dashed','ls-dashdot','ls-arrows'],
-  ['mode-freeblob','mode-fixedpts']
+  ['mode-freeblob','mode-fixedpts'],
+  ['det-luma','det-motion','det-body'] /* SYNTECH-BODY */
 ];
 const PRESET_COLORS=['tracker-color-pick','vfx-color-pick','panels-color-pick'];
 const PRESET_TEXT=['pro-custom-text'];
@@ -6606,6 +7217,7 @@ function applyState(s){
   if(s.led)Object.entries(s.led).forEach(([id,on])=>{const el=document.getElementById(id);if(!el)return;const cur=el.classList.contains('on');if(on!==cur)el.click();});
   // Seg groups
   if(s.seg)Object.entries(s.seg).forEach(([,activeId])=>{const el=document.getElementById(activeId);if(el&&!el.classList.contains('on'))el.click();});
+  if(s.seg&&!('det-luma' in s.seg)){const el=document.getElementById('det-luma');if(el&&!el.classList.contains('on'))el.click();} /* SYNTECH-BODY: pre-DETECT save → classic LUMA */
   // Colors
   if(s.col)Object.entries(s.col).forEach(([id,v])=>{const el=document.getElementById(id);if(el){el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));}});
   // Text
@@ -6831,17 +7443,19 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
   var LEDS=['fx-blob','fx-conn','fx-data','fx-glitch','fx-invert',
     'fx-thermal','fx-security','fx-liquid','fx-panels','fx-nums','fx-letters',
     'fx-tmix','ar-on-btn','vr-on-btn','flow-on-btn','btn-plabels',
-    'btn-pconnlines','btn-ripple','cam-af-btn','cam-awb-btn'];
+    'btn-pconnlines','btn-ripple','cam-af-btn','cam-awb-btn',
+    'body-face-btn','body-hands-btn','body-pose-btn'];
   var SEGS=[['mode-tracker','mode-panels'],['drive-manual','drive-auto'],
     ['bs-square','bs-rect','bs-circle','bs-corner','bs-mix'],
     ['ls-solid','ls-dashed','ls-dashdot','ls-arrows'],
-    ['mode-freeblob','mode-fixedpts']];
+    ['mode-freeblob','mode-fixedpts'],['det-luma','det-motion','det-body']];
   var COLORS=['tracker-color-pick','vfx-color-pick','panels-color-pick'];
   var TEXTS=['pro-custom-text'];
   function segGet(){var o={};for(var g=0;g<SEGS.length;g++){var grp=SEGS[g];
     for(var i=0;i<grp.length;i++){var el=document.getElementById(grp[i]);
       if(el&&el.classList.contains('on')){o[grp[0]]=grp[i];break;}}}return o;}
-  function segApply(o){if(!o)return;for(var k in o){var el=document.getElementById(o[k]);
+  function segApply(o){if(!o)return;if(!('det-luma' in o))o['det-luma']='det-luma'; /* save made before DETECT → classic LUMA */
+    for(var k in o){var el=document.getElementById(o[k]);
     if(el&&!el.classList.contains('on'))el.click();}}
   function colGet(){var o={};for(var i=0;i<COLORS.length;i++){var el=document.getElementById(COLORS[i]);
     if(el)o[COLORS[i]]=el.value;}return o;}

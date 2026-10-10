@@ -24,6 +24,7 @@ done, what is next, and every decision made so far. Then follow
 | `06-VERIFICATION.md` | How to verify each phase (commands, Playwright, parity protocol) |
 | `07-SESSION-PROTOCOL.md` | How every work session must start, run, and end |
 | `08-PROMPTS.md` | The prompts the operator pastes to drive each session |
+| `09-MODEL-ROUTING.md` | **Which model does which task** (Haiku / Sonnet / Opus) + the mandatory Opus review gate |
 
 ## Commands
 
@@ -84,3 +85,7 @@ public/effects/<id>/index.html  The 5 standalone effect apps (SOURCE OF TRUTH fo
    No backend state.
 8. Update `docs/workflow/STATE.md` (progress log + next step) in the same
    commit as the work it describes, then push.
+9. Route work by model per `docs/workflow/09-MODEL-ROUTING.md` (agents in
+   `.claude/agents/`: `syn-scout` Haiku, `syn-builder` Sonnet, `syn-architect`
+   Opus, `syn-reviewer` Opus). Nothing is committed without the Opus
+   reviewer's PASS on the full diff.
