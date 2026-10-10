@@ -29,6 +29,43 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-09 (workflow multi-modello + 4 richieste).** Da far provare
+all'operatore sull'app vera, in quest'ordine:
+- **Blob tracker → sezione Body**: FACE / HANDS / BODY su un suo video trap con
+  il cantante in camera; e la riga **DETECT** del Tracker (default MOTION: i blob
+  seguono il movimento; BODY: i blob si agganciano a faccia/mani/corpo; LUMA: il
+  classico). Misurare gli fps con i tre Body accesi sulla SUA GPU (in sandbox,
+  solo CPU, 5–12 fps).
+- **Fullscreen** del riquadro centrale (bottone accanto a giorno/notte, Esc per
+  uscire), con un effetto aperto.
+- **Blob reveal → Source** con un'immagine fissa.
+
+Aperti nati da questa sessione:
+- **AI Lab non allineato al blob tracker standalone.** Il nodo
+  `src/engine/nodes/blob_tracker.ts` è il port 1:1 del solo LUMA; lo standalone
+  ora parte in MOTION e ha BODY. Il port di MOTION (`_motionDetect`,
+  `_trkUpdate`, `findBlobs(bin,minCirc)`) è JS puro su 320×180 e va fatto per
+  primo; BODY richiede un servizio landmark condiviso (come `PersonMask`) con i 3
+  `.task` già in `vendor/`. Fino ad allora la parità 1:1 vale per LUMA.
+- **Blob tracker: la sorgente è stirata sulla tela** (`_drawSrc` disegna a
+  `dW×dH` senza rispettare le proporzioni) — comportamento originale, non toccato
+  per la regola di parità; un'immagine verticale appare allargata. Da decidere
+  con l'operatore.
+- **Blob tracker LUMA su webcam**: i blob LUMA stanno sul lato opposto
+  all'immagine specchiata (il frame di detection non è specchiato, `_drawSrc` sì)
+  — difetto originale, correzione di una riga ma rompe la parità LUMA: da
+  decidere con l'operatore.
+- **Blob tracker, caso remoto (segnalato dal revisore, non riprodotto, già presente
+  prima):** se il ricaricamento su CPU di un modello fallisce dopo 3 errori GPU,
+  POSE/FACE del Video Reactive restano fermi sull'ultimo valore finché non si
+  ricarica la pagina. Correzione di due righe nel `catch` di `_bodyLoad`
+  (azzerare `_vrPoseNet`/`_vrPoseLM` se puntano a quel modello, idem face): da
+  fare con una revisione.
+- **Pulizia possibile (~23 MB):** `public/effects/vendor/mediapipe/pose/` e
+  `face_mesh/` non sono più caricati da nessun effetto; li usa solo
+  `tools/verify/verify-phase10-vendor-lazy.js`. Cancellarli (e aggiornare quello
+  script) solo con l'ok dell'operatore.
+
 **LA GABBIA È DENTRO L'APP (2026-07-31).** L'operatore ha dato il via —
 *"quando apro l'app come ho fatto prima l'estetica deve essere quella finale che
 avevamo deciso"* — dopo aver provato l'app in locale e averla trovata ancora con
@@ -139,6 +176,78 @@ degli effetti", solo per questo file; tutto il nuovo codice è in blocchi
   "Info", come nel blob tracker di riferimento) — nessuna modifica necessaria.
 - Nota per i test: il Chromium di Playwright non decodifica H.264; per i test
   video usare una copia VP9 (`.webm`).
+
+**Blob tracker: tracking reattivo + sezione Body (Opus → revisione Opus in
+quattro giri: FAIL, FAIL, FAIL, PASS — ogni FAIL corretto e riverificato).** L'operatore: *"blob tracker non è veramente reattivo, va
+corretto… riconosce anche faccia mani e corpo, aggiungi una sezione body"*. Il
+.tar caricato era la riscrittura Next.js "BST V2" (MediaPipe Pose/Hand/Face
+Landmarker); i suoi stessi documenti chiamano il prototipo "blob tracker stupido
+(threshold + flood-fill)": i blob nascevano solo dalla luminosità, quindi stavano
+sulle zone chiare ferme e non seguivano il performer. Portate le IDEE della V2
+dentro l'HTML (deroga esplicita alla regola 1, solo per questo file; tutto in
+blocchi `SYNTECH-BODY` + piccoli hook commentati):
+- **Riga DETECT nel Tracker: LUMA / MOTION / BODY, default MOTION** (decisione del
+  regista: l'operatore ha chiesto che sia reattivo; LUMA resta a un click come
+  classico/leggero). LUMA = codice originale, verificato identico pixel per pixel
+  (hash del canvas uguali all'HEAD su immagine, immagine+soglia 90+EDGE, video in
+  pausa a 0.5/1.7/3.2 s). MOTION = differenza tra fotogrammi a 320×180 con
+  compensazione delle panoramiche, soglia dallo slider Threshold, dilatazione,
+  tracking temporale (ID stabili, smoothing, tenuta di pochi frame, un blob deve
+  durare 2 frame); su un'immagine fissa ricade su LUMA. BODY = un blob per
+  faccia, mano e persona. Su un soggetto in movimento: MOTION lo segue 8/8
+  campioni, LUMA 0/8 (un blob unico su tutto il fotogramma chiaro).
+- **Sezione Body** (chiusa all'apertura) con FACE / HANDS / BODY on/off: mesh del
+  volto con iridi, mani con L/R dal lato reale del performer, scheletro;
+  disegnati su `dc`, quindi anche nell'export REC. Modelli caricati al primo ON,
+  in serie, da `vendor/mediapipe/tasks-vision/` (3 `.task` ufficiali Google,
+  17 MB, sha256 verificati): l'app resta offline. GPU con fallback CPU,
+  timestamp sempre crescenti, budget per frame, reset dei modelli sugli stacchi.
+- Persistenza: DETECT e i tre LED nel bridge `SYNTECH-BRIDGE` e nei preset
+  dell'effetto. **I salvataggi fatti prima di oggi (senza DETECT) si riaprono in
+  LUMA** — decisione del regista: un salvataggio conserva il suo look; le
+  sessioni nuove partono in MOTION.
+- Corretto anche un difetto originale: `_ctRunSmartSeg` usava il tempo del video
+  come timestamp, che dopo un loop/seek tornava indietro (144 errori e maschera
+  congelata nell'originale, 0 ora).
+- **La revisione Opus ha dato FAIL al primo giro** con 3 difetti confermati + 1
+  scelta di prodotto + 1 rischio, tutti corretti: (1) caricare i modelli Body
+  insieme al vecchio POSE/FACE del Video Reactive rompeva quest'ultimo (globale
+  `Module` condiviso) → creazioni serializzate che aspettano i caricamenti
+  legacy, e i `send()` legacy in pausa durante una creazione; (2) webcam +
+  contorno SMART: maschera specchiata rispetto ai blob MOTION/BODY → specchiata
+  anch'essa; (3) in modalità Fixed Points i Body non giravano → hook anche lì;
+  (4) vecchi salvataggi → LUMA (sopra); (5) i flash/strobo dei video trap
+  venivano presi per stacchi di scena → rilevatore per correlazione di struttura
+  (0 falsi stacchi su clip strobo contro 31 prima, stacchi veri ancora presi).
+- **Secondo giro: FAIL solo sul punto (1).** Con Body acceso e poi POSE+FACE del
+  Video Reactive, la pagina poteva bloccarsi per sempre (7 prove su 16, thread
+  principale fermo dentro il wasm della vecchia FaceMesh): due generazioni di
+  MediaPipe nella stessa pagina non convivono, e nessuna protezione basta.
+  **Decisione del regista:** le vecchie soluzioni `@mediapipe/pose` e
+  `@mediapipe/face_mesh` non vengono più caricate; POSE e FACE del Video Reactive
+  leggono gli stessi landmarker tasks-vision della sezione Body (stesso formato:
+  33 punti corpo, 478 volto; la `visibility` che il vecchio codice usa è
+  ricostruita: 1 in campo, 0 fuori). Per l'operatore non cambia nulla nel
+  pannello; in più un solo modello per tipo invece di due. Rimossa tutta la
+  macchina di convivenza (nascondere `Module`, attese, `send()` protetti). Anche
+  lo stacco video→webcam / nuovo video ora resetta i modelli. I file vendor
+  `pose/` e `face_mesh/` restano su disco ma non sono più usati dal blob tracker.
+- **Terzo giro: FAIL su un solo punto nuovo, poi corretto.** Il blocco della
+  pagina è sparito (17 prove in sequenza: 0 blocchi, risposta più lenta 458 ms,
+  0 errori, 0 richieste alla vecchia MediaPipe, nessuna doppia inferenza). Il
+  punto nuovo: su un'immagine fissa con il LED Body già acceso, POSE/FACE del
+  Video Reactive restavano vuoti (lo scheduler Body analizza un'immagine solo 3
+  volte, poi si ferma). Corretto con la soluzione del revisore: l'ultimo
+  risultato resta in memoria (`vrList`) e il Video Reactive lo riusa; azzerato
+  agli stacchi e al LED spento. Aggiunto anche al solo Video Reactive il ripiego
+  GPU→CPU dopo 3 errori. Riverificato: immagine fissa 0 → 33 punti, 2 prove dello
+  scenario che bloccava (nessun blocco, 0 errori).
+- **Controllo finale Opus sulle ultime righe: PASS** (immagine fissa 33 punti,
+  nessuna doppia inferenza, 0 errori, lint pulito).
+- Limiti noti: in sandbox (solo CPU) faccia ~80 ms, mani ~150–250 ms, corpo
+  ~100–150 ms per inferenza → 5–12 fps con tutti e tre accesi; il modello pose
+  "lite" sbaglia su inquadrature strettissime (lì servono FACE/HANDS); MOTION
+  compensa panoramiche, non zoom/rotazioni.
 
 ### 2026-07-31 — Il dev server non partiva sul Mac; l'AI diventa sostituibile
 
