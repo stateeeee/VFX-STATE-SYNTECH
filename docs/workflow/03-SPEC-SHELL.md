@@ -7,7 +7,14 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
 
 - **Top bar**: status left, "VFX Syntech / Created by State" wordmark centered,
   session clock right.
-- **Left sidebar**: temporary "VS" logo top; nav = Home, Save, Projects,
+  Next to the day/night toggle: the hero fullscreen button (YouTube-style
+  corner icons); in fullscreen a matching exit button sits bottom-right of the
+  hero, Esc also exits.
+- **Node graph** (NodalComposition): click selects an effect node, Delete /
+  Backspace removes it, Esc / click elsewhere deselects, double-click opens the
+  Lab, the ✕ still removes.
+- **Left sidebar**: nav = Home (its icon IS the app logo — no separate logo
+  above it, 2026-10-10), Save, Projects,
   Lab; below the divider, the GEMINI 3.8 label and the three Gemini modes
   (Art Dir, Agent, Optimizer) — locked until a key is active (§9).
 - **Center hero**: on launch, the animated brain graph (`VfxCanvas`) — the

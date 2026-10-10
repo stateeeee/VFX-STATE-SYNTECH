@@ -80,7 +80,7 @@ interface NodalCompositionProps {
   onAddEffect: (id: ModuleId) => void;
   /** remove an effect node from the graph entirely */
   onRemoveEffect: (id: ModuleId) => void;
-  /** click a node body → jump into the Lab (the real engine) */
+  /** double-click a node body → jump into the Lab (the real engine) */
   onOpenLab: () => void;
   /** click the INPUT node → pick the source video */
   onPickSource: () => void;
@@ -108,6 +108,49 @@ export default function NodalComposition({
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   dragRef.current = drag;
+
+  /* ── selection: a click selects an effect node; Delete / Backspace removes it,
+     Esc or a click on the empty canvas deselects; a double-click opens the Lab ── */
+  const [selected, setSelected] = useState<ModuleId | null>(null);
+  const selectedRef = useRef<ModuleId | null>(null);
+  selectedRef.current = selected;
+  const onRemoveRef = useRef(onRemoveEffect);
+  onRemoveRef.current = onRemoveEffect;
+  // a node removed elsewhere (✕, rack, Gemini) drops the selection
+  useEffect(() => {
+    if (selected && !effects.some((e) => e.id === selected)) setSelected(null);
+  }, [effects, selected]);
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => {
+      const id = selectedRef.current;
+      if (!id) return;
+      if (e.key === 'Escape') { setSelected(null); return; }
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // never steal the key from a text field, a slider/select or anything editable
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      e.preventDefault();
+      setSelected(null);
+      onRemoveRef.current(id);
+    };
+    // the selection lives only while the user works in this panel: a press anywhere
+    // else (top bar, Lab, an effect iframe → window blur) drops it, so a later stray
+    // Backspace can never delete a node that is out of sight
+    const onDown = (e: PointerEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setSelected(null);
+    };
+    const onBlur = () => setSelected(null);
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [selected]);
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -340,7 +383,11 @@ export default function NodalComposition({
         </div>
       </div>
       {/* node canvas */}
-      <div ref={wrapRef} className="flex-1 min-h-0 relative" onClick={() => setAddOpen(false)}>
+      <div ref={wrapRef} className="flex-1 min-h-0 relative select-none" onClick={(e) => {
+        setAddOpen(false);
+        // the click that ends a wire drag lands on a port: keep the selection then
+        if (!(e.target as Element).closest?.('[data-testid^="port-"]')) setSelected(null);
+      }}>
         <svg
           ref={svgRef}
           className="absolute inset-0 w-full h-full"
@@ -427,12 +474,21 @@ export default function NodalComposition({
             const meta = EFFECT_META[id];
             const on = enabledOf(id);
             const y = fxRow(i);
+            const sel = selected === id;
             return (
-              <g key={`node-${id}`} data-testid={`nodal-node-${id}`} opacity={on ? 1 : 0.5}>
+              <g key={`node-${id}`} data-testid={`nodal-node-${id}`} data-selected={sel ? 'true' : 'false'} opacity={on ? 1 : 0.5}>
                 <g
                   style={{ cursor: 'pointer' }}
-                  onClick={(e) => { e.stopPropagation(); onOpenLab(); }}
+                  onClick={(e) => { e.stopPropagation(); setAddOpen(false); setSelected(id); }}
+                  onDoubleClick={(e) => { e.stopPropagation(); setSelected(null); onOpenLab(); }}
                 >
+                  {/* selection ring + soft glow, in the violet accent (day and night) */}
+                  {sel && (
+                    <>
+                      <rect x={fxX - 5} y={y - 5} width={FX_W + 10} height={FX_H + 10} rx="13" fill="none" stroke={OUTPUT_COLOR} strokeWidth="5" opacity={isDayMode ? 0.18 : 0.28} pointerEvents="none" data-testid={`nodal-glow-${id}`} />
+                      <rect x={fxX - 2.5} y={y - 2.5} width={FX_W + 5} height={FX_H + 5} rx="11.5" fill="none" stroke={OUTPUT_COLOR} strokeWidth="2.2" pointerEvents="none" />
+                    </>
+                  )}
                   <rect
                     x={fxX}
                     y={y}

@@ -121,6 +121,28 @@ Non riaprirle.
 
 ## Log
 
+### 2026-10-10 (sera) — Barra di sinistra, nodi eliminabili, icone YouTube
+
+Richieste dell'operatore, fatte da Sonnet (syn-builder), revisione Opus:
+- **Home = logo.** Tolta l'icona della casa e il logo separato sopra: il logo
+  dell'app è ora l'icona del bottone HOME (scritta tenuta). Tutto sale; spazi
+  del gruppo Gemini stretti (mai i caratteri) → ingranaggio + OPTIMIZER interi a
+  1440×900 (81 px di margine) e 1280×800 (8 px). A 1280×720 resta l'overflow
+  già noto.
+- **Nodi.** Un clic seleziona il nodo (anello viola), Delete/Backspace lo
+  elimina, Esc o un clic altrove deseleziona, doppio clic apre il Lab (prima era
+  il clic singolo), la ✕ resta. Mai cancellazioni scrivendo in un campo di testo.
+- **Schermo intero come YouTube.** Icone a quattro angoli (fuori = entra, dentro
+  = esci); in fullscreen un bottone di uscita in basso a destra dell'immagine,
+  Esc funziona.
+- Revisione Opus: FAIL — la selezione restava attiva dopo aver cliccato altrove
+  (es. Save), quindi un Backspace successivo cancellava un nodo non visibile →
+  corretto (clic fuori dal pannello o finestra che perde il fuoco = deselezione;
+  doppio clic non evidenzia più il testo) → riverificato con lo script del
+  revisore.
+- Specifica aggiornata: `03-SPEC-SHELL.md` (barra di sinistra, fullscreen,
+  grafo dei nodi).
+
 ### 2026-10-10 — AI Lab: il blob tracker ha MOTION / BODY e FACE / HANDS / BODY
 
 L'operatore: *"AI Lab: il blob tracker lì è ancora solo LUMA. Va portato
