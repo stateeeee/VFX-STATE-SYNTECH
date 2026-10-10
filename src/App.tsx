@@ -23,12 +23,14 @@ import { EFFECTS_REGISTRY, hasRealEffect } from './effects-registry';
 import VfxCanvas from './components/VfxCanvas';
 import EffectHost, { EffectHostHandle } from './components/EffectHost';
 import ChainLab from './components/ChainLab';
-import AiDirector from './components/AiDirector';
+import AiDirector, { CompSource, GeminiMode, GeminiStatus } from './components/AiDirector';
 import NodalComposition, { CompEffect, EFFECT_META, WireMap } from './components/NodalComposition';
 import AudioMeter from './components/AudioMeter';
 import { gelMaterialTile } from './lib/gelTexture';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { HOLES, DAY_BACKDROPS, VIDEO_BOX, CAGE_BED, CAGE_SURFACE, cageBox, cagePlane } from './cage/cage';
+import { GEMINI_MODEL_DEFAULT, type AiErrorKind, type KeyResponse, type LabHandle, type StatusResponse } from './ai/contract';
+import { AiError, aiGet, forgetKey, getStoredKey, isHostRefusal, storeKey, validateKey } from './ai/client';
 
 // explicit session snapshot for the SAVE nav action (decision #9: localStorage)
 const GEL_TILE = 640; // gel material tile edge (px) — also its background-size
@@ -189,17 +191,17 @@ export default function App() {
 
   // Real effect currently open full-terminal (null = dashboard/home view)
   const [openEffectId, setOpenEffectId] = useState<ModuleId | null>(null);
-  // Ai Lab (native SynEngine): effects composed in series, phase 5 MVP
+  // Lab (native SynEngine): effects composed in series, phase 5 MVP
   const [chainOpen, setChainOpen] = useState(false);
 
-  // Synchronize isStreaming with whether the AI Lab is open
+  // Synchronize isStreaming with whether the Lab is open
   useEffect(() => {
     setIsStreaming(chainOpen);
   }, [chainOpen]);
 
-  // ── COMPOSITION STATE (shared by the Nodal Composition + the AI Lab) ──
+  // ── COMPOSITION STATE (shared by the Nodal Composition + the Lab) ──
   // The effects present in the composition, each with its enabled flag.
-  // Detaching a node's connection port simply toggles enabled. The AI Lab
+  // Detaching a node's connection port simply toggles enabled. The Lab
   // opens with exactly this source + enabled chain (the Nodal Composition is
   // the dashboard shortcut into it).
   const [comp, setComp] = useState<{ nodes: ModuleId[]; wires: WireMap }>(() => {
@@ -230,7 +232,7 @@ export default function App() {
     try { localStorage.setItem(COMP_KEY, JSON.stringify(comp)); } catch { /* private mode */ }
   }, [comp]);
 
-  // the wired chain (in order) — what the AI Lab / brain graph consume;
+  // the wired chain (in order) — what the Lab / brain graph consume;
   // node presence + derived enabled flag feed every legacy consumer
   const graphChain: ModuleId[] = walkChain(comp.nodes, comp.wires);
   const compEffects: CompEffect[] = comp.nodes.map((id) => ({ id, enabled: graphChain.includes(id) }));
@@ -287,8 +289,12 @@ export default function App() {
   };
   const clearChain = () => setComp((prev) => ({ ...prev, wires: wiresFromChain([]) }));
 
-  // ── SHARED SOURCE VIDEO (video + audio): the INPUT node ──
-  const [compSource, setCompSource] = useState<{ url: string; name: string } | null>(null);
+  // ── SHARED SOURCE (a video with its audio, or a still photo): the INPUT node ──
+  // kind/mime/size/lastModified come straight from the picked File: the Gemini
+  // panel needs them to decide upload vs frames and to key its upload cache.
+  // The File itself is kept too: it is disk-backed, so the panel can upload it
+  // as is (streamed) instead of reading the object URL into a second copy.
+  const [compSource, setCompSource] = useState<CompSource | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
   // the hero clip — the sidebar level meter taps this element
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -302,9 +308,19 @@ export default function App() {
   const pickSource = () => sourceInputRef.current?.click();
   const onSourceFile = (file: File | null) => {
     if (!file) return;
+    // some platforms hand over a photo with an empty type: fall back to the extension
+    const isImage = file.type ? file.type.startsWith('image/') : /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(file.name);
     setCompSource((prev) => {
       if (prev?.url) URL.revokeObjectURL(prev.url);
-      return { url: URL.createObjectURL(file), name: file.name };
+      return {
+        url: URL.createObjectURL(file),
+        name: file.name,
+        kind: isImage ? 'image' : 'video',
+        mime: file.type,
+        size: file.size,
+        lastModified: file.lastModified,
+        file,
+      };
     });
   };
   useEffect(() => () => { if (compSource?.url) URL.revokeObjectURL(compSource.url); }, []); // eslint-disable-line
@@ -369,33 +385,128 @@ export default function App() {
     );
   };
 
-  // Gemini Intelligence custom states
-  const [activeGeminiMode, setActiveGeminiMode] = useState<'art_director' | 'agent' | 'optimizer' | null>(null);
-  const [geminiPrompt, setGeminiPrompt] = useState('');
-  const [geminiResponse, setGeminiResponse] = useState<string | null>(null);
-  const [isProcessingGemini, setIsProcessingGemini] = useState(false);
-  const [suggestedPreset, setSuggestedPreset] = useState<any | null>(null);
+  // ── GEMINI 3.8 (src/ai/contract.ts) ──
+  // The three modes stay locked until a key is validated: the browser's pasted
+  // key (sent only to our server) or, failing that, the server's .env key.
+  // 'checking' and 'standby' both read as STANDBY; only 'active' unlocks.
+  const [activeGeminiMode, setActiveGeminiMode] = useState<GeminiMode | null>(null);
+  const [geminiStatus, setGeminiStatus] = useState<GeminiStatus>('checking');
+  const [geminiError, setGeminiError] = useState<AiErrorKind | null>(null);
+  // the server's own words, kept only when they say more than the kind: the
+  // Host guard's 403 ("this API does not answer on <name> — add it to
+  // ALLOWED_HOSTS…"), which would otherwise read as 'Gemini refused the request'
+  const [geminiErrorMsg, setGeminiErrorMsg] = useState<string | null>(null);
+  const [geminiSource, setGeminiSource] = useState<'browser' | 'server' | null>(null);
+  // the model the server runs (GEMINI_MODEL may override the default): the
+  // panel names it when Google says this key cannot use it
+  const [geminiModel, setGeminiModel] = useState<string>(GEMINI_MODEL_DEFAULT);
+  const geminiActive = geminiStatus === 'active';
+  // the Lab's handle — what the Agent and the Optimizer drive (null while closed)
+  const labRef = useRef<LabHandle>(null);
 
-  // Apply a parameter preset suggested by Gemini AI
-  const handleApplyPreset = (preset: any) => {
-    if (!preset) return;
-    setModules((prev) =>
-      prev.map((m) => {
-        if (m.id === activeModule) {
-          const updatedParameters = { ...m.parameters };
-          let updated = false;
-          for (const key of Object.keys(preset)) {
-            if (updatedParameters[key]) {
-              updatedParameters[key] = { ...updatedParameters[key], value: Number(preset[key]) };
-              updated = true;
-            }
-          }
-          if (updated) return { ...m, parameters: updatedParameters };
-        }
-        return m;
-      })
-    );
+  /** a validation's verdict → the panel state. Only a key Google rejected is
+   *  'invalid'; everything else that failed is plain standby with its reason
+   *  (no key yet, a model this key cannot reach, quota, Google or our server
+   *  unreachable — the key itself may be fine). */
+  const applyKeyResponse = (r: KeyResponse) => {
+    if (r.active === false) {
+      setGeminiStatus(r.error === 'invalid_key' ? 'invalid' : 'standby');
+      setGeminiSource(null);
+      setGeminiError(r.error);
+      setGeminiErrorMsg(null);
+    } else {
+      setGeminiStatus('active');
+      setGeminiSource(r.source);
+      setGeminiError(null);
+      setGeminiErrorMsg(null);
+      if (r.model) setGeminiModel(r.model);
+    }
   };
+  const keyFailure = (err: unknown) => {
+    setGeminiStatus('standby');
+    setGeminiSource(null);
+    setGeminiError(err instanceof AiError ? err.kind : 'server_error');
+    setGeminiErrorMsg(isHostRefusal(err) ? err.message : null);
+  };
+
+  /** the browser's key if one is stored, else the server's if it has one.
+   *  Never throws: an unhandled rejection here is a pageerror, and the cage /
+   *  phase-2 suites fail on any pageerror. */
+  const refreshGeminiKey = async (isAlive: () => boolean = () => true) => {
+    try {
+      setGeminiStatus('checking');
+      const stored = getStoredKey();
+      // asked even with a stored key: it names the model the server runs. Only
+      // without one does its failure end the check (nothing else to try).
+      let st: StatusResponse | null = null;
+      try {
+        st = await aiGet<StatusResponse>('/api/gemini/status');
+      } catch (err) {
+        if (!stored) throw err;
+      }
+      if (!isAlive()) return;
+      if (st?.model) setGeminiModel(st.model);
+      if (!stored && st) {
+        if (!st.serverKey) {
+          setGeminiStatus('standby');
+          setGeminiSource(null);
+          setGeminiError(null);
+          setGeminiErrorMsg(null);
+          return;
+        }
+      }
+      const r = await validateKey(stored);
+      if (isAlive()) applyKeyResponse(r);
+    } catch (err) {
+      if (isAlive()) keyFailure(err);
+    }
+  };
+  useEffect(() => {
+    let alive = true;
+    void refreshGeminiKey(() => alive);
+    return () => { alive = false; };
+  }, []); // eslint-disable-line
+
+  /** Connect: validate the typed key WITHOUT storing it, store it only once
+   *  Google accepts it — a rejected key stays in the input for correction but
+   *  never reaches localStorage. An empty field re-checks the stored/server key. */
+  const submitGeminiKey = async (typed: string): Promise<boolean> => {
+    const key = typed.trim();
+    setGeminiStatus('checking');
+    setGeminiError(null);
+    setGeminiErrorMsg(null);
+    try {
+      const r = await validateKey(key || getStoredKey());
+      if (r.active && key) storeKey(key);
+      applyKeyResponse(r);
+      return r.active;
+    } catch (err) {
+      keyFailure(err);
+      return false;
+    }
+  };
+  const forgetGeminiKey = () => {
+    forgetKey();
+    void refreshGeminiKey();
+  };
+  /** a role call came back saying the key no longer works */
+  const handleGeminiError = (kind: AiErrorKind) => {
+    if (kind === 'invalid_key') {
+      setGeminiStatus('invalid');
+      setGeminiSource(null);
+      setGeminiError(kind);
+      setGeminiErrorMsg(null);
+    } else if (kind === 'no_key') {
+      setGeminiStatus('standby');
+      setGeminiSource(null);
+      setGeminiError(kind);
+      setGeminiErrorMsg(null);
+    }
+  };
+  // leaving 'active' closes whatever mode was open (the rail locks again)
+  useEffect(() => {
+    if (!geminiActive) setActiveGeminiMode(null);
+  }, [geminiActive]);
 
   // Dynamic ticking metrics
   const [frameCount, setFrameCount] = useState(84491820);
@@ -533,13 +644,28 @@ export default function App() {
 
   // ── left-sidebar navigation (the real commands, re-skinned per reference) ──
   const navItems: Array<{ key: string; label: string; Icon: any; active: boolean; onClick: () => void; title?: string }> = [
-    // Home closes the open effect / Gemini panel; the AI Lab stays armed —
+    // Home closes the open effect / Gemini panel; the Lab stays armed —
     // only a manual click on its own toggle disarms it (03-SPEC-SHELL §3)
     { key: 'home', label: 'Home', Icon: HomeIcon, active: isHome, onClick: () => { handleEffectClose(); setActiveGeminiMode(null); } },
     { key: 'save', label: savedFlash ? 'Saved' : 'Save', Icon: SaveIcon, active: savedFlash, onClick: handleSaveSession, title: 'Save the current session (module, theme) to this browser' },
     { key: 'projects', label: 'Projects', Icon: FolderIcon, active: projectsOpen, onClick: () => setProjectsOpen(true), title: 'Saved effect chains' },
-    { key: 'ailab', label: 'AI Lab', Icon: AiIcon, active: chainOpen, onClick: toggleLab },
+    // the key stays 'ailab' (nav-ailab): the verify suites address it by testid
+    { key: 'ailab', label: 'Lab', Icon: AiIcon, active: chainOpen, onClick: toggleLab },
   ];
+
+  // where the Gemini panel is working: the Agent and the Optimizer drive the
+  // Lab only; the Art Director works anywhere (03-SPEC-SHELL, D2)
+  const geminiSurface: 'home' | 'lab' | 'effect' = openEffectId ? 'effect' : chainOpen ? 'lab' : 'home';
+  /** "Use this chain": the Art Director's proposal becomes the wired chain, in the Lab */
+  const applyGeminiChain = (list: ModuleId[]) => {
+    setChainTo(list);
+    openLab();
+  };
+  /** "Open in Lab": a standalone effect carries over as a one-node chain */
+  const openGeminiLab = () => {
+    if (openEffectId) setChainTo([openEffectId]);
+    openLab();
+  };
 
   const outputRes = compSource ? '1920x1080' : '1920x1080';
 
@@ -595,7 +721,7 @@ export default function App() {
       <input
         ref={sourceInputRef}
         type="file"
-        accept="video/*"
+        accept="video/*,image/*"
         data-testid="source-file"
         className="hidden"
         onChange={(e) => { onSourceFile(e.target.files?.[0] ?? null); e.currentTarget.value = ''; }}
@@ -674,7 +800,7 @@ export default function App() {
         {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
         {/* The tall left opening. With the meter moved out of it (below), the slot
             is shorter than the nav wants, so the rhythm tightens — otherwise
-            AI LAB and GEMINI PRO collide. Tighten the spacing, never the type. */}
+            LAB and GEMINI 3.8 collide. Tighten the spacing, never the type. */}
         <nav
           className={`syn-hole flex flex-col items-center pt-3 pb-3 rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'}`}
           style={cageBox(HOLES.railTop, 4, 6)}
@@ -715,7 +841,7 @@ export default function App() {
           {/* Divider */}
           <div className={`w-8 h-px my-5 shrink-0 ${isDayMode ? 'bg-neutral-300' : 'bg-ink-700'}`} />
 
-          <span className={`text-[7px] uppercase tracking-[0.2em] font-bold mb-3 shrink-0 ${isDayMode ? 'text-neutral-400' : 'text-neutral-500'}`}>GEMINI PRO</span>
+          <span className={`text-[7px] uppercase tracking-[0.2em] font-bold mb-3 shrink-0 ${isDayMode ? 'text-neutral-400' : 'text-neutral-500'}`}>GEMINI 3.8</span>
           <ul className="flex flex-col gap-4 w-full items-center">
             {[
               { key: 'art_director', label: 'Art Dir', Icon: Lightbulb, onClick: () => setActiveGeminiMode(activeGeminiMode === 'art_director' ? null : 'art_director'), active: activeGeminiMode === 'art_director', title: 'Art Director' },
@@ -723,14 +849,23 @@ export default function App() {
               { key: 'optimizer', label: 'Optimizer', Icon: Settings, onClick: () => setActiveGeminiMode(activeGeminiMode === 'optimizer' ? null : 'optimizer'), active: activeGeminiMode === 'optimizer', title: 'Optimizer' }
             ].map(({ key, label, Icon, active, onClick, title }) => (
               <li key={key} className="w-full flex justify-center">
+                {/* Locked until a key is active: dimmed, no hover pill, a tooltip
+                    that says how to unlock. Colour and cursor only — the rail
+                    already overflows at 1280x800, so no box may grow. */}
                 <button
                   type="button"
                   data-testid={`nav-gemini-${key}`}
                   onClick={onClick}
-                  title={title}
-                  className={`group flex flex-col items-center gap-1 w-full cursor-pointer transition-colors ${active ? 'text-violet-500' : isDayMode ? 'text-neutral-500 hover:text-black' : 'text-neutral-500 hover:text-white'}`}
+                  disabled={!geminiActive}
+                  aria-disabled={!geminiActive}
+                  title={geminiActive ? title : 'Paste your Gemini key in the Gemini 3.8 panel to unlock'}
+                  className={`group flex flex-col items-center gap-1 w-full transition-colors ${
+                    !geminiActive ? 'opacity-35 cursor-not-allowed text-neutral-500'
+                      : active ? 'cursor-pointer text-violet-500'
+                        : isDayMode ? 'cursor-pointer text-neutral-500 hover:text-black' : 'cursor-pointer text-neutral-500 hover:text-white'
+                  }`}
                 >
-                  <span className={`p-1.5 rounded-lg transition-colors ${active ? 'bg-violet-500/12 shadow-[0_0_12px_rgba(139,92,246,0.12)]' : 'group-hover:bg-white/5'}`}>
+                  <span className={`p-1.5 rounded-lg transition-colors ${!geminiActive ? '' : active ? 'bg-violet-500/12 shadow-[0_0_12px_rgba(139,92,246,0.12)]' : 'group-hover:bg-white/5'}`}>
                     <Icon className="w-[16px] h-[16px]" />
                   </span>
                   <span className="text-[7.5px] uppercase tracking-[0.1em] font-medium">{label}</span>
@@ -744,10 +879,11 @@ export default function App() {
         {/* Playback level of the loaded clip. There is a SEPARATE small opening
             under the rail in the artwork, so the meter leaves the rail's flow and
             is centred in that hole — which is also why the hairline that used to
-            divide the two is gone. (The one above GEMINI PRO stays: without it,
-            AI LAB and GEMINI PRO end up touching.) */}
+            divide the two is gone. (The one above GEMINI 3.8 stays: without it,
+            LAB and GEMINI 3.8 end up touching.) */}
         <div className="flex flex-col" style={cageBox(HOLES.meter, 6, 6)}>
-          <AudioMeter isDayMode={isDayMode} videoRef={heroVideoRef} sourceKey={compSource?.url ?? null} />
+          {/* a photo has no sound: the meter only taps a video */}
+          <AudioMeter isDayMode={isDayMode} videoRef={heroVideoRef} sourceKey={compSource?.kind === 'video' ? compSource.url : null} />
         </div>
 
         {/* ═══════════════ MAIN CONTENT ═══════════════ */}
@@ -770,7 +906,7 @@ export default function App() {
                 </div>
                 {savedChains().length === 0 ? (
                   <p className={`font-mono text-[10px] leading-relaxed ${isDayMode ? 'text-neutral-500' : 'text-neutral-400'}`}>
-                    No saved chains yet. Build one in the Ai Lab (or by linking nodes on the
+                    No saved chains yet. Build one in the Lab (or by linking nodes on the
                     brain graph) and save it as a preset — it will appear here.
                   </p>
                 ) : (
@@ -805,18 +941,19 @@ export default function App() {
             <Panel defaultSize={80} minSize={30} className="flex flex-col overflow-hidden">
               <PanelGroup direction="vertical" autoSaveId="syntech-main-vert" className="flex flex-col">
 
-                {/* TOP: Hero (brain graph / video) OR AI Lab OR Effect */}
+                {/* TOP: Hero (brain graph / video) OR Lab OR Effect */}
                 <Panel defaultSize={62} minSize={20}>
                   {/* the big rounded opening */}
                   <div
                     className={`syn-hole relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col`}
                     style={cageBox(HOLES.hero)}
                   >
-                    {/* armed AI Lab stays mounted under an open effect so its
+                    {/* armed Lab stays mounted under an open effect so its
                         composition (nodes, wiring, params) survives navigation */}
                     {chainOpen && (
                       <div className={openEffectId ? 'hidden' : 'w-full h-full'}>
                         <ChainLab
+                          ref={labRef}
                           isDayMode={isDayMode}
                           onBack={() => setChainOpen(false)}
                           chain={graphChain}
@@ -837,8 +974,18 @@ export default function App() {
                       />
                     ) : chainOpen ? null : (
                       <>
-                        {/* background: source video if chosen, else the brain graph */}
-                        {compSource ? (
+                        {/* background: the source if chosen (a photo sits in the
+                            same box as the clip), else the brain graph */}
+                        {compSource?.kind === 'image' ? (
+                          <img
+                            key={compSource.url}
+                            src={compSource.url}
+                            alt=""
+                            draggable={false}
+                            data-testid="hero-image"
+                            className="absolute inset-0 w-full h-full object-cover"
+                          />
+                        ) : compSource ? (
                           <video
                             key={compSource.url}
                             ref={heroVideoRef}
@@ -900,7 +1047,7 @@ export default function App() {
                         isDayMode={isDayMode}
                         effects={compEffects}
                         wires={comp.wires}
-                        source={compSource ? { name: compSource.name } : null}
+                        source={compSource ? { name: compSource.name, kind: compSource.kind } : null}
                         onConnect={connectWire}
                         onDisconnect={disconnectWire}
                         onAddEffect={addCompEffect}
@@ -924,21 +1071,22 @@ export default function App() {
                         <AiDirector
                           isDayMode={isDayMode}
                           activeGeminiMode={activeGeminiMode}
-                          compEffects={compEffects}
+                          status={geminiStatus}
+                          error={geminiError}
+                          errorMessage={geminiErrorMsg}
+                          source={geminiSource}
+                          onSubmitKey={submitGeminiKey}
+                          onForgetKey={forgetGeminiKey}
+                          onAiError={handleGeminiError}
+                          surface={geminiSurface}
+                          openEffectId={openEffectId}
+                          labRef={labRef}
                           compSource={compSource}
-                          currentConfig={{
-                            activeModule,
-                            signalSource,
-                            bufferSize,
-                            parameters: modules.find((m) => m.id === activeModule)?.parameters || {},
-                          }}
-                          onApplyPreset={(preset) => handleApplyPreset(preset)}
-                          onUpdateCompEffects={(enableIds, disableIds) => {
-                            setChainTo([
-                              ...graphChain.filter((id) => !disableIds.includes(id)),
-                              ...(enableIds.filter((id) => !graphChain.includes(id as ModuleId)) as ModuleId[]),
-                            ]);
-                          }}
+                          graphChain={graphChain}
+                          onUseChain={applyGeminiChain}
+                          onOpenLab={openGeminiLab}
+                          onPickMode={setActiveGeminiMode}
+                          model={geminiModel}
                         />
                       </div>
                     </Panel>

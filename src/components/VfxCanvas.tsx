@@ -14,7 +14,7 @@ interface VfxCanvasProps {
   chain?: ModuleId[];
   /** Drag released from one hub onto another: link them into the chain */
   onChainLink?: (from: ModuleId, to: ModuleId) => void;
-  /** Open the Ai Lab with the current chain */
+  /** Open the Lab with the current chain */
   onChainOpen?: () => void;
   onChainClear?: () => void;
 }
@@ -1075,7 +1075,7 @@ export default function VfxCanvas({
             onClick={onChainOpen}
             className="px-2 py-1 rounded bg-violet-500 text-black font-bold hover:bg-violet-400 cursor-pointer"
           >
-            Open Ai Lab
+            Open Lab
           </button>
           <button
             type="button"

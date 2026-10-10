@@ -33,8 +33,8 @@ out to every effect in the app.
 
 ## Product shape (operator's mental model)
 
-- **Left sidebar**: all the commands (Home, Save, Projects, AI Lab, Gemini
-  modes).
+- **Left sidebar**: all the commands (Home, Save, Projects, Lab, and the
+  three Gemini 3.8 modes).
 - **Right sidebar**: the effects library (the 5 effects; artwork covers coming).
 - **Center hero**: the animated brain graph on launch; the video takes this
   space while working.
@@ -42,12 +42,21 @@ out to every effect in the app.
   app opens in the hero space. One effect at a time on the video. Home returns
   to the brain graph; unsaved parameter changes are lost (by design — Save
   exists for that).
-- **AI Lab**: the node section under the brain graph. Toggle it on (it turns
+- **Lab**: the node section under the brain graph. Toggle it on (it turns
   violet and STAYS on until manually toggled off). INPUT and OUTPUT nodes are
   always there; "Add Node" inserts effects; wiring nodes by dragging between
   their connection holes runs multiple effects on the same video in real time.
   An effect disconnected from either side ghosts to ~50% opacity and stops
   processing.
+- **Gemini 3.8**: a panel of three AI roles that really watch and listen to
+  the footage — never just its filename. The **Art Director** is the creative
+  mind: it watches the source (a video with its music, a photo, the webcam)
+  and proposes which effects fit. The **Agent** is the operator: with source
+  and effects chosen, it sets the parameters and the audio routing so video,
+  music and effect play together. The **Optimizer** is the Agent's
+  controller: it looks at the result and reports errors and improvements,
+  each with a fix. It needs a Gemini key, pasted in the panel; without one
+  the three modes are simply locked — everything else works without a key.
 
 ## Known placeholders (do not "fix" prematurely)
 

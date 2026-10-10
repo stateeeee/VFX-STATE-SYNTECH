@@ -15,6 +15,10 @@ View your app in AI Studio: https://ai.studio/apps/c045ad8a-86b0-4e20-8736-007d8
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Optional — only the Gemini 3.8 panel (Art Director, Agent, Optimizer) needs a
+   Gemini API key (free at https://aistudio.google.com/apikey). Paste it in the
+   Gemini 3.8 panel, or put `GEMINI_API_KEY` in [.env.local](.env.local) (see
+   `.env.example`). Without a key the AI modes are simply locked; every non-AI
+   feature works without one.
 3. Run the app:
    `npm run dev`

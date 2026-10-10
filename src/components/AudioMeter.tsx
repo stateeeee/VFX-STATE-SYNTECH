@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 /* Stereo playback level meter for the left sidebar (Premiere-style): green at the
  * bottom, amber through the middle, red at the top when the clip is running hot.
  * TWO columns side by side — left channel and right channel — centred in the rail,
- * and the pair fills whatever height is left under the GEMINI PRO block, with the
+ * and the pair fills whatever height is left under the GEMINI 3.8 block, with the
  * "Audio" caption sitting UNDER the columns.
  *
  * It taps the shell's hero <video> through WebAudio. The element ships muted (so
