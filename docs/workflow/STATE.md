@@ -47,14 +47,10 @@ Aperti nati da questa sessione:
   `_trkUpdate`, `findBlobs(bin,minCirc)`) è JS puro su 320×180 e va fatto per
   primo; BODY richiede un servizio landmark condiviso (come `PersonMask`) con i 3
   `.task` già in `vendor/`. Fino ad allora la parità 1:1 vale per LUMA.
-- **Blob tracker: la sorgente è stirata sulla tela** (`_drawSrc` disegna a
-  `dW×dH` senza rispettare le proporzioni) — comportamento originale, non toccato
-  per la regola di parità; un'immagine verticale appare allargata. Da decidere
-  con l'operatore.
-- **Blob tracker LUMA su webcam**: i blob LUMA stanno sul lato opposto
-  all'immagine specchiata (il frame di detection non è specchiato, `_drawSrc` sì)
-  — difetto originale, correzione di una riga ma rompe la parità LUMA: da
-  decidere con l'operatore.
+- **DECISO dall'operatore (2026-10-10, dopo screenshot prima/dopo):** il blob
+  tracker non stira più la sorgente — **bande nere** (proporzioni originali,
+  immagine centrata); e **LUMA su webcam va corretto** (blob sulla persona, come
+  MOTION/BODY). In lavorazione su standalone e AI Lab insieme.
 - **Blob tracker, caso remoto (segnalato dal revisore, non riprodotto, già presente
   prima):** se il ricaricamento su CPU di un modello fallisce dopo 3 errori GPU,
   POSE/FACE del Video Reactive restano fermi sull'ultimo valore finché non si
