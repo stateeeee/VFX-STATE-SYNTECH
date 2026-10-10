@@ -47,10 +47,12 @@ Aperti nati da questa sessione:
   `_trkUpdate`, `findBlobs(bin,minCirc)`) è JS puro su 320×180 e va fatto per
   primo; BODY richiede un servizio landmark condiviso (come `PersonMask`) con i 3
   `.task` già in `vendor/`. Fino ad allora la parità 1:1 vale per LUMA.
-- **DECISO dall'operatore (2026-10-10, dopo screenshot prima/dopo):** il blob
-  tracker non stira più la sorgente — **bande nere** (proporzioni originali,
-  immagine centrata); e **LUMA su webcam va corretto** (blob sulla persona, come
-  MOTION/BODY). In lavorazione su standalone e AI Lab insieme.
+- **FATTO nello standalone (2026-10-10), da allineare nell'AI Lab:** bande nere
+  (proporzioni originali, immagine centrata) e LUMA su webcam corretto — vedi il
+  log del 2026-10-10.
+- **Blob tracker, ritocco estetico (LOW, non riprodotto):** in Fixed Points un
+  punto cliccato dentro una banda nera perde il marker (le bande vengono ridipinte
+  dopo i marker); proposta: seconda passata dei soli marker dopo `_fitBars`.
 - **Blob tracker, caso remoto (segnalato dal revisore, non riprodotto, già presente
   prima):** se il ricaricamento su CPU di un modello fallisce dopo 3 errori GPU,
   POSE/FACE del Video Reactive restano fermi sull'ultimo valore finché non si
@@ -105,6 +107,30 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-10-10 — Blob tracker: bande nere + LUMA su webcam (decisioni dell'operatore)
+
+L'operatore ha visto due coppie di screenshot prima/dopo e ha scelto: **bande
+nere** (il blob tracker stirava la sorgente sulla tela: un 16:9 nel riquadro
+~1.35 usciva deformato, una foto verticale allargata) e **correggere LUMA su
+webcam** (i blob LUMA cadevano sul lato opposto all'immagine specchiata).
+- Opus (syn-architect) in `public/effects/blob_tracker/index.html`, blocco
+  `SYNTECH-FIT`: un solo helper `_fitRect` per il rettangolo dell'immagine; il
+  canvas di detection 320×180 resta in spazio-tela (`_fitProc`), quindi blob,
+  connessioni, testo, FX, contorni, flow, fixed points, overlay Body, Panels e REC
+  si allineano da soli; la detection vede solo l'immagine (bande escluse anche con
+  INVERT); le bande vengono ridipinte nere dopo gli FX a tutto schermo. LUMA su
+  webcam ora rileva in spazio specchiato come MOTION/BODY.
+- Verificato: proporzioni disegnate = sorgente (errore ≤0,34% anche dopo resize)
+  su video 16:9, foto verticale, foto orizzontale, webcam; blob/overlay/contorni
+  tutti dentro l'immagine; LUMA su webcam sulla persona; **parità LUMA con la
+  versione precedente identica (6/6 hash)** quando la sorgente ha già la forma del
+  riquadro; 0 errori.
+- Revisione Opus: FAIL su un punto — su video verticale con bande la protezione
+  "stacco di scena" di MOTION non scattava più (frazione calcolata su tutto il
+  fotogramma invece che sull'immagine) → corretto (una riga), più le bande
+  ridipinte anche in Fixed Points; riverificato (protezione scattata, 6/6 parità)
+  → controllo finale Opus: PASS.
 
 ### 2026-10-09 — Workflow multi-modello: Haiku / Sonnet / Opus + revisione Opus obbligatoria
 
