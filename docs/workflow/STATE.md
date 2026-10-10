@@ -61,10 +61,6 @@ Aperti nati da questa sessione:
   ricarica la pagina. Correzione di due righe nel `catch` di `_bodyLoad`
   (azzerare `_vrPoseNet`/`_vrPoseLM` se puntano a quel modello, idem face): da
   fare con una revisione.
-- **Pulizia possibile (~23 MB):** `public/effects/vendor/mediapipe/pose/` e
-  `face_mesh/` non sono più caricati da nessun effetto; li usa solo
-  `tools/verify/verify-phase10-vendor-lazy.js`. Cancellarli (e aggiornare quello
-  script) solo con l'ok dell'operatore.
 
 **LA GABBIA È DENTRO L'APP (2026-07-31).** L'operatore ha dato il via —
 *"quando apro l'app come ho fatto prima l'estetica deve essere quella finale che
@@ -231,7 +227,9 @@ blocchi `SYNTECH-BODY` + piccoli hook commentati):
   pannello; in più un solo modello per tipo invece di due. Rimossa tutta la
   macchina di convivenza (nascondere `Module`, attese, `send()` protetti). Anche
   lo stacco video→webcam / nuovo video ora resetta i modelli. I file vendor
-  `pose/` e `face_mesh/` restano su disco ma non sono più usati dal blob tracker.
+  `pose/` e `face_mesh/` sono stati poi cancellati (22,8 MB) con l'ok
+  dell'operatore (2026-10-10); `tools/verify/verify-phase10-vendor-lazy.js` non li
+  controlla più.
 - **Terzo giro: FAIL su un solo punto nuovo, poi corretto.** Il blocco della
   pagina è sparito (17 prove in sequenza: 0 blocchi, risposta più lenta 458 ms,
   0 errori, 0 richieste alla vecchia MediaPipe, nessuna doppia inferenza). Il
