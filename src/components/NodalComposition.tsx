@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react';
 import { ModuleId } from '../types';
 
 /* ═══════════════════════════════════════════════════════════════
-   NODAL COMPOSITION — the AI Lab's wiring surface (03-SPEC-SHELL §6).
+   NODAL COMPOSITION — the Lab's wiring surface (03-SPEC-SHELL §6).
 
    INPUT (right port only) → effect nodes (left in / right out) →
    OUTPUT (left port only). Wires are dragged: press a port, drag to
@@ -70,7 +70,8 @@ interface NodalCompositionProps {
   isDayMode: boolean;
   effects: CompEffect[];
   wires: WireMap;
-  source: { name: string } | null;
+  /** the INPUT source; a photo (kind 'image') has no sound to draw */
+  source: { name: string; kind?: 'video' | 'image' } | null;
   /** commit a wire from an out-port to an in-port (replaces occupied ports) */
   onConnect: (from: string, to: string) => void;
   /** remove the wire that starts at this out-port */
@@ -79,7 +80,7 @@ interface NodalCompositionProps {
   onAddEffect: (id: ModuleId) => void;
   /** remove an effect node from the graph entirely */
   onRemoveEffect: (id: ModuleId) => void;
-  /** click a node body → jump into the AI Lab (the real engine) */
+  /** click a node body → jump into the Lab (the real engine) */
   onOpenLab: () => void;
   /** click the INPUT node → pick the source video */
   onPickSource: () => void;
@@ -394,14 +395,14 @@ export default function NodalComposition({
             <text x={inX + 12} y={inY + 36} fontFamily="var(--syn-font-mono)" fontSize="7.5" fill={subInk}>
               {source ? truncate(source.name, 18) : 'Click to load source'}
             </text>
-            {/* mini waveform to signal video + audio */}
+            {/* mini waveform to signal video + audio — flat for a photo */}
             {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((b) => (
               <rect
                 key={b}
                 x={inX + 12 + b * 6}
                 y={inY + IN_H - 12}
                 width="3"
-                height={source ? 3 + ((b * 5) % 8) : 2}
+                height={source && source.kind !== 'image' ? 3 + ((b * 5) % 8) : 2}
                 rx="1"
                 fill={INPUT_COLOR}
                 opacity={source ? 0.85 : 0.3}

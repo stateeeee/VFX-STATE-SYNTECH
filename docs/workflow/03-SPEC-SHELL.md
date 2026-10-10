@@ -8,13 +8,14 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
 - **Top bar**: status left, "VFX Syntech / Created by State" wordmark centered,
   session clock right.
 - **Left sidebar**: temporary "VS" logo top; nav = Home, Save, Projects,
-  AI Lab; below the divider, the three Gemini modes (Art Dir, Agent,
-  Optimizer).
+  Lab; below the divider, the GEMINI 3.8 label and the three Gemini modes
+  (Art Dir, Agent, Optimizer) — locked until a key is active (§9).
 - **Center hero**: on launch, the animated brain graph (`VfxCanvas`) — the
   app's "second brain": VFX SYNTECH core firing neural connections to every
   effect. This space is where the video/effect appears while working.
 - **Below the hero**: the node graph panel (`NodalComposition`) — this IS the
-  AI Lab's wiring surface — plus the AI Director panel beside it.
+  Lab's wiring surface — plus the Gemini 3.8 panel (`AiDirector`, §9) beside
+  it.
 - **Right sidebar**: the effects library (5 cards; artwork images arrive
   later).
 
@@ -24,21 +25,22 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
   that effect's standalone HTML **in the hero space** (iframe via
   `EffectHost`). It fills the section; the shell chrome stays around it.
 - **One effect at a time.** Applying multiple effects simultaneously is
-  exclusively an AI Lab capability.
+  exclusively a Lab capability.
 - **Home** returns to the brain graph view. Unsaved parameter changes in the
   effect are lost — this is intended, no blocking "are you sure" dialogs.
 - Re-opening an effect restores its **saved** settings (see §4), not the
   abandoned ones.
 
-## 3. AI Lab activation model
+## 3. Lab activation model
 
-- The AI Lab nav button is a **mode toggle**: click → turns violet
-  (`--syn-accent`) and **stays lit until manually toggled off**. It can be
-  armed at any time — while an effect is open, or from the empty dashboard.
+- The Lab nav button (testid still `nav-ailab`) is a **mode toggle**: click →
+  turns violet (`--syn-accent`) and **stays lit until manually toggled off**.
+  It can be armed at any time — while an effect is open, or from the empty
+  dashboard.
 - While armed, the composition runs live: the enabled node chain processes the
   INPUT source in real time on the SynEngine surface (`ChainLab`), and the
   node graph below reflects/edits the same state.
-- Toggling AI Lab off returns to the normal dashboard; the composition state
+- Toggling the Lab off returns to the normal dashboard; the composition state
   (nodes, wiring, params) is preserved for the next time it is armed.
 
 ## 4. Save semantics (operator decision: settings/presets only)
@@ -47,8 +49,8 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
   settings (localStorage key `syntech.effectSettings.<moduleId>`), via the
   bridge (§5). A brief "Saved" flash on the nav button confirms it. No video
   export here — exporting stays inside each effect's own UI, and chain export
-  belongs to the AI Lab's Master MP4 (later phase).
-- **Save, elsewhere** = current behavior (session snapshot) plus, when the AI
+  belongs to the Lab's Master MP4 (later phase).
+- **Save, elsewhere** = current behavior (session snapshot) plus, when the
   Lab is armed, saving the chain preset flow already in ChainLab.
 - **Projects** lists saved chain presets (existing behavior; keep).
 
@@ -83,8 +85,8 @@ Rules:
 
 ## 6. Node graph spec (INPUT → effects → OUTPUT)
 
-- **Nodes**: INPUT (the loaded source video, with audio), one node per added
-  effect, OUTPUT (the final composited video).
+- **Nodes**: INPUT (the loaded source video, with audio — or a still photo,
+  §9.11), one node per added effect, OUTPUT (the final composited video).
 - **Ports ("holes")**: every effect node has one port on its **left (in)** and
   one on its **right (out)**. INPUT has only a **right** port. OUTPUT has only
   a **left** port.
@@ -118,3 +120,282 @@ Rules:
 - No user accounts, no server-side persistence, no collaborative editing.
 - No mobile layout work (desktop browser is the target).
 - No new effects beyond the five until the roadmap says so.
+
+## 9. Gemini 3.8 panel (Art Director · Agent · Optimizer)
+
+The panel beside the node graph (`AiDirector`). One model:
+`gemini-3.8-flash` (the server's `GEMINI_MODEL` may override it; the panel
+names whichever model the server runs). Gemini always receives real pixels
+and/or audio — never just a filename. The wire format shared by panel and
+server is `src/ai/contract.ts`. Panel chrome is English; everything Gemini
+writes back (reads, proposals, summaries, findings) is in Italian.
+
+### 9.1 Key: STANDBY → ACTIVE
+
+- Header pill (`ai-status`): grey **STANDBY** (no key, checking, or
+  rejected) → green **ACTIVE** only once a key has been validated.
+- Until ACTIVE the panel body is the key form: a password field with
+  show/hide (`ai-key-input`), **Connect** (`ai-key-submit`), and a link to
+  the free key page (aistudio.google.com/apikey).
+- Connect sends the typed key to OUR server (`POST /api/gemini/key`, header
+  `x-gemini-key`), which validates it with one `models.get` — no tokens
+  spent. Only a key Google accepts is stored (localStorage
+  `syntech.geminiKey`); a rejected key stays in the field for correction and
+  is never stored. The reason sits beside the label (`ai-key-error`): key
+  rejected, model not available for this key, quota, server not reachable…
+  A key with characters a header cannot carry (curly quote, non-ASCII space)
+  is caught before sending ("copy it again").
+- On every load the shell re-checks: `GET /api/gemini/status` (model, and
+  whether a server key is usable by THIS browser), then validates the stored
+  key, else the server key; with neither it stays STANDBY.
+- The key travels only browser → our server, in that header: never in a URL,
+  never in a log line, never from the browser to Google.
+- ACTIVE card: "Gemini 3.8 is active", the three roles again as buttons
+  (`ai-pick-<mode>`, same switch as the rail — always reachable, even when the
+  rail's lower buttons sit under the meter on a short window), where the key
+  lives ("key from this browser" / "key from server .env") and **Forget key**
+  (`ai-key-forget`, browser key only).
+- A role call that comes back `invalid_key` or `no_key` (key revoked
+  mid-session) drops the panel back to STANDBY and locks the rail again.
+
+### 9.2 Rail gating
+
+- The three mode buttons under GEMINI 3.8 (`nav-gemini-art_director`,
+  `nav-gemini-agent`, `nav-gemini-optimizer`) are disabled until ACTIVE:
+  dimmed, not-allowed cursor, tooltip "Paste your Gemini key in the Gemini
+  3.8 panel to unlock". Leaving ACTIVE closes whatever mode was open.
+- Once unlocked, a click toggles that mode; the panel header shows its name.
+
+### 9.3 Server key fallback (this machine only)
+
+- `GEMINI_API_KEY` in `.env.local` (or `.env`) lets this machine skip the
+  paste. A pasted key always wins over it.
+- It is used only for a browser on this machine talking to the server
+  directly: a loopback socket (127.0.0.0/8, ::1), no relay header
+  (`Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host`, `X-Real-IP`) and a
+  `Host` of `localhost`, `*.localhost` or a loopback address. A phone or
+  laptop on the LAN opening `http://<ip>:3000`, a `.local` name, a name from
+  `ALLOWED_HOSTS`, or anyone coming through a reverse proxy or tunnel on this
+  machine gets `serverKey: false` from `/status` and must paste its own key —
+  nobody else spends the operator's quota.
+- `/api` answers only when the `Host` is `localhost`, `*.localhost`, an IP
+  literal, a `*.local` mDNS name (the Mac's Bonjour name, from the iPad) or a
+  name listed in `ALLOWED_HOSTS` (comma-separated; `.example.com` /
+  `*.example.com` for a domain and its subdomains; `*` turns the check off) —
+  the DNS-rebinding guard. Anything else gets 403 `bad_request` whose message
+  names the fix ("add <name> to ALLOWED_HOSTS … or open the app by IP address,
+  or at http://localhost:PORT"); the key form shows that message, and the
+  server logs one `[host] refused …` line per refused name. In dev the same
+  rule is Vite's `allowedHosts`, so the page and its API open on the same
+  names.
+
+### 9.4 The three roles (the operator's definitions)
+
+- **Art Director** — the creative mind. Watches the source (a video with its
+  music, a photo, or the webcam) and proposes which effects fit. Works
+  everywhere: Home, an open effect, the Lab — always on the INPUT node's
+  source (or the Lab's webcam).
+- **Agent** — the operator. Source and effects are already chosen; it sets
+  the parameters AND the audio routing so video, music and effect play
+  together, and applies them. **Lab only.**
+- **Optimizer** — the Agent's controller. Looks at the RESULT (a short output
+  clip with its music, plus frames) and reports errors and improvements, each
+  with a fix that can be applied. **Lab only.**
+
+### 9.5 What each role sends (captured on demand)
+
+Nothing samples in the background: frames, clips and signal windows are
+captured on the button press, once, downscaled, and everything the capture
+created is released before the request goes. Each tab shows a "Sends: …"
+line saying exactly what will leave the machine (and, when a whole clip is
+uploaded, that Google keeps it ~48h and a free key may use it to improve
+Google's products).
+
+| Role | Sends |
+|---|---|
+| Art Director | **Video ≤ 300 MB** (`MAX_UPLOAD_BYTES`) in an uploadable container: the whole file, uploaded once (`/api/gemini/upload` → Files API) and referenced by `fileUri` — Gemini sees the motion AND hears the music; reused from the upload cache (localStorage `syntech.geminiFiles`) while Google keeps it (~48h). **Larger, or MKV**: 12 sampled frames, no audio (the panel says so). **Photo**: 1 JPEG ≤ 1024 px. **Webcam** (Lab): 4 frames over ~2 s. In the Lab also 2 s of live signals and the current chain. Optional direction text (`ai-ad-intent`). |
+| Agent | The source video whole (cached upload, or uploaded now when ≤ 300 MB; above that it is not sent and the panel says the song is missing); a SOURCE/OUTPUT frame pair; a **4 s OUTPUT clip with the music** when audio is on; 3 s of live signals; the chain table (enabled effects in render order; every parameter's range, base, route and flags; fps, resolution scale, source kind, audio mode, person-mask state); the art direction (§9.7) when chosen; optional intent (`ai-agent-intent`). |
+| Optimizer | A 4 s OUTPUT clip (with the music when audio is on, silent otherwise); a SOURCE/OUTPUT frame pair; 2 s of live signals; the chain table; the Lab's deterministic checks (performance, audio routes, video routes, person mask, output exposure — the output's mean luma against the source frame's, so an already dark night or club source is the footage, not a fault: "almost black" only when the output is ≤ 0.04 AND under half the source's, "blown out" by the mirrored rule); the Agent's last plan when that run is still in effect on this Lab, for this chain order (§9.8); the art direction when chosen. |
+
+Inline clips go with `videoMetadata.fps = 12` (`INLINE_VIDEO_FPS`) so a
+flash can be checked against a kick; an uploaded source is sampled at 1 fps
+(0.5 fps past 10 minutes). The chain table is read before any recording, so
+the recording's own load never shows up as a performance problem.
+
+### 9.6 What comes back
+
+- **Art Director** (`ai-ad-run` → `ai-ad-result`): a read — subject,
+  setting, mood, palette, motion, and music (energy, tempo feel, timestamped
+  moments; null when nothing can be heard) — and 1–3 proposals, each a title,
+  a chain of 1–3 effects in render order, why, and audioIdea. The server
+  makes every chain renderable: valid ids, no repeats, at most one of
+  `blob_tracker` / `blob_reveal` and that one first (both rebuild the frame
+  from the raw source). Each proposal has **Use this chain**
+  (`ai-ad-apply-<i>`, §9.7).
+- **Agent** (`ai-agent-run` → `ai-agent-result`): a plan — summary, ≤ 12
+  parameter bases, ≤ 6 routes — already validated by the server, plus what it
+  refused (`dropped`) and what it kept but changed (`adjusted`: a base raised
+  to its floor or clamped to its range, a route depth capped). **Applied at
+  once.** The card lists every change "from → to" (`ai-agent-rows`), each
+  adjusted one with its note on the row itself ("Mod Depth: 0.4 → 0.1 ·
+  Gemini asked 0, raised to its floor 0.1"), and a "Not applied" list (server
+  refusals + anything the Lab skipped), in plain words — an applied change is
+  never listed as not applied. A plan the Lab refused whole (a Master export)
+  leaves the previous card and its Undo in place, with an error line.
+- **Optimizer** (`ai-opt-run` "Check output" → `ai-opt-result`): verdict
+  ok / improve / broken, a summary, ≤ 6 issues (error / warning / tip, with
+  finding, evidence and clip timestamp, and a fix = a validated plan, or none
+  when no parameter can fix it). Failed checks show in amber. Issue cards are
+  numbered ("2 · tip", `ai-opt-issue-<i>`) the way the server's "fix N" lines
+  are, and each card holds its own refusals (`ai-opt-not-applied-<i>`). Each
+  fix lists its rows before it is applied ("Would change:",
+  `ai-opt-fix-rows-<i>`, with its adjusted notes) and after ("Changed:").
+  **Apply fix** per issue (`ai-opt-fix-<i>`, then a small Undo next to
+  "Applied", `ai-opt-fix-undo-<i>`) or **Apply all** (`ai-opt-fix-all`).
+- A result made on a Lab that has since closed (Agent, Optimizer) — or, for
+  the Art Director, a read of another source than the one loaded now — stays
+  readable but dimmed, opens with "Earlier run — on a Lab that has closed" /
+  "Read of <name>, not the current source — run Analyze again for this one."
+  (`ai-agent-stale`, `ai-opt-stale`, `ai-ad-stale`), and its actions are off.
+  When the Lab (or the source) changes, the tab scrolls back to its action
+  row.
+
+### 9.7 Art Director → Agent handoff
+
+- **Use this chain** wires the proposal's chain in the node graph, opens the
+  Lab, keeps the proposal as the **art direction** (title, chain, why,
+  audioIdea, music read) in the panel's state for the session, marks its card
+  "In use" (check icon, full violet border, `data-in-use` on
+  `ai-ad-proposal-<i>`) and switches the panel to the **Agent** tab — the
+  director's pipeline: creative mind, then operator. Clearing or replacing
+  the direction removes the mark.
+- All three tabs show one line "Direction: <title>" with a small × that
+  clears it (`ai-ad-direction`, `ai-agent-direction`, `ai-opt-direction`,
+  each with `-clear`; the Art Director's also has an "Agent →" link,
+  `ai-ad-direction-next`). Agent and Optimizer send it with every run. The
+  server prompts treat it as the brief: the
+  Agent turns its audioIdea into routes and its why into bases; the Optimizer
+  flags a result that does not deliver it. A typed intent still wins where
+  the two disagree. If the Lab chain changed since, the idea applies to the
+  effects actually there.
+
+### 9.8 Apply / Undo (per-key revert)
+
+- The Lab applies a plan through `LabHandle.applyPlan`, which enforces the
+  safety lists (§9.13) again and records the previous base / switch / route
+  of every key it touches (`PlanUndo`).
+- **Undo** = `revertPlan` of that run's record: it puts back exactly those
+  keys — never the operator's other edits, never chain order or enabled.
+- **One undo stack per Lab, shared by the Agent and the Optimizer**, last in
+  first out: every applied Agent run and every applied fix is pushed on it.
+  A tab's Undo works only while its own newest entry is on top; otherwise it
+  is off and says what comes first ("Undo the Optimizer's fixes first",
+  "Undo the Agent's run first", "Undo fix 2 first"), so an undo can never
+  bring back a value another undo already took away. Agent Undo
+  (`ai-agent-undo`) reverts its run — or, once that is undone, offers the
+  earlier run still in effect ("Undo the 09:47 run"). Optimizer Undo
+  (`ai-opt-undo`) reverts the fixes on top of the stack, newest first.
+- The Optimizer judges the newest Agent run still on the stack for this Lab,
+  and only while the chain order is the one that run was made for; otherwise
+  it says "The Agent's last run was undone: judges the Lab as it is" / "The
+  Agent's last run was on another chain: judges the Lab as it is" (or "No
+  Agent run yet…", `ai-opt-agent-line`) and sends `lastAgent: null`.
+- A run is bound to the Lab it started on: if the Lab is closed or reopened
+  mid-run, the run stops ("The Lab changed — run again"), and Undo / Apply
+  fix stay disabled on any other Lab (the stale result, §9.6).
+- A Master export makes the Lab refuse grabs, plans and reverts. The panel
+  learns of it from those refusals only (a ready Lab giving no frame, a
+  refused apply or undo): it stops before any upload or request ("A Master
+  export is running — run again after it", `ai-agent-export` /
+  `ai-opt-export`), turns Run / Check output / Apply / Undo off, and polls
+  with a tiny grab until the export is over. The server also answers an
+  Agent or Optimizer request with no frame from the Lab with 400 `no_media`,
+  even when the whole source is already uploaded, so Gemini is never paid to
+  tune blind.
+
+### 9.9 Audio: one rule, and auto Clip audio
+
+- Audio off is the Lab's default, even for a music video.
+- One rule everywhere (prompts, validator, Optimizer checks): a route on an
+  audio signal (bass, treble, loud, beat) while audio is off is **waiting for
+  music**, not an error. Only motion / bright routes on a provably dead
+  signal (a still photo) are flagged. Carriers are never counted.
+- When Agent **Run** or Optimizer **Check output** fires on a VIDEO source
+  with audio off, the panel first calls `lab.startClipAudio()` — inside the
+  click, before any await, so the browser lets the AudioContext start — and
+  says so in one line: "Clip audio switched on so Gemini can hear the music"
+  (`ai-agent-note` / `ai-opt-note`). If the clip has no audio track, the run
+  goes on without and says so: "This clip has no soundtrack: Gemini gets the
+  picture only. Start Track or Mic for music." The panel remembers that per
+  clip (it does not try again), and every line stops promising sound: Sends
+  reads "video only — it has no soundtrack" instead of "(video + audio)", the
+  Agent sends no output clip (it records one only with music on), the
+  Optimizer's is "4s output clip (silent)", and the context line reads "this
+  clip has no soundtrack — music routes wait for Track or Mic".
+- It is the same switch as the Lab's **Clip** button (`audio-clip`): the
+  source video's own soundtrack drives the analysers. Clip is disabled for a
+  photo or the webcam (Track or Mic instead).
+
+### 9.10 Lab-only roles: Open in Lab
+
+- Outside the Lab, the Agent and Optimizer tabs say they work in the Lab on
+  the INPUT node's source and offer **Open in Lab** (`ai-open-lab`), enabled
+  once a clip or photo is loaded (the webcam is started from inside the Lab).
+- From an open standalone effect, Open in Lab carries that effect over as a
+  one-node chain. The clip and settings loaded INSIDE the effect stay in the
+  effect, and the panel says so.
+
+### 9.11 Photo source
+
+- The INPUT node (`source-file`) and the Lab's source button take a video or
+  a still photo (`video/*,image/*`).
+- On Home the photo fills the hero (`hero-image`). In the Lab SynEngine loads
+  it as a still (flattened over black, long side ≤ 2560 px) and every effect
+  renders on it.
+- A photo has no sound: the sidebar meter stays idle, the INPUT node's
+  waveform is flat, Clip is disabled — music comes from Track or Mic. Master
+  MP4 export needs a video.
+
+### 9.12 Endpoints
+
+| Method + path | Does | Answers |
+|---|---|---|
+| `GET /api/gemini/status` | model + whether this client may use a server key (no key needed) | `StatusResponse` |
+| `POST /api/gemini/key` | validates the header key (or the server key) with one `models.get` | `KeyResponse` (200 either way) |
+| `POST /api/gemini/upload` | raw file bytes → Files API, waits until Google has processed it | `UploadResponse` |
+| `POST /api/gemini/art-director` | watch the source, propose chains | `ArtDirectorResult` |
+| `POST /api/gemini/agent` | params + routes for the Lab chain | `AgentResult` |
+| `POST /api/gemini/optimizer` | judge the Lab's OUTPUT, propose fixes | `OptimizerResult` |
+
+Every failure is `{ error, message }` (`AiErrorResponse`) with a 4xx/5xx
+status; `error` is one of `no_key`, `invalid_key`, `model_unavailable`,
+`quota`, `too_large`, `no_media`, `bad_request`, `upstream`, `network`,
+`server_error`. Any other `/api` path is a 404 in the same shape (the old
+`/chat`, `/analyze-video`, `/optimize`, `/analyze` are gone). Limits: JSON
+bodies 40 MB; uploads 500 MB on the server (the panel already stops at
+300 MB and falls back to frames).
+
+### 9.13 Safety lists (server validator AND the Lab)
+
+Defined once in `src/ai/contract.ts`; enforced by the server's validator on
+the Agent's plan and on every Optimizer fix, and again by the Lab's
+`applyPlan`. Every refusal or adjustment is reported back.
+
+- **Enum** keys (`ENUM_KEYS`, e.g. `analog.sortDir`, `bokeh.bokehStyle`):
+  snapped to integers inside their range, never routed.
+- **Carrier** keys (`CARRIER_KEYS`: `analog.reactBass/Mid/High`,
+  `blob_reveal.beatReact`, `blob_tracker.connGlow`,
+  `blob_tracker.rippleForce`): their route IS the effect's music response.
+  Base stays 0; only the route amount may change, within 0.05..1
+  (`CARRIER_AMOUNT_MIN/MAX`), on the same source; never switched off.
+- **Protected** keys (`PROTECTED_KEYS`): never touched —
+  `anamorphic_lab.compare`, `anamorphic_lab.lutMix`, `blob_reveal.segN`,
+  `bokeh.segEnabled`, `analog.reactEnabled`.
+- **Floors** (`PARAM_FLOORS`): `analog.modDepth` never below 0.1 (it scales
+  analog's whole music response); a lower base is raised to the floor, and
+  the validator refuses a negative route on it.
+- **Route cap**: ordinary route amounts within ±0.6 (`MAX_ROUTE_AMOUNT` — the
+  deepest factory route, so a default can always be restored); only
+  parameters marked reactive can be routed.
+- **Plan size**: at most 12 parameter changes and 6 routes; unknown keys are
+  dropped, numbers clamped and snapped to their step, switches 0/1.

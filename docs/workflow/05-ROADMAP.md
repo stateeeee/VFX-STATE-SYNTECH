@@ -133,10 +133,65 @@ MP4 with correct duration.
 - [ ] Performance pass: chain of 5 at 720p ≥30fps or graceful adaptive-res.
 - [ ] Sweep for stray non-token colors; day-mode audit.
 
+## Phase 11 — Gemini 3.8 vision + photo input
+
+**Goal**: the Gemini 3.8 panel of 03-SPEC-SHELL §9 — three roles that SEE
+and HEAR (real frames, clips, the uploaded source with its music), a key the
+operator pastes, and a still photo as INPUT. Replaces the text-only AI
+(Groq, offline fallbacks).
+
+- [ ] One wire format, `src/ai/contract.ts`, imported by panel and server;
+      endpoints `/api/gemini/{status,key,upload,art-director,agent,optimizer}`;
+      the old AI endpoints answer 404.
+- [ ] Key paste → validate (one `models.get`) → grey STANDBY becomes green
+      ACTIVE; only an accepted key is stored; the rail's three modes stay
+      locked until ACTIVE and lock again if Google rejects the key later.
+      `GEMINI_API_KEY` in `.env.local` works for this machine only.
+- [ ] Art Director on a photo (1 JPEG), a video (uploaded once, reused;
+      frames past 300 MB) and the webcam; "Use this chain" wires the chain,
+      opens the Lab and hands the proposal to the Agent as the art direction.
+- [ ] Agent (Lab only): uploaded source + SOURCE/OUTPUT pair + 4 s OUTPUT clip
+      with the music + signals + chain table; plan applied at once; Undo
+      reverts only the keys it touched.
+- [ ] Optimizer (Lab only): 4 s OUTPUT clip + pair + deterministic checks +
+      the Agent's last plan; per-issue fixes; Undo.
+- [ ] Safety lists enforced by the server validator AND the Lab: enum,
+      carrier (amount 0.05..1, same source), protected, floors, route cap 0.6,
+      12 params / 6 routes; Apply and Undo refused during a Master export.
+- [ ] Audio rule: a music route with audio off is "waiting for music", never
+      an error; Agent/Optimizer on a video switch the Clip audio on first and
+      say so.
+- [ ] Photo as INPUT: hero image on Home, still source in the Lab, no audio
+      (meter idle, Clip disabled).
+- [ ] Rename across the shell: "AI Lab" → "Lab", "Gemini Pro" → "Gemini 3.8"
+      (testid `nav-ailab` unchanged).
+
+**Accept when** — verified by the suite (no real key, mock Gemini):
+`node tools/verify/verify-gemini.cjs` passes all ten steps (06-VERIFICATION
+§3), `npm run lint` is clean, and every non-AI flow still works with no key
+(the panel just stays STANDBY; `verify-ui-cage.cjs` still passes).
+
+**Needs the operator's real key** (the sandbox has none; the mock proves the
+plumbing, not Gemini's judgement) — ask him to check, and record the answer in
+STATE.md:
+
+- [ ] His key turns the panel ACTIVE and the boot line names the model;
+      `gemini-3.8-flash` is available to that key (else set `GEMINI_MODEL`).
+- [ ] Art Director on one of his music videos: the read hears the song
+      (energy, tempo, moments at plausible timestamps) and the proposals cite
+      what is actually on screen. A large clip (100–300 MB, .mov from a phone)
+      uploads, and the second run reuses it.
+- [ ] Agent on the same clip with the Clip audio: the routes land on the hits
+      he hears; the Italian summary matches what changed; Undo is clean.
+- [ ] Optimizer: findings carry real clip timestamps, it does not flag music
+      routes while audio is off, and its fixes improve the look.
+- [ ] A long chain (4–5 effects) gets an answer (strict schema, or the one
+      loose-schema retry), and a free-tier quota hit reads as a quota message.
+
 ---
 
 ## Later (do not start unless the operator asks)
 
-Webcam as INPUT node in AI Lab is already supported by SynEngine — surface it
-in the node UI. Image (still) input. New effects beyond the five (target ~20).
+Webcam as INPUT node in the Lab is already supported by SynEngine — surface it
+in the node UI. New effects beyond the five (target ~20).
 Payments/licensing. Deploy pipeline hardening (AI Studio / Cloud Run).

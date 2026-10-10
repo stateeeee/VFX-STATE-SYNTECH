@@ -1,12 +1,23 @@
 /* AudioEngine — the audio half of the reactivity backbone (Phase 3).
  *
- * Two exclusive inputs: microphone or a loaded audio file (audible through
- * the speakers). An AnalyserNode feeds per-frame band levels:
+ * Three exclusive inputs: microphone, a loaded audio file, or the CLIP —
+ * the soundtrack of the Lab's own source video (in a music video the
+ * music IS in the clip). An AnalyserNode feeds per-frame band levels:
  *   bass / loud / treble ∈ 0..1 (attack/release smoothed),
  *   beat — a decaying pulse fired on bass-energy onsets,
  *   bpm  — median inter-beat estimate (null until stable).
+ * beatCount counts every onset since the engine was made, so a caller
+ * sampling at a low rate can diff it instead of chasing the pulse.
  * The FileTransport mirrors the underlying <audio> element and is null
  * until a file is loaded — the ChainLab transport bar keys off that.
+ *
+ * Monitoring (analyser → speakers) is on for file and clip, OFF for the
+ * mic: the mic routed to the speakers would feed back into itself. The
+ * link used to be made once, on the first file, and never undone — so a
+ * mic started after a track went to the speakers; setMonitor() fixes it.
+ *
+ * getOutputStream() taps the analyser into a MediaStreamDestination (made
+ * once, on first ask) so a recorder can carry whatever is being analysed.
  */
 
 export interface FileTransport {
@@ -17,7 +28,7 @@ export interface FileTransport {
   duration: number;
 }
 
-export type AudioMode = 'off' | 'mic' | 'file';
+export type AudioMode = 'off' | 'mic' | 'file' | 'clip';
 
 const FFT_SIZE = 2048;
 const BEAT_REFRACTORY_MS = 240; // max ~250 BPM
@@ -28,6 +39,8 @@ export class AudioEngine {
   transport: FileTransport | null = null;
   mode: AudioMode = 'off';
   active = false;
+  /** onsets detected since construction — monotonic, diff it over a window */
+  beatCount = 0;
 
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
@@ -37,6 +50,16 @@ export class AudioEngine {
   private fileEl: HTMLAudioElement | null = null;
   private fileNode: MediaElementAudioSourceNode | null = null;
   private fileUrl: string | null = null;
+  // clip mode: an audio-only stream cut from video.captureStream()
+  private clipStream: MediaStream | null = null;
+  private clipNode: MediaStreamAudioSourceNode | null = null;
+  private clipEnded: (() => void) | null = null;
+  // the tapped element and the src it had — see the source-swap check in tick()
+  private clipEl: HTMLVideoElement | null = null;
+  private clipSrc = '';
+  // analyser → speakers link state (see header) and the recorder tap
+  private monitoring = false;
+  private outDest: MediaStreamAudioDestinationNode | null = null;
 
   // beat / bpm tracking
   private bassAvg = 0;
@@ -63,12 +86,37 @@ export class AudioEngine {
     if (this.fileEl) this.fileEl.pause();
     this.fileNode?.disconnect();
     this.transport = null;
+    // clip: these tracks belong to OUR captureStream() call — stopping them
+    // ends the tap only; the engine's <video> keeps playing untouched
+    this.clipNode?.disconnect();
+    if (this.clipStream) {
+      const ended = this.clipEnded;
+      this.clipStream.getTracks().forEach((t) => {
+        if (ended) t.removeEventListener('ended', ended);
+        t.stop();
+      });
+    }
+    this.clipStream = null;
+    this.clipNode = null;
+    this.clipEnded = null;
+    this.clipEl = null;
+  }
+
+  /** analyser → speakers on/off; idempotent (see header) */
+  private setMonitor(on: boolean) {
+    const ctx = this.ctx;
+    const an = this.analyser;
+    if (!ctx || !an || on === this.monitoring) return;
+    if (on) an.connect(ctx.destination);
+    else an.disconnect(ctx.destination);
+    this.monitoring = on;
   }
 
   async startMic(): Promise<void> {
     const ctx = this.ensureCtx();
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     this.disconnectSources();
+    this.setMonitor(false); // never the mic to the speakers: feedback
     this.micStream = stream;
     this.micNode = ctx.createMediaStreamSource(stream);
     this.micNode.connect(this.analyser!);
@@ -85,8 +133,8 @@ export class AudioEngine {
       this.fileEl = new Audio();
       this.fileEl.crossOrigin = 'anonymous';
       this.fileNode = ctx.createMediaElementSource(this.fileEl);
-      this.analyser!.connect(ctx.destination); // file mode is audible
     }
+    this.setMonitor(true); // file mode is audible
     this.fileNode!.connect(this.analyser!);
     if (this.fileUrl) URL.revokeObjectURL(this.fileUrl);
     this.fileUrl = URL.createObjectURL(file);
@@ -103,6 +151,65 @@ export class AudioEngine {
     this.mode = 'file';
     this.active = true;
     this.resetBeat();
+  }
+
+  /**
+   * Analyse the soundtrack of the Lab's source video. The element stays
+   * muted (the engine keeps it so); captureStream() still carries its
+   * audio in Chromium, and the analyser → speakers link makes it audible
+   * exactly once — no double audio. Never createMediaElementSource: that
+   * is a one-per-element lock, and the shell's AudioMeter owns the hero.
+   * Throws a readable Error (and leaves the current input running) when
+   * the browser cannot tap the element or the clip has no audio track.
+   */
+  async startClip(video: HTMLVideoElement): Promise<void> {
+    const ctx = this.ensureCtx();
+    const capture = (video as HTMLVideoElement & { captureStream?: () => MediaStream }).captureStream;
+    if (typeof capture !== 'function') throw new Error('This browser cannot tap the clip audio');
+    let ms: MediaStream;
+    try {
+      ms = capture.call(video);
+    } catch {
+      throw new Error('This browser cannot tap the clip audio');
+    }
+    // only the sound is wanted — drop the video track right away so the
+    // browser does not keep copying frames into a stream nobody reads
+    ms.getVideoTracks().forEach((t) => t.stop());
+    const tracks = ms.getAudioTracks();
+    if (!tracks.length) throw new Error('This clip has no audio track');
+    this.disconnectSources();
+    const stream = new MediaStream(tracks);
+    this.clipStream = stream;
+    this.clipNode = ctx.createMediaStreamSource(stream);
+    this.clipNode.connect(this.analyser!);
+    this.setMonitor(true); // the muted element is heard through the analyser
+    // when the Lab swaps its source (a new clip / photo / webcam) the old
+    // element is stripped of its src: fall back to off rather than analyse
+    // silence. Chromium keeps the captured track 'live' through that, so
+    // tick() watches the src; 'ended' covers browsers that do end it.
+    const ended = () => { if (this.clipStream === stream) this.stop(); };
+    tracks.forEach((t) => t.addEventListener('ended', ended));
+    this.clipEnded = ended;
+    this.clipEl = video;
+    this.clipSrc = video.src;
+    this.mode = 'clip';
+    this.active = true;
+    this.resetBeat();
+  }
+
+  /**
+   * The analysed audio as a MediaStream — for recording an output clip
+   * with its music (file / clip; the mic too). Null while off. The
+   * destination is made once and stays tapped; it does not reach the
+   * speakers. Callers that need their own lifetime should clone tracks.
+   */
+  getOutputStream(): MediaStream | null {
+    if (!this.active || !this.ctx || !this.analyser) return null;
+    if (!this.outDest) {
+      this.outDest = this.ctx.createMediaStreamDestination();
+      this.analyser.connect(this.outDest);
+    }
+    return this.outDest.stream;
   }
 
   togglePlay(): void {
@@ -140,6 +247,10 @@ export class AudioEngine {
   tick(now: number): typeof this.levels {
     const an = this.analyser;
     if (!an || !this.active || !this.freq) return this.levels;
+    if (this.clipEl && this.clipEl.src !== this.clipSrc) {
+      this.stop(); // the clip's element lost (or changed) its source
+      return this.levels;
+    }
     if (this.transport && this.fileEl) {
       this.transport.currentTime = this.fileEl.currentTime;
       this.transport.duration = isFinite(this.fileEl.duration) ? this.fileEl.duration : 0;
@@ -178,6 +289,7 @@ export class AudioEngine {
       }
       this.lastBeatAt = now;
       this.levels.beat = 1;
+      this.beatCount++;
     } else {
       this.levels.beat *= 0.88;
       if (this.levels.beat < 0.02) this.levels.beat = 0;

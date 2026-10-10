@@ -92,7 +92,7 @@ const HOLES = JSON.parse(fs.readFileSync(__dirname + '/holes.json', 'utf8'));
         nav.querySelectorAll('ul').forEach((u) => { u.style.gap = '13px'; });
         const logo = nav.querySelector('.syn-logo');
         if (logo) { logo.style.width = '34px'; logo.style.height = '34px'; logo.style.marginBottom = '10px'; }
-        [...nav.querySelectorAll('span')].filter((x) => /gemini pro/i.test(x.textContent)).forEach((x) => { x.style.margin = '12px 0 8px'; });
+        [...nav.querySelectorAll('span')].filter((x) => /gemini (pro|3\.8)/i.test(x.textContent)).forEach((x) => { x.style.margin = '12px 0 8px'; });
       }
       put(panelOf(document.querySelector('canvas')), holes.hero);
       put(panelOf(document.querySelector('[data-testid="effect-search"]')), holes.sidebar);

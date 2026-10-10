@@ -1,277 +1,386 @@
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import path from "path";
+import os from "os";
+import fs from "fs";
+import net from "net";
 import dotenv from "dotenv";
 
-dotenv.config();
+/* .env.local first (the operator's own, git-ignored), then .env. The first
+   file to define a variable wins; neither is required. */
+dotenv.config({ path: [".env.local", ".env"], quiet: true });
 
-/* The AI behind these endpoints is pluggable: Groq if GROQ_API_KEY is set,
-   Gemini if GEMINI_API_KEY is, and offline fallbacks if neither. The endpoints
-   below are written against `generate` and never name a provider — see
-   ai-provider.ts. Every catch block here IS the no-key path, and it is why the
-   app has never needed a key to work. */
-import { generate, parseJson, describeProvider } from "./ai-provider";
+/* GEMINI 3.8 — six endpoints under /api/gemini, all speaking the wire format of
+   src/ai/contract.ts:
+
+     GET  /status        is there a server key, which model          (no key needed)
+     POST /key           validate the pasted key (one models.get)    → KeyResponse
+     POST /upload        a whole source video → Gemini Files API     → UploadResponse
+     POST /art-director  watch the source, propose effect chains     → ArtDirectorResult
+     POST /agent         set params + audio routes for the Lab chain → AgentResult
+     POST /optimizer     judge the Lab's OUTPUT, propose fixes       → OptimizerResult
+
+   Every failure is an AiErrorResponse {error, message} with a 4xx/5xx status.
+   Only Host names that cannot be rebound by a web page (localhost, an IP
+   literal, a *.local mDNS name) or that ALLOWED_HOSTS lists reach /api — see
+   hostAllowed. The server's own GEMINI_API_KEY is used only by a browser on
+   this machine, opened at localhost and not relayed by a proxy or a tunnel
+   (ai-provider.ts resolveKey).
+   There are no offline answers any more: without a key the panel simply stays
+   locked, and nothing that is not AI ever needs one. The prompts, schemas and
+   validators live in ai-roles.ts; the Gemini client, key handling and error
+   classification in ai-provider.ts. */
+import {
+  checkKey,
+  failure,
+  generateJson,
+  geminiModel,
+  GeminiFailure,
+  hostnameOf,
+  isSchemaRejection,
+  reportFailure,
+  resolveKey,
+  serverKeyAvailable,
+  uploadAndWait,
+  worthLooseRetry,
+  type AiFailure,
+} from "./ai-provider";
+import { agentJob, artDirectorJob, optimizerJob, type RoleJob } from "./ai-roles";
+import { GEMINI_KEY_HEADER, type KeyResponse, type StatusResponse, type UploadResponse } from "./src/ai/contract";
 
 const app = express();
-const PORT = 3000;
 
-app.use(express.json());
+/* PORT from the environment (default 3000), so a second server — a test run,
+   a parallel session — can live next to the operator's own. */
+const PORT = (() => {
+  const n = Number(process.env.PORT);
+  return Number.isInteger(n) && n > 0 && n < 65536 ? n : 3000;
+})();
 
-// AI Oracle endpoint for multi-turn conversational intelligence
-app.post("/api/gemini/chat", async (req, res) => {
-  const { message, history, currentConfig } = req.body;
-  const activeModuleId = currentConfig?.activeModule || "BLOB";
+const NO_KEY_MESSAGE = "No Gemini key: paste one in the Gemini 3.8 panel (free at https://aistudio.google.com/apikey).";
 
+function sendFailure(res: Response, f: AiFailure) {
+  if (res.headersSent) return;
+  res.status(f.status).json({ error: f.kind, message: f.message });
+}
+
+/* DNS-rebinding guard. A web page on some evil.example can re-point its own
+   name at 127.0.0.1 and then call this API "same-origin" — but its requests
+   still carry Host: evil.example. /api is mounted before Vite (and in a
+   production build nothing else checks the Host at all), so it gets its own
+   check. Allowed:
+     - localhost and *.localhost (browsers resolve them to this machine);
+     - any IP literal (a rebinding attack needs a DNS name; the operator on a
+       phone or another laptop can type an IP);
+     - *.local — the Mac's own Bonjour/mDNS name (studio-mac.local from the
+       iPad). Those names are answered on the LAN only, never by a DNS server
+       a web page on the internet controls;
+     - whatever ALLOWED_HOSTS lists (comma-separated, .env.local): exact names,
+       or ".example.com" / "*.example.com" for a domain and all its
+       subdomains — Vite's own allowedHosts rule. ALLOWED_HOSTS="*" turns the
+       check off (a deploy behind a proxy that checks the Host itself).
+       Letting a name in never lends it the server's key: a request through a
+       proxy or tunnel must paste its own (ai-provider.ts serverKeyFor).
+   The same rule is handed to Vite's dev host check below, so in dev the page
+   and its API open on the same names. Runs before the body parser, so a
+   refused request is never read. */
+interface HostRule { any: boolean; names: string[] }
+
+function readHostRule(raw = process.env.ALLOWED_HOSTS || ""): HostRule {
+  const names: string[] = [];
+  for (const part of raw.split(",")) {
+    const entry = part.trim().toLowerCase()
+      .replace(/^[a-z][a-z0-9+.-]*:\/\//, "") // a pasted URL: keep only its host
+      .replace(/\/.*$/, "");
+    if (!entry) continue;
+    if (entry === "*") return { any: true, names: [] };
+    const wildcard = entry.startsWith("*.") || entry.startsWith(".");
+    const name = hostnameOf(entry.replace(/^\*?\./, ""));
+    if (name) names.push(wildcard ? `.${name}` : name);
+  }
+  return { any: false, names: [...new Set(names)] };
+}
+
+const HOST_RULE = readHostRule();
+
+function hostAllowed(hostHeader: string | undefined, rule: HostRule = HOST_RULE): boolean {
+  if (rule.any) return true;
+  const name = hostnameOf(hostHeader);
+  if (!name) return false;
+  if (net.isIP(name) !== 0) return true;
+  if (name === "localhost" || name.endsWith(".localhost") || name.endsWith(".local")) return true;
+  return rule.names.some((n) => (n.startsWith(".") ? name === n.slice(1) || name.endsWith(n) : name === n));
+}
+
+/** One log line per refused name (up to 20), so the operator who opened the
+ *  app under a new name sees in the terminal what to add. */
+const refusedHosts = new Set<string>();
+
+app.use("/api", (req, res, next) => {
+  if (hostAllowed(req.headers.host)) return next();
+  const shown = (hostnameOf(req.headers.host) ?? "").replace(/[^a-z0-9.:_-]/g, "").slice(0, 100);
+  if (shown && refusedHosts.size < 20 && !refusedHosts.has(shown)) {
+    refusedHosts.add(shown);
+    console.warn(`[host] refused /api on "${shown}" — to allow that name, add it to ALLOWED_HOSTS in .env.local and restart.`);
+  }
+  res.set("Connection", "close");
+  const message = shown
+    ? `This server's API does not answer on "${shown}" — only on localhost, an IP address or a .local name. To use this name, add ${shown} to ALLOWED_HOSTS (in .env.local or the server's environment) and restart the server; or open the app by IP address, or at http://localhost:${PORT} on the server's own machine.`
+    : `This server's API needs a Host name: open the app by IP address, or at http://localhost:${PORT} on the server's own machine.`;
+  sendFailure(res, { ...failure("bad_request", message), status: 403 });
+});
+
+/* Frames and a 4s clip arrive inline as base64; 40MB is far above what the
+   panel sends and still below anything that would hurt the dev server. */
+app.use(express.json({ limit: "40mb" }));
+
+/* ── status + key ─────────────────────────────────────────────── */
+
+/* serverKey is true only for a client that may USE it (this machine): a LAN
+   client is told to paste its own key. */
+app.get("/api/gemini/status", (req, res) => {
+  const body: StatusResponse = { serverKey: serverKeyAvailable(req), model: geminiModel() };
+  res.json(body);
+});
+
+/* Answers 200 with a KeyResponse either way: "this key does not work" is the
+   successful outcome of a validation, not a server failure. */
+app.post("/api/gemini/key", async (req, res) => {
+  const fromHeader = !!req.get(GEMINI_KEY_HEADER)?.trim();
+  const apiKey = resolveKey(req);
+  let body: KeyResponse;
+  if (!apiKey) {
+    body = { active: false, error: "no_key", message: NO_KEY_MESSAGE };
+  } else {
+    try {
+      await checkKey(apiKey);
+      body = { active: true, model: geminiModel(), source: fromHeader ? "browser" : "server" };
+    } catch (err) {
+      const f = reportFailure(err);
+      body = { active: false, error: f.kind, message: f.message };
+    }
+  }
+  res.json(body);
+});
+
+/* ── upload ───────────────────────────────────────────────────── */
+
+/* The browser sends the file's raw bytes (no multipart, no base64): we stream
+   them to a temp file, hand that path to the Files API, and wait for Google to
+   finish processing. 500MB is our hard ceiling; the panel already stops at
+   MAX_UPLOAD_BYTES (300MB) and falls back to sampled frames above it. */
+const UPLOAD_CAP_BYTES = 500 * 1024 * 1024;
+const UPLOAD_MIME = /^(video|audio|image)\/[a-z0-9.+-]+$/;
+/* Browsers name some containers with legacy x- types; Gemini's documented
+   list uses the plain names. Send those, so the stored file's type is one
+   Gemini reads when a role references it later. */
+const MIME_ALIASES: Record<string, string> = {
+  "video/x-msvideo": "video/avi",
+  "video/msvideo": "video/avi",
+  "video/x-ms-wmv": "video/wmv",
+};
+
+class TooLarge extends Error {}
+
+/** Streams the request body into `filePath`, refusing past `cap` bytes.
+ *  On refusal the rest of the body is drained and discarded (not
+ *  destroyed), so the 413 can still reach the browser. */
+function receiveToFile(req: Request, filePath: string, cap: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const out = fs.createWriteStream(filePath);
+    let bytes = 0;
+    let settled = false;
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      req.unpipe(out);
+      out.destroy();
+      req.resume();
+      reject(err);
+    };
+    req.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > cap) fail(new TooLarge());
+    });
+    /* The browser going away (reset, tab closed) is not "could not reach
+       Gemini": say what happened, in the contract's words. */
+    const interrupted = () => fail(new GeminiFailure("server_error", "Upload interrupted by the browser."));
+    req.on("error", interrupted);
+    req.on("close", () => { if (!req.complete) interrupted(); });
+    out.on("error", fail);
+    out.on("finish", () => {
+      if (settled) return;
+      settled = true;
+      resolve(bytes);
+    });
+    req.pipe(out);
+  });
+}
+
+app.post("/api/gemini/upload", async (req, res) => {
+  let tmpDir: string | null = null;
+  /* If the browser goes away at any point — mid-body or while Google works —
+     give up on its behalf: the handler returns at once, the transfer to
+     Google is cut at the next 8MB chunk and whatever already reached Google
+     is deleted (best effort — the SDK itself ignores an abort signal on
+     upload; see uploadAndWait). */
+  const abort = new AbortController();
+  res.on("close", () => { if (!res.writableFinished) abort.abort(); });
   try {
-    if (!message) {
-      return res.status(400).json({ error: "Message is required" });
+    const sent = (req.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const mimeType = MIME_ALIASES[sent] ?? sent;
+    if (!UPLOAD_MIME.test(mimeType)) {
+      throw new GeminiFailure("bad_request", `Only video, audio or image files can be uploaded (got "${mimeType || "no type"}").`);
+    }
+    const apiKey = resolveKey(req);
+    if (!apiKey) throw new GeminiFailure("no_key", NO_KEY_MESSAGE);
+    const declared = Number(req.get("content-length") || 0);
+    if (declared > UPLOAD_CAP_BYTES) throw new TooLarge();
+
+    let displayName = "source";
+    try {
+      displayName = decodeURIComponent(req.get("x-file-name") || "source").replace(/[\r\n\t]/g, " ").trim().slice(0, 120) || "source";
+    } catch {
+      /* a malformed URI escape is not worth a failed upload */
     }
 
-    // Build model prompt context incorporating current active module and visual signal parameters
-    const systemInstruction = `You are the VFX Syntech AI Vault Oracle, an intelligence node embedded in an Obsidian Constellation Vault. You have supreme expertise in high-fidelity digital and analog visual effects synthesis, frequency spectrum dynamics, and generative particles.
+    tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "syntech-upload-"));
+    const tmpPath = path.join(tmpDir, "source.bin");
+    const bytes = await receiveToFile(req, tmpPath, UPLOAD_CAP_BYTES);
+    if (!bytes) throw new GeminiFailure("no_media", "The upload was empty.");
 
-Your design matches the elegant, premium Obsidian gold-and-black aesthetic. 
+    const file = await uploadAndWait(apiKey, tmpPath, mimeType, displayName, abort.signal);
+    const body: UploadResponse = {
+      fileUri: file.uri as string,
+      mimeType: file.mimeType || mimeType,
+      name: file.name || "",
+      expiresAt: file.expirationTime ?? null,
+    };
+    res.json(body);
+  } catch (err) {
+    if (err instanceof TooLarge) {
+      res.set("Connection", "close");
+      sendFailure(res, reportFailure(new GeminiFailure("too_large", "File too large to upload (limit 500 MB).")));
+    } else {
+      sendFailure(res, reportFailure(err));
+    }
+  } finally {
+    if (tmpDir) fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
 
-When the user queries, you must help them:
-1. Customize and optimize visual effect parameters (Vertex Displacement, CRT Emulation, Quantum Gravity, Input Sensitivity, etc.).
-2. Generate creative presets or mathematical visual concepts.
-3. Understand connections in the Obsidian graph.
+/* ── the three roles ──────────────────────────────────────────── */
 
-CURRENT LIVE VFX CONFIGURATION:
-- Active Module: ${activeModuleId}
-- Signal Source: ${currentConfig?.signalSource || "unknown"}
-- Buffer Size: ${currentConfig?.bufferSize || "unknown"}
-- Parameters: ${JSON.stringify(currentConfig?.parameters || {})}
-
-FORMAT RULES:
-- Use elegant, clean markdown.
-- Maintain a high-tech, precise scientific, slightly poetic tone.
-- Keep responses concise, scannable, and highly relevant.
-- IMPORTANT: If you suggest changes to parameters, format them nicely. If you suggest specific values for the current active module, you can optionally include a line with JSON formatting like: \`PRESET:{"threshold":96,"datamosh":18}\` using ONLY keys that exist in the Parameters listed above, so the user can apply them instantly. Each parameter entry includes its own "min"/"max" range and a "hint" describing what it controls — every value you suggest MUST lie within that parameter's range (ranges differ per parameter), and parameters hinted as "(on/off switch)" accept only 0 or 1.`;
-
-    const formattedContents = [
-      ...(history || []).map((msg: any) => ({
-        role: msg.role === "user" ? "user" : "model" as const,
-        text: msg.text,
-      })),
-      { role: "user" as const, text: message },
-    ];
-
-    const response = await generate({
-      tier: "fast",
-      systemInstruction,
-      contents: formattedContents,
-      temperature: 0.75,
-    });
-
-    const replyText = response.text;
-    
-    // Check if replyText contains a parameter preset suggestion
-    let presetMatch = replyText.match(/PRESET:({.*?})/);
-    let extractedPreset = null;
-    if (presetMatch) {
+/* Same shape for all three: read + validate the body (400 no_media / bad_request
+   before anything else), find a key (401 no_key), ask Gemini for JSON in the
+   role's schema, validate the answer, send it. Fully try/caught: Express 4 does
+   not catch a rejected async handler. A browser that hangs up (panel closed,
+   page reloaded) aborts the Gemini call: nobody is left to read the answer. */
+function roleEndpoint<R>(build: (body: unknown) => RoleJob<R>) {
+  return async (req: Request, res: Response) => {
+    const abort = new AbortController();
+    res.on("close", () => { if (!res.writableFinished) abort.abort(); });
+    try {
+      const job = build(req.body);
+      const apiKey = resolveKey(req);
+      if (!apiKey) throw new GeminiFailure("no_key", NO_KEY_MESSAGE);
+      const ask = (responseJsonSchema: Record<string, unknown>) => generateJson<unknown>({
+        apiKey,
+        systemInstruction: job.systemInstruction,
+        parts: job.parts,
+        responseJsonSchema,
+        mediaResolution: job.mediaResolution,
+        signal: abort.signal,
+      });
+      let raw: unknown;
       try {
-        extractedPreset = JSON.parse(presetMatch[1]);
+        raw = await ask(job.responseJsonSchema);
       } catch (err) {
-        // ignore malformed suggestion JSON
+        /* A long chain puts ~170 parameter keys in enums nested under capped
+           arrays; if Google finds that too complex (a 400 naming the schema,
+           or sometimes a bare 500), ask once more with the loose schema — no
+           enums, caps or bounds; the validator enforces all of them anyway.
+           Anything else is a failure. */
+        if (!job.looseSchema || abort.signal.aborted || !worthLooseRetry(err)) throw err;
+        console.warn(`[gemini] strict schema ${isSchemaRejection(err) ? "refused by Google" : "failed with HTTP 500"}, retrying once with the loose schema`);
+        raw = await ask(job.looseSchema);
       }
+      res.json(job.finish(raw));
+    } catch (err) {
+      if (abort.signal.aborted) {
+        console.warn("[gemini] request cancelled: the browser hung up before Gemini answered");
+        return;
+      }
+      sendFailure(res, reportFailure(err));
     }
+  };
+}
 
-    res.json({
-      reply: replyText,
-      preset: extractedPreset
-    });
+app.post("/api/gemini/art-director", roleEndpoint(artDirectorJob));
+app.post("/api/gemini/agent", roleEndpoint(agentJob));
+app.post("/api/gemini/optimizer", roleEndpoint(optimizerJob));
 
-  } catch (error: any) {
-    // Elegant local fallback sequence when upstream is busy, rate-limited, or unconfigured
-    
-    // Create intelligent offline responses when the API is overloaded/503/key is missing
-    let fallbackReply = "The primary Gemini cognitive stream is currently experiencing high request queues or is temporarily unavailable. Local Obsidian Vault archives remain active.\n\n";
-    let extractedPreset: any = null;
-
-    if (activeModuleId === "blob_tracker") {
-      fallbackReply += "As requested, local sensors suggest a dramatic organic tracking look: **Threshold** at 96 for wide blob coverage, **Datamosh** at 18 with **Glitch** at 12 for digital decay, and **Line Glow** at 65 for luminous connections.\n\nPRESET:{\"threshold\":96,\"datamosh\":18,\"glitch\":12,\"connGlow\":65,\"fxOpacity\":100}";
-      extractedPreset = { threshold: 96, datamosh: 18, glitch: 12, connGlow: 65, fxOpacity: 100 };
-    } else if (activeModuleId === "analog") {
-      fallbackReply += "Local scanlines report an optimal retro calibration: **Tear** at 0.5 with **Chroma** at 0.45 for VHS distortion, **Scanlines** at 0.65 and **Bloom** at 0.4 for phosphor warmth.\n\nPRESET:{\"tearAmt\":0.5,\"chromaAmt\":0.45,\"noiseAmt\":0.3,\"scanlinesAmt\":0.65,\"bloomAmt\":0.4,\"feedbackAmt\":0.35}";
-      extractedPreset = { tearAmt: 0.5, chromaAmt: 0.45, noiseAmt: 0.3, scanlinesAmt: 0.65, bloomAmt: 0.4, feedbackAmt: 0.35 };
-    } else if (activeModuleId === "blob_reveal") {
-      fallbackReply += "Local sensors suggest a cinematic reveal matrix: **Seg Threshold** at 55 with **Feather** at 12 for soft rotoscope edges, and **Audio Expand** at 40 to make the mask pulse with the music.\n\nPRESET:{\"segThreshold\":55,\"feather\":12,\"opacity\":90,\"audioExpand\":40}";
-      extractedPreset = { segThreshold: 55, feather: 12, opacity: 90, audioExpand: 40 };
-    } else if (activeModuleId === "bokeh") {
-      fallbackReply += "Local lens calculations recommend heavy background blur aesthetics: **Bokeh Radius** at 32 with **Bloom** at 1.8, plus a 1.6x **Anamorphic Squeeze** for cinematic ovals.\n\nPRESET:{\"bokehRadius\":32,\"bokehBloom\":1.8,\"bokehFeather\":0.55,\"anamSqueeze\":1.6}";
-      extractedPreset = { bokehRadius: 32, bokehBloom: 1.8, bokehFeather: 0.55, anamSqueeze: 1.6 };
-    } else {
-      fallbackReply += "Anamorphic Lab local calculations suggest majestic horizontal flares: **Flare Amount** at 0.85 with **Flare Length** at 0.9, plus **Halation** at 0.6 for film glow.\n\nPRESET:{\"flareMaster\":1,\"flareAmt\":0.85,\"flareLength\":0.9,\"halation\":0.6,\"squeeze\":1.6}";
-      extractedPreset = { flareMaster: 1, flareAmt: 0.85, flareLength: 0.9, halation: 0.6, squeeze: 1.6 };
-    }
-
-    res.json({
-      reply: fallbackReply,
-      preset: extractedPreset,
-      isFallback: true,
-      info: "Loaded vault offline archives due to upstream API limits."
-    });
-  }
+/* Anything else under /api is a 404 in the contract's error shape — not the
+   SPA's index.html, which is what the Vite middleware would answer. */
+app.all("/api/*", (_req, res) => {
+  sendFailure(res, { ...failure("bad_request", "Unknown API endpoint."), status: 404 });
 });
-// Gemini Intelligence Agent endpoint
-app.post("/api/gemini/agent", async (req, res) => {
-  const { prompt, history, currentConfig, compEffects } = req.body;
+
+/* Errors raised before a handler runs — body-parser's 413 (entity.too.large)
+   and 400 (entity.parse.failed) — still answer as AiErrorResponse JSON. */
+app.use("/api", (err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent) return next(err);
+  const type = (err as { type?: string })?.type;
+  if (type === "entity.too.large") return sendFailure(res, failure("too_large", "Request too large (limit 40 MB). Send fewer frames or a shorter clip."));
+  if (type === "entity.parse.failed") return sendFailure(res, failure("bad_request", "Request body is not valid JSON."));
+  sendFailure(res, reportFailure(err));
+});
+
+/* Uploads in flight live in os.tmpdir()/syntech-upload-*; the handler's
+   `finally` removes them, but not when the server is killed mid-upload
+   (Ctrl+C during a 300MB "Uploading clip…"). Sweep leftovers at boot — only
+   ones untouched for 10 minutes, so a second server's live upload is safe. */
+const STALE_UPLOAD_MS = 10 * 60_000;
+async function sweepStaleUploads(): Promise<void> {
+  const dir = os.tmpdir();
+  let names: string[];
   try {
-    let systemInstruction = `You are the VFX Syntech Agent, an autonomous workflow assistant.
-Your job is to read the user request and modify the active Nodal Composition (the graph of effects).
-The current graph has these nodes enabled: ${JSON.stringify(compEffects)}.
-Available node IDs are: "blob_tracker", "analog", "blob_reveal", "bokeh", "anamorphic_lab".
-Return a JSON object with a list of nodes to ENABLE and nodes to DISABLE to achieve the user request.
-Example: {"enable": ["analog", "blob_tracker"], "disable": ["bokeh"]}`;
-
-    const response = await generate({
-      tier: "pro",
-      systemInstruction,
-      contents: [{ role: "user", text: prompt }],
-      json: true,
-    });
-    const result = parseJson(response.text);
-    res.json({ result, message: "Applied automated workflow edits based on your request." });
-  } catch (error: any) {
-    res.json({ result: {}, message: "Agent encountered a local sensor error.", isFallback: true });
+    names = await fs.promises.readdir(dir);
+  } catch {
+    return;
   }
-});
-
-// Gemini Intelligence Video Analyzer endpoint
-app.post("/api/gemini/analyze-video", async (req, res) => {
-  const { videoName } = req.body;
-  try {
-    let systemInstruction = `You are a video analysis AI. The user has uploaded or selected a video named "${videoName}". 
-Provide a brief, high-level analysis of what you detect in this type of video and how the active Nodal Composition could be optimized for it.`;
-    const response = await generate({
-      tier: "pro",
-      systemInstruction,
-      contents: [{ role: "user", text: "Analyze the video context." }],
-    });
-    res.json({ analysis: response.text });
-  } catch (error: any) {
-    res.json({ analysis: "Offline telemetry: Action sequence detected. Optimize buffer speeds.", isFallback: true });
+  const cutoff = Date.now() - STALE_UPLOAD_MS;
+  let removed = 0;
+  for (const name of names) {
+    if (!name.startsWith("syntech-upload-")) continue;
+    const full = path.join(dir, name);
+    try {
+      let newest = (await fs.promises.stat(full)).mtimeMs;
+      for (const f of await fs.promises.readdir(full)) {
+        newest = Math.max(newest, (await fs.promises.stat(path.join(full, f))).mtimeMs);
+      }
+      if (newest >= cutoff) continue;
+      await fs.promises.rm(full, { recursive: true, force: true });
+      removed++;
+    } catch {
+      /* raced with another process, or not ours to remove: leave it */
+    }
   }
-});
-
-
-// Gemini Intelligence Parameter Optimizer endpoint
-app.post("/api/gemini/optimize", async (req, res) => {
-  const { activeModule, parameters, prompt } = req.body;
-  
-  try {
-    let systemInstruction = `You are the VFX Syntech Gemini Optimizer.
-Your job is to analyze the active module and its parameters, and return a set of optimized parameter values that would make the visuals extremely high-fidelity, dramatic, and aesthetically stunning.
-
-Return ONLY a valid JSON object mapping parameter keys (exactly as given in CURRENT PARAMETERS) to their recommended numeric values. Do not write any other text, markdown, or code blocks. Just the raw JSON.
-
-CRITICAL RULES:
-- Each parameter entry in CURRENT PARAMETERS includes its own "min", "max" and "step"; every value you return MUST lie within that parameter's [min, max] range. Ranges differ per parameter — they are NOT all 0-100.
-- Parameters whose hint says "(on/off switch)" accept only 0 or 1.
-- Use each parameter's "hint" field to understand what it controls.
-- Only include keys you want to change; omit the rest.
-
-Example shape of a valid answer: {"threshold":96,"datamosh":18,"fxInvert":1}
-
-ACTIVE MODULE: ${activeModule}
-CURRENT PARAMETERS: ${JSON.stringify(parameters)}`;
-
-    if (prompt && prompt.trim()) {
-      systemInstruction += `\n\nCRITICAL USER DIRECTION: The operator has requested the following visual theme/guideline: "${prompt}". You MUST calibrate the parameters strictly to match this style.`;
-    }
-
-    const response = await generate({
-      tier: "fast",
-      systemInstruction,
-      contents: [{ role: "user", text: "Generate the optimized parameter JSON" }],
-      temperature: 0.4,
-      json: true,
-    });
-
-    const result = parseJson(response.text);
-
-    res.json({ preset: result });
-  } catch (error: any) {
-    // Mathematical local fallback calibration when upstream is busy, rate-limited, or unconfigured
-    
-    // Provide beautifully optimized fallback defaults so the button still works instantly
-    let fallbackPreset: Record<string, number> = {};
-    if (activeModule === "blob_tracker") {
-      fallbackPreset = { threshold: 96, datamosh: 18, glitch: 12, connGlow: 65, fxOpacity: 100 };
-    } else if (activeModule === "analog") {
-      fallbackPreset = { tearAmt: 0.5, chromaAmt: 0.45, noiseAmt: 0.3, scanlinesAmt: 0.65, bloomAmt: 0.4, feedbackAmt: 0.35 };
-    } else if (activeModule === "blob_reveal") {
-      fallbackPreset = { segThreshold: 55, feather: 12, opacity: 90, audioExpand: 40 };
-    } else if (activeModule === "bokeh") {
-      fallbackPreset = { bokehRadius: 32, bokehBloom: 1.8, bokehFeather: 0.55, anamSqueeze: 1.6 };
-    } else {
-      fallbackPreset = { flareMaster: 1, flareAmt: 0.85, flareLength: 0.9, halation: 0.6, squeeze: 1.6 };
-    }
-
-    res.json({ 
-      preset: fallbackPreset,
-      isFallback: true,
-      message: "Upstream busy. Loaded mathematical vault optimal presets."
-    });
-  }
-});
-
-// Gemini Intelligence live aesthetic analyzer critique endpoint
-app.post("/api/gemini/analyze", async (req, res) => {
-  const { activeModule, parameters, prompt } = req.body;
-
-  try {
-    let systemInstruction = `You are the VFX Syntech AI Art Director.
-Generate a highly atmospheric, sci-fi poetic, and technically advanced 2-sentence aesthetic analysis or design inspiration for the current active VFX module "${activeModule}" with parameters ${JSON.stringify(parameters)}.
-Describe what the wave forms and particles are expressing. Keep it elegant, dramatic, under 45 words, and strictly relevant. No greetings or meta text.`;
-
-    if (prompt && prompt.trim()) {
-      systemInstruction += `\n\nUSER DIRECTION / FOCUS: The operator has requested you to focus on or incorporate the following idea: "${prompt}". Tailor your aesthetic analysis or design inspiration around this context.`;
-    }
-
-    const response = await generate({
-      tier: "fast",
-      systemInstruction,
-      contents: [{ role: "user", text: "Perform live canvas aesthetic critique" }],
-      temperature: 0.85,
-    });
-
-    res.json({ analysis: response.text || "Obsidian nodes align. The stream spectrum is clean." });
-  } catch (error: any) {
-    // Sci-fi aesthetic backup telemetry generator when upstream is busy, rate-limited, or unconfigured
-
-    // Provide pre-designed beautiful sci-fi critiques specific to the active module
-    let fallbackAnalysis = "Obsidian nodes detect active force fields. Visual resonance aligns within high-fidelity tolerances.";
-    
-    if (activeModule === "blob_tracker") {
-      fallbackAnalysis = "Resonant amorphous particles expand outwards, translating dynamic sound pressure waves into beautiful fluid membranes.";
-    } else if (activeModule === "analog") {
-      fallbackAnalysis = "Phosphor scanlines trace retro waveforms. Minor clock deviations form elegant noise fields with warm chromatic refractions.";
-    } else if (activeModule === "blob_reveal") {
-      fallbackAnalysis = "A soft negative luminance mask gradually expands outward, peeling back layer after layer of glowing digital blueprints.";
-    } else if (activeModule === "bokeh") {
-      fallbackAnalysis = "A heavy circular lens aberration field scatters the background nodes, forming beautiful out-of-focus overlapping disks.";
-    } else if (activeModule === "anamorphic_lab") {
-      fallbackAnalysis = "A majestic horizontal streak projection expands across the ultra-wide lens boundary, creating elegant cinematic flares.";
-    }
-
-    res.json({ 
-      analysis: fallbackAnalysis,
-      isFallback: true,
-      message: "Showing local sensor telemetry."
-    });
-  }
-});
+  if (removed) console.log(`Removed ${removed} stale upload temp folder${removed === 1 ? "" : "s"} from ${dir}.`);
+}
 
 // Configure Vite middleware or static route handling depending on production state
 const startServer = async () => {
+  await sweepStaleUploads();
   if (process.env.NODE_ENV !== "production") {
     // Effect builds are self-contained static apps: serve them ahead of the
     // Vite pipeline, which blocks public assets requested as <script src>
     app.use("/effects", express.static(path.join(process.cwd(), "public/effects")));
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      /* Vite already accepts localhost, *.localhost and IP literals; add what
+         hostAllowed adds, so the page never loads on a name its API refuses
+         (or the reverse). */
+      server: { middlewareMode: true, allowedHosts: HOST_RULE.any ? true : [".local", ...HOST_RULE.names] },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -285,7 +394,8 @@ const startServer = async () => {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server launched on port ${PORT} // Full-stack core ready.`);
-    console.log(describeProvider());
+    console.log(`API hosts: ${HOST_RULE.any ? "any (ALLOWED_HOSTS=*)" : ["localhost", "IP addresses", "*.local", ...HOST_RULE.names.map((n) => (n.startsWith(".") ? `*${n}` : n))].join(", ")}`);
+    console.log(`Gemini: model=${geminiModel()}, server key: ${process.env.GEMINI_API_KEY?.trim() ? "set (used only by browsers on this machine)" : "not set (a key can be pasted in the panel)"}`);
   });
 };
 
