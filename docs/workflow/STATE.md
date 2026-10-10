@@ -41,15 +41,18 @@ all'operatore sull'app vera, in quest'ordine:
 - **Blob reveal → Source** con un'immagine fissa.
 
 Aperti nati da questa sessione:
-- **AI Lab non allineato al blob tracker standalone.** Il nodo
-  `src/engine/nodes/blob_tracker.ts` è il port 1:1 del solo LUMA; lo standalone
-  ora parte in MOTION e ha BODY. Il port di MOTION (`_motionDetect`,
-  `_trkUpdate`, `findBlobs(bin,minCirc)`) è JS puro su 320×180 e va fatto per
-  primo; BODY richiede un servizio landmark condiviso (come `PersonMask`) con i 3
-  `.task` già in `vendor/`. Fino ad allora la parità 1:1 vale per LUMA.
-- **FATTO nello standalone (2026-10-10), da allineare nell'AI Lab:** bande nere
-  (proporzioni originali, immagine centrata) e LUMA su webcam corretto — vedi il
-  log del 2026-10-10.
+- **AI Lab: blob tracker ora allineato (MOTION/BODY + FACE/HANDS/BODY, 2026-10-10).**
+  Limite noto (di design della catena, non nuovo): se dopo il blob tracker è
+  acceso **blob reveal**, che ridisegna dalla sorgente, tutto ciò che il blob
+  tracker disegna (marker, contorni, overlay Body) sparisce nell'uscita; con
+  analog/bokeh/anamorphic dopo, gli overlay restano. Ritocchi minori segnalati
+  dal revisore: un fallimento di caricamento del bundle tasks-vision non si
+  riprova senza ricaricare la pagina (proposta: `?r=n` nell'URL); le checkbox
+  Body nel rack si aggiornano con <1 s di ritardo quando il nodo le cambia da
+  solo.
+- **FATTO (2026-10-10):** bande nere + LUMA su webcam nello standalone; nell'AI
+  Lab non serve nulla (la tela ha sempre la forma della sorgente, e la
+  detection segue già lo specchio "Mirror Video").
 - **Blob tracker, ritocco estetico (LOW, non riprodotto):** in Fixed Points un
   punto cliccato dentro una banda nera perde il marker (le bande vengono ridipinte
   dopo i marker); proposta: seconda passata dei soli marker dopo `_fitBars`.
@@ -107,6 +110,35 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-10-10 — AI Lab: il blob tracker ha MOTION / BODY e FACE / HANDS / BODY
+
+L'operatore: *"AI Lab: il blob tracker lì è ancora solo LUMA. Va portato
+MOTION/BODY anche lì."* Fatto da Opus (syn-architect), revisione Opus: PASS.
+- `src/engine/BodyLandmarks.ts` (nuovo): servizio landmark condiviso come
+  `PersonMask.ts` — pigro, una sola istanza, creazioni in serie, timestamp sempre
+  crescenti, reset sugli stacchi, ripiego GPU→CPU, chiusura dei modelli
+  all'ultimo nodo; carica gli stessi file `vendor/mediapipe/tasks-vision/`.
+- `src/engine/nodes/blob_tracker.ts`: parametro **Detect** (0 LUMA / 1 MOTION /
+  2 BODY, default MOTION come lo standalone) e checkbox **Body Face / Body Hands
+  / Body Skeleton**; DETECT→BODY accende lo scheletro se nulla è acceso; port in
+  JS puro di MOTION (compensazione panoramiche, tracking), BODY (blob e maschera
+  contorni), scheduler, smoothing, rilevatore di stacchi, overlay.
+- `ChainLab.tsx`: un preset salvato prima (senza `blob_tracker.detect`) si
+  riapre in LUMA, come lo standalone.
+- **Parità 1:1 con lo standalone** (protocollo 06 §4): LUMA 30/30 hash identici
+  al nodo precedente; MOTION 255/255 fotogrammi con blob identici; BODY landmark
+  differenza 0 e blob identici su 4 clip. Il revisore ha rifatto da sé LUMA
+  (30/30), MOTION (45/45), BODY (2 clip), e un giro in produzione
+  (`npm run build` + server): flusso reale dall'interfaccia, chiusura del Lab a
+  caricamento in corso, bundle mancante → nessun errore.
+- Le due regole del 2026-10-10 nell'AI Lab: bande nere = nessuna modifica (la
+  tela segue già la forma della sorgente); LUMA su webcam = la detection segue
+  già lo specchio "Mirror Video". Unica variazione LUMA voluta: con SMART +
+  Mirror Video la maschera ora è specchiata anch'essa (prima era dal lato
+  sbagliato).
+- Velocità in sandbox (solo CPU, 640×360): nodo da solo LUMA 15,8 fps, MOTION
+  14,7, tutti e tre i Body 6; la misura vera resta quella sulla GPU dell'operatore.
 
 ### 2026-10-10 — Blob tracker: bande nere + LUMA su webcam (decisioni dell'operatore)
 

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { EngineNode, NodeRenderContext } from '../SynEngine';
 import { ParamSchema } from '../../bridge/types';
+import { bodyLandmarks, BodyKind, BODY_KINDS, BODY_FACE_OVAL } from '../BodyLandmarks'; // SYNTECH-BODY
 
 /* ═══════════════════════════════════════════════════════════════
    BLOB TRACKER — 1:1 port of public/effects/blob_tracker/index.html
@@ -117,6 +118,9 @@ const CONN_STYLES = ['solid', 'dashed', 'dashdot', 'arrows'] as const;
  * them (flagged in L7). */
 const PARAMS: ParamSchema[] = [
   // tracking
+  // SYNTECH-BODY: DETECT row (standalone det-luma / det-motion / det-body). Default MOTION like the standalone;
+  // presets saved before DETECT existed reopen in LUMA (ChainLab applyPresetTo), like the standalone bridge.
+  { key: 'detect', label: 'Detect', type: 'number', value: 1, min: 0, max: 2, step: 1, aiHint: '0 LUMA (classic: blobs = bright zones, Threshold/Brightness/Contrast) · 1 MOTION (default: blobs follow what moves — frame difference with camera-pan compensation, sensitivity from Threshold, tracked over time) · 2 BODY (one blob per face / hand / person from the Face / Hands / Body landmarks; turns Body on if none is)' },
   { key: 'threshold', label: 'Threshold', type: 'number', value: 127, min: 0, max: 255, step: 1, reactive: true, aiHint: 'Luma threshold above which a pixel joins a tracked blob' },
   { key: 'brightness', label: 'Brightness', type: 'number', value: 31, min: -100, max: 100, step: 1, reactive: true, aiHint: 'Pre-detection brightness offset on the grayscale' },
   { key: 'contrast', label: 'Contrast', type: 'number', value: 2.15, min: 0.5, max: 5, step: 0.05, reactive: true, aiHint: 'Pre-detection contrast around mid-grey (before the γ=1.75 curve)' },
@@ -157,6 +161,11 @@ const PARAMS: ParamSchema[] = [
   { key: 'flowOn', label: 'Optical Flow', type: 'boolean', value: 0, aiHint: '(on/off switch) Lucas-Kanade motion arrows per blob (green→red by speed) + optional trails' },
   { key: 'flowScale', label: 'Arrow Scale', type: 'number', value: 3, min: 0, max: 10, step: 0.5, reactive: true, aiHint: 'Length multiplier of the flow arrows' },
   { key: 'flowTrail', label: 'Trail Length', type: 'number', value: 0, min: 0, max: 10, step: 1, aiHint: 'How many past positions each blob leaves as a fading dashed trail (0 = off)' },
+  // SYNTECH-BODY: Body section (standalone body-face-btn / body-hands-btn / body-pose-btn) — MediaPipe Tasks
+  // landmarkers via the shared BodyLandmarks service (vendored, offline, loaded on the first ON)
+  { key: 'bodyFace', label: 'Body Face', type: 'boolean', value: 0, aiHint: '(on/off switch) Face recognition: 478-point face mesh with irises drawn over the video (up to 3 faces); feeds DETECT BODY' },
+  { key: 'bodyHands', label: 'Body Hands', type: 'boolean', value: 0, aiHint: '(on/off switch) Hand recognition: 21-point hands with L/R tag (up to 4 hands); feeds DETECT BODY' },
+  { key: 'bodyPose', label: 'Body Skeleton', type: 'boolean', value: 0, aiHint: '(on/off switch) Body recognition: 33-point skeleton (up to 5 people); feeds DETECT BODY' },
   // L5 — three.js ripple sim (wave-equation displacement). Operator decision:
   // the standalone's mouse force is replaced by an audio-reactive force
   // (rippleForce, pre-wired to the beat) — the three.js sim/shaders are 1:1.
@@ -218,6 +227,24 @@ interface FpBlob {
   fpAlpha: number; myShape: number;
   myInvert: boolean; myThermal: boolean; mySecurity: boolean; myLiquid: boolean; myGlitch: boolean; myData: boolean;
 }
+
+/* SYNTECH-BODY-START ── DETECT (LUMA / MOTION / BODY) + Body section (face / hands / body).
+   Port of the standalone's SYNTECH-BODY block (public/effects/blob_tracker/index.html):
+   _motionDetect / _trkUpdate / findBlobs(bin,minCirc) / _bodyBlobs / _bodyMask / _bodyTick /
+   _bodyIngest / _bodyStep / _bodySceneCut / _bodyDraw. The landmarker models live in the shared
+   BodyLandmarks service (src/engine/BodyLandmarks.ts). "Display space" — the standalone mirrors the
+   webcam on screen and runs MOTION/BODY mirrored to match; the chain never mirrors the webcam, its
+   display mirror is the Mirror Video param (mirrorBg), so that is the mirror used here. */
+type DetMode = 'luma' | 'motion' | 'body';
+interface DBlob { x: number; y: number; w: number; h: number; cx: number; cy: number; area: number; kind?: string }
+interface BodySet { id: number; pts: Float32Array; tgt: Float32Array; fresh: boolean; seen: number; side: string; c: [number, number] }
+interface BodySt { sets: BodySet[]; n: number; last: number; vt: number; img: unknown; imgRuns: number; wasOn: boolean; gen: number; fails: number }
+interface Track { id: number; x: number; y: number; w: number; h: number; cx: number; cy: number; area: number; kind?: string; miss: number; hits: number }
+const BODY_KEY: Record<BodyKind, string> = { face: 'bodyFace', hands: 'bodyHands', pose: 'bodyPose' };
+const BODY_POSE_JOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
+const BODY_TIPS = [4, 8, 12, 16, 20];
+const M_N = PW * PH, G_W = PW >> 2, G_H = PH >> 2;
+/* SYNTECH-BODY-END */
 
 /* ═══ L6 — three.js PANELS scene (standalone DEFS/PLBLS/VS/FS/SimplexNoise,
    L2482-2500). A FIXED 8-panel 3D montage of the video shown as floating
@@ -309,6 +336,7 @@ export class BlobTrackerNode implements EngineNode {
   // L3b smart-contour mask (from the shared PersonMask, downscaled to PW×PH)
   private ctSmartMask: Uint8Array | null = null;
   private ctSmartMaskV = -1;
+  private ctSmartMaskMir = false; // SYNTECH-BODY: mask mirrored into display space (Mirror Video on)
   private smartMaskCv!: HTMLCanvasElement; private smartMaskCtx!: CanvasRenderingContext2D;
   // L7c fixed-points chaos engine (points auto-placed in dc space)
   private fpPoints: { x: number; y: number }[] = [];
@@ -356,13 +384,43 @@ export class BlobTrackerNode implements EngineNode {
   private trackerColor = '#ffffff';
   private connColor = '#0011ff';
 
+  /* SYNTECH-BODY-START — DETECT + Body state (standalone _body / _trk / _m* globals) */
+  private detPrev: DetMode | '' = '';
+  private bodyAcq = false;
+  private body: Record<BodyKind, BodySt> = {
+    face: { sets: [], n: 0, last: -99, vt: -1, img: null, imgRuns: 0, wasOn: false, gen: -1, fails: -1 },
+    hands: { sets: [], n: 0, last: -99, vt: -1, img: null, imgRuns: 0, wasOn: false, gen: -1, fails: -1 },
+    pose: { sets: [], n: 0, last: -99, vt: -1, img: null, imgRuns: 0, wasOn: false, gen: -1, fails: -1 },
+  };
+  private bodyTickN = 0;
+  private bodyNextAt = 0;
+  private bodyNextId = 1;
+  private cutCv: HTMLCanvasElement | null = null; private cutCtx: CanvasRenderingContext2D | null = null;
+  private cutPrev: { g: Float32Array; sd: number } | null = null;
+  private cutSrc: string | null = null;
+  private bmCv: HTMLCanvasElement | null = null; private bmCtx: CanvasRenderingContext2D | null = null;
+  private bmBin = new Uint8Array(M_N);
+  private detNoBin = new Uint8Array(M_N);
+  // MOTION detect buffers (standalone _mG/_mH/_mCur/_mPrev/_mE/_mE2/_mBin/_mDil/_mT/_gA/_gB)
+  private mG = new Uint8Array(M_N); private mH = new Uint16Array(M_N); private mCur = new Uint8Array(M_N); private mPrev = new Uint8Array(M_N);
+  private mE = new Uint8Array(M_N); private mE2 = new Uint8Array(M_N); private mBin = new Uint8Array(M_N); private mDil = new Uint8Array(M_N); private mT = new Uint8Array(M_N);
+  private gA = new Uint8Array(G_W * G_H); private gB = new Uint8Array(G_W * G_H);
+  private mHas = false; private mKey = ''; private mLast: DBlob[] = []; private mShift: [number, number] = [0, 0]; private mFrac = 0;
+  // MOTION / BODY temporal tracking (standalone _trk)
+  private trk: { mode: string; key: string; tracks: Track[]; nextId: number } = { mode: '', key: '', tracks: [], nextId: 1 };
+  /* SYNTECH-BODY-END */
+
   constructor() {
     PARAMS.forEach((p) => { this.v[p.key] = Number(p.value); });
   }
 
   setParam(key: string, value: unknown): void {
     const n = Number(value);
-    if (!isNaN(n)) this.v[key] = n;
+    if (isNaN(n)) return;
+    // SYNTECH-BODY: switching DETECT to BODY with no detector on turns the skeleton on (standalone _detSet)
+    if (key === 'detect' && Math.round(n) === 2 && Math.round(this.v.detect) !== 2 &&
+        !BODY_KINDS.some((k) => this.v[BODY_KEY[k]] >= 0.5)) this.v.bodyPose = 1;
+    this.v[key] = n;
   }
 
   getParam(key: string): unknown {
@@ -425,7 +483,8 @@ export class BlobTrackerNode implements EngineNode {
     return bin;
   }
 
-  private findBlobs(bin: Uint8Array): { x: number; y: number; w: number; h: number; cx: number; cy: number; area: number }[] {
+  // SYNTECH-BODY: optional minCirc (MOTION relaxes it); LUMA calls findBlobs(bin) → 0.15 as before
+  private findBlobs(bin: Uint8Array, minCirc?: number): { x: number; y: number; w: number; h: number; cx: number; cy: number; area: number }[] {
     const vis = new Uint8Array(PW * PH);
     const blobs = [];
     const minArea = this.v.minArea;
@@ -447,7 +506,7 @@ export class BlobTrackerNode implements EngineNode {
       }
       if (area < minArea) continue;
       const bw = mxX - mnX + 1, bh = mxY - mnY + 1, per = 2 * (bw + bh);
-      if ((4 * Math.PI * area) / (per * per) < 0.15) continue;
+      if ((4 * Math.PI * area) / (per * per) < (minCirc === undefined ? 0.15 : minCirc)) continue;
       blobs.push({ x: mnX, y: mnY, w: bw, h: bh, cx: sx / area, cy: sy / area, area });
     }
     return blobs;
@@ -586,13 +645,16 @@ export class BlobTrackerNode implements EngineNode {
    * read), refreshed once per new segmentation arrival (personMaskVersion),
    * cached between arrivals like the standalone's send-every-N staleness.
    * Returns the cached mask, or null if none has been built yet (→ edge). */
-  private refreshSmartMask(ctx: NodeRenderContext): Uint8Array | null {
-    if (ctx.personMask && ctx.personMaskVersion !== this.ctSmartMaskV) {
+  private refreshSmartMask(ctx: NodeRenderContext, mirror = false): Uint8Array | null {
+    if (ctx.personMask && (ctx.personMaskVersion !== this.ctSmartMaskV || mirror !== this.ctSmartMaskMir)) {
       this.ctSmartMaskV = ctx.personMaskVersion;
+      this.ctSmartMaskMir = mirror;
       if (!this.ctSmartMask) this.ctSmartMask = new Uint8Array(PW * PH);
       try {
         this.smartMaskCtx.clearRect(0, 0, PW, PH);
-        this.smartMaskCtx.drawImage(ctx.personMask as CanvasImageSource, 0, 0, PW, PH);
+        // SYNTECH-BODY hook (standalone _bodySegMirror): detection runs in the mirrored display space → mirror the mask too
+        if (mirror) { this.smartMaskCtx.save(); this.smartMaskCtx.setTransform(-1, 0, 0, 1, PW, 0); this.smartMaskCtx.drawImage(ctx.personMask as CanvasImageSource, 0, 0, PW, PH); this.smartMaskCtx.restore(); }
+        else this.smartMaskCtx.drawImage(ctx.personMask as CanvasImageSource, 0, 0, PW, PH);
         const d = this.smartMaskCtx.getImageData(0, 0, PW, PH).data, m = this.ctSmartMask;
         for (let i = 0; i < PW * PH; i++) m[i] = d[i * 4 + 3] > 127 ? 1 : 0;
       } catch { /* mask not ready */ }
@@ -1342,6 +1404,427 @@ export class BlobTrackerNode implements EngineNode {
     }
   }
 
+  /* SYNTECH-BODY-START ═══════════════════════════════════════════════════════
+     DETECT (LUMA / MOTION / BODY) + Body section — 1:1 port of the standalone's
+     SYNTECH-BODY block. LUMA = the original processForDetect/getBinary/findBlobs
+     path, untouched. MOTION = blobs on moving pixels (frame difference, camera-pan
+     compensated). BODY = one blob per face / hand / person box from the landmarks.
+     MOTION and BODY blobs are tracked over time (nearest-centre match, EMA, short
+     hold). The face / hands / skeleton overlays are drawn into dc.
+     ═══════════════════════════════════════════════════════════════════════════ */
+  private bodyOn(k: BodyKind): boolean { return this.v[BODY_KEY[k]] >= 0.5; }
+  private static isImg(src: TexImageSource): boolean { return typeof HTMLImageElement !== 'undefined' && src instanceof HTMLImageElement; }
+  private static isCam(src: TexImageSource): boolean { return src instanceof HTMLVideoElement && !!src.srcObject; }
+  /** source identity — the standalone's srcMode + current file/image/webcam key */
+  private srcKey(src: TexImageSource): string {
+    if (BlobTrackerNode.isImg(src)) return 'image|' + (src as HTMLImageElement).src;
+    if (src instanceof HTMLVideoElement) return src.srcObject ? 'webcam|cam' : 'video|' + src.currentSrc;
+    return 'other|';
+  }
+  private detMode(): DetMode { const d = Math.round(this.v.detect); return d <= 0 ? 'luma' : d >= 2 ? 'body' : 'motion'; }
+  // still image: no motion → LUMA (standalone _detEffMode)
+  private detEffMode(src: TexImageSource): DetMode { const m = this.detMode(); return (m === 'motion' && BlobTrackerNode.isImg(src)) ? 'luma' : m; }
+
+  /* ── Body: per-frame scheduler (standalone _bodyTick): pose every frame alone / every 2nd,
+        hands every 2nd, face every 3rd — most-overdue first, ~10 ms budget, duty cycle ≤ ~60% ── */
+  private bodyTick(src: TexImageSource): void {
+    const svc = bodyLandmarks;
+    for (const k of BODY_KINDS) {
+      const st = this.body[k], on = this.bodyOn(k);
+      if (on !== st.wasOn) { // toggle edge (standalone _bodySetOn)
+        st.wasOn = on; st.img = null; st.imgRuns = 0; st.vt = -1;
+        if (!on) { st.sets = []; st.n = 0; st.fails = -1; }
+      }
+      if (!on) continue;
+      if (!this.bodyAcq) { svc.acquire(); this.bodyAcq = true; }
+      const f = svc.failures(k);
+      if (st.fails >= 0 && f > st.fails) { // load failed → toggle back off (standalone: LED off)
+        this.v[BODY_KEY[k]] = 0; st.wasOn = false; st.sets = []; st.n = 0; st.fails = -1;
+        continue;
+      }
+      if (st.fails < 0) st.fails = f;
+      svc.ensure(k);
+      const g = svc.generation(k);
+      if (g !== st.gen) { st.gen = g; st.last = -99; st.vt = -1; st.img = null; st.imgRuns = 0; } // (re)loaded model
+    }
+    const act = BODY_KINDS.filter((k) => this.bodyOn(k) && svc.state(k) === 'ready');
+    if (!act.length) return;
+    this.bodyTickN++;
+    const now = performance.now();
+    const isImg = BlobTrackerNode.isImg(src);
+    if (this.bodySceneCut(src)) {
+      // VIDEO-mode landmarkers keep tracking the old ROI across a cut (loop, seek, new source) → feed one blank
+      // frame so they drop it and re-detect on the next real frame; forget the old sets too.
+      for (const k of act) { const st = this.body[k]; svc.cutReset(k); st.sets = []; st.n = 0; st.last = -99; st.vt = -1; st.img = null; }
+    }
+    if (now >= this.bodyNextAt) {
+      const vt = (!isImg && src instanceof HTMLVideoElement && !src.srcObject) ? src.currentTime : -1, alone = act.length === 1;
+      const cand: [number, BodyKind][] = [];
+      for (const k of act) {
+        const st = this.body[k];
+        if (isImg) { if (st.img !== src) { st.img = src; st.imgRuns = 0; } if (st.imgRuns >= 3) continue; } // a still image converges in 3 runs → hold
+        else { st.img = null; if (vt >= 0 && vt === st.vt) continue; }                                     // same video frame already analysed
+        const iv = alone ? 1 : (k === 'face' ? 3 : 2), due = (this.bodyTickN - st.last) / iv;
+        if (due >= 1) cand.push([due + (k === 'pose' ? 0.02 : k === 'hands' ? 0.01 : 0), k]);
+      }
+      cand.sort((a, b) => b[0] - a[0]);
+      let spent = 0;
+      for (const [, k] of cand) {
+        if (spent > 10) break;
+        const st = this.body[k], t0 = performance.now();
+        const r = svc.detect(k, src);
+        if (r) this.bodyIngest(k, r, isImg);
+        spent += performance.now() - t0;
+        st.last = this.bodyTickN; st.vt = vt; if (isImg) st.imgRuns++;
+      }
+      if (spent > 0) this.bodyNextAt = performance.now() + spent * 0.6;
+    }
+    this.bodyStep(isImg);
+  }
+
+  // Results → landmark sets matched to the previous ones (stable order, smoothed in bodyStep) — standalone _bodyIngest
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw tasks-vision result
+  private bodyIngest(kind: BodyKind, r: any, snap: boolean): void {
+    type E = { pts: { x: number; y: number; z?: number; visibility?: number }[]; side?: string; c?: [number, number] };
+    let list: E[] = [];
+    if (kind === 'pose') list = ((r && r.landmarks) || []).map((p: E['pts']) => ({ pts: p }));
+    else if (kind === 'face') list = ((r && r.faceLandmarks) || []).map((p: E['pts']) => ({ pts: p }));
+    else {
+      const hd = (r && (r.handedness || r.handednesses)) || [];
+      // MediaPipe labels handedness for a mirrored (selfie) input; we feed the raw frame → swap to the performer's real side
+      const W = this.w || 16, H = this.h || 9;
+      list = ((r && r.landmarks) || []).map((p: E['pts'], i: number) => {
+        const c = hd[i] && hd[i][0]; const nm = c ? (c.categoryName || c.displayName || '') : '';
+        return { pts: p, side: nm === 'Left' ? 'R' : nm === 'Right' ? 'L' : '' };
+      }).filter((e: E) => {
+        const p = e.pts; if (p.length < 21) return false;
+        let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+        for (const q of p) { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }
+        return Math.hypot((p[0].x - p[9].x) * W, (p[0].y - p[9].y) * H) >= 0.2 * Math.max((x1 - x0) * W, (y1 - y0) * H); // collapsed (degenerate) hand → drop
+      });
+    }
+    if (kind === 'pose' && list.length) list = this.bodyPoseFilter(list);
+    const st = this.body[kind]; st.n = list.length;
+    const prev = st.sets, used = new Uint8Array(prev.length), pairs: [number, number, number][] = [];
+    list.forEach((e, i) => {
+      let sx = 0, sy = 0; for (const p of e.pts) { sx += p.x; sy += p.y; } e.c = [sx / e.pts.length, sy / e.pts.length];
+      prev.forEach((s, j) => { const d = Math.hypot(e.c![0] - s.c[0], e.c![1] - s.c[1]); if (d < 0.25) pairs.push([d, i, j]); });
+    });
+    pairs.sort((a, b) => a[0] - b[0]);
+    const li = new Array(list.length).fill(-1);
+    for (const [, i, j] of pairs) { if (li[i] >= 0 || used[j]) continue; li[i] = j; used[j] = 1; }
+    const out: BodySet[] = [];
+    list.forEach((e, i) => {
+      const n = e.pts.length; let s: BodySet | null = li[i] >= 0 ? prev[li[i]] : null;
+      if (!s || s.pts.length !== n * 3) s = { id: this.bodyNextId++, pts: new Float32Array(n * 3), tgt: new Float32Array(n * 3), fresh: true, seen: 0, side: '', c: [0, 0] };
+      s.seen = performance.now(); s.side = e.side || ''; s.c = e.c!;
+      for (let q = 0; q < n; q++) {
+        const p = e.pts[q]; s.tgt[q * 3] = p.x; s.tgt[q * 3 + 1] = p.y;
+        // tasks-vision 0.10.3 gives pose points no visibility → a point predicted outside the frame counts as hidden
+        let v = 1; if (kind === 'pose') { if (p.x < -0.02 || p.x > 1.02 || p.y < -0.02 || p.y > 1.02) v = 0; else if (typeof p.visibility === 'number') v = p.visibility; }
+        s.tgt[q * 3 + 2] = v;
+      }
+      if (kind === 'pose' && n >= 33) { // hips collapsed onto the shoulders = hallucinated lower body (half-body framing) → hide 23..32
+        const t = s.tgt, sw = Math.hypot(t[33] - t[36], t[34] - t[37]), tl = Math.hypot((t[33] + t[36] - t[69] - t[72]) / 2, (t[34] + t[37] - t[70] - t[73]) / 2);
+        if (tl < 0.6 * sw) for (let q = 23; q < 33; q++) t[q * 3 + 2] = 0;
+      }
+      if (s.fresh || snap) { s.pts.set(s.tgt); s.fresh = false; }
+      out.push(s);
+    });
+    const now = performance.now(); prev.forEach((s, j) => { if (!used[j] && now - s.seen < 160) out.push(s); }); // bridge a missed inference (no flicker), never a scene change
+    out.sort((a, b) => a.id - b.id);
+    st.sets = out;
+  }
+
+  // The lite pose model sometimes "sees" tiny bodies inside a close-up hand, or the same person twice:
+  // drop duplicates (bbox IoU > .45, keep the larger) and bodies no bigger than a detected hand lying on it.
+  private bodyPoseFilter<T extends { pts: { x: number; y: number }[] }>(list: T[]): T[] {
+    const bb = (e: T): number[] | null => {
+      let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+      for (const p of e.pts) { if (p.x < -0.02 || p.x > 1.02 || p.y < -0.02 || p.y > 1.02) continue; x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+      return x1 > x0 && y1 > y0 ? [x0, y0, x1, y1] : null;
+    };
+    const area = (b: number[]) => (b[2] - b[0]) * (b[3] - b[1]);
+    const inter = (a: number[], b: number[]) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+    const hands = this.bodyOn('hands') ? this.body.hands.sets.map((s) => this.bodyBox(s, 0)).filter((b): b is number[] => !!b) : [];
+    const L = list.map((e) => ({ e, b: bb(e) })).filter((o): o is { e: T; b: number[] } => !!o.b).sort((p, q) => area(q.b) - area(p.b)), keep: { e: T; b: number[] }[] = [];
+    for (const o of L) {
+      const a = area(o.b);
+      if (keep.some((k) => { const i = inter(o.b, k.b); return i / (a + area(k.b) - i) > 0.45; })) continue;
+      if (hands.some((h) => a <= 1.5 * area(h) && inter(o.b, h) > 0.6 * a)) continue;
+      keep.push(o);
+    }
+    return keep.map((o) => o.e);
+  }
+
+  private bodyStep(isImg: boolean): void {
+    const a = isImg ? 1 : 0.6;
+    for (const k of BODY_KINDS) {
+      if (!this.bodyOn(k)) continue;
+      for (const s of this.body[k].sets) { const p = s.pts, t = s.tgt; for (let i = 0; i < p.length; i++) p[i] += (t[i] - p[i]) * a; }
+    }
+  }
+
+  // Hard-cut detector on a 32×18 thumbnail. It looks at STRUCTURE, not brightness: Pearson correlation of the
+  // mean-centred frame with the last structured one (gain/offset-invariant → strobes, flashes and exposure pumps are
+  // not cuts); a flat frame (white flash / black) carries no structure → never a cut and never the new reference.
+  private bodySceneCut(src: TexImageSource): boolean {
+    if (!this.cutCv) { this.cutCv = document.createElement('canvas'); this.cutCv.width = 32; this.cutCv.height = 18; this.cutCtx = this.cutCv.getContext('2d', { willReadFrequently: true }); }
+    const cx = this.cutCtx!;
+    try { cx.drawImage(src as CanvasImageSource, 0, 0, 32, 18); } catch { return false; }
+    const d = cx.getImageData(0, 0, 32, 18).data, g = new Float32Array(576);
+    let m = 0; for (let i = 0; i < 576; i++) { g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]; m += g[i]; } m /= 576;
+    let v = 0; for (let i = 0; i < 576; i++) { g[i] -= m; v += g[i] * g[i]; } const sd = Math.sqrt(v / 576);
+    const key = this.srcKey(src);
+    const switched = (this.cutSrc !== null && this.cutSrc !== key); this.cutSrc = key; // video ↔ webcam, new image or new video file
+    if (switched) { this.cutPrev = sd >= 6 ? { g, sd } : null; return true; }
+    if (sd < 6) return false;
+    let cut = false;
+    if (this.cutPrev) { let c = 0; const p = this.cutPrev.g; for (let i = 0; i < 576; i++) c += g[i] * p[i]; cut = c / (576 * sd * this.cutPrev.sd) < 0.35; }
+    this.cutPrev = { g, sd }; return cut;
+  }
+
+  // ── Landmark geometry helpers ──
+  private bodyBox(s: BodySet, minV: number): number[] | null { // normalised bbox [x0,y0,x1,y1] of a landmark set (source frame, un-mirrored)
+    const p = s.pts; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, n = 0;
+    for (let i = 0; i < p.length; i += 3) { if (minV && p[i + 2] < minV) continue; const x = p[i], y = p[i + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; n++; }
+    return n ? [x0, y0, x1, y1] : null;
+  }
+  private bodyPoseBox(s: BodySet): number[] | null {
+    const b = this.bodyBox(s, 0.5); if (!b) return null; const p = s.pts;
+    if (p[2] > 0.5 && p[11 * 3 + 2] > 0.5 && p[12 * 3 + 2] > 0.5) { // extend up to the top of the head (pose stops at the eyes)
+      const neck = (p[11 * 3 + 1] + p[12 * 3 + 1]) / 2; b[1] = Math.min(b[1], p[1] - 0.7 * Math.abs(neck - p[1]));
+    }
+    return b;
+  }
+  // BODY detect → proc-space blobs {x,y,w,h,cx,cy,area} in display space (mirrored like the base video)
+  private bodyBlobs(): DBlob[] {
+    const out: DBlob[] = [], mir = this.v.mirrorBg >= 0.5;
+    const push = (b: number[] | null, pad: number, kind: string) => {
+      if (!b) return; const pw = (b[2] - b[0]) * pad, ph = (b[3] - b[1]) * pad;
+      let x0 = Math.max(0, b[0] - pw), x1 = Math.min(1, b[2] + pw); const y0 = Math.max(0, b[1] - ph), y1 = Math.min(1, b[3] + ph);
+      if (x1 - x0 < 0.004 || y1 - y0 < 0.004) return;
+      if (mir) { const t = x0; x0 = 1 - x1; x1 = 1 - t; }
+      const X = x0 * PW, Y = y0 * PH, w = (x1 - x0) * PW, h = (y1 - y0) * PH;
+      out.push({ x: X, y: Y, w, h, cx: X + w / 2, cy: Y + h / 2, area: Math.round(w * h), kind });
+    };
+    if (this.bodyOn('face')) this.body.face.sets.forEach((s) => push(this.bodyBox(s, 0), 0.06, 'face'));
+    if (this.bodyOn('hands')) this.body.hands.sets.forEach((s) => push(this.bodyBox(s, 0), 0.12, 'hand'));
+    if (this.bodyOn('pose')) this.body.pose.sets.forEach((s) => push(this.bodyPoseBox(s), 0.05, 'pose'));
+    return out;
+  }
+  // BODY detect + Contour mode: silhouette-ish mask painted from the landmarks (so contours hug face/hands/body)
+  private bodyMask(): Uint8Array {
+    if (!this.bmCv) { this.bmCv = document.createElement('canvas'); this.bmCv.width = PW; this.bmCv.height = PH; this.bmCtx = this.bmCv.getContext('2d', { willReadFrequently: true }); }
+    const c = this.bmCtx!, C = bodyLandmarks.conn;
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, PW, PH);
+    if (this.v.mirrorBg >= 0.5) c.setTransform(-PW, 0, 0, PH, PW, 0); else c.setTransform(PW, 0, 0, PH, 0, 0); // draw in normalised coords
+    c.fillStyle = c.strokeStyle = '#fff'; c.lineCap = c.lineJoin = 'round';
+    const poly = (p: Float32Array, idx: number[]) => { c.beginPath(); idx.forEach((i, n) => { if (n) c.lineTo(p[i * 3], p[i * 3 + 1]); else c.moveTo(p[i * 3], p[i * 3 + 1]); }); c.closePath(); c.fill(); };
+    const limbs = (p: Float32Array, pairs: number[], w: number, minV?: number) => { c.lineWidth = w; c.beginPath(); for (let i = 0; i < pairs.length; i += 2) { const a = pairs[i] * 3, b = pairs[i + 1] * 3; if (minV && (p[a + 2] < minV || p[b + 2] < minV)) continue; c.moveTo(p[a], p[a + 1]); c.lineTo(p[b], p[b + 1]); } c.stroke(); };
+    if (this.bodyOn('face')) this.body.face.sets.forEach((s) => { if (s.pts.length >= 468 * 3) poly(s.pts, BODY_FACE_OVAL); });
+    if (this.bodyOn('hands') && C) this.body.hands.sets.forEach((s) => { const p = s.pts; poly(p, [0, 1, 2, 5, 9, 13, 17]);
+      limbs(p, C.hand, Math.hypot(p[0] - p[9 * 3], p[1] - p[9 * 3 + 1]) * 0.28); });
+    if (this.bodyOn('pose') && C) this.body.pose.sets.forEach((s) => { const p = s.pts;
+      const sw = Math.max(0.01, Math.hypot(p[11 * 3] - p[12 * 3], p[11 * 3 + 1] - p[12 * 3 + 1]));
+      if (p[11 * 3 + 2] > 0.5 && p[12 * 3 + 2] > 0.5 && p[23 * 3 + 2] > 0.3 && p[24 * 3 + 2] > 0.3) poly(p, [11, 12, 24, 23]);
+      limbs(p, C.poseBody, sw * 0.3, 0.5);
+      if (p[2] > 0.5) { c.beginPath(); c.arc(p[0], p[1], sw * 0.33, 0, Math.PI * 2); c.fill(); } });
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    const d = c.getImageData(0, 0, PW, PH).data, bin = this.bmBin;
+    for (let i = 0; i < bin.length; i++) bin[i] = d[i * 4 + 3] > 64 ? 1 : 0;
+    return bin;
+  }
+
+  // ── MOTION detect (standalone _motionDetect) ──
+  private motionReset(): void { this.mHas = false; this.mE.fill(0); this.mDil.fill(0); this.mLast = []; this.mShift = [0, 0]; this.mFrac = 0; }
+  private mDown(src: Uint8Array, dst: Uint8Array): void {
+    for (let gy = 0; gy < G_H; gy++) for (let gx = 0; gx < G_W; gx++) {
+      let s = 0; const x0 = gx << 2, y0 = gy << 2;
+      for (let y = 0; y < 4; y++) { const r = (y0 + y) * PW + x0; s += src[r] + src[r + 1] + src[r + 2] + src[r + 3]; }
+      dst[gy * G_W + gx] = s >> 4;
+    }
+  }
+  // Mean abs difference cur(x,y) vs prev(x-dx,y-dy) over the frame border ring (performers are usually centred,
+  // the ring mostly sees background → estimates the camera pan, not the person)
+  private mRingSAD(A: Uint8Array, B: Uint8Array, W: number, H: number, dx: number, dy: number, step: number): number {
+    let s = 0, n = 0; const xl = (W * 0.3) | 0, xr = (W * 0.7) | 0, yt = (H * 0.15) | 0;
+    for (let y = 0; y < H; y += step) {
+      const py = y - dy; if (py < 0 || py >= H) continue;
+      for (let x = 0; x < W; x += step) {
+        if (x >= xl && x < xr && y >= yt) continue; const px = x - dx; if (px < 0 || px >= W) continue;
+        const d = A[y * W + x] - B[py * W + px]; s += d < 0 ? -d : d; n++;
+      }
+    }
+    return n > 50 ? s / n : 1e9;
+  }
+  private mEstimateShift(): [number, number] {
+    this.mDown(this.mCur, this.gA); this.mDown(this.mPrev, this.gB);
+    const z = this.mRingSAD(this.gA, this.gB, G_W, G_H, 0, 0, 1); let best = z, bx = 0, by = 0;
+    for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) { if (!dx && !dy) continue; const v = this.mRingSAD(this.gA, this.gB, G_W, G_H, dx, dy, 1); if (v < best) { best = v; bx = dx; by = dy; } }
+    if (best >= z * 0.8) return [0, 0];                    // no clear global motion → static camera
+    let fb = 1e9, fx = bx * 4, fy = by * 4; const cx = fx, cy = fy; // refine at full resolution (sparse)
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const v = this.mRingSAD(this.mCur, this.mPrev, PW, PH, cx + dx, cy + dy, 2); if (v < fb) { fb = v; fx = cx + dx; fy = cy + dy; } }
+    return [fx, fy];
+  }
+  private motionDetect(data: Uint8ClampedArray, key: string): { bin: Uint8Array; blobs: DBlob[]; fresh: boolean } {
+    if (key !== this.mKey) { this.mKey = key; this.motionReset(); }
+    const G = this.mG, Hh = this.mH, Cur = this.mCur, Prev = this.mPrev, E = this.mE, Bin = this.mBin, Dil = this.mDil, T = this.mT;
+    // 1) luma + 3×3 box blur (kills sensor / codec speckle)
+    for (let i = 0; i < M_N; i++) { const j = i << 2; G[i] = (77 * data[j] + 150 * data[j + 1] + 29 * data[j + 2]) >> 8; }
+    for (let y = 0; y < PH; y++) { const r = y * PW; for (let x = 0; x < PW; x++) { const i = r + x; Hh[i] = G[i] + G[x > 0 ? i - 1 : i] + G[x < PW - 1 ? i + 1 : i]; } }
+    for (let y = 0; y < PH; y++) { const up = y > 0 ? -PW : 0, dn = y < PH - 1 ? PW : 0, r = y * PW; for (let x = 0; x < PW; x++) { const i = r + x; Cur[i] = ((Hh[i + up] + Hh[i] + Hh[i + dn]) * 7282) >> 16; } }
+    if (!this.mHas) { Prev.set(Cur); this.mHas = true; return { bin: Dil, blobs: [], fresh: false }; }
+    // 2) same frame again (render faster than the video) → keep last result, don't age the tracks
+    let same = true; for (let i = 0; i < M_N; i += 13) { if (Cur[i] !== Prev[i]) { same = false; break; } }
+    if (same) return { bin: Dil, blobs: this.mLast, fresh: false };
+    // 3) camera-pan compensation + frame difference, threshold from the Threshold slider (same knob as LUMA)
+    const sh = this.mEstimateShift(), dx = sh[0], dy = sh[1]; this.mShift = sh;
+    const thrL = this.v.threshold + Math.round((1 - this.v.padThresh) * (255 - this.v.threshold));
+    const mThr = 6 + thrL * 0.12; // 0→6 · 127→21 · 255→37 grey levels of change
+    if (dx || dy) { // move the motion history with the camera
+      const E2 = this.mE2; E2.fill(0);
+      for (let y = 0; y < PH; y++) { const py = y - dy; if (py < 0 || py >= PH) continue; for (let x = 0; x < PW; x++) { const px = x - dx; if (px >= 0 && px < PW) E2[y * PW + x] = E[py * PW + px]; } }
+      E.set(E2);
+    }
+    let moving = 0;
+    for (let y = 0; y < PH; y++) {
+      const py = y - dy, r = y * PW;
+      for (let x = 0; x < PW; x++) {
+        const i = r + x, px = x - dx; let d = 0;
+        if (py >= 0 && py < PH && px >= 0 && px < PW) { d = Cur[i] - Prev[py * PW + px]; if (d < 0) d = -d; }
+        if (d > mThr) { E[i] = 255; moving++; } else { const e = E[i]; E[i] = e > 80 ? e - 80 : 0; }
+      }
+    }
+    Prev.set(Cur);
+    this.mFrac = moving / M_N;
+    if (this.mFrac > 0.5) { E.fill(0); Dil.fill(0); this.mLast = []; return { bin: Dil, blobs: [], fresh: true }; } // scene cut / flash / zoom
+    // 4) motion history (current + 1 frame: bridges dropped frames, little trail) → binary → dilate r=3 so a moving arm / head becomes one blob
+    for (let i = 0; i < M_N; i++) Bin[i] = E[i] >= 128 ? 1 : 0;
+    const R = 3;
+    for (let y = 0; y < PH; y++) { const r = y * PW; for (let x = 0; x < PW; x++) { let v = 0; const a = Math.max(0, x - R), b = Math.min(PW - 1, x + R); for (let k = a; k <= b; k++) if (Bin[r + k]) { v = 1; break; } T[r + x] = v; } }
+    for (let x = 0; x < PW; x++) { for (let y = 0; y < PH; y++) { let v = 0; const a = Math.max(0, y - R), b = Math.min(PH - 1, y + R); for (let k = a; k <= b; k++) if (T[k * PW + x]) { v = 1; break; } Dil[y * PW + x] = v; } }
+    // 5) connected components via the tracker's own findBlobs (circularity relaxed: motion shapes are outlines)
+    let bl: DBlob[] = this.findBlobs(Dil, 0.04);
+    if (bl.length > 16) bl = bl.sort((a, b) => b.area - a.area).slice(0, 16);
+    this.mLast = bl;
+    return { bin: Dil, blobs: bl, fresh: true };
+  }
+
+  // ── Temporal tracking for MOTION / BODY blobs (LUMA stays frame-by-frame like the original) — standalone _trkUpdate ──
+  private trkReset(): void { this.trk.tracks = []; this.trk.mode = ''; }
+  private trkUpdate(list: DBlob[], mode: string, fresh: boolean): DBlob[] {
+    if (this.trk.mode !== mode) { this.trk.tracks = []; this.trk.mode = mode; }
+    const T = this.trk.tracks;
+    if (fresh) {
+      const A = mode === 'motion' ? 0.5 : 0.55, HOLD = mode === 'motion' ? 4 : 3;
+      const used = new Uint8Array(T.length), taken = new Uint8Array(list.length), pairs: [number, number, number][] = [];
+      for (let i = 0; i < list.length; i++) {
+        const b = list[i];
+        for (let j = 0; j < T.length; j++) {
+          const t = T[j]; if (t.kind !== b.kind) continue;
+          const d = Math.hypot(b.cx - t.cx, b.cy - t.cy), gate = Math.max(18, 0.6 * Math.max(t.w, t.h, b.w, b.h));
+          if (d <= gate) pairs.push([d, i, j]);
+        }
+      }
+      pairs.sort((a, b) => a[0] - b[0]);
+      for (const [, i, j] of pairs) {
+        if (taken[i] || used[j]) continue; taken[i] = 1; used[j] = 1; const t = T[j], b = list[i];
+        t.x += (b.x - t.x) * A; t.y += (b.y - t.y) * A; t.w += (b.w - t.w) * A; t.h += (b.h - t.h) * A; t.cx += (b.cx - t.cx) * A; t.cy += (b.cy - t.cy) * A;
+        t.area = b.area; t.miss = 0; t.hits++;
+      }
+      for (let j = T.length - 1; j >= 0; j--) if (!used[j] && ++T[j].miss > HOLD) T.splice(j, 1); // held (not faded) a few frames
+      for (let i = 0; i < list.length; i++) if (!taken[i]) {
+        const b = list[i];
+        T.push({ id: this.trk.nextId++, x: b.x, y: b.y, w: b.w, h: b.h, cx: b.cx, cy: b.cy, area: b.area, kind: b.kind, miss: 0, hits: 1 });
+      }
+    }
+    const minHits = mode === 'motion' ? 2 : 1; // a motion blob must survive 2 frames → no single-frame noise
+    return T.filter((t) => t.hits >= minHits).map((t) => ({ x: t.x, y: t.y, w: t.w, h: t.h, cx: t.cx, cy: t.cy, area: Math.round(t.area) }));
+  }
+
+  // DETECT switch (standalone _detRun): MOTION / BODY → {bin (contour mask), tracked blobs}
+  private detRun(dm: DetMode, data: Uint8ClampedArray, src: TexImageSource): { bin: Uint8Array; blobs: DBlob[] } {
+    const key = this.srcKey(src) + '|' + (this.v.mirrorBg >= 0.5 ? 'm' : '');
+    if (key !== this.trk.key) { this.trk.key = key; this.trkReset(); }
+    if (dm === 'motion') { const r = this.motionDetect(data, key); return { bin: r.bin, blobs: this.trkUpdate(r.blobs, 'motion', r.fresh) }; }
+    return { bin: this.v.ctMode >= 0.5 ? this.bodyMask() : this.detNoBin, blobs: this.trkUpdate(this.bodyBlobs(), 'body', true) };
+  }
+
+  // ── Overlay: face mesh · hands · skeleton on dc (same stretch + mirror as the base video) — standalone _bodyTag/_bodyDraw ──
+  private bodyTag(ctx: CanvasRenderingContext2D, x: number, y: number, txt: string, col: string, k: number, align?: string): void {
+    const fs = Math.max(9, Math.round(9 * k)); ctx.font = fs + 'px JetBrains Mono,monospace';
+    const w = ctx.measureText(txt).width + fs * 0.9, h = fs + 5; let x0 = align === 'left' ? x : x - w / 2;
+    x0 = Math.max(2, Math.min(this.w - w - 2, x0)); const y0 = Math.max(2, y - h);
+    ctx.globalAlpha = 0.72; ctx.fillStyle = '#04020a'; ctx.fillRect(x0, y0, w, h);
+    ctx.globalAlpha = 0.9; ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);
+    ctx.globalAlpha = 1; ctx.fillStyle = col; ctx.textBaseline = 'middle'; ctx.fillText(txt, x0 + fs * 0.45, y0 + h / 2 + 0.5); ctx.textBaseline = 'alphabetic';
+  }
+  private bodyDraw(dW: number, dH: number): void {
+    const C = bodyLandmarks.conn, ctx = this.dCtx;
+    const Fon = this.bodyOn('face'), Hon = this.bodyOn('hands'), Qon = this.bodyOn('pose');
+    const F = this.body.face.sets, Hs = this.body.hands.sets, Q = this.body.pose.sets;
+    if (!C || !((Fon && F.length) || (Hon && Hs.length) || (Qon && Q.length))) return;
+    const mir = this.v.mirrorBg >= 0.5, sx = mir ? -dW : dW, ox = mir ? dW : 0; // x = ox + nx·sx , y = ny·dH
+    const k = Math.max(1, Math.min(dW, dH) / 600);
+    // standalone: trackerColorActive ? trackerColor : white / amber / teal — palette index 0 (white) = not active
+    const tAct = (this.v.trackerColorIdx | 0) !== 0;
+    const main = tAct ? this.trackerColor : '#ffffff', acc = tAct ? this.trackerColor : '#e8c000', hcol = tAct ? this.trackerColor : '#00e0c0';
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    const path = (p: Float32Array, pairs: number[], minV?: number) => {
+      ctx.beginPath();
+      for (let i = 0; i < pairs.length; i += 2) { const a = pairs[i] * 3, b = pairs[i + 1] * 3; if (minV && (p[a + 2] < minV || p[b + 2] < minV)) continue; ctx.moveTo(ox + p[a] * sx, p[a + 1] * dH); ctx.lineTo(ox + p[b] * sx, p[b + 1] * dH); }
+    };
+    const line = (col: string, w: number) => { // dark under-stroke keeps it readable on bright skin/clothes, then coloured core with a soft glow
+      ctx.shadowBlur = 0; ctx.globalAlpha = 0.32; ctx.strokeStyle = '#000'; ctx.lineWidth = w + 2.2 * k; ctx.stroke();
+      ctx.globalAlpha = 0.92; ctx.strokeStyle = col; ctx.lineWidth = w; ctx.shadowColor = col; ctx.shadowBlur = 7 * k; ctx.stroke(); ctx.shadowBlur = 0;
+    };
+    const dot = (x: number, y: number, r: number, col: string) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill(); };
+    ctx.save(); ctx.setLineDash([]); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalCompositeOperation = 'source-over';
+    // FACE — hairline tesselation + glowing contours (oval, eyes, brows, lips) + irises
+    if (Fon) F.forEach((s, i) => {
+      const p = s.pts;
+      if (C.tess.length) { path(p, C.tess); ctx.globalAlpha = 0.14; ctx.strokeStyle = main; ctx.lineWidth = 0.6 * k; ctx.stroke(); }
+      path(p, C.cont); line(main, 1.1 * k);
+      if (p.length >= 478 * 3) [[468, 469], [473, 474]].forEach(([c, e]) => {
+        const x = ox + p[c * 3] * sx, y = p[c * 3 + 1] * dH;
+        const r = Math.max(1.5 * k, Math.hypot(ox + p[e * 3] * sx - x, p[e * 3 + 1] * dH - y));
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.globalAlpha = 0.95; ctx.strokeStyle = acc; ctx.lineWidth = 1.1 * k; ctx.stroke(); dot(x, y, 1.2 * k, acc);
+      });
+      const b = this.bodyBox(s, 0); if (b) this.bodyTag(ctx, ox + ((b[0] + b[2]) / 2) * sx, b[1] * dH - 6 * k, 'FACE ' + pad2(i + 1), acc, k);
+    });
+    // BODY — 33-kp skeleton (face lines left to the mesh when FACE is on) + glowing joints
+    if (Qon) Q.forEach((s, i) => {
+      const p = s.pts;
+      path(p, Fon ? (Hon ? C.poseBodyNH : C.poseBody) : (Hon ? C.poseNH : C.pose), 0.5); line(main, 1.6 * k); // mesh/hands own the face & fingers when ON
+      ctx.globalAlpha = 1;
+      const J = Fon ? BODY_POSE_JOINTS : [0].concat(BODY_POSE_JOINTS);
+      J.forEach((j) => {
+        if (p[j * 3 + 2] < 0.5) return; if (Hon && j >= 15 && j <= 22) return; const x = ox + p[j * 3] * sx, y = p[j * 3 + 1] * dH;
+        ctx.globalAlpha = 0.35; dot(x, y, 4.2 * k, acc); ctx.globalAlpha = 1; dot(x, y, 2.2 * k, acc); dot(x, y, 0.9 * k, '#ffffff');
+      });
+      const b = this.bodyPoseBox(s);
+      if (b) { // tag above the head; beside the box when the FACE tag already sits there
+        if (!Fon && p[2] > 0.5) this.bodyTag(ctx, ox + p[0] * sx, b[1] * dH - 4 * k, 'BODY ' + pad2(i + 1), main, k);
+        else { const xl = mir ? 1 - b[2] : b[0]; this.bodyTag(ctx, xl * dW, b[1] * dH - 4 * k, 'BODY ' + pad2(i + 1), main, k, 'left'); }
+      }
+    });
+    // HANDS — 21-kp per hand, fingertips emphasised, L/R tag at the wrist
+    if (Hon) Hs.forEach((s) => {
+      const p = s.pts;
+      path(p, C.hand); line(hcol, 1.3 * k);
+      ctx.globalAlpha = 1;
+      for (let j = 0; j < 21; j++) {
+        const x = ox + p[j * 3] * sx, y = p[j * 3 + 1] * dH;
+        if (BODY_TIPS.indexOf(j) >= 0) { ctx.beginPath(); ctx.arc(x, y, 3.4 * k, 0, Math.PI * 2); ctx.strokeStyle = acc; ctx.lineWidth = 1.2 * k; ctx.stroke(); dot(x, y, 1.3 * k, '#ffffff'); }
+        else dot(x, y, (j === 0 ? 2.2 : 1.3) * k, j === 0 ? acc : '#ffffff');
+      }
+      if (s.side) { const wy = p[1] * dH, my = p[9 * 3 + 1] * dH, below = wy >= my; this.bodyTag(ctx, ox + p[0] * sx, below ? wy + 20 * k : wy - 6 * k, s.side, hcol, k); }
+    });
+    ctx.restore();
+  }
+  /* SYNTECH-BODY-END ═════════════════════════════════════════════════════════ */
+
   render(ctx: NodeRenderContext): WebGLTexture {
     const gl = ctx.gl;
     const src = ctx.source;
@@ -1361,15 +1844,22 @@ export class BlobTrackerNode implements EngineNode {
     // detect → contour → FX → markers → flow pipeline (steps 2-4)
     if (this.v.fixedPtsMode >= 0.5) {
       this.fpRender(src);
+      this.bodyTick(src); this.bodyDraw(dW, dH); /* SYNTECH-BODY hook: face/hands/body overlay also over the chaos points */
     } else {
-    // 2) detect on the 320×180 processing canvas (flipped to match mirrorBg)
+    /* SYNTECH-BODY hook: face/hands/body inference (no-op while all OFF) + DETECT switch.
+       LUMA runs exactly the original sequence; MOTION/BODY live in the SYNTECH-BODY block. */
+    this.bodyTick(src);
+    const dm = this.detEffMode(src);
+    if (dm !== this.detPrev) { this.detPrev = dm; this.trkReset(); this.motionReset(); } // standalone _detSet
+    /* /SYNTECH-BODY hook */
+    // 2) detect on the 320×180 processing canvas (flipped to match mirrorBg — the display space)
     if (mir) { this.pCtx.save(); this.pCtx.translate(PW, 0); this.pCtx.scale(-1, 1); this.pCtx.drawImage(src as CanvasImageSource, 0, 0, PW, PH); this.pCtx.restore(); }
     else this.pCtx.drawImage(src as CanvasImageSource, 0, 0, PW, PH);
     const id = this.pCtx.getImageData(0, 0, PW, PH);
     if (this.v.flowOn >= 0.5) this.flowUpdateGray(id.data); // raw gray BEFORE processForDetect
-    this.processForDetect(id.data);
-    const bin = this.getBinary(id.data);
-    const blobs = this.findBlobs(bin);
+    let bin: Uint8Array, blobs: DBlob[];
+    if (dm === 'luma') { this.processForDetect(id.data); bin = this.getBinary(id.data); blobs = this.findBlobs(bin); }
+    else { const dr = this.detRun(dm, id.data, src); bin = dr.bin; blobs = dr.blobs; } /* SYNTECH-BODY hook */
     if (this.v.flowOn >= 0.5) this.flowComputeVel(blobs);
     const scX = dW / PW, scY = dH / PH;
     const sc = blobs.map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, cx: b.cx * scX, cy: b.cy * scY, area: b.area }));
@@ -1381,7 +1871,7 @@ export class BlobTrackerNode implements EngineNode {
     if (this.v.ctMode >= 0.5) {
       let mask = bin;
       if (this.v.ctMode >= 1.5 && ctx.personMask) {
-        const sm = this.refreshSmartMask(ctx);
+        const sm = this.refreshSmartMask(ctx, mir); // SYNTECH-BODY: detection runs in display space in every DETECT mode
         if (sm) mask = sm;
       }
       this.computeContours(blobs, mask);
@@ -1409,6 +1899,7 @@ export class BlobTrackerNode implements EngineNode {
     this.drawConnections(sc);
     sc.forEach((b, i) => this.drawBlobMarker(b, scX, scY, i));
     if (this.v.flowOn >= 0.5) this.drawFlowViz(sc, scX, scY);
+    this.bodyDraw(dW, dH); /* SYNTECH-BODY hook: face mesh / hands / skeleton overlay on dc */
     this.computeMotion(src);
     }
 
@@ -1460,5 +1951,7 @@ export class BlobTrackerNode implements EngineNode {
     this.pMeshes = [];
     this.pTex?.dispose(); this.pRenderer?.dispose();
     this.pRenderer = null; this.pTex = null; this.pScene = null; this.pCamera = null; this.pCanvas = null; this.pInited = false;
+    // SYNTECH-BODY: the last node using the shared landmark service closes its models
+    if (this.bodyAcq) { this.bodyAcq = false; bodyLandmarks.release(); }
   }
 }

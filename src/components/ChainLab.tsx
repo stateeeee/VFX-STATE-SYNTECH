@@ -266,6 +266,10 @@ export default function ChainLab({ isDayMode, onBack, chain: chainProp, onChainC
       engine.chain.find((n) => n.id === k.slice(0, dot))?.setParam(k.slice(dot + 1), v);
     });
     busRef.current!.restore(preset.bus, engine.chain);
+    // SYNTECH-BODY: a preset saved before blob_tracker had DETECT reopens in LUMA (the classic look it was
+    // saved with) — same rule as the standalone's bridge restore; new sessions start in MOTION
+    const bt = engine.chain.find((n) => n.id === 'blob_tracker');
+    if (bt && preset.bus && !('blob_tracker.detect' in preset.bus)) busRef.current!.setBase(bt, 'detect', 0);
   };
 
   const loadPreset = (preset: ChainPreset) => {
