@@ -5,12 +5,9 @@ import {
   RefreshCw,
   Sun,
   Moon,
-  Maximize,
-  Minimize,
   MoreHorizontal,
   Search,
   Cpu,
-  Home as HomeIcon,
   Save as SaveIcon,
   Folder as FolderIcon,
   Sparkle as AiIcon,
@@ -146,6 +143,48 @@ function EffectCardArt({ id, name, isDayMode }: { id: string; name: string; isDa
         </span>
       )}
     </>
+  );
+}
+
+/** The brand mark, used as the Home button's icon in the left rail. It keeps its
+ *  inflated glossy 3D shading but takes its colour from the same violet→gold ramp as
+ *  the gel slab and the titles: a masked gradient layer underneath, the mark on top in
+ *  `luminosity` blend (see .syn-logo in index.css). Never inverted. */
+function HomeLogo({ isDayMode }: { isDayMode: boolean }) {
+  return (
+    <span className="syn-logo block w-[30px] h-[30px] shrink-0" title="VFX Syntech — created by State">
+      <span className="syn-logo-color" aria-hidden />
+      <img
+        src="/assets/logo.png"
+        alt="VFX Syntech"
+        draggable={false}
+        className={`syn-logo-shade select-none ${isDayMode ? '' : 'drop-shadow-[0_0_10px_rgba(139,92,246,0.35)]'}`}
+      />
+    </span>
+  );
+}
+
+/** YouTube-player-style fullscreen glyphs: four square corner brackets pointing OUT
+ *  (enter) or IN (exit). 36-unit viewBox with the glyph padded inside it. */
+function FullscreenIcon({ exit, className }: { exit: boolean; className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 36 36" fill="currentColor" aria-hidden>
+      {exit ? (
+        <>
+          <path d="m 14,14 -4,0 0,2 6,0 0,-6 -2,0 0,4 0,0 z" />
+          <path d="m 22,14 0,-4 -2,0 0,6 6,0 0,-2 -4,0 0,0 z" />
+          <path d="m 20,26 2,0 0,-4 4,0 0,-2 -6,0 0,6 0,0 z" />
+          <path d="m 10,22 4,0 0,4 2,0 0,-6 -6,0 0,2 0,0 z" />
+        </>
+      ) : (
+        <>
+          <path d="m 10,16 2,0 0,-4 4,0 0,-2 L 10,10 l 0,6 0,0 z" />
+          <path d="m 20,10 0,2 4,0 0,4 2,0 L 26,10 l -6,0 0,0 z" />
+          <path d="m 24,24 -4,0 0,2 L 26,26 l 0,-6 -2,0 0,4 0,0 z" />
+          <path d="M 12,20 10,20 10,26 l 6,0 0,-2 -4,0 0,-4 0,0 z" />
+        </>
+      )}
+    </svg>
   );
 }
 
@@ -685,7 +724,7 @@ export default function App() {
   const navItems: Array<{ key: string; label: string; Icon: any; active: boolean; onClick: () => void; title?: string }> = [
     // Home closes the open effect / Gemini panel; the Lab stays armed —
     // only a manual click on its own toggle disarms it (03-SPEC-SHELL §3)
-    { key: 'home', label: 'Home', Icon: HomeIcon, active: isHome, onClick: () => { handleEffectClose(); setActiveGeminiMode(null); } },
+    { key: 'home', label: 'Home', Icon: null /* the brand logo, rendered by the rail */, active: isHome, onClick: () => { handleEffectClose(); setActiveGeminiMode(null); } },
     { key: 'save', label: savedFlash ? 'Saved' : 'Save', Icon: SaveIcon, active: savedFlash, onClick: handleSaveSession, title: 'Save the current session (module, theme) to this browser' },
     { key: 'projects', label: 'Projects', Icon: FolderIcon, active: projectsOpen, onClick: () => setProjectsOpen(true), title: 'Saved effect chains' },
     // the key stays 'ailab' (nav-ailab): the verify suites address it by testid
@@ -792,12 +831,12 @@ export default function App() {
             {/* fullscreen the central opening only (see HERO FULLSCREEN above) */}
             <button
               type="button"
-              title="Fullscreen (Esc to exit)"
+              title={isHeroFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (Esc to exit)'}
               data-testid="hero-fullscreen"
               onClick={toggleHeroFullscreen}
               className={`p-1.5 rounded-md transition-colors cursor-pointer ${isDayMode ? 'hover:bg-neutral-200 text-neutral-500' : 'hover:bg-ink-800 text-neutral-400'}`}
             >
-              {isHeroFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
+              <FullscreenIcon exit={isHeroFullscreen} className="w-[22px] h-[22px] -m-[4px]" />
             </button>
           </div>
         </div>
@@ -857,20 +896,6 @@ export default function App() {
           className={`syn-hole flex flex-col items-center pt-3 pb-3 rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'}`}
           style={cageBox(HOLES.railTop, 4, 6)}
         >
-          {/* Brand logo. The mark keeps its inflated glossy 3D shading but takes its
-              colour from the same violet→gold ramp as the gel slab and the titles:
-              a masked gradient layer underneath, the mark on top in `luminosity`
-              blend (see .syn-logo in index.css). Never inverted. */}
-          <div className="syn-logo w-[34px] h-[34px] shrink-0 mb-2.5" title="VFX Syntech — created by State">
-            <span className="syn-logo-color" aria-hidden />
-            <img
-              src="/assets/logo.png"
-              alt="VFX Syntech"
-              draggable={false}
-              className={`syn-logo-shade select-none ${isDayMode ? '' : 'drop-shadow-[0_0_10px_rgba(139,92,246,0.35)]'}`}
-            />
-          </div>
-
           <ul className="flex flex-col gap-[13px] w-full items-center">
             {navItems.map(({ key, label, Icon, active, onClick, title }) => (
               <li key={key} className="w-full flex justify-center">
@@ -881,8 +906,8 @@ export default function App() {
                   title={title}
                   className={`group flex flex-col items-center gap-1.5 w-full cursor-pointer transition-colors ${active ? 'text-violet-500' : isDayMode ? 'text-neutral-500 hover:text-black' : 'text-neutral-500 hover:text-white'}`}
                 >
-                  <span className={`p-2 rounded-xl transition-colors ${active ? 'bg-violet-500/12 shadow-[0_0_12px_rgba(139,92,246,0.12)]' : 'group-hover:bg-white/5'}`}>
-                    <Icon className="w-[18px] h-[18px]" />
+                  <span className={`${key === 'home' ? 'p-0.5' : 'p-2'} rounded-xl transition-colors ${active ? 'bg-violet-500/12 shadow-[0_0_12px_rgba(139,92,246,0.12)]' : 'group-hover:bg-white/5'}`}>
+                    {key === 'home' ? <HomeLogo isDayMode={isDayMode} /> : <Icon className="w-[18px] h-[18px]" />}
                   </span>
                   <span className="text-[8.5px] uppercase tracking-[0.12em] font-medium">{label}</span>
                 </button>
@@ -891,10 +916,10 @@ export default function App() {
           </ul>
 
           {/* Divider */}
-          <div className={`w-8 h-px my-5 shrink-0 ${isDayMode ? 'bg-neutral-300' : 'bg-ink-700'}`} />
+          <div className={`w-8 h-px my-4 shrink-0 ${isDayMode ? 'bg-neutral-300' : 'bg-ink-700'}`} />
 
-          <span className={`text-[7px] uppercase tracking-[0.2em] font-bold mb-3 shrink-0 ${isDayMode ? 'text-neutral-400' : 'text-neutral-500'}`}>GEMINI 3.8</span>
-          <ul className="flex flex-col gap-4 w-full items-center">
+          <span className={`text-[7px] uppercase tracking-[0.2em] font-bold mb-2.5 shrink-0 ${isDayMode ? 'text-neutral-400' : 'text-neutral-500'}`}>GEMINI 3.8</span>
+          <ul className="flex flex-col gap-3.5 w-full items-center">
             {[
               { key: 'art_director', label: 'Art Dir', Icon: Lightbulb, onClick: () => setActiveGeminiMode(activeGeminiMode === 'art_director' ? null : 'art_director'), active: activeGeminiMode === 'art_director', title: 'Art Director' },
               { key: 'agent', label: 'Agent', Icon: Bot, onClick: () => setActiveGeminiMode(activeGeminiMode === 'agent' ? null : 'agent'), active: activeGeminiMode === 'agent', title: 'Agent' },
@@ -1085,6 +1110,22 @@ export default function App() {
                           </p>
                         </div>
                       </>
+                    )}
+
+                    {/* YouTube-style exit control: the top bar stays outside the fullscreen
+                        element, so while fullscreen the way out lives inside the hero.
+                        Bottom-right, translucent at rest, opaque on hover. */}
+                    {isHeroFullscreen && (
+                      <button
+                        type="button"
+                        title="Exit fullscreen (Esc)"
+                        aria-label="Exit fullscreen"
+                        data-testid="hero-fullscreen-exit"
+                        onClick={toggleHeroFullscreen}
+                        className="absolute bottom-10 right-3 z-50 w-10 h-10 flex items-center justify-center rounded-lg bg-black/55 text-white opacity-60 hover:opacity-100 focus-visible:opacity-100 transition-opacity cursor-pointer"
+                      >
+                        <FullscreenIcon exit className="w-9 h-9" />
+                      </button>
                     )}
                   </div>
                 </Panel>
