@@ -2064,6 +2064,12 @@ syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on,
 SynExtras.attach({
   hasSource:function(){ return srcMode!=='none'; }
 });
+/* its transport shows only while a video FILE is the source, like the other four (it used to stay up after switching to webcam/none) */
+setInterval(function(){
+  var t=document.getElementById('transport'); if(!t) return;
+  var want=srcMode==='video';
+  if(t.classList.contains('visible')!==want){ t.classList.toggle('visible',want); try{ fit(); }catch(e){} }
+},250);
 </script>
 <!-- SYNTECH-UNIFORM-END -->
 </body>

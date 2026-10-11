@@ -7562,6 +7562,8 @@ SynExtras.attach({
   toggleLoop:function(){ toggleLoop(); },
   isLoop:function(){ return !!vidEl.loop; }
 });
+/* clip ended with loop off: its Source LED kept saying PLAYING — sync the paused flag and both labels */
+vidEl.addEventListener('ended',function(){ if(srcMode==='video'&&!vidEl.loop){ paused=true; try{ updatePlayBtn(); updatePlayUI(); }catch(e){} } });
 /* the external-camera source is hidden (only IMAGE · VIDEO · WEBCAM): its C shortcut is switched off too */
 document.addEventListener('keydown',function(e){
   var t=e.target&&e.target.tagName;
