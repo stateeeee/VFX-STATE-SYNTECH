@@ -47,9 +47,8 @@ il Blob Tracker il clip salvato si ricarica da solo — è il comportamento orig
 dell'effetto. Se non lo vuole: togliere la riga `SYNTECH-FIX` di `srcM` in Save Session.
 FATTI dopo (stessa sera, revisione Opus PASS): la timeline di BLOB REVEAL ora compare solo
 col video (sparisce con webcam / nessuna sorgente, il riquadro si riadatta); il LED del
-Blob Tracker passa a PAUSED a fine clip senza loop. Aperto (LOW): nel Blob Tracker la
-barra spaziatrice aggiorna solo il bottone, non il LED (preesistente, aggiungere
-`updatePlayUI()` alla riga dello Space).
+Blob Tracker passa a PAUSED a fine clip senza loop, e ora segue anche la barra
+spaziatrice e il tasto S (stop).
 
 **SESSIONE 2026-10-11 (sera) — i 5 effetti hanno la grafica di BOKEH, FATTO.**
 Da far guardare all'operatore sull'app vera: aprire i 5 effetti dalla Home (riquadro

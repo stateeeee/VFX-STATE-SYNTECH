@@ -3401,8 +3401,8 @@ document.addEventListener('keydown',e=>{
     case 'c':loadNikonCamera();break;
     case 'm':setMode(appMode==='tracker'?'panels':'tracker');break;
     case 'r':toggleRec();break;
-    case 's':if(srcMode==='video'){vidEl.pause();vidEl.currentTime=0;paused=true;updatePlayBtn();}break;
-    case ' ':e.preventDefault();if(srcMode==='video'){paused=!paused;if(paused)vidEl.pause();else{vidEl.play();if(!trackerRafId&&appMode==='tracker')startTracker();}updatePlayBtn();}break;
+    case 's':if(srcMode==='video'){vidEl.pause();vidEl.currentTime=0;paused=true;updatePlayBtn();updatePlayUI();/* SYNTECH-FIX: Source LED follows the S key too */}break;
+    case ' ':e.preventDefault();if(srcMode==='video'){paused=!paused;if(paused)vidEl.pause();else{vidEl.play();if(!trackerRafId&&appMode==='tracker')startTracker();}updatePlayBtn();updatePlayUI();/* SYNTECH-FIX: Source LED follows Space too (was stale) */}break;
     case '`':document.getElementById('btn-ripple').click();break;
   }
 });
