@@ -586,3 +586,12 @@ body {
 .led-btn::before { border-radius:0; }
 /* Source → MOTION meter: green in Bokeh (class .mid there) — same id in every effect */
 #vu-motion { background:linear-gradient(90deg,#2a4800,#20a040); box-shadow:0 0 6px rgba(32,160,64,.4); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SOURCES = BOKEH's (operator request 2026-10-11, second round): only
+   IMAGE · VIDEO · WEBCAM. The external-camera source is hidden everywhere —
+   its Source button (#src-camera, ANALOG / ANAMORPHIC / BLOB TRACKER) and the
+   "Camera" settings section that only served it (#sec-cam-ctrl, ANAMORPHIC /
+   BLOB TRACKER). Hidden, not deleted: the effects' JS still binds to them.
+   ═══════════════════════════════════════════════════════════════════════ */
+#src-camera, #sec-cam-ctrl { display:none !important; }

@@ -849,7 +849,7 @@ body {
       <div id="drop-overlay">
         <div class="drop-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
         <div class="drop-title">ANALOG</div><!-- SYNTECH-UNIFORM: Bokeh's drop overlay (was "ANALOG STATE" + format list) -->
-        <div class="drop-sub">VIDEO — IMAGE — WEBCAM — CAMERA</div>
+        <div class="drop-sub">IMAGE — VIDEO — WEBCAM</div><!-- SYNTECH-UNIFORM: BOKEH's wording + order, no CAMERA (operator request 2026-10-11) -->
         <button class="drop-source-btn" id="browse-btn">SOURCE</button>
       </div>
       <input type="file" id="file-input" accept="video/*">
@@ -870,8 +870,8 @@ body {
       </div>
       <div class="sec-body hidden" id="sec-source">
         <div class="seg-row" id="src-mode-row">
+          <div class="seg-btn" id="src-image">IMAGE</div><!-- SYNTECH-UNIFORM: BOKEH's order IMAGE · VIDEO · WEBCAM; CAM hidden by ../shared/syn-chrome.css -->
           <div class="seg-btn" id="src-video">VIDEO</div>
-          <div class="seg-btn" id="src-image">IMAGE</div>
           <div class="seg-btn" id="src-webcam">WEBCAM</div>
           <div class="seg-btn" id="src-camera">CAM</div>
         </div>
@@ -1997,7 +1997,7 @@ function render(now){
 
   fpsF++;
   if(now-lastFPS>=500){
-    document.getElementById('fps-val').textContent=Math.round(fpsF*1000/(now-lastFPS));
+    document.getElementById('fps-val').textContent=STATE.hasVideo?Math.round(fpsF*1000/(now-lastFPS)):0; /* SYNTECH-UNIFORM: FPS 0 with no source, like BOKEH (was always the render-loop rate, e.g. 41) */
     fpsF=0;lastFPS=now;
   }
   if(STATE.hasVideo&&STATE.srcMode!=='image'&&video.readyState>=2)
@@ -2718,5 +2718,17 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 </script>
 <!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
+<script src="../shared/syn-extras.js"></script>
+<script>
+SynExtras.attach({
+  hasSource:function(){ return !!STATE.hasVideo; },
+  video:function(){ return (STATE.hasVideo&&STATE.srcMode==='video')?video:null; },
+  togglePlay:function(){ togglePlay(); },
+  toggleLoop:function(){ toggleLoop(); },
+  isLoop:function(){ return !!STATE.isLooping; }
+});
+</script>
+<!-- SYNTECH-UNIFORM-END -->
 </body>
 </html>

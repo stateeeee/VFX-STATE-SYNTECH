@@ -1228,6 +1228,8 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 .smoke-blob.s4 { display:none; }
 /* old status bar stays hidden and has no decoration */
 #bottombar::before { content:none; }
+/* timeline: BLOB REVEAL's transport for every effect (../shared/syn-extras.js) — the old ■ ▶ bar stays in the DOM, hidden (operator request 2026-10-11) */
+#tl-bar { display:none !important; }
 </style>
 <!-- SYNTECH-UNIFORM-END -->
 <body>
@@ -1270,7 +1272,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
       <div id="drop-overlay"><!-- SYNTECH-UNIFORM: Bokeh's id (was #drop-ov; JS ref updated) -->
         <div class="drop-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
         <div class="drop-title">BLOB TRACKER</div><!-- SYNTECH: name, operator request 2026-10-11 -->
-        <div class="drop-sub">VIDEO — IMAGE — WEBCAM — CAMERA</div>
+        <div class="drop-sub">IMAGE — VIDEO — WEBCAM</div><!-- SYNTECH-UNIFORM: BOKEH's wording + order, no CAMERA (operator request 2026-10-11) -->
         <button class="drop-source-btn" id="browse-btn">SOURCE</button><!-- SYNTECH-UNIFORM: Bokeh's class (was .drop-browse); id + behaviour unchanged -->
       </div>
       <div id="toast"></div>
@@ -1301,7 +1303,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
           <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val amber" id="info-res">--</div></div>
         </div>
         <div class="row"><div class="lbl">Playback</div><div class="led-btn" id="btn-play"><div class="led"></div><div class="led-txt" id="play-label">PAUSED</div><div class="kbd-badge">SPC</div></div></div>
-        <div class="row"><div class="lbl">Loop</div><div class="led-btn" id="btn-loop"><div class="led"></div><div class="led-txt" id="loop-label">LOOP OFF</div></div></div>
+        <div class="row"><div class="lbl">Loop</div><div class="led-btn on" id="btn-loop"><div class="led"></div><div class="led-txt" id="loop-label">LOOP ON</div></div></div><!-- SYNTECH-FIX: <video id="vid"> has the loop attribute, so the LED starts ON (was LOOP OFF while the clip looped) -->
         <div class="row"><div class="lbl">Webcam</div><div class="led-btn" id="btn-webcam"><div class="led" id="webcam-led"></div><div class="led-txt" id="webcam-label">WEBCAM OFF</div></div></div>
         <div class="row"><div class="lbl">Fullscreen</div><div class="led-btn" id="btn-fullscreen"><div class="led"></div><div class="led-txt">FULLSCREEN</div><div class="kbd-badge">F</div></div></div>
         <div class="vu-row" id="vu-kick-row" style="display:none"><span class="vu-lbl">KICK</span><div class="vu-track"><div class="vu-bar" id="vu-kick" style="background:linear-gradient(90deg,#802000,#ff4400)"></div></div><span class="vu-val" id="vu-kv">0%</span></div>
@@ -2690,7 +2692,7 @@ function panelsAnimate(){
   const cLag=0.018+motionEnergy*.04;camC.x+=(camT.x-camC.x)*cLag;camC.y+=(camT.y-camC.y)*cLag;
   panelsCamera.position.set(camC.x,camC.y,targetZ);panelsCamera.lookAt(0,0,0);panelsScene.updateMatrixWorld();
   const now2=performance.now();fc++;
-  if(now2-lastFpsT>700){fps=Math.round(fc/((now2-lastFpsT)/1000));fc=0;lastFpsT=now2;document.getElementById('fps-val').textContent=fps;document.getElementById('ic-fps').textContent=fps;}
+  if(now2-lastFpsT>700){fps=Math.round(fc/((now2-lastFpsT)/1000));fc=0;lastFpsT=now2;const _fpsT=srcMode==='none'?0:fps;document.getElementById('fps-val').textContent=_fpsT;document.getElementById('ic-fps').textContent=_fpsT;} /* SYNTECH-UNIFORM: FPS 0 with no source, like BOKEH */
   // Labels + connections
   const pts=panelMeshes.map((p,i)=>{
     const anc=lAnchor(p),ctr=toScreen(wCenter(p));
@@ -7265,7 +7267,7 @@ function capture(){
   PRESET_SEGS.forEach(group=>{const active=group.find(id=>{const el=document.getElementById(id);return el&&el.classList.contains('on');});s.seg[group[0]]=active||group[0];});
   PRESET_COLORS.forEach(id=>{const el=document.getElementById(id);if(el)s.col[id]=el.value;});
   PRESET_TEXT.forEach(id=>{const el=document.getElementById(id);if(el)s.txt[id]=el.value;});
-  s.xy=[window.padX||0.5, window.padY||1.0];
+  s.xy=[padX, padY]; /* SYNTECH-FIX: padX/padY are top-level `let` (never on window) — was [window.padX||0.5, window.padY||1.0], i.e. always the default; operator request 2026-10-11 */
   return s;
 }
 
@@ -7441,7 +7443,7 @@ const fiV=document.getElementById('fi-v');
 fiV.addEventListener('change',e=>{if(e.target.files[0])_sessionFile=e.target.files[0];},{capture:true});
 
 document.getElementById('btn-save-session').addEventListener('click',async()=>{
-  const ses={savedAt:Date.now(),state:capture(),srcM:window.srcMode||'none',vt:0,vName:null,hasBlob:false};
+  const ses={savedAt:Date.now(),state:capture(),srcM:srcMode||'none'/* SYNTECH-FIX: was window.srcMode — a top-level `let`, never on window, so the video was never saved with the session */,vt:0,vName:null,hasBlob:false};
   const vEl=document.getElementById('vid');
   if(ses.srcM==='video'&&vEl)ses.vt=vEl.currentTime||0;
   if(_sessionFile){ses.vName=_sessionFile.name;try{await idbSet('ses_blob',_sessionFile);ses.hasBlob=true;}catch(e){}}
@@ -7528,7 +7530,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
   function txtApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
     if(el)el.value=o[id];}}
   function collect(){return {sliders:slVals(),leds:ledGet(LEDS),segs:segGet(),
-    colors:colGet(),texts:txtGet(),xy:[window.padX||0.5,window.padY||1.0]};}
+    colors:colGet(),texts:txtGet(),xy:[padX,padY]};} /* SYNTECH-FIX: was [window.padX||0.5,window.padY||1.0] — `let` globals are not window props, so the XY pad was never saved */
   function apply(s){if(!s)return;slApply(s.sliders);ledApply(s.leds);
     segApply(s.segs);colApply(s.colors);txtApply(s.texts);
     if(s.xy&&typeof setPad==='function')setPad(s.xy[0],1-s.xy[1]);}
@@ -7548,5 +7550,25 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 </script>
 <!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
+<script src="../shared/syn-extras.js"></script>
+<script>
+/* its own ■ ▶ timeline (#tl-bar) is replaced by the shared one (hidden in its SYNTECH-UNIFORM <style>) */
+SynExtras.attach({
+  hasSource:function(){ return srcMode!=='none'; },
+  video:function(){ return srcMode==='video'?vidEl:null; },
+  /* its own `paused` flag stays false when the clip ends (loop off) or autoplay is refused: re-sync it so one click on ▶ PLAY plays */
+  togglePlay:function(){ if(srcMode==='video'&&(vidEl.paused||vidEl.ended)&&!paused) paused=true; togglePlay(); },
+  toggleLoop:function(){ toggleLoop(); },
+  isLoop:function(){ return !!vidEl.loop; }
+});
+/* the external-camera source is hidden (only IMAGE · VIDEO · WEBCAM): its C shortcut is switched off too */
+document.addEventListener('keydown',function(e){
+  var t=e.target&&e.target.tagName;
+  if((t==='INPUT'&&e.target.type!=='range')||t==='TEXTAREA'||t==='SELECT') return; /* same guard as its shortcut handler */
+  if(e.key==='c'||e.key==='C') e.stopImmediatePropagation(); /* any modifier too (its handler ignores them); no preventDefault → copy still works */
+},true);
+</script>
+<!-- SYNTECH-UNIFORM-END -->
 </body>
 </html>

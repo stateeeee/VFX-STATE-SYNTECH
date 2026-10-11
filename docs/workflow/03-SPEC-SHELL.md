@@ -155,7 +155,30 @@ link both inside a delimited `SYNTECH-UNIFORM` block (plus a per-effect
 chrome). Contract every effect follows:
 
 - **Top bar**: name · one separator · `INPUT` pill · `ENGINE` pill ·
-  timecode `HH:MM:SS:FF` · `FPS`. Anything else moves into Info.
+  **work timer** `DD:HH:MM:SS` (in place of the old video timecode) · `FPS`.
+  Anything else moves into Info. FPS is the real render rate while a source is
+  active and **0 with no source** (like Bokeh).
+- **Work timers** (operator request 2026-10-11, second round): two separate
+  timers. The app's `SESSION` timer (top bar of the shell) starts when the app
+  opens; each effect has its own (`public/effects/shared/syn-extras.js`) that
+  starts when the effect opens. Both count only while the app window is
+  visible **and** focused (focus inside an effect iframe counts) — using other
+  apps pauses them; an effect's timer also pauses while the effect is not on
+  screen. They live in `sessionStorage` (`syntech.timer.app`,
+  `syntech.timer.fx.<ModuleId>`): leaving and reopening an effect, or reloading,
+  keeps the value; closing the app (the tab) resets them.
+- **Sources**: exactly Bokeh's — `IMAGE · VIDEO · WEBCAM`, in this order, in
+  the drop overlay and in Source. The external-camera source (`#src-camera`)
+  and the `Camera` section that served it (`#sec-cam-ctrl`) are hidden by
+  `shared/syn-chrome.css` (kept in the DOM: the effects' JS binds to them).
+- **Timeline**: Blob Reveal's transport bar (▶ PLAY / ▮▮ PAUSE · time · scrub
+  track · duration · ⟳ LOOP) under the video in all five. Blob Reveal keeps
+  its own `#transport` with its own visibility rule (it appears with the first
+  video and stays); the other four get the same bar from
+  `shared/syn-extras.js`, shown only while a video **file** is the source
+  (Blob Tracker's C camera shortcut is disabled with the source; its old
+  ■ ▶ `#tl-bar` is hidden). Play/loop go through each effect's own functions,
+  so its Source-section LEDs stay in sync.
 - **Frame**: centred `#canvas-wrap` (area − 24 px) with `#frame-outline`, the
   amber corner brackets and Bokeh's drop overlay (name, sources, SOURCE). 16:9
   like Bokeh; blob reveal keeps following the source aspect (16:9 when empty).

@@ -64,7 +64,7 @@ src/engine/ParamBus (params.ts) ★ partial — base + modulation routing
 src/engine/PersonMask.ts        ★ STUB — MediaPipe selfie segmentation service
 src/effects-registry.ts         ModuleId → iframe src mapping
 public/effects/<id>/index.html  The 5 standalone effect apps (SOURCE OF TRUTH for effect look)
-public/effects/shared/          syn-chrome.css/.js — Bokeh's chrome, shared by all 5 (§5.1)
+public/effects/shared/          syn-chrome.css/.js — Bokeh's chrome, shared by all 5 (§5.1); syn-extras.js — work timer + timeline (all 5)
 ```
 
 ## Hard rules

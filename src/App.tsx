@@ -36,6 +36,15 @@ const GEL_TILE = 640; // gel material tile edge (px) — also its background-siz
 const SESSION_KEY = 'syntech.session';
 const COMP_KEY = 'syntech.composition.v3';
 const COMP_KEY_V2 = 'syntech.composition.v2';
+// SESSION work timer (operator request 2026-10-11): counts only while the app
+// window is visible AND focused (focus inside an effect's iframe counts), so
+// using other apps pauses it. sessionStorage → it survives a reload and resets
+// only when the app (the browser tab) is closed. Each effect keeps its own,
+// separate timer the same way (public/effects/shared/syn-extras.js).
+const APP_TIMER_KEY = 'syntech.timer.app';
+const readAppTimerMs = (): number => {
+  try { return Math.max(0, Number(sessionStorage.getItem(APP_TIMER_KEY)) || 0); } catch { return 0; }
+};
 
 // ── serial wiring helpers (03-SPEC-SHELL §6: chain order = wiring order) ──
 const wiresFromChain = (list: ModuleId[]): WireMap => {
@@ -601,7 +610,7 @@ export default function App() {
   // Dynamic ticking metrics
   const [frameCount, setFrameCount] = useState(84491820);
   const [uptimeSeconds, setUptimeSeconds] = useState(15132);
-  const [sessionSeconds, setSessionSeconds] = useState(0);
+  const [sessionSeconds, setSessionSeconds] = useState(() => Math.floor(readAppTimerMs() / 1000));
   const [currentTime, setCurrentTime] = useState(new Date());
   const [simulatedLatency, setSimulatedLatency] = useState(1.2);
   const [fpsDisplay, setFpsDisplay] = useState(120);
@@ -679,8 +688,6 @@ export default function App() {
       }, 16);
       clockTimer = window.setInterval(() => {
         setUptimeSeconds((prev) => prev + 1);
-        setSessionSeconds((prev) => prev + 1);
-        setCurrentTime(new Date());
         setFpsDisplay(116 + Math.floor(Math.random() * 8));
         setSimulatedLatency((prev) => {
           const jitter = (Math.random() - 0.5) * 0.12;
@@ -694,6 +701,25 @@ export default function App() {
       clearInterval(clockTimer);
     };
   }, [isStreaming, bufferSize]);
+
+  // SESSION work timer + wall clock: always on (not only while the Lab streams)
+  useEffect(() => {
+    let workMs = readAppTimerMs();
+    let last = performance.now();
+    let shownMinute = new Date().getMinutes();
+    const tick = () => {
+      const now = performance.now();
+      const dt = Math.min(now - last, 1500); // never credit a sleep / throttled gap
+      last = now;
+      if (document.visibilityState === 'visible' && document.hasFocus()) workMs += dt;
+      try { sessionStorage.setItem(APP_TIMER_KEY, String(Math.round(workMs))); } catch { /* storage blocked */ }
+      setSessionSeconds(Math.floor(workMs / 1000)); // same value → React skips the render
+      const d = new Date();
+      if (d.getMinutes() !== shownMinute) { shownMinute = d.getMinutes(); setCurrentTime(d); } // clock shows HH:MM
+    };
+    const id = window.setInterval(tick, 250);
+    return () => window.clearInterval(id);
+  }, []);
 
   const formatUptime = (totalSecs: number) => {
     const hrs = Math.floor(totalSecs / 3600);

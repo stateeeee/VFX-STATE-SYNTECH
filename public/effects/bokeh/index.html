@@ -3848,5 +3848,17 @@ requestAnimationFrame(syncSectionTitleGradients);
 })();
 </script>
 <!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
+<script src="../shared/syn-extras.js"></script>
+<script>
+SynExtras.attach({
+  hasSource:function(){ return !!STATE.hasVideo; },
+  video:function(){ return (STATE.hasVideo&&!STATE.webcamActive)?video:null; },
+  togglePlay:function(){ togglePlay(); },
+  toggleLoop:function(){ toggleLoop(); },
+  isLoop:function(){ return !!STATE.isLooping; }
+});
+</script>
+<!-- SYNTECH-UNIFORM-END -->
 </body>
 </html>

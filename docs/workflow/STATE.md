@@ -29,6 +29,26 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-11 (notte) — timer, timeline, sorgenti, FPS, XY pad: FATTO e su `main`.**
+Da far provare all'operatore sull'app vera:
+- **Timer**: in alto a destra nella Home il `SESSION` parte all'apertura dell'app; in ogni
+  effetto, al posto degli zeri accanto a FPS, il timer dell'effetto parte all'apertura.
+  Passare a un'altra app/scheda o minimizzare → entrambi si fermano; tornare → ripartono.
+  Uscire da un effetto e rientrare → riprende da dove era; ricaricare → restano; chiudere
+  la scheda dell'app → si azzerano.
+- **Timeline** stile Blob Reveal sotto il video in tutti e 5 con un video caricato
+  (PLAY/PAUSE, trascinamento, LOOP; i LED della sezione Source restano allineati).
+- **Sorgenti**: IMAGE · VIDEO · WEBCAM ovunque; niente CAM / sezione Camera.
+- **FPS**: 0 senza sorgente, FPS veri con video/webcam.
+- **Blob Tracker → XY pad**: spostarlo, Save, uscire, riaprire → è dove l'aveva lasciato.
+Da confermare con lui (decisione del regista, reversibile): **Save Session del Blob
+Tracker** ora salva davvero anche il video (prima un bug lo impediva), quindi riaprendo
+il Blob Tracker il clip salvato si ricarica da solo — è il comportamento originale
+dell'effetto. Se non lo vuole: togliere la riga `SYNTECH-FIX` di `srcM` in Save Session.
+Aperti (LOW): la timeline di BLOB REVEAL ha la sua regola di visibilità (resta visibile
+dopo il passaggio a webcam); il LED "PLAYING" del Blob Tracker resta acceso a fine clip
+senza loop (preesistente).
+
 **SESSIONE 2026-10-11 (sera) — i 5 effetti hanno la grafica di BOKEH, FATTO.**
 Da far guardare all'operatore sull'app vera: aprire i 5 effetti dalla Home (riquadro
 piccolo) e a schermo intero, vuoti e con un suo video. Barra in alto, riquadro,
@@ -180,6 +200,46 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-10-11 (notte) — Timer di lavoro, timeline per tutti, solo IMAGE · VIDEO · WEBCAM
+
+Richiesta: *"dove comparirà il video … scrivere solo: image video webcam, con questo
+ordine, copia bokeh … in source se c'è comando camera va tolto … anamorphic ha fps e i
+trattini, deve avere 0 … analog ha scritto 41 ma deve avere 0 … di fianco a fps dove ci
+sono gli zeri … deve comparire un timer … uno x app e uno x singolo effetto … si resetta
+solo se esci e chiudi la app … se usi altre app si deve stoppare … in Blob Tracker e Blob
+Reveal c'è la timeline mettila anche negli altri … Blob Tracker la posizione dell'XY pad
+non viene mai salvata … pusha su main"*. Domande fatte e risposte: nascondere anche la
+sezione **Camera**; FPS = **fps reali di riproduzione** (come Bokeh); timeline **stile
+Blob Reveal** in tutti e 5.
+
+- **Regista** — `public/effects/shared/syn-extras.js` (nuovo, collegato da tutti e 5,
+  Bokeh compreso, in un blocco `SYNTECH-UNIFORM` prima di `</body>`): timer di lavoro
+  per effetto al posto del timecode (`sessionStorage` `syntech.timer.fx.<id>`, conta solo
+  con finestra visibile + a fuoco + effetto a schermo, DD:HH:MM:SS), timeline di Blob
+  Reveal (CSS copiato 1:1) con adattatore per effetto (play/loop passano dalle funzioni
+  dell'effetto), rete di sicurezza FPS 0 senza sorgente. `syn-chrome.css`: `#src-camera`
+  e `#sec-cam-ctrl` nascosti. Drop overlay `IMAGE — VIDEO — WEBCAM` in analog /
+  anamorphic / blob tracker; ordine dei bottoni di ANALOG. FPS 0 senza sorgente in
+  ANALOG (riga di Bokeh) e nel loop pannelli 3D del BLOB TRACKER. `App.tsx`: SESSION
+  sempre attivo con la stessa regola di pausa (`syntech.timer.app`; prima contava solo
+  col Lab acceso), orologio aggiornato ogni minuto. BLOB TRACKER: XY pad salvato (bridge
+  e preset leggevano `window.padX`, ma è un `let`), stesso bug in Save Session
+  (`window.srcMode`), LED Loop che partiva da LOOP OFF con il video in loop, vecchia
+  `#tl-bar` nascosta, scorciatoia C (camera) disattivata. 03-SPEC §5.1, CLAUDE.md.
+- **Opus (revisione)** — giro 1 **FAIL** (MED: nel Blob Tracker ▶ PLAY a fine clip senza
+  loop richiedeva due clic; LOW: tasto C, testo spec, scrub che resta agganciato fuori
+  dall'iframe) → corretti → **giro 2 = PASS** (un LOW: Ctrl+C lanciava ancora la camera,
+  corretto prima del commit togliendo il filtro sui modificatori).
+
+Verifica: `npm run lint` pulito, `npm run build` ok, verify-phase1 21/21, verify-ui-cage
+18/18. Playwright (1440×900 e 722×396, app e standalone): testo e ordine delle sorgenti,
+CAM e Camera nascosti, FPS 0 senza sorgente e reali con video/webcam finta in tutti e 5;
+timer: iframe dell'app, persistenza uscendo/rientrando e al reload, pausa con
+`hasFocus()=false` e con pagina nascosta (entrambi i timer si fermano e ripartono);
+timeline: compare solo col file video, play/pausa/loop/scrub allineati ai LED, si
+nasconde con la webcam, il riquadro si riadatta; XY pad: bridge dell'app, preset e
+session salvano e ripristinano [0.25, 0.4].
 
 ### 2026-10-11 (sera) — Un'unica grafica: i 5 effetti vestono BOKEH
 
