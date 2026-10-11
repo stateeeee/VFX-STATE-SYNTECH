@@ -758,52 +758,99 @@ body {
 /* ── LROW — due led-btn affiancati ── */
 .lrow { display:flex; gap:3px; }
 
-/* ═══════════════════════════════════════════════════════
-   RESPONSIVE — schermi stretti (telefono/tablet)
-   Video sopra a piena larghezza, pannello controlli sotto (scorrevole)
-   ═══════════════════════════════════════════════════════ */
-@media (max-width: 820px) {
-  #main { flex-direction:column; overflow-y:auto; }
-  #canvas-area { flex:none; width:100%; height:42vh; min-height:200px; }
-  #panel {
-    width:100%; flex:1 1 auto; min-height:260px;
-    border-left:none; border-top:1px solid rgba(255,255,255,.07);
-  }
-  #topbar { flex-wrap:wrap; height:auto; padding:8px 12px; row-gap:6px; }
-  #fps-display { margin-left:0; }
-}
+/* SYNTECH-UNIFORM: removed the "RESPONSIVE — schermi stretti" @media (max-width:820px) block
+   (stacked the video above and the panel below). Operator request 2026-10-11: the panel stays on
+   the right at every size, exactly like BOKEH (which has no @media rule) — the app shows effects
+   in a small 722px-wide iframe, where the old rule broke the layout. */
 </style>
+<!-- SYNTECH-UNIFORM-START: shared BOKEH chrome — operator request 2026-10-11 -->
+<link rel="stylesheet" href="../shared/syn-chrome.css">
+<style id="syntech-uniform">
+/* Only neutralisers of ANALOG's old chrome leftovers that the shared (Bokeh) CSS does not override.
+   Every value below is the Bokeh value / "no rule". */
+.logo { filter:none; }                                     /* old: drop-shadow glow */
+#fps-display { margin-left:0; }                            /* old: auto — timecode now carries the auto margin */
+#canvas-wrap::after { box-shadow:none; }                   /* old: inset vignette over the video */
+#drop-overlay::before { content:none; }                    /* old: dashed corner frame, not in Bokeh */
+#drop-overlay.drag-over { border-color:rgba(255,255,255,.07); }
+.play-ring, #play-overlay:hover .play-ring { box-shadow:none; }
+#panel { scrollbar-gutter:auto; overscroll-behavior-y:auto; }
+.sec-mark, .sec-mark.on { opacity:1; transition:none; filter:none; }   /* old: dim + hue-spin, "on" state */
+.info-cell { border-radius:0; }
+.ic-val.amber { text-shadow:none; color:var(--t4); }       /* Bokeh: gradient text-fill, base colour var(--t4) */
+#bottombar { height:auto; padding:0; gap:normal; align-items:normal; background:transparent; border-top:0 none; flex-shrink:1; }  /* hidden by the shared CSS; element kept for the JS (bb-warn/bb-gl/bb-stage) */
+</style>
+<style id="syntech-uniform-controls">
+/* Shared widgets (LED button, knob, slider, shortcut key): analog's variants re-pointed at BOKEH's values so the
+   right panel reads identically. Visual-only; no layout/JS hooks changed (knob keeps pointer-events:none).
+   Effect-specific widgets (XY pad, preset grid, VU bars, REC) are NOT touched. */
+.led-btn { box-shadow:inset 0 2px 10px rgba(255,255,255,.15),inset 0 -2px 8px rgba(0,0,0,.65),inset 2px 0 6px rgba(255,255,255,.04),inset -2px 0 6px rgba(0,0,0,.25),0 2px 5px rgba(0,0,0,.65); }
+.led-btn::before { border-radius:0; }
+.led-btn:hover {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.30) 0%,rgba(255,255,255,.12) 40%,transparent 72%),
+    linear-gradient(180deg,#242228 0%,#161418 35%,#0e0c10 70%,#141218 100%);
+  border-color:rgba(255,255,255,.16);
+  box-shadow:inset 0 2px 10px rgba(255,255,255,.15),inset 0 -2px 8px rgba(0,0,0,.65),inset 2px 0 6px rgba(255,255,255,.04),inset -2px 0 6px rgba(0,0,0,.25),0 2px 5px rgba(0,0,0,.65);
+}
+.led-btn.on {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.32) 0%,rgba(255,255,255,.14) 40%,transparent 72%),
+    linear-gradient(180deg,#221e26 0%,#141218 35%,#0c0a0e 70%,#121018 100%);
+  border-color:rgba(232,192,0,.42); border-bottom-color:rgba(0,0,0,.65);
+  box-shadow:inset 0 2px 10px rgba(255,255,255,.15),inset 0 -2px 8px rgba(0,0,0,.65),inset 2px 0 6px rgba(255,255,255,.04),inset -2px 0 6px rgba(0,0,0,.25),0 2px 5px rgba(0,0,0,.65);
+}
+.seg-btn:hover { box-shadow:inset 0 2px 10px rgba(255,255,255,.13),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 4px rgba(0,0,0,.6); }
+.knob-outer {
+  background:conic-gradient(from 225deg,var(--amber) 0deg,var(--amber) var(--fill,0deg),var(--border-hi) var(--fill,0deg),var(--border-hi) 270deg,transparent 270deg);
+  box-shadow:none; transition:filter .1s;
+}
+.knob-outer:hover { filter:brightness(1.2); box-shadow:none; }
+.knob-outer:active { filter:brightness(1.4); }
+.knob {
+  background:radial-gradient(circle at 38% 32%,#2a2040,#0a0818);
+  border:1px solid rgba(200,180,255,.25);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 2px 8px rgba(0,0,0,.8);
+}
+.knob-dot { background:var(--amber); opacity:.9; box-shadow:0 0 6px rgba(232,192,0,.6); }
+.knob-val { color:var(--t4); text-shadow:0 0 6px rgba(232,192,0,.3); }
+.ctrl-lbl { width:70px; font-size:8px; letter-spacing:1px; }
+.ctrl-val { width:40px; font-size:9.5px; }
+.daw-slider::-webkit-slider-thumb { box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8); }
+.daw-slider::-webkit-slider-thumb:hover { box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 0 16px rgba(232,192,0,.7),0 0 32px rgba(180,120,255,.3),0 2px 8px rgba(0,0,0,.8); }
+.sc-key { min-width:26px; }
+.vu-track { background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.08)); }
+#vu-motion { background:linear-gradient(90deg,#2a4800,#20a040); box-shadow:0 0 6px rgba(32,160,64,.4); }   /* Source > MOTION meter = Bokeh's green (the Reactive meters keep their own colours) */
+#vu-mid { background:linear-gradient(90deg,#6a4800,var(--amber)); box-shadow:0 0 6px rgba(232,192,0,.4); }   /* Reactive MID keeps analog's amber (shared .vu-bar.mid is Bokeh's green) */
+</style>
+<!-- SYNTECH-UNIFORM-END -->
 </head>
 <body translate="no">
 
 <!-- TOPBAR -->
 <div id="topbar">
-  <div class="logo">ANALOG</div><!-- SYNTECH: effect name, was "VFX" (operator request 2026-10-10) -->
+  <div class="logo notranslate">ANALOG</div><!-- SYNTECH: effect name, was "VFX" (operator request 2026-10-10) -->
   <div class="tb-sep"></div>
-  <div class="pill" id="pill-status">
-    <div class="dot"></div>
-    <span class="pill-pre">INPUT</span><span id="pill-label">NONE</span>
-  </div>
-  <div class="pill" style="border-color:rgba(32,224,96,.25);color:rgba(160,255,200,.8)">
-    <div class="dot" style="background:var(--green);box-shadow:0 0 8px rgba(32,224,96,.6)"></div>
-    <span class="pill-pre">ENGINE</span><span>READY</span>
-  </div>
-  <div class="tb-sep"></div>
+  <!-- SYNTECH-UNIFORM: top bar = BOKEH's (logo · sep · INPUT · ENGINE · timecode · FPS), operator request 2026-10-11 -->
+  <div class="pill" id="pill-status"><div class="dot"></div><span class="pill-pre">INPUT</span><span id="pill-label">NONE</span></div>
+  <div class="pill engine" id="pill-engine"><div class="dot"></div><span class="pill-pre">ENGINE</span><span id="pill-engine-lbl">READY</span></div>
+  <div class="pill" id="pill-rec" style="display:none"><div class="dot"></div><span>● REC</span></div><!-- shown while recording, as in BOKEH -->
   <div id="timecode">00:00:00:00</div>
-  <div id="fps-display">FPS&nbsp;<b id="fps-val">--</b></div>
+  <div id="fps-display">FPS <b id="fps-val">0</b></div>
 </div>
 
 <div id="main">
   <!-- CANVAS -->
   <div id="canvas-area">
     <div id="canvas-wrap">
+      <div id="frame-outline"></div><!-- SYNTECH-UNIFORM: Bokeh's animated frame -->
       <canvas id="glcanvas"></canvas>
       <div id="res-tag">1920 × 1080 · ANALOG STATE</div>
       <div id="drop-overlay">
-        <div class="drop-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
-        <div class="drop-title">ANALOG STATE</div>
-        <div class="drop-sub">VIDEO — MP4 · MOV · WEBM · ANY FORMAT</div>
-        <button class="drop-browse" id="browse-btn">SOURCE</button>
+        <div class="drop-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <div class="drop-title">ANALOG</div><!-- SYNTECH-UNIFORM: Bokeh's drop overlay (was "ANALOG STATE" + format list) -->
+        <div class="drop-sub">VIDEO — IMAGE — WEBCAM — CAMERA</div>
+        <button class="drop-source-btn" id="browse-btn">SOURCE</button>
       </div>
       <input type="file" id="file-input" accept="video/*">
       <input type="file" id="image-input" accept="image/*">
@@ -819,7 +866,7 @@ body {
       <div class="sec-head collapsed" data-sec="source">
         <div class="sec-mark" id="src-mark"></div>
         <div class="sec-title">Source</div>
-        <div class="sec-chevron">▾</div>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden" id="sec-source">
         <div class="seg-row" id="src-mode-row">
@@ -871,7 +918,7 @@ body {
       <div class="sec-head collapsed" data-sec="preset">
         <div class="sec-mark"></div>
         <div class="sec-title">Preset</div>
-        <div class="sec-chevron">▾</div>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden" id="sec-preset" style="gap:6px">
         <!-- Lista preset salvati -->
@@ -896,7 +943,7 @@ body {
       <div class="sec-head collapsed" data-sec="pad">
         <div class="sec-mark"></div>
         <div class="sec-title">Performance Pad</div>
-        <div class="sec-chevron">▾</div>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden" id="sec-pad">
         <div id="xy-pad-wrap">
@@ -955,7 +1002,7 @@ body {
       <div class="sec-head collapsed" data-sec="feedback">
         <div class="sec-mark" id="fbk-mark"></div>
         <div class="sec-title">Feedback Loop</div>
-        <div class="sec-chevron">▾</div>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden" id="sec-feedback">
         <div class="knob-row">
@@ -998,7 +1045,7 @@ body {
       <div class="sec-head collapsed" data-sec="glitch">
         <div class="sec-mark" id="glt-mark"></div>
         <div class="sec-title">Analog Glitch</div>
-        <div class="sec-chevron">▾</div>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden" id="sec-glitch">
         <div class="knob-row">
@@ -1037,7 +1084,7 @@ body {
       <div class="sec-head collapsed" data-sec="crt">
         <div class="sec-mark" id="crt-mark"></div>
         <div class="sec-title">CRT Monitor</div>
-        <div class="sec-chevron">▾</div>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden" id="sec-crt">
         <div class="knob-row">
@@ -1076,7 +1123,7 @@ body {
       <div class="sec-head collapsed" data-sec="sort">
         <div class="sec-mark" id="srt-mark"></div>
         <div class="sec-title">Pixel Sort</div>
-        <div class="sec-chevron">▾</div>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden" id="sec-sort">
         <div class="row">
@@ -1107,7 +1154,7 @@ body {
       <div class="sec-head collapsed" data-sec="reactive">
         <div class="sec-mark" id="rct-mark"></div>
         <div class="sec-title">Reactive</div>
-        <div class="sec-chevron">▾</div>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden" id="sec-reactive">
         <div class="vu-section">
@@ -1142,7 +1189,7 @@ body {
       <div class="sec-head collapsed" data-sec="record">
         <div class="sec-mark" id="rec-mark"></div>
         <div class="sec-title">Export</div>
-        <div class="sec-chevron">▾</div>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden" id="sec-record">
         <div class="info-grid">
@@ -1160,7 +1207,7 @@ body {
     <!-- SHORTCUTS -->
     <div class="section">
       <div class="sec-head collapsed" data-sec="keys">
-        <div class="sec-mark"></div><div class="sec-title">Shortcuts</div><div class="sec-chevron">▾</div>
+        <div class="sec-mark"></div><div class="sec-title">Shortcuts</div><div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden" id="sec-keys">
         <div class="sc-row"><div class="sc-key">SPC</div><div class="sc-desc">Play / Pause</div></div>
@@ -1173,6 +1220,25 @@ body {
         <div class="sc-row"><div class="sc-key">1–6</div><div class="sc-desc">Load preset</div></div>
       </div>
     </div>
+
+    <!-- SYNTECH-UNIFORM-START: INFO — last section, always open on load (same layout as BOKEH's Info) -->
+    <div class="section">
+      <div class="sec-head" data-sec="info">
+        <div class="sec-mark" id="info-mark"></div>
+        <span class="sec-title">Info</span>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body" id="sb-info">
+        <div class="info-grid">
+          <div class="info-cell"><div class="ic-lbl">FPS</div><div class="ic-val amber" id="ic-fps">0</div></div>
+          <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val dim" id="ic-source">NONE</div></div>
+          <div class="info-cell"><div class="ic-lbl">Resolution</div><div class="ic-val dim" id="ic-res">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Pipeline</div><div class="ic-val amber" id="ic-pipe" style="font-size:11px;line-height:1.35">SORT → FEEDBACK → CRT</div></div>
+          <div class="ic-credit">ANALOG — by STATE</div>
+        </div>
+      </div>
+    </div>
+    <!-- SYNTECH-UNIFORM-END -->
 
     <!-- ANIMATED SMOKE -->
     <div id="panel-smoke" aria-hidden="true">
@@ -1937,7 +2003,7 @@ function render(now){
   if(STATE.hasVideo&&STATE.srcMode!=='image'&&video.readyState>=2)
     document.getElementById('timecode').textContent=fmtTC(video.currentTime);
   else if(STATE.srcMode==='image')
-    document.getElementById('timecode').textContent='--:--:--:--';
+    document.getElementById('timecode').textContent='00:00:00:00'; /* SYNTECH-UNIFORM: was '--:--:--:--'; BOKEH shows 00:00:00:00 when no video plays */
   if(STATE.isRecording)
     document.getElementById('rec-time').textContent=fmtDur((Date.now()-STATE.recStartTime)/1000);
 
@@ -2262,7 +2328,7 @@ function startRec(){
     document.getElementById('rec-label').textContent='STOP REC';
     document.getElementById('rec-status').textContent='RECORDING';
     document.getElementById('rec-mark').classList.add('on');
-    document.getElementById('pill-status').classList.add('rec');
+    document.getElementById('pill-rec').style.display='flex'; /* SYNTECH-UNIFORM: BOKEH's REC pill (was: red INPUT pill via .rec) */
     video.play().catch(console.error);
   };
   const onSeeked=()=>{video.removeEventListener('seeked',onSeeked);go();};
@@ -2276,7 +2342,7 @@ function stopRec(){
   document.getElementById('rec-btn').classList.remove('recording');
   document.getElementById('rec-label').textContent='REC FROM START';
   document.getElementById('rec-mark').classList.remove('on');
-  document.getElementById('pill-status').classList.remove('rec');
+  document.getElementById('pill-rec').style.display='none'; /* SYNTECH-UNIFORM: REC pill hidden again */
 }
 
 /* =========================================
@@ -2303,7 +2369,7 @@ document.addEventListener('keydown',e=>{
    ========================================= */
 document.querySelectorAll('.sec-head').forEach(h=>{
   h.addEventListener('click',()=>{
-    const b=document.getElementById('sec-'+h.dataset.sec);
+    const b=document.getElementById('sec-'+h.dataset.sec)||document.getElementById('sb-'+h.dataset.sec); /* SYNTECH-UNIFORM: Info body is #sb-info (as in BOKEH) */
     if(!b)return;
     b.classList.toggle('hidden');
     h.classList.toggle('collapsed',b.classList.contains('hidden'));
@@ -2581,6 +2647,28 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 
 </script>
+<!-- SYNTECH-UNIFORM-START: section-mark sync (shared, same as BOKEH's syncSectionTitleGradients) + live Info values -->
+<script src="../shared/syn-chrome.js"></script>
+<script>
+(function(){
+  'use strict';
+  /* Mirrors existing readouts into the Info cells (read-only; never touches effect state). */
+  function set(id,v){var el=document.getElementById(id);if(el&&el.textContent!==v)el.textContent=v;}
+  function txt(id){var el=document.getElementById(id);return el?el.textContent:'';}
+  function refresh(){
+    try{
+      set('ic-fps',txt('fps-val')||'0');
+      var mode=(typeof STATE!=='undefined'&&STATE.srcMode)?String(STATE.srcMode).toUpperCase():'NONE';
+      set('ic-source',mode);
+      set('ic-res',txt('info-res').replace('x','×')||'--');
+      set('ic-pipe',txt('bb-stage')||'SORT → FEEDBACK → CRT');
+    }catch(e){}
+  }
+  refresh();
+  setInterval(refresh,500);
+})();
+</script>
+<!-- SYNTECH-UNIFORM-END -->
 <!-- SYNTECH-BRIDGE-START (shell integration; standalone-safe) -->
 <script>
 (function(){

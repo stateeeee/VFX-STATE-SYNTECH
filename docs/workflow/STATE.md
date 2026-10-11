@@ -29,6 +29,24 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-11 (sera) — i 5 effetti hanno la grafica di BOKEH, FATTO.**
+Da far guardare all'operatore sull'app vera: aprire i 5 effetti dalla Home (riquadro
+piccolo) e a schermo intero, vuoti e con un suo video. Barra in alto, riquadro,
+pannello, lineette delle sezioni, Info aperta devono essere uguali a Bokeh.
+Decisioni da confermare con lui (prese dal regista, tutte reversibili):
+- **Timeline sotto il video** in BLOB TRACKER e BLOB REVEAL (Bokeh non ce l'ha):
+  tenuta perché serve a scorrere il video. Toglierla = una riga CSS per effetto.
+- **ENGINE** mostra lo stato del motore di ogni effetto (READY, TRACKER, WEBGL,
+  LOADING/READY della segmentazione); **INPUT** usa le parole di ogni effetto
+  (LIVE, VIDEO…), sempre verde quando c'è una sorgente.
+- **BLOB REVEAL** segue ancora la forma della sorgente (16:9 a vuoto): forzarlo a
+  16:9 deformerebbe i video verticali.
+- **BLOB TRACKER REC** ora registra il riquadro 16:9 (1120×630 a 1440×900; ~402×226
+  nel riquadro piccolo dell'app, prima ~426×350): per un export grande, registrare a
+  schermo intero.
+- Messaggi di errore di ANALOG (`#bb-warn`) non più visibili (la barra in basso è
+  nascosta come in Bokeh): se servono, un piccolo toast.
+
 **SESSIONE 2026-10-11 (pomeriggio) — ritocchi chiesti dall'operatore, FATTI:**
 nomi BLOB TRACKER / ANAMORPHIC ovunque si vedono (ModuleId invariati);
 riquadro API key di Gemini centrato tra la linea viola e la cornice
@@ -162,6 +180,51 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-10-11 (sera) — Un'unica grafica: i 5 effetti vestono BOKEH
+
+Richiesta: *"gli effetti devono avere tutti l'estetica UI non simile, ma identica…
+copia la grafica di bokeh state (parte alta con nome, input, engine e fps; riquadro del
+video; sezione a destra)… tutte le sezioni chiuse appena apro, solo Info aperta… in blob
+tracker le linee prima del nome della sezione sono sempre arancioni… analog nel riquadro
+piccolo ha i parametri sotto, devono stare a destra… prima di consegnare screenshot."*
+
+- **Regista** — `public/effects/shared/syn-chrome.css`: il CSS della cornice di Bokeh
+  copiato riga per riga (keyframes, token, barra, riquadro, drop overlay, pannello,
+  sezioni, Info, fumo) + i comandi di Bokeh (LED, segmenti, VU, REC/FS) + RESETS (valori
+  calcolati di Bokeh); `shared/syn-chrome.js`: lineette sincronizzate coi titoli (la
+  funzione 🔒 di Bokeh) + pill INPUT verde con sorgente attiva. Bokeh non è toccato.
+  Spec: 03-SPEC-SHELL §5.1, 04, CLAUDE.md regola 1.
+- **Haiku** — audit `tools/verify/verify-effects-chrome.cjs` (stili calcolati di ogni
+  elemento della cornice e dei comandi vs Bokeh, animazioni ferme a t=0, 1440×900 e
+  722×396). Baseline: 146–220 differenze per effetto.
+- **Sonnet** — ANALOG: tolta la regola `@media` che impilava video/parametri nel
+  riquadro piccolo; ENGINE ambra, timecode a destra, `#frame-outline`, drop "ANALOG",
+  sezione **Info** nuova (FPS/INPUT/RESOLUTION/PIPELINE). BLOB REVEAL: barra NOME ·
+  INPUT · ENGINE (stato segmentazione) · timecode · FPS; AUDIO/BPM/VOL/SEG nella nuova
+  **Info**; drop overlay e seg-loading dentro il riquadro.
+- **Opus** — BLOB TRACKER: lineette animate come i titoli (via le varianti
+  arancio/hue-rotate), riquadro 16:9 come Bokeh con `resize()`/ripple/pannelli 3D/REC
+  sul riquadro (ResizeObserver + fullscreenchange), `#drop-ov`→`#drop-overlay`,
+  `#tb-time`→`#timecode` HH:MM:SS:FF, niente barra diagonale sul nome. ANAMORPHIC:
+  `#main/#canvas-area/#canvas-wrap/#panel` come Bokeh, immagine in `object-fit:contain`
+  (export nativo invariato), `#drop-hint`→`#drop-overlay`, `_tickMarkHue` non più
+  avviato, Info riordinata.
+- Tutti: chevron ▼, crediti "<NOME> — by STATE", tutte le sezioni chiuse tranne Info.
+
+Verifica: audit finale = solo righe da lunghezza dei testi / contenuto / stato dei
+bottoni (es. il primo LED di Bokeh è acceso); 1 sezione aperta (Info) in tutti; pannello
+a destra anche a 722×396. Screenshot affiancati (app e schermo intero, vuoti e con video)
+guardati dal regista. **Revisione Opus giro 1 = FAIL** (il meter MID di ANALOG diventava
+verde per la regola `.vu-bar.mid` di Bokeh) + 2 LOW (FPS "--" in ANAMORPHIC, REC di BLOB
+REVEAL alto 15px, già prima) → corretti → **giro 2 = PASS** (MID ambra, FPS 0, REC 34px
+in tutti e 5). verify-phase1 21/21
+(Save → Home → riapri, tutti e 5), verify-ui-cage 18/18, lint pulito, build ok.
+
+Aperti (LOW): blob tracker, la posizione dell'XY pad non viene mai salvata (bridge e
+preset leggono `window.padX`, ma `padX` è `let`) — preesistente, fix di 2 righe; regole
+CSS vecchie ormai inutili (`#tb-time`, `#drop-ov`, `.drop-browse`, `.preview`…) restano
+nei file come codice morto.
 
 ### 2026-10-11 (pomeriggio) — Nomi, riquadro Gemini centrato, via l'avviso CHAIN
 

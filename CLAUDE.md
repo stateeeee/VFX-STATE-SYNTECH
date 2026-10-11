@@ -64,13 +64,17 @@ src/engine/ParamBus (params.ts) ★ partial — base + modulation routing
 src/engine/PersonMask.ts        ★ STUB — MediaPipe selfie segmentation service
 src/effects-registry.ts         ModuleId → iframe src mapping
 public/effects/<id>/index.html  The 5 standalone effect apps (SOURCE OF TRUTH for effect look)
+public/effects/shared/          syn-chrome.css/.js — Bokeh's chrome, shared by all 5 (§5.1)
 ```
 
 ## Hard rules
 
 1. **The five `public/effects/*/index.html` files are the ground truth** for how
    each effect looks and behaves. Never rewrite them. Only additive, clearly
-   delimited bridge snippets are allowed (see 03-SPEC-SHELL.md §5).
+   delimited bridge snippets are allowed (see 03-SPEC-SHELL.md §5), plus the
+   delimited `SYNTECH-UNIFORM` edits (shared-chrome link, markup, ids, frame
+   sizing) that put Bokeh's top bar / frame / panel on every effect (§5.1,
+   `public/effects/shared/syn-chrome.css`).
 2. **AI Lab ports must be 1:1** — every parameter, every visual detail of the
    standalone effect, replicated in its SynEngine node and verified with the
    parity protocol in 06-VERIFICATION.md. No "close enough" shortcuts.

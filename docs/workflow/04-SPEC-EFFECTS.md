@@ -8,6 +8,11 @@ the map, not the territory.
 Common to all five: own dark UI, video-file input, webcam mode, MediaRecorder
 export, and their own hotkeys. Ids below are the `ModuleId`s.
 
+**One look for all five (2026-10-11):** top bar, video frame and right panel
+are Bokeh's, shared through `public/effects/shared/syn-chrome.css` +
+`syn-chrome.js` — see 03-SPEC-SHELL §5.1. Parameters and engines stay per
+effect.
+
 ---
 
 ## `analog` — ANALOG STATE — Video Synthesizer  (~130 KB)

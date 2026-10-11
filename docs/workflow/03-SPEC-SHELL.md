@@ -142,6 +142,30 @@ Rules:
   `syntech.effectSettings.<id>`; on nav Save send `syn:get-settings` and
   persist the reply.
 
+### 5.1 Shared chrome (operator request 2026-10-11 — second permitted edit)
+
+*"Gli effetti devono avere tutti l'estetica UI non simile, ma identica"* — the
+top bar, the video frame and the right panel of every effect are **Bokeh's**,
+pixel for pixel. Bokeh (`public/effects/bokeh/index.html`) is the reference
+look; its chrome CSS is copied verbatim into
+`public/effects/shared/syn-chrome.css`, and `shared/syn-chrome.js` keeps each
+section line (`.sec-mark`) lit in sync with its title. The other four effects
+link both inside a delimited `SYNTECH-UNIFORM` block (plus a per-effect
+`<style id="syntech-uniform">` that only neutralises leftovers of their old
+chrome). Contract every effect follows:
+
+- **Top bar**: name · one separator · `INPUT` pill · `ENGINE` pill ·
+  timecode `HH:MM:SS:FF` · `FPS`. Anything else moves into Info.
+- **Frame**: centred `#canvas-wrap` (area − 24 px) with `#frame-outline`, the
+  amber corner brackets and Bokeh's drop overlay (name, sources, SOURCE). 16:9
+  like Bokeh; blob reveal keeps following the source aspect (16:9 when empty).
+- **Panel**: 296 px on the right at every size (no responsive stacking — the
+  app shows effects in a ~722×396 frame); every section closed at load except
+  **Info** (last, open, Bokeh's 2-column grid + "<NAME> — by STATE").
+- Changing the look means changing Bokeh **and** `shared/syn-chrome.css`
+  together. Verified with the computed-style audit described in STATE.md
+  (2026-10-11 evening).
+
 ## 6. Node graph spec (INPUT → effects → OUTPUT)
 
 - **Nodes**: INPUT (the loaded source video, with audio — or a still photo,

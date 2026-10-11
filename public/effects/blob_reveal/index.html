@@ -703,6 +703,36 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 #info-file{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* SYNTECH-SOURCE-END */
 </style>
+<!-- SYNTECH-UNIFORM-START: shared BOKEH chrome — operator request 2026-10-11 -->
+<link rel="stylesheet" href="../shared/syn-chrome.css">
+<style id="syntech-uniform">
+.rec-btn { flex:none; }   /* SYNTECH-UNIFORM: old flex:1 squashed the REC button to 15px; Bokeh's is 34px */
+/* Only neutralisers of this effect's old chrome leftovers (the shared sheet above carries the Bokeh look).
+   Every rule here resets a property the shared sheet does not set, or beats a more specific old selector. */
+.logo::before{content:none;display:none}                                   /* old shimmer slash on the logo — Bokeh's logo has none */
+.pill.seg .dot,.pill.beat .dot{animation:none}                              /* old teal blinking SEG dot / amber AUDIO pill states */
+#canvas-wrap::after{box-shadow:none}                                        /* old dark vignette — Bokeh's frame has only the hairline border */
+#drop-overlay::before{content:none;display:none}                            /* old inner corner-bracket box on the drop screen */
+#drop-overlay.drag-over{border-color:rgba(255,255,255,.07)}                 /* Bokeh: drag-over only runs the iri-border animation */
+.drop-sub{text-transform:none}
+#panel{scrollbar-gutter:auto;overscroll-behavior-y:auto}                    /* old stable gutter / scroll containment — Bokeh has neither */
+.sec-mark,.sec-mark.on,.sec-mark.amber{                                      /* section lines animate EXACTLY like the titles (iri-logo), no static/variant colour */
+  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffd8,#e8c000);
+  background-size:300% 100%;animation:iri-logo 5s linear infinite;
+  box-shadow:0 0 7px rgba(232,192,0,.4);opacity:1;filter:none;transition:none}
+.info-cell{border-radius:0}
+#info-res{font-size:16px}                                                   /* Bokeh's Input cell size (was 15px for the old 22px cells) */
+#info-seg{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}        /* SEG status can carry the REC string */
+#bottombar{position:static;height:auto;padding:0;gap:normal;align-items:normal;background:none;border-top:0} /* hidden by the shared sheet; keep the element (JS writes #bb-status) */
+#bottombar::before{content:none}
+/* Source-section controls: Bokeh's exact values where the old blob_reveal tokens read brighter */
+.seg-btn,.kbd-badge,.vu-val{color:var(--t2)}
+.led-btn::before{border-radius:0}
+.led-btn:hover{box-shadow:inset 0 2px 10px rgba(255,255,255,.15),inset 0 -2px 8px rgba(0,0,0,.65),inset 2px 0 6px rgba(255,255,255,.04),inset -2px 0 6px rgba(0,0,0,.25),0 2px 5px rgba(0,0,0,.65)}
+.vu-bar.mid{background:linear-gradient(90deg,#2a4800,#20a040);box-shadow:0 0 6px rgba(32,160,64,.4)} /* Bokeh's green MOTION bar */
+.led-btn.on{background:radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.32) 0%,rgba(255,255,255,.14) 40%,transparent 72%),linear-gradient(180deg,#221e26 0%,#141218 35%,#0c0a0e 70%,#121018 100%)}
+</style>
+<!-- SYNTECH-UNIFORM-END -->
 </head>
 <body translate="no">
 <!-- FULLSCREEN OVERLAY -->
@@ -725,20 +755,16 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 <script src="../vendor/mediapipe/selfie_segmentation/selfie_segmentation.js"></script><!-- SYNTECH Phase-10: vendored (offline) — was cdn.jsdelivr.net -->
 
 <!-- ═══════════════════════════════════════════════════════ HTML ═══ -->
+<!-- SYNTECH-UNIFORM-START: top bar = BOKEH's (logo · sep · INPUT pill · ENGINE pill · timecode · FPS). AUDIO / BPM / VOL moved to the Info section. -->
 <div id="topbar">
-  <div class="logo">BLOB REVEAL</div>
+  <div class="logo notranslate">BLOB REVEAL</div>
   <div class="tb-sep"></div>
-  <div class="pill" id="pill-input"><div class="dot"></div><span id="pill-input-lbl">NO INPUT</span></div>
-  <div class="pill" id="pill-seg"  ><div class="dot"></div><span id="pill-seg-lbl">SEG IDLE</span></div>
-  <div class="pill" id="pill-beat" ><div class="dot"></div><span id="pill-beat-lbl">AUDIO OFF</span></div>
-  <div class="tb-sep"></div>
-  <span id="timecode">00:00:00</span>
-  <div id="topbar-right">
-    <div class="tb-stat fps">FPS <b id="fps-val">--</b></div>
-    <div class="tb-stat bpm">BPM <b id="bpm-val">--</b></div>
-    <div class="tb-stat vol">VOL <b id="vol-val">--</b></div>
-  </div>
+  <div class="pill" id="pill-input"><div class="dot"></div><span class="pill-pre">INPUT</span><span id="pill-input-lbl">NONE</span></div>
+  <div class="pill engine" id="pill-seg"><div class="dot"></div><span class="pill-pre">ENGINE</span><span id="pill-seg-lbl">IDLE</span></div>
+  <div id="timecode">00:00:00:00</div>
+  <div id="fps-display">FPS <b id="fps-val">0</b></div>
 </div>
+<!-- SYNTECH-UNIFORM-END -->
 
 <div id="main">
   <div id="canvas-area">
@@ -748,15 +774,16 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
       <div id="beat-flash"></div>
       <div id="beat-ring"></div>
       <div id="res-tag">BLOB REVEAL · ROTOSCOPE ENGINE v2.0</div>
+      <!-- SYNTECH-UNIFORM-START: drop overlay + seg-loading moved INSIDE #canvas-wrap so they fill the frame exactly like BOKEH's (icon class drop-ico, button class drop-source-btn; ids/behaviour unchanged) -->
+      <div id="drop-overlay">
+        <div class="drop-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <div class="drop-title">BLOB REVEAL</div>
+        <div class="drop-sub">IMAGE — VIDEO — WEBCAM</div>
+        <button class="drop-source-btn" id="browse-btn">SOURCE</button>
+      </div>
+      <div id="seg-loading"><span class="ld-txt">INIZIALIZZAZIONE SEGMENTAZIONE…</span></div>
+      <!-- SYNTECH-UNIFORM-END -->
     </div>
-
-    <div id="drop-overlay">
-      <div class="drop-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
-      <div class="drop-title">BLOB REVEAL</div>
-      <div class="drop-sub">IMAGE — VIDEO — WEBCAM</div>
-      <button class="drop-browse" id="browse-btn">SOURCE</button>
-    </div>
-    <div id="seg-loading"><span class="ld-txt">INIZIALIZZAZIONE SEGMENTAZIONE…</span></div>
   </div>
 
   <!-- ══════════════════════════ PANEL ══════════════════════════ -->
@@ -764,14 +791,14 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 
     <!-- SYNTECH-SOURCE-START: "Source" section (replaces the old "Input" section; same layout as the other effects) -->
     <div class="section">
-      <div class="sec-head collapsed" data-sec="source"><div class="sec-mark on"></div><div class="sec-title">Source</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-head closed" data-sec="source"><div class="sec-mark"></div><div class="sec-title">Source</div><div class="sec-chevron">▼</div></div>
       <div class="sec-body hidden" id="sec-source">
         <div class="seg-row">
           <button class="seg-btn" id="src-image">IMAGE</button>
           <button class="seg-btn" id="src-video">VIDEO</button>
           <button class="seg-btn" id="src-webcam">WEBCAM</button>
         </div>
-        <div class="vu-row"><span class="vu-lbl">MOTION</span><div class="vu-track"><div class="vu-bar" id="vu-motion"></div></div><span class="vu-val" id="vu-mv">0%</span></div>
+        <div class="vu-row"><span class="vu-lbl">MOTION</span><div class="vu-track"><div class="vu-bar mid" id="vu-motion"></div></div><span class="vu-val" id="vu-mv">0%</span></div><!-- SYNTECH-UNIFORM: .mid = Bokeh's green MOTION bar -->
         <div class="info-grid">
           <div class="info-cell"><div class="ic-lbl">File</div><div class="ic-val dim" id="info-file">--</div></div>
           <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val amber" id="info-res">--</div></div>
@@ -788,7 +815,7 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 
     <!-- ROTOSCOPE -->
     <div class="section">
-      <div class="sec-head collapsed" data-sec="seg"><div class="sec-mark on" id="seg-mark"></div><div class="sec-title">Rotoscope · Seg</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-head closed" data-sec="seg"><div class="sec-mark" id="seg-mark"></div><div class="sec-title">Rotoscope · Seg</div><div class="sec-chevron">▼</div></div>
       <div class="sec-body hidden" id="sec-seg">
         <div class="row">
           <div class="lbl">Attivo</div>
@@ -840,7 +867,7 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 
     <!-- BLOB -->
     <div class="section">
-      <div class="sec-head collapsed" data-sec="blob"><div class="sec-mark on"></div><div class="sec-title">Blob Detection</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-head closed" data-sec="blob"><div class="sec-mark"></div><div class="sec-title">Blob Detection</div><div class="sec-chevron">▼</div></div>
       <div class="sec-body hidden" id="sec-blob">
         <div class="ctrl-row">
           <div class="ctrl-lbl">Lum Thresh</div>
@@ -872,7 +899,7 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 
     <!-- AUDIO -->
     <div class="section">
-      <div class="sec-head collapsed" data-sec="audio"><div class="sec-mark amber" id="audio-mark"></div><div class="sec-title">Audio Reactive</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-head closed" data-sec="audio"><div class="sec-mark" id="audio-mark"></div><div class="sec-title">Audio Reactive</div><div class="sec-chevron">▼</div></div>
       <div class="sec-body hidden" id="sec-audio">
         <div class="row">
           <div class="lbl">Audio</div>
@@ -904,7 +931,7 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 
     <!-- XY PAD -->
     <div class="section">
-      <div class="sec-head collapsed" data-sec="xy"><div class="sec-mark on" style="background:var(--blue)"></div><div class="sec-title">XY Pad · Blob Control</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-head closed" data-sec="xy"><div class="sec-mark"></div><div class="sec-title">XY Pad · Blob Control</div><div class="sec-chevron">▼</div></div>
       <div class="sec-body hidden" id="sec-xy" style="padding:8px 10px;gap:5px">
         <div class="xy-axis-lbl"><span>BLOB MIN ←</span><span>X AXIS</span><span>→ BLOB MAX</span></div>
         <div id="xy-pad">
@@ -921,7 +948,7 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 
     <!-- EXPORT -->
     <div class="section">
-      <div class="sec-head collapsed" data-sec="export"><div class="sec-mark"></div><div class="sec-title">Export / REC</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-head closed" data-sec="export"><div class="sec-mark"></div><div class="sec-title">Export / REC</div><div class="sec-chevron">▼</div></div>
       <div class="sec-body hidden" id="sec-export">
         <button class="fs-btn" id="btn-fs">⛶&nbsp;&nbsp;FULLSCREEN</button>
         <button class="rec-btn" id="rec-btn"><div class="rec-dot"></div><span>REC</span></button>
@@ -929,12 +956,33 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
       </div>
     </div>
 
+    <!-- SYNTECH-UNIFORM-START: INFO — LAST section, open on load (same structure as BOKEH's). Holds what used to live in the top bar / bottom bar:
+         FPS, input kind, BPM, VOL (ids bpm-val / vol-val kept so tickAudio() keeps writing them), AUDIO state (#pill-beat / #pill-beat-lbl kept), SEG status (#info-seg mirrors #bb-status). -->
+    <div class="section">
+      <div class="sec-head" data-sec="info">
+        <div class="sec-mark" id="info-mark"></div>
+        <div class="sec-title">Info</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body" id="sec-info">
+        <div class="info-grid">
+          <div class="info-cell"><div class="ic-lbl">FPS</div><div class="ic-val amber" id="ic-fps">0</div></div>
+          <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val dim" id="ic-source">NONE</div></div>
+          <div class="info-cell"><div class="ic-lbl">BPM</div><div class="ic-val amber" id="bpm-val">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Vol</div><div class="ic-val dim" id="vol-val">--</div></div>
+          <div class="info-cell" id="pill-beat"><div class="ic-lbl">Audio</div><div class="ic-val dim" id="pill-beat-lbl">OFF</div></div>
+          <div class="info-cell"><div class="ic-lbl">Seg</div><div class="ic-val dim" id="info-seg">INIT</div></div>
+          <div class="ic-credit">BLOB REVEAL — by STATE</div>
+        </div>
+      </div>
+    </div>
+    <!-- SYNTECH-UNIFORM-END -->
+
     <!-- ANIMATED SMOKE -->
     <div id="panel-smoke" aria-hidden="true">
       <div class="smoke-blob s1"></div>
       <div class="smoke-blob s2"></div>
       <div class="smoke-blob s3"></div>
-      <div class="smoke-blob s4"></div>
     </div>
 
   </div><!-- /panel -->
@@ -1025,7 +1073,7 @@ function srcSize(){ return srcImg ? {w:srcImg.naturalWidth,h:srcImg.naturalHeigh
 /* ─── MEDIAPIPE ──────────────────────────────────────────────── */
 function initSeg() {
   document.getElementById('seg-loading').classList.add('show');
-  document.getElementById('bb-status').textContent = 'SEG: LOADING';
+  synStatus('SEG: LOADING'); synEngine('LOADING'); // SYNTECH-UNIFORM: was a bare #bb-status write (also mirrors to the Info SEG cell / ENGINE pill)
   segObj = new SelfieSegmentation({
     locateFile: f=>`../vendor/mediapipe/selfie_segmentation/${f}`
   });
@@ -1042,13 +1090,11 @@ function initSeg() {
   segObj.initialize().then(()=>{
     segReady=true;
     document.getElementById('seg-loading').classList.remove('show');
-    document.getElementById('pill-seg').classList.add('seg');
-    document.getElementById('pill-seg-lbl').textContent = 'SEG READY';
-    document.getElementById('bb-status').textContent = 'SEG: READY';
+    synEngine('READY'); synStatus('SEG: READY'); // SYNTECH-UNIFORM: ENGINE pill is Bokeh's static amber (no .seg state class); same text goes to bb-status + Info SEG
   }).catch(e=>{
     document.getElementById('seg-loading').classList.remove('show');
     segEnabled=false;
-    document.getElementById('bb-status').textContent = 'SEG: ERROR';
+    synStatus('SEG: ERROR'); synEngine('ERROR'); // SYNTECH-UNIFORM
   });
 }
 
@@ -1066,6 +1112,7 @@ function fit() {
   dCtx.fillStyle='#000'; dCtx.fillRect(0,0,w,h);
 }
 window.addEventListener('resize',fit);
+document.addEventListener('fullscreenchange',()=>setTimeout(fit,100)); // SYNTECH-UNIFORM: Bokeh's fitCanvas() also re-runs on fullscreenchange
 
 /* ─── GPU-ONLY SUBJECT DRAW ──────────────────────────────────── 
    Technique:
@@ -1289,7 +1336,7 @@ async function startMic(){
     document.getElementById('btn-mic').classList.add('amber-on');
     document.getElementById('btn-mic').querySelector('.led-txt').textContent='ACTIVE';
     document.getElementById('pill-beat').classList.add('beat');
-    document.getElementById('pill-beat-lbl').textContent='AUDIO ON';
+    document.getElementById('pill-beat-lbl').textContent='ON'; // SYNTECH-UNIFORM: Info AUDIO cell (was the top-bar pill text AUDIO ON)
   }catch(e){alert('Audio error: '+e.message);}
 }
 function stopMic(){
@@ -1299,7 +1346,7 @@ function stopMic(){
   document.getElementById('btn-mic').classList.remove('amber-on');
   document.getElementById('btn-mic').querySelector('.led-txt').textContent='OFF';
   document.getElementById('pill-beat').classList.remove('beat');
-  document.getElementById('pill-beat-lbl').textContent='AUDIO OFF';
+  document.getElementById('pill-beat-lbl').textContent='OFF'; // SYNTECH-UNIFORM: Info AUDIO cell (was AUDIO OFF)
   document.getElementById('meter-bass').style.width='0%';
   document.getElementById('meter-loud').style.width='0%';
   document.getElementById('meter-treble').style.width='0%';
@@ -1394,15 +1441,13 @@ async function frame(){
   fc++;
   if(now-lastFpsT>800){
     document.getElementById('fps-val').textContent=Math.round(fc/((now-lastFpsT)/1000));
+    document.getElementById('ic-fps').textContent=document.getElementById('fps-val').textContent; // SYNTECH-UNIFORM: Info FPS cell mirrors the top bar
     fc=0;lastFpsT=now;
   }
 
   // Timecode
   if(vid.duration){
-    const t=vid.currentTime;
-    const m=Math.floor(t/60),s=Math.floor(t%60);
-    document.getElementById('timecode').textContent=
-      String(Math.floor(t/3600)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')+':'+String(s).padStart(2,'0');
+    document.getElementById('timecode').textContent=fmtTCF(vid.currentTime); // SYNTECH-UNIFORM: HH:MM:SS:FF like Bokeh (was HH:MM:SS)
   }
 
   // Audio
@@ -1449,9 +1494,9 @@ function startPlayback(srcLabel){
   paused=false; lastFpsT=performance.now(); fc=0;
   loopGen++; frame(); // SYNTECH-SOURCE: one loop only — a frame() still parked on `await seg.send()` sees the new generation and exits;
                       // a send that never settles then only stalls segmentation, never the canvas
-  document.getElementById('pill-input').classList.add('live');
-  document.getElementById('pill-input-lbl').textContent=srcLabel;
+  synInput(srcLabel,true); // SYNTECH-UNIFORM: INPUT pill + Info INPUT cell (was two bare writes)
   showTransport();
+  fit(); // SYNTECH-UNIFORM: the transport bar just took 36px from #canvas-area — re-fit the frame so a tall (9:16) source keeps its 24px margin instead of being clipped
   const pb=document.getElementById('btn-pause');
   pb.innerHTML='&#9646;&#9646; PAUSE';
   pb.classList.remove('paused');
@@ -1504,7 +1549,8 @@ document.getElementById('btn-model').addEventListener('click',function(){
   if(segObj){
     lastMaskBitmap=null; segReady=false;
     segObj.setOptions({modelSelection:P.modelHQ?1:0,selfieMode:false});
-    segObj.initialize().then(()=>{segReady=true;}).catch(()=>{});
+    synEngine('LOADING'); // SYNTECH-UNIFORM: ENGINE pill follows the model reload
+    segObj.initialize().then(()=>{segReady=true;synEngine('READY');}).catch(()=>{synEngine('ERROR');});
   }
 });
 
@@ -1591,7 +1637,7 @@ function loadImage(f){
     setInfo(f.name,img.naturalWidth+'×'+img.naturalHeight,'—');
     startPlayback('IMAGE');                                   // hides the drop overlay, fits canvas, starts the render loop
     document.getElementById('transport').classList.remove('visible'); // no play/timeline for a still
-    document.getElementById('timecode').textContent='00:00:00';
+    document.getElementById('timecode').textContent='00:00:00:00'; // SYNTECH-UNIFORM: HH:MM:SS:FF
     fit();                                                    // stage grew back now that the transport is hidden
     syncSourceUI();
   };
@@ -1620,7 +1666,7 @@ async function toggleWebcam(){
     armVideoLoad(()=>{
       document.getElementById('info-res').textContent=vid.videoWidth+'×'+vid.videoHeight;
       fit();
-    },()=>startPlayback('CAM'));
+    },()=>startPlayback('WEBCAM')); // SYNTECH-UNIFORM: INPUT pill reads WEBCAM (was CAM)
     syncSourceUI();
   }catch(e){alert('Webcam: '+e.message);}
   finally{camBusy=false;}
@@ -1628,8 +1674,7 @@ async function toggleWebcam(){
 function stopWebcam(){
   endSource();                                                // stops the tracks, clears srcObject
   setInfo('--','--','—');
-  document.getElementById('pill-input').classList.remove('live');
-  document.getElementById('pill-input-lbl').textContent='NO INPUT';
+  synInput('NONE',false); // SYNTECH-UNIFORM: was NO INPUT
   syncSourceUI();
 }
 
@@ -1637,7 +1682,7 @@ function stopWebcam(){
 document.getElementById('browse-btn').addEventListener('click',()=>{
   const head=document.querySelector('.sec-head[data-sec="source"]');
   const body=document.getElementById('sec-source');
-  if(head&&body&&head.classList.contains('collapsed')){head.classList.remove('collapsed');body.classList.remove('hidden');}
+  if(head&&body&&head.classList.contains('closed')){head.classList.remove('closed');body.classList.remove('hidden');} // SYNTECH-UNIFORM: Bokeh's class name (was .collapsed)
   if(head)head.scrollIntoView({behavior:'smooth',block:'nearest'});
 });
 /* SYNTECH-SOURCE-END */
@@ -1701,7 +1746,7 @@ document.getElementById('rec-btn').addEventListener('click',function(){
       document.getElementById('rec-time').textContent='00:00:00';
       document.getElementById('rec-time').classList.remove('active');
       this.classList.remove('recording');this.querySelector('span').textContent='REC';
-      document.getElementById('bb-status').textContent='SEG: READY';
+      synStatus('SEG: READY'); // SYNTECH-UNIFORM: also mirrors to the Info SEG cell
       mediaRec=null;
     };
     mediaRec.start(80); // smaller chunks = less memory pressure
@@ -1715,7 +1760,7 @@ document.getElementById('rec-btn').addEventListener('click',function(){
     },1000);
     document.getElementById('rec-time').classList.add('active');
     this.classList.add('recording');this.querySelector('span').textContent='■ STOP';
-    document.getElementById('bb-status').textContent=`REC · ${ext.toUpperCase()} · ${Math.round(bps/1e6)}Mbps`;
+    synStatus(`REC · ${ext.toUpperCase()} · ${Math.round(bps/1e6)}Mbps`); // SYNTECH-UNIFORM: also mirrors to the Info SEG cell
   }else{mediaRec.stop();}
 });
 
@@ -1765,7 +1810,7 @@ function updateTimeline(){
   document.getElementById('tl-head').style.left=pct+'%';
   document.getElementById('tl-cur').textContent=fmtTC(vid.currentTime);
   document.getElementById('tl-dur').textContent=fmtTC(vid.duration);
-  document.getElementById('timecode').textContent=fmtTC(vid.currentTime);
+  document.getElementById('timecode').textContent=fmtTCF(vid.currentTime); // SYNTECH-UNIFORM: HH:MM:SS:FF like Bokeh (fmtTC stays MM:SS for the transport bar)
 }
 setInterval(updateTimeline,250);
 
@@ -1946,11 +1991,27 @@ document.querySelectorAll('.sec-head').forEach(h=>{
   h.addEventListener('click',()=>{
     const b=document.getElementById('sec-'+h.dataset.sec);if(!b)return;
     b.classList.toggle('hidden');
-    h.classList.toggle('collapsed',b.classList.contains('hidden'));
+    h.classList.toggle('closed',b.classList.contains('hidden')); // SYNTECH-UNIFORM: Bokeh's class name (was .collapsed)
   });
 });
 
 /* ─── HELPERS ────────────────────────────────────────────────── */
+/* SYNTECH-UNIFORM-START — top bar / Info mirrors (Bokeh-style chrome). Function declarations: hoisted, usable from anywhere above. */
+function synInput(lbl,live){ // INPUT pill (top bar) + Info INPUT cell
+  document.getElementById('pill-input').classList.toggle('live',live);
+  document.getElementById('pill-input-lbl').textContent=lbl;
+  document.getElementById('ic-source').textContent=lbl;
+}
+function synEngine(state){ document.getElementById('pill-seg-lbl').textContent=state; } // ENGINE pill: IDLE / LOADING / READY / ERROR
+function synStatus(txt){ // the old bottom-bar status (#bottombar is hidden now) + the Info SEG cell
+  document.getElementById('bb-status').textContent=txt;
+  const e=document.getElementById('info-seg'); e.textContent=txt.replace(/^SEG:\s*/,''); e.title=txt;
+}
+function fmtTCF(s){ // HH:MM:SS:FF @30 — same formula as Bokeh's fmtTC
+  if(!s||isNaN(s)||!isFinite(s))s=0;
+  return[Math.floor(s/3600),Math.floor((s%3600)/60),Math.floor(s%60),Math.floor((s%1)*30)].map(n=>String(n).padStart(2,'0')).join(':');
+}
+/* SYNTECH-UNIFORM-END */
 function fmtDur(s){if(!s||isNaN(s))return '--';return String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0');}
 
 /* ─── INIT ───────────────────────────────────────────────────── */
@@ -1958,6 +2019,8 @@ fit();
 initSeg();
 syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on, nothing playing)
 </script>
+<!-- SYNTECH-UNIFORM: section title + mark gradient sync, shared by every effect (same as BOKEH's syncSectionTitleGradients) -->
+<script src="../shared/syn-chrome.js"></script>
 <!-- SYNTECH-BRIDGE-START (shell integration; standalone-safe) -->
 <script>
 (function(){

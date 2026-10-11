@@ -1204,6 +1204,32 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 /* SYNTECH-BODY-END */
 
 </style>
+<!-- SYNTECH-UNIFORM-START: shared BOKEH chrome — operator request 2026-10-11 -->
+<link rel="stylesheet" href="../shared/syn-chrome.css">
+<style id="syntech-uniform">
+/* Only neutralisers of BLOB TRACKER's old chrome leftovers (everything else comes from ../shared/syn-chrome.css). */
+/* top bar: Bokeh's .logo has no shimmer slash */
+.logo::before { content:none; }
+/* video frame: no inner vignette on the 16:9 box (Bokeh's ::after is only the thin border) */
+#canvas-wrap::after { box-shadow:none; }
+/* drop overlay: blob JS toggles .dragover (Bokeh's class is .drag-over) — same animation */
+#drop-overlay.dragover { animation:iri-border 3s linear infinite; }
+/* panel: Bokeh reserves no scrollbar gutter (overflow-y:auto comes from the shared CSS) */
+#panel { scrollbar-gutter:auto; }
+/* the terminal takeover stays an overlay above the panel (shared "#panel > *" would make it relative/z1) */
+#panel > #pro-takeover { position:absolute; z-index:100; }
+/* section lines: exactly Bokeh's animated .sec-mark — no static gradient filter, no colour variants, no dim water mark */
+.sec-mark { filter:none; transition:none; }
+.sec-mark.amber, .sec-mark.blue, .sec-mark.green, .sec-mark.red { filter:none; box-shadow:0 0 7px rgba(232,192,0,.4); }
+#sm-water, #sm-water.amber { opacity:1; box-shadow:0 0 7px rgba(232,192,0,.4); }
+/* info grid: Bokeh's cells are square */
+.info-cell { border-radius:0; }
+/* panel smoke: Bokeh has three blobs (s4 kept in the DOM, hidden) */
+.smoke-blob.s4 { display:none; }
+/* old status bar stays hidden and has no decoration */
+#bottombar::before { content:none; }
+</style>
+<!-- SYNTECH-UNIFORM-END -->
 <body>
 <!-- FULLSCREEN OVERLAY -->
 <div id="fs-ov">
@@ -1222,16 +1248,17 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
   </div><!-- SYNTECH: effect name, was "VFX" (operator request 2026-10-10) -->
   <div class="tb-sep"></div>
   <div class="pill" id="pill-src"><div class="dot"></div><span class="pill-pre">INPUT</span><span id="pill-src-lbl">NONE</span></div>
-  <div class="pill engine"><div class="dot"></div><span class="pill-pre">RENDER</span><span id="pill-mode-lbl">TRACKER</span></div>
+  <div class="pill engine"><div class="dot"></div><span class="pill-pre">ENGINE</span><span id="pill-mode-lbl">TRACKER</span></div><!-- SYNTECH-UNIFORM: pre-label "ENGINE" like Bokeh, was "RENDER" (value = live render mode) -->
   <div class="pill" id="pill-rec" style="display:none"><div class="dot"></div><span>● REC</span></div>
-  <div id="tb-time">--:--</div>
-  <div id="fps-display">FPS&nbsp;<b id="fps-val">--</b></div>
+  <div id="timecode">00:00:00:00</div><!-- SYNTECH-UNIFORM: Bokeh's HH:MM:SS:FF timecode, was #tb-time "--:--" -->
+  <div id="fps-display">FPS <b id="fps-val">0</b></div><!-- SYNTECH-UNIFORM: as Bokeh (was "FPS&nbsp;--") -->
 </div>
 
 <!-- ──────────────────────────────── MAIN ──────────────────────────────── -->
 <div id="main">
   <div id="canvas-area">
-    <div id="canvas-wrap">
+    <div id="canvas-wrap"><!-- SYNTECH-UNIFORM: Bokeh's centred 16:9 frame, sized by _synFitWrap() (was the whole #canvas-area) -->
+      <div id="frame-outline"></div><!-- SYNTECH-UNIFORM -->
       <canvas id="dc"></canvas>
       <canvas id="panels-canvas"></canvas>
       <canvas id="fx-ov-cv" style="position:absolute;inset:0;width:100%;height:100%;display:none;z-index:3;pointer-events:none"></canvas>
@@ -1240,11 +1267,11 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
       <div id="labels-ov"></div>
       <div id="src-pip"><div id="src-pip-lbl">SOURCE</div><canvas id="pip-cv"></canvas></div>
       <div id="cam-pip"><video id="cam-vid" autoplay muted playsinline></video><div id="cam-pip-lbl">WEBCAM LIVE</div></div>
-      <div id="drop-ov">
+      <div id="drop-overlay"><!-- SYNTECH-UNIFORM: Bokeh's id (was #drop-ov; JS ref updated) -->
         <div class="drop-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
         <div class="drop-title">BLOB TRACKER</div><!-- SYNTECH: name, operator request 2026-10-11 -->
         <div class="drop-sub">VIDEO — IMAGE — WEBCAM — CAMERA</div>
-        <button class="drop-browse" id="browse-btn">SOURCE</button>
+        <button class="drop-source-btn" id="browse-btn">SOURCE</button><!-- SYNTECH-UNIFORM: Bokeh's class (was .drop-browse); id + behaviour unchanged -->
       </div>
       <div id="toast"></div>
     </div>
@@ -1257,9 +1284,10 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
       <div id="pro-takeover-body"><span id="pro-takeover-cursor"></span></div>
     </div>
 
+    <!-- SYNTECH-UNIFORM: every section chevron is Bokeh's "▼" (was "▾"); all closed at load except Info (last, open) -->
     <!-- SOURCE -->
     <div class="section">
-      <div class="sec-head closed" data-sec="src"><div class="sec-mark amber"></div><span class="sec-title">Source</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="src"><div class="sec-mark amber"></div><span class="sec-title">Source</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-src" style="gap:8px">
         <div class="seg-row">
           <button class="seg-btn" id="src-image">IMAGE</button>
@@ -1284,7 +1312,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- CAMERA CONTROLS -->
     <div class="section" id="sec-cam-ctrl">
-      <div class="sec-head closed" data-sec="cam-ctrl"><div class="sec-mark amber"></div><span class="sec-title">Camera</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="cam-ctrl"><div class="sec-mark amber"></div><span class="sec-title">Camera</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-cam-ctrl" style="gap:6px">
         <!-- Device picker -->
         <div style="display:flex;gap:4px;align-items:center">
@@ -1324,7 +1352,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- PRESET -->
     <div class="section">
-      <div class="sec-head closed" data-sec="preset"><div class="sec-mark amber"></div><span class="sec-title">Preset</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="preset"><div class="sec-mark amber"></div><span class="sec-title">Preset</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-preset" style="gap:6px">
         <!-- Preset list -->
         <div id="preset-list-wrap" style="display:flex;flex-direction:column;gap:3px;max-height:140px;overflow-y:auto;padding-right:2px">
@@ -1346,7 +1374,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- RENDER MODE -->
     <div class="section">
-      <div class="sec-head closed" data-sec="rmode"><div class="sec-mark amber"></div><span class="sec-title">Render Mode</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="rmode"><div class="sec-mark amber"></div><span class="sec-title">Render Mode</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-rmode">
         <div class="seg-row">
           <button class="seg-btn on" id="mode-tracker">TRACKER</button>
@@ -1361,7 +1389,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- XY PAD -->
     <div class="section">
-      <div class="sec-head closed" data-sec="xypad"><div class="sec-mark amber"></div><span class="sec-title">XY Pad</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="xypad"><div class="sec-mark amber"></div><span class="sec-title">XY Pad</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-xypad">
         <div id="xy-pad">
           <canvas id="xy-ripple-cv" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4;border-radius:1px"></canvas>
@@ -1377,7 +1405,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- TRACKER params -->
     <div class="section">
-      <div class="sec-head closed" data-sec="detect"><div class="sec-mark amber"></div><span class="sec-title">Tracker</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="detect"><div class="sec-mark amber"></div><span class="sec-title">Tracker</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-detect">
         <!-- SYNTECH-BODY: DETECT source — LUMA (classic threshold) / MOTION (frame diff) / BODY (face·hands·body landmarks) -->
         <div class="det-lbl">DETECT</div>
@@ -1414,7 +1442,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- SYNTECH-BODY-START: BODY section — face / hands / body landmarks (MediaPipe Tasks, offline) -->
     <div class="section">
-      <div class="sec-head closed" data-sec="body"><div class="sec-mark amber"></div><span class="sec-title">Body</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="body"><div class="sec-mark amber"></div><span class="sec-title">Body</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-body">
         <div class="lrow">
           <div class="led-btn" id="body-face-btn" title="Riconoscimento faccia (mesh 478 punti)"><div class="led"></div><span class="led-txt">FACE</span></div>
@@ -1434,7 +1462,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- PANELS params -->
     <div class="section">
-      <div class="sec-head closed" data-sec="panels3d"><div class="sec-mark amber"></div><span class="sec-title">Panels</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="panels3d"><div class="sec-mark amber"></div><span class="sec-title">Panels</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-panels3d">
         <div class="lrow">
           <div class="led-btn on" id="btn-plabels"><div class="led"></div><span class="led-txt">LABELS</span></div>
@@ -1452,7 +1480,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- VISUAL FX -->
     <div class="section">
-      <div class="sec-head closed" data-sec="fx"><div class="sec-mark amber"></div><span class="sec-title">Visual FX</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="fx"><div class="sec-mark amber"></div><span class="sec-title">Visual FX</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-fx">
 
         <!-- RENDER MODE -->
@@ -1507,7 +1535,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- BLOB SHAPE -->
     <div class="section">
-      <div class="sec-head closed" data-sec="bshape"><div class="sec-mark amber"></div><span class="sec-title">Tracker Shape</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="bshape"><div class="sec-mark amber"></div><span class="sec-title">Tracker Shape</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-bshape">
         <div class="grid2">
           <button class="seg-btn on" id="bs-square">■ SQUARE</button>
@@ -1522,7 +1550,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- COLOR CONNECTION -->
     <div class="section">
-      <div class="sec-head closed" data-sec="clines"><div class="sec-mark amber"></div><span class="sec-title">Color Connection</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="clines"><div class="sec-mark amber"></div><span class="sec-title">Color Connection</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-clines">
         <div style="position:relative">
           <canvas id="color-pad" width="256" height="110" style="width:100%;display:block;border:1px solid var(--border-hi);cursor:crosshair;border-radius:2px"></canvas>
@@ -1566,7 +1594,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- AUDIO REACTIVE -->
     <div class="section">
-      <div class="sec-head closed" data-sec="ar"><div class="sec-mark amber"></div><span class="sec-title">Audio Reactive</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="ar"><div class="sec-mark amber"></div><span class="sec-title">Audio Reactive</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-ar">
         <!-- SOURCE selector -->
         <div class="ar-src-row">
@@ -1634,7 +1662,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- VIDEO REACTIVE -->
     <div class="section">
-      <div class="sec-head closed" data-sec="vr"><div class="sec-mark amber"></div><span class="sec-title">Video Reactive</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="vr"><div class="sec-mark amber"></div><span class="sec-title">Video Reactive</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-vr">
         <!-- ON / AUTO -->
         <div class="seg-row">
@@ -1688,7 +1716,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- PRO -->
     <div class="section">
-      <div class="sec-head closed" data-sec="pro"><div class="sec-mark amber"></div><span class="sec-title">Text Generator</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="pro"><div class="sec-mark amber"></div><span class="sec-title">Text Generator</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-pro" style="gap:0;padding:0">
         <!-- FREE / FIXED PTS -->
         <div style="padding:10px 12px 8px">
@@ -1734,7 +1762,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- WATER RIPPLE -->
     <div class="section">
-      <div class="sec-head closed" data-sec="water"><div class="sec-mark" id="sm-water"></div><span class="sec-title">Water Ripple</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="water"><div class="sec-mark" id="sm-water"></div><span class="sec-title">Water Ripple</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-water">
         <div class="led-btn" id="btn-ripple" style="width:100%;flex:none"><div class="led"></div><span class="led-txt">RIPPLE ON / OFF</span></div>
         <div class="ctrl-row"><span class="ctrl-lbl">Displace</span><div class="ctrl-track"><input type="range" class="daw-sl" id="sDisp" min="0.002" max="0.04" value="0.013" step="0.001"></div><span class="ctrl-val" id="vDisp">0.013</span></div>
@@ -1745,7 +1773,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- RECORD -->
     <div class="section">
-      <div class="sec-head closed" data-sec="rec"><div class="sec-mark amber"></div><span class="sec-title">Export</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="rec"><div class="sec-mark amber"></div><span class="sec-title">Export</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-rec">
         <button class="fs-btn" id="btn-fs">⛶&nbsp;&nbsp;FULLSCREEN</button>
         <button class="rec-btn" id="btn-rec"><div class="rec-dot"></div>REC</button>
@@ -1755,7 +1783,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- SHORTCUTS -->
     <div class="section">
-      <div class="sec-head closed" data-sec="keys"><div class="sec-mark"></div><span class="sec-title">Shortcuts</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head closed" data-sec="keys"><div class="sec-mark"></div><span class="sec-title">Shortcuts</span><span class="sec-chev">▼</span></div>
       <div class="sec-body hidden" id="sb-keys">
         <div class="sc-row"><span class="sc-key">V</span><span class="sc-desc">Load video</span></div>
         <div class="sc-row"><span class="sc-key">I</span><span class="sc-desc">Load image</span></div>
@@ -1770,14 +1798,14 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
     <!-- INFO -->
     <div class="section">
-      <div class="sec-head" data-sec="info"><div class="sec-mark amber"></div><span class="sec-title">Info</span><span class="sec-chev">▾</span></div>
+      <div class="sec-head" data-sec="info"><div class="sec-mark amber"></div><span class="sec-title">Info</span><span class="sec-chev">▼</span></div>
       <div class="sec-body" id="sb-info">
         <div class="info-grid">
           <div class="info-cell"><div class="ic-lbl">Blobs</div><div class="ic-val amber" id="ic-blobs">0</div></div>
-          <div class="info-cell"><div class="ic-lbl">FPS</div><div class="ic-val amber" id="ic-fps">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">FPS</div><div class="ic-val amber" id="ic-fps">0</div></div>
           <div class="info-cell"><div class="ic-lbl">Render</div><div class="ic-val dim" id="ic-mode">TRACKER</div></div>
           <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val dim" id="ic-source">NONE</div></div>
-          <div class="ic-credit">CREATED BY STATE</div>
+          <div class="ic-credit">BLOB TRACKER — by STATE</div><!-- SYNTECH-UNIFORM: Bokeh's credit form, was "CREATED BY STATE" -->
         </div>
       </div>
     </div>
@@ -1930,7 +1958,7 @@ const panelsReadCv=document.createElement('canvas'),panelsReadCtx=panelsReadCv.g
 const vidEl=document.getElementById('vid'),procCv=document.getElementById('proc-cv');
 const dCtx=dc.getContext('2d'),pCtx=procCv.getContext('2d',{willReadFrequently:true});
 const labelsOv=document.getElementById('labels-ov'),svgLines=document.getElementById('svg-lines');
-const dropOv=document.getElementById('drop-ov'),srcPip=document.getElementById('src-pip');
+const dropOv=document.getElementById('drop-overlay')/* SYNTECH-UNIFORM: was 'drop-ov' */,srcPip=document.getElementById('src-pip');
 const pipCv=document.getElementById('pip-cv'),pipCtx=pipCv.getContext('2d'),camPip=document.getElementById('cam-pip');
 
 let trackerRafId=null,fc=0,lastFpsT=0,fps=0;
@@ -2514,7 +2542,7 @@ function rSrcLoop(){
 function initRipple(){
   if(rInited)return;rInited=true;
   rSrcCv.width=dc.width;rSrcCv.height=dc.height;
-  const SIM=512,area=document.getElementById('canvas-area');
+  const SIM=512,area=document.getElementById('canvas-wrap'); // SYNTECH-UNIFORM: the 16:9 frame (was 'canvas-area'), same size as dc
   rRenderer=new THREE.WebGLRenderer({canvas:glC,alpha:false,antialias:false,powerPreference:'high-performance'});
   rRenderer.autoClear=false;rRenderer.setPixelRatio(1);rRenderer.setSize(area.clientWidth||640,area.clientHeight||400,false);
   rCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
@@ -2595,7 +2623,7 @@ const FS=`uniform sampler2D map;uniform vec4 uvRect;uniform float opacity;unifor
 
 function initPanels(){
   if(panelsScene)return;
-  const area=document.getElementById('canvas-area');panelsW=area.clientWidth||800;panelsH=area.clientHeight||600;
+  const area=document.getElementById('canvas-wrap');panelsW=area.clientWidth||800;panelsH=area.clientHeight||600; // SYNTECH-UNIFORM: the 16:9 frame (was 'canvas-area')
   panelsDefaultTex=createFloralTex();
   panelsRenderer=new THREE.WebGLRenderer({canvas:panelsCv,antialias:true,alpha:true,premultipliedAlpha:false,preserveDrawingBuffer:true});
   panelsRenderer.setSize(panelsW,panelsH);panelsRenderer.setPixelRatio(Math.min(window.devicePixelRatio,2));panelsRenderer.setClearColor(0x000000,0);
@@ -3088,11 +3116,21 @@ document.getElementById('btn-loop').addEventListener('click',toggleLoop);
 document.getElementById('btn-webcam').addEventListener('click',()=>loadWebcam());
 document.getElementById('btn-fullscreen').addEventListener('click',goFullscreen);
 setInterval(()=>{
-  if(srcMode==='video'&&vidEl.duration){const cur=fmt(vidEl.currentTime),dur=fmt(vidEl.duration),pct=(vidEl.currentTime/vidEl.duration)*100;document.getElementById('tb-time').textContent=cur+' / '+dur;document.getElementById('bb-r').textContent=cur;document.getElementById('tl-fill').style.width=pct+'%';document.getElementById('tl-thumb').style.left=pct+'%';document.getElementById('tl-time').textContent=cur+' / '+dur;}
-  else if(srcMode==='webcam'){document.getElementById('tb-time').textContent='◉ LIVE';document.getElementById('bb-r').textContent='LIVE';}
-  else if(srcMode==='camera'){document.getElementById('tb-time').textContent='◉ NIKON';document.getElementById('bb-r').textContent='ZR';}
-  else{document.getElementById('tb-time').textContent='--:--';document.getElementById('bb-r').textContent='--:--';}
+  /* SYNTECH-UNIFORM: the top-bar #tb-time writes moved to _synTimecode() below (Bokeh's HH:MM:SS:FF); transport (#tl-time) and #bb-r unchanged */
+  if(srcMode==='video'&&vidEl.duration){const cur=fmt(vidEl.currentTime),dur=fmt(vidEl.duration),pct=(vidEl.currentTime/vidEl.duration)*100;document.getElementById('bb-r').textContent=cur;document.getElementById('tl-fill').style.width=pct+'%';document.getElementById('tl-thumb').style.left=pct+'%';document.getElementById('tl-time').textContent=cur+' / '+dur;}
+  else if(srcMode==='webcam'){document.getElementById('bb-r').textContent='LIVE';}
+  else if(srcMode==='camera'){document.getElementById('bb-r').textContent='ZR';}
+  else{document.getElementById('bb-r').textContent='--:--';}
 },200);
+/* SYNTECH-UNIFORM-START: top-bar #timecode exactly like Bokeh (fmtTC: HH:MM:SS:FF at 30 fps, every frame) —
+   the video time while a video is loaded, 00:00:00:00 for webcam / camera / image / no input. */
+function _synFmtTC(s){return[Math.floor(s/3600),Math.floor((s%3600)/60),Math.floor(s%60),Math.floor((s%1)*30)].map(n=>String(n).padStart(2,'0')).join(':');}
+(function _synTimecode(){
+  const el=document.getElementById('timecode');
+  if(el){const t=(srcMode==='video'&&vidEl.readyState>=2)?_synFmtTC(vidEl.currentTime||0):'00:00:00:00';if(el.textContent!==t)el.textContent=t;}
+  requestAnimationFrame(_synTimecode);
+})();
+/* SYNTECH-UNIFORM-END */
 
 // ══════════════════════════════════════════════════════════
 //  XY PAD
@@ -3243,7 +3281,7 @@ document.getElementById('src-camera').addEventListener('click',loadNikonCamera);
 document.getElementById('fi-v').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadVideo(f);e.target.value='';});
 document.getElementById('fi-i').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadImage(f);e.target.value='';});
 document.getElementById('browse-btn').addEventListener('click',()=>{const sHead=document.querySelector('.sec-head[data-sec="src"]');const sBody=document.getElementById('sb-src');if(sHead&&sBody&&sHead.classList.contains('closed')){sHead.classList.remove('closed');sBody.classList.remove('hidden');}if(sHead)sHead.scrollIntoView({behavior:'smooth',block:'nearest'});});
-const wrap=document.getElementById('canvas-wrap');
+const wrap=document.getElementById('canvas-area'); // SYNTECH-UNIFORM: drop target stays the whole area (the wrap is now the 16:9 frame inside it), as Bokeh
 wrap.addEventListener('dragover',e=>{e.preventDefault();dropOv.classList.add('dragover');});
 wrap.addEventListener('dragleave',()=>dropOv.classList.remove('dragover'));
 wrap.addEventListener('drop',e=>{e.preventDefault();dropOv.classList.remove('dragover');const f=e.dataTransfer.files[0];if(!f)return;if(f.type.startsWith('video/'))loadVideo(f);else if(f.type.startsWith('image/'))loadImage(f);});
@@ -5967,8 +6005,26 @@ setTimeout(initColorPad,80);
 // ══════════════════════════════════════════════════════════
 //  RESIZE
 // ══════════════════════════════════════════════════════════
+/* SYNTECH-UNIFORM-START: Bokeh's video frame — fitCanvas(): #canvas-wrap is a centred 16:9 box of (area − 24px).
+   Every drawing surface (dc, fx overlay, REC capture, ripple source/renderer, panels renderer) is sized to the BOX,
+   no longer to the whole #canvas-area; the SYNTECH-FIT letterbox then works inside the box. */
+const _SYN_ASP=16/9;let _synBoxW=0,_synBoxH=0;
+function _synBox(){
+  const area=document.getElementById('canvas-area');
+  let aw=area.clientWidth-24,ah=area.clientHeight-24;
+  if(!(aw>0&&ah>0)){aw=640;ah=360;} // area not laid out yet (hidden iframe): provisional box, the observer refits later
+  let w,h;
+  if(aw/ah>_SYN_ASP){h=ah;w=Math.round(h*_SYN_ASP);}else{w=aw;h=Math.round(w/_SYN_ASP);}
+  return{w,h};
+}
+function _synFitWrap(){
+  const b=_synBox(),wrap=document.getElementById('canvas-wrap');
+  wrap.style.width=b.w+'px';wrap.style.height=b.h+'px';_synBoxW=b.w;_synBoxH=b.h;
+  return b;
+}
+/* SYNTECH-UNIFORM-END */
 function resize(){
-  const area=document.getElementById('canvas-area');const w=area.clientWidth||640,h=area.clientHeight||400;
+  const _box=_synFitWrap();const w=_box.w,h=_box.h; // SYNTECH-UNIFORM: the 16:9 frame (was #canvas-area clientWidth/Height)
   dc.width=w;dc.height=h;dCtx.fillStyle='#000';dCtx.fillRect(0,0,w,h);
   fxOvCv.width=w;fxOvCv.height=h;
   capCv.width=w;capCv.height=h;rSrcCv.width=w;rSrcCv.height=h;
@@ -5976,6 +6032,10 @@ function resize(){
   if(panelsRenderer){panelsW=w;panelsH=h;panelsRenderer.setSize(w,h);panelsCamera.aspect=w/h;panelsCamera.updateProjectionMatrix();}
 }
 window.addEventListener('resize',resize);
+/* SYNTECH-UNIFORM: refit like Bokeh on fullscreen enter/exit, and whenever the area changes size without a window
+   resize (timeline bar shown/hidden, iframe laid out late) — only when the 16:9 box really changes. */
+document.addEventListener('fullscreenchange',()=>setTimeout(resize,100));
+try{new ResizeObserver(()=>{const b=_synBox();if(b.w!==_synBoxW||b.h!==_synBoxH)resize();}).observe(document.getElementById('canvas-area'));}catch(e){}
 
 // ══════════════════════════════════════════════════════════
 //  INIT
@@ -6368,7 +6428,7 @@ document.getElementById('pro-rec-btn')?.addEventListener('click',()=>{
 
   function loop(){
     if(!ov.classList.contains('active')){rafId=null;return;}
-    cv.width = window.innerWidth; cv.height = window.innerHeight;
+    cv.width = dc.width; cv.height = dc.height; // SYNTECH-UNIFORM: frame resolution, #fs-cv object-fit:contain keeps 16:9 (was window size → stretched)
     try{ctx3.drawImage(dc,0,0,cv.width,cv.height);}catch(e){}
     if(panelsCv.style.display!=='none')try{ctx3.drawImage(panelsCv,0,0,cv.width,cv.height);}catch(e){}
     if(fxOvCv.style.display!=='none')try{ctx3.drawImage(fxOvCv,0,0,cv.width,cv.height);}catch(e){}
@@ -7423,6 +7483,8 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 
 </script>
+<!-- SYNTECH-UNIFORM: section line + title gradient sync, shared with every effect (Bokeh's syncSectionTitleGradients) -->
+<script src="../shared/syn-chrome.js"></script>
 <!-- SYNTECH-BRIDGE-START (shell integration; standalone-safe) -->
 <script>
 (function(){

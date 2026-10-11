@@ -783,6 +783,25 @@ canvas:-webkit-full-screen { width:100vw; height:100vh; object-fit:contain; back
 
 video { display:none; }
 </style>
+<!-- SYNTECH-UNIFORM-START: shared BOKEH chrome — operator request 2026-10-11 -->
+<link rel="stylesheet" href="../shared/syn-chrome.css">
+<style id="syntech-uniform">
+/* Only neutralisers of ANAMORPHIC's old chrome (rules above) that the shared
+   sheet does not override by itself. The old .main/.preview/.panel/#drop-hint/
+   #tb-time rules no longer match anything (markup now uses BOKEH's ids). */
+.logo { text-shadow:none; }
+.logo::before { content:none; }                     /* old moving shimmer slash */
+.pill.rec-on { border-color:rgba(255,255,255,.12); border-bottom-color:rgba(0,0,0,.5); color:var(--t3); } /* REC pill = BOKEH's (.pill + red blinking dot) */
+.section::after { background-position:0% 0%; }      /* was driven by --line-pos */
+.sec-mark { filter:none; }                           /* was hue-rotate(--mark-hue): the line now animates like the title */
+.sec-title { filter:none; background-position:0% 0%; }
+.info-cell { border-radius:0; }
+/* The picture is CONTAINED in BOKEH's 16:9 frame (#canvas-wrap, sized by
+   synFitFrame below): aspect kept, letterboxed/pillarboxed, never stretched.
+   CSS only — cv.width/height (= native/export resolution) are untouched. */
+#cv { width:100%; height:100%; object-fit:contain; }
+</style>
+<!-- SYNTECH-UNIFORM-END -->
 </head>
 <body>
 
@@ -791,41 +810,43 @@ video { display:none; }
   <div class="logo">ANAMORPHIC</div><!-- SYNTECH: effect name, was "VFX" then "ANAMORPHIC LAB" (operator requests 2026-10-10/11) -->
   <div class="tb-sep"></div>
   <div class="pill" id="pill-src"><div class="dot"></div><span class="pill-pre">INPUT</span><span id="pill-src-lbl">NONE</span></div>
-  <div class="pill engine"><div class="dot"></div><span class="pill-pre">RENDER</span><span id="pill-mode-lbl">WEBGL</span></div>
+  <div class="pill engine"><div class="dot"></div><span class="pill-pre">ENGINE</span><span id="pill-mode-lbl">WEBGL</span></div><!-- SYNTECH-UNIFORM: pre-label "ENGINE" like BOKEH (was "RENDER") -->
   <div class="pill" id="pill-rec" style="display:none"><div class="dot"></div><span>● REC</span></div>
-  <div id="tb-time">--:--</div>
-  <div id="fps-display">FPS&nbsp;<b id="fps-val">--</b></div>
+  <div id="timecode">00:00:00:00</div><!-- SYNTECH-UNIFORM: BOKEH's HH:MM:SS:FF timecode (was #tb-time "mm:ss / mm:ss"; duration moved to Info) -->
+  <div id="fps-display">FPS <b id="fps-val">0</b></div><!-- SYNTECH-UNIFORM: Bokeh's markup -->
 </div>
 
-<div class="main">
+<!-- SYNTECH-UNIFORM: BOKEH's chrome ids (operator request 2026-10-11) — was
+     .main / .preview#preview / #drop-hint / .panel. The picture (#cv) now sits in
+     BOKEH's 16:9 frame #canvas-wrap (+ #frame-outline), the drop overlay fills it. -->
+<div id="main">
 
   <!-- ──────────────────────── PREVIEW ──────────────────────── -->
-  <div class="preview" id="preview">
-    <div id="drop-hint">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="17 8 12 3 7 8"/>
-        <line x1="12" y1="3" x2="12" y2="15"/>
-      </svg>
-      <div class="drop-title">ANAMORPHIC</div><!-- SYNTECH: name, operator request 2026-10-11 -->
-      <small>VIDEO &nbsp;—&nbsp; IMAGE &nbsp;—&nbsp; WEBCAM &nbsp;—&nbsp; CAMERA</small>
-      <button class="drop-source-btn" id="drop-source-btn" onclick="openSourcePanel()">SOURCE</button>
+  <div id="canvas-area">
+    <div id="canvas-wrap">
+      <div id="frame-outline"></div>
+      <canvas id="cv"></canvas>
+      <div id="drop-overlay">
+        <div class="drop-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <div class="drop-title">ANAMORPHIC</div><!-- SYNTECH: name, operator request 2026-10-11 -->
+        <div class="drop-sub">VIDEO — IMAGE — WEBCAM — CAMERA</div>
+        <button class="drop-source-btn" id="drop-source-btn" onclick="openSourcePanel()">SOURCE</button>
+      </div>
     </div>
-    <canvas id="cv"></canvas>
     <input type="file" id="file-input" accept="video/*">
     <input type="file" id="file-input-img" accept="image/*" style="display:none">
     <div id="toast"></div>
   </div>
 
   <!-- ──────────────────────── PANEL ──────────────────────── -->
-  <div class="panel">
+  <div id="panel"><!-- SYNTECH-UNIFORM: was class="panel"; every section chevron is BOKEH's <div class="sec-chevron">▼</div> (was <span class="sec-chev">▾</span>) -->
 
     <!-- SOURCE -->
     <div class="section" id="sec-source">
       <div class="sec-head closed" onclick="toggleSection(this)">
         <div class="sec-mark"></div>
         <span class="sec-title">Source</span>
-        <span class="sec-chev">▾</span>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden">
         <div class="seg-row">
@@ -851,7 +872,7 @@ video { display:none; }
       <div class="sec-head closed" onclick="toggleSection(this)">
         <div class="sec-mark"></div>
         <span class="sec-title">Camera</span>
-        <span class="sec-chev">▾</span>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden">
         <div style="display:flex;gap:4px;align-items:center">
@@ -908,7 +929,7 @@ video { display:none; }
       <div class="sec-head closed" onclick="toggleSection(this)">
         <div class="sec-mark"></div>
         <span class="sec-title">Preset</span>
-        <span class="sec-chev">▾</span>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden">
         <div class="lrow">
@@ -933,7 +954,7 @@ video { display:none; }
       <div class="sec-head closed" onclick="toggleSection(this)">
         <div class="sec-mark"></div>
         <span class="sec-title">Exposure</span>
-        <span class="sec-chev">▾</span>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden">
         <div class="seg-row">
@@ -952,7 +973,7 @@ video { display:none; }
       <div class="sec-head closed" onclick="toggleSection(this)">
         <div class="sec-mark"></div>
         <span class="sec-title">Color Temperature</span>
-        <span class="sec-chev">▾</span>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden">
         <div class="ctrl">
@@ -996,7 +1017,7 @@ video { display:none; }
       <div class="sec-head closed" onclick="toggleSection(this)">
         <div class="sec-mark"></div>
         <span class="sec-title">Texture / Bokeh</span>
-        <span class="sec-chev">▾</span>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden">
         <div class="ctrl">
@@ -1024,7 +1045,7 @@ video { display:none; }
       <div class="sec-head closed" onclick="toggleSection(this)">
         <div class="sec-mark"></div>
         <span class="sec-title">Anamorphic Optics</span>
-        <span class="sec-chev">▾</span>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden">
         <div class="seg-row">
@@ -1062,7 +1083,7 @@ video { display:none; }
       <div class="sec-head closed" onclick="toggleSection(this)">
         <div class="sec-mark"></div>
         <span class="sec-title">Ghost</span>
-        <span class="sec-chev">▾</span>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden">
         <div class="ctrl-row" style="margin-top:6px">
@@ -1081,7 +1102,7 @@ video { display:none; }
       <div class="sec-head closed" onclick="toggleSection(this)">
         <div class="sec-mark"></div>
         <span class="sec-title">Bokeh</span>
-        <span class="sec-chev">▾</span>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden">
         <div class="seg-row">
@@ -1121,7 +1142,7 @@ video { display:none; }
       <div class="sec-head closed" onclick="toggleSection(this)">
         <div class="sec-mark"></div>
         <span class="sec-title">Flare</span>
-        <span class="sec-chev">▾</span>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden">
         <div class="seg-row">
@@ -1161,7 +1182,7 @@ video { display:none; }
       <div class="sec-head closed" onclick="toggleSection(this)">
         <div class="sec-mark"></div>
         <span class="sec-title">Export</span>
-        <span class="sec-chev">▾</span>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body hidden">
         <button class="fs-btn" id="btn-fs">⛶&nbsp;&nbsp;FULLSCREEN</button>
@@ -1175,15 +1196,19 @@ video { display:none; }
       <div class="sec-head" onclick="toggleSection(this)">
         <div class="sec-mark"></div>
         <span class="sec-title">Info</span>
-        <span class="sec-chev">▾</span>
+        <div class="sec-chevron">▼</div>
       </div>
       <div class="sec-body">
+        <!-- SYNTECH-UNIFORM: BOKEH's Info layout — FPS amber · Input dim / Resolution dim · <effect> amber
+             (was Resolution amber · FPS amber / Aspect dim · Input dim); + Duration, moved here from the
+             old top-bar "mm:ss / mm:ss"; credit like BOKEH (was "CREATED BY STATE") -->
         <div class="info-grid">
-          <div class="info-cell"><div class="ic-lbl">Resolution</div><div class="ic-val amber" id="ic-res">--</div></div>
-          <div class="info-cell"><div class="ic-lbl">FPS</div><div class="ic-val amber" id="ic-fps">--</div></div>
-          <div class="info-cell"><div class="ic-lbl">Aspect</div><div class="ic-val dim" id="ic-ratio">2.39:1</div></div>
+          <div class="info-cell"><div class="ic-lbl">FPS</div><div class="ic-val amber" id="ic-fps">0</div></div>
           <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val dim" id="ic-source">NONE</div></div>
-          <div class="ic-credit">CREATED BY STATE</div>
+          <div class="info-cell"><div class="ic-lbl">Resolution</div><div class="ic-val dim" id="ic-res">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Aspect</div><div class="ic-val amber" id="ic-ratio">2.39:1</div></div>
+          <div class="info-cell" style="grid-column:1/-1"><div class="ic-lbl">Duration</div><div class="ic-val dim" id="ic-dur">--</div></div>
+          <div class="ic-credit">ANAMORPHIC — by STATE</div>
         </div>
       </div>
     </div>
@@ -1197,6 +1222,8 @@ video { display:none; }
 
   </div><!-- /panel -->
 </div><!-- /main -->
+
+<div id="bottombar"></div><!-- SYNTECH-UNIFORM: BOKEH's (empty, hidden by the shared sheet) — structural parity only -->
 
 <video id="vid" loop playsinline muted></video>
 
@@ -1244,7 +1271,10 @@ function _tickMarkHue(ts){
   document.documentElement.style.setProperty('--line-pos',linePos+'%');
   requestAnimationFrame(_tickMarkHue);
 }
-requestAnimationFrame(_tickMarkHue);
+/* SYNTECH-UNIFORM (operator request 2026-10-11): loop no longer started — every
+   .sec-mark/.sec-title now runs BOKEH's CSS iri-logo animation, start-synced by
+   ../shared/syn-chrome.js, and the three variables it wrote are neutralised in
+   <style id="syntech-uniform">. Was: requestAnimationFrame(_tickMarkHue); */
 
 /* ═══════════════════════════════════════════════════════
    ORIGINAL JS — UNCHANGED
@@ -2382,16 +2412,22 @@ function resizeCanvasToVideo(forceFull=false){
 let t0=Date.now();
 let fc=0,fps=0,lastFpsT=performance.now();
 let lastValidAR=1.778; // cached AR, updated whenever source provides real dimensions
+/* SYNTECH-UNIFORM (operator request 2026-10-11): BOKEH's top-bar #timecode,
+   HH:MM:SS:FF of the video time (fmtTC copied from BOKEH), 00:00:00:00 when no
+   video plays (none / webcam / camera / image — the Info "Input" cell says which).
+   The clip duration of the old "mm:ss / mm:ss" moved to Info → #ic-dur.
+   Writes only on change; now called every frame (was every 6th). */
 function updateTbTime(){
-  const tb=document.getElementById('tb-time');
+  const tb=document.getElementById('timecode');
   if(!tb)return;
-  if(srcMode==='video'&&vid.duration){
-    const fmt=s=>{s=Math.max(0,Math.floor(s));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');};
-    tb.textContent=fmt(vid.currentTime)+' / '+fmt(vid.duration);
-  }else if(srcMode==='webcam'){tb.textContent='◉ LIVE';}
-  else if(srcMode==='camera'){tb.textContent='◉ CAM';}
-  else if(srcMode==='image'){tb.textContent='◉ IMG';}
-  else{tb.textContent='--:--';}
+  const fmt=s=>{s=Math.max(0,Math.floor(s));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');};
+  const fmtTC=s=>[Math.floor(s/3600),Math.floor((s%3600)/60),Math.floor(s%60),Math.floor((s%1)*30)].map(n=>String(n).padStart(2,'0')).join(':');
+  const isVid=srcMode==='video';
+  const tc=isVid?fmtTC(Math.max(0,vid.currentTime||0)):'00:00:00:00';
+  if(tb.textContent!==tc)tb.textContent=tc;
+  const du=document.getElementById('ic-dur');
+  const dur=(isVid&&vid.duration&&isFinite(vid.duration))?fmt(vid.duration):'--';
+  if(du&&du.textContent!==dur)du.textContent=dur;
 }
 function render(){
   if(tex)uploadFrame();
@@ -2404,7 +2440,7 @@ function render(){
   const nowFps=performance.now();
   if(nowFps-lastFpsT>700){
     fps=Math.round(fc/((nowFps-lastFpsT)/1000));fc=0;lastFpsT=nowFps;
-    const fpsTxt=(srcMode==='none')?'--':String(fps);
+    const fpsTxt=(srcMode==='none')?'0':String(fps); // SYNTECH-UNIFORM: Bokeh shows FPS 0 with no source
     const fv=document.getElementById('fps-val');if(fv)fv.textContent=fpsTxt;
     const icf=document.getElementById('ic-fps');if(icf)icf.textContent=fpsTxt;
   }
@@ -2415,7 +2451,7 @@ function render(){
      video l'impatto è meno visibile, ma su una webcam/camera in tempo
      reale ogni blocco è un fotogramma perso → effetto "a scatti". Per questo
      sono stati spostati su due setInterval indipendenti, vedi sotto render().*/
-  if(frameN%6===0)updateTbTime();
+  updateTbTime(); /* SYNTECH-UNIFORM: every frame like BOKEH's timecode (was if(frameN%6===0)) */
 
   /* ── BOKEH pre-pass ──────────────────────────────────────────
      Runs only while the Bokeh slider is above 0mm. Feeds frames to
@@ -2550,7 +2586,7 @@ function loadFile(file){
   srcMode='video';
   updateSourceUI('src-video');
   cv.classList.remove('on');
-  document.getElementById('drop-hint').classList.remove('hidden');
+  document.getElementById('drop-overlay').classList.remove('hidden'); /* SYNTECH-UNIFORM: was #drop-hint */
   updateSrcInfo(file.name,'Loading…');
   vid.onerror=()=>{updateSrcInfo(null,'Error');toast('⚠ Error loading video',3000);};
   vid.muted=true;vid.playsInline=true;
@@ -2561,7 +2597,7 @@ function loadFile(file){
     loaded=true;
     resizeCanvasToVideo();if(!tex)initTex();
     cv.classList.add('on');
-    document.getElementById('drop-hint').classList.add('hidden');
+    document.getElementById('drop-overlay').classList.add('hidden'); /* SYNTECH-UNIFORM: was #drop-hint */
     updateSrcInfo(file.name,vid.videoWidth+'×'+vid.videoHeight);
     const p=vid.play();if(p&&typeof p.catch==='function')p.catch(()=>{});
   };
@@ -2580,7 +2616,7 @@ function loadImageFile(file){
     updateSourceUI('src-image');
     resizeCanvasToVideo();if(!tex)initTex();
     cv.classList.add('on');
-    document.getElementById('drop-hint').classList.add('hidden');
+    document.getElementById('drop-overlay').classList.add('hidden'); /* SYNTECH-UNIFORM: was #drop-hint */
     updateSrcInfo(file.name,img.naturalWidth+'×'+img.naturalHeight);
   };
   img.src=url;
@@ -2592,7 +2628,7 @@ async function toggleWebcam(){
     updateSourceUI('');
     cv.classList.remove('on');
     cv.classList.remove('mirrored');
-    document.getElementById('drop-hint').classList.remove('hidden');
+    document.getElementById('drop-overlay').classList.remove('hidden'); /* SYNTECH-UNIFORM: was #drop-hint */
     toast('◯ Webcam off',1800);
     return;
   }
@@ -2615,7 +2651,7 @@ async function toggleWebcam(){
     vid.onloadeddata=()=>{
       resizeCanvasToVideo();if(!tex)initTex();
       cv.classList.add('on');
-      document.getElementById('drop-hint').classList.add('hidden');
+      document.getElementById('drop-overlay').classList.add('hidden'); /* SYNTECH-UNIFORM: was #drop-hint */
       updateSourceUI('src-webcam');
       cv.classList.add('mirrored');
       updateSrcInfo('Webcam',vid.videoWidth+'×'+vid.videoHeight);
@@ -2627,7 +2663,7 @@ async function toggleWebcam(){
   }
 }
 
-const prv=document.getElementById('preview');
+const prv=document.getElementById('canvas-area'); /* SYNTECH-UNIFORM: was #preview (same element, BOKEH's id) */
 prv.addEventListener('dragover',e=>{e.preventDefault();prv.style.outline='1px solid rgba(232,192,0,.5)';});
 prv.addEventListener('dragleave',()=>{prv.style.outline='';});
 prv.addEventListener('drop',e=>{
@@ -2907,7 +2943,7 @@ async function toggleNikonCamera(){
     stopAllSources();srcMode='none';
     updateSourceUI('');
     cv.classList.remove('on');
-    document.getElementById('drop-hint').classList.remove('hidden');
+    document.getElementById('drop-overlay').classList.remove('hidden'); /* SYNTECH-UNIFORM: was #drop-hint */
     toast('◯ Camera disconnected');
     return;
   }
@@ -3001,7 +3037,7 @@ async function toggleNikonCamera(){
       toast(`◉ ${devLabel} — ${w}×${h}`);
       resizeCanvasToVideo();if(!tex)initTex();
       cv.classList.add('on');
-      document.getElementById('drop-hint').classList.add('hidden');
+      document.getElementById('drop-overlay').classList.add('hidden'); /* SYNTECH-UNIFORM: was #drop-hint */
       updateSourceUI('src-camera');
       _camSetStatus(true,w+'×'+h);
       _camInitImageCapture(stream);
@@ -3157,6 +3193,31 @@ document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
 document.querySelector('.chip').classList.add('on');
 
 </script>
+<!-- SYNTECH-UNIFORM-START: BOKEH chrome — section line/title sync + 16:9 video frame (operator request 2026-10-11) -->
+<script src="../shared/syn-chrome.js"></script>
+<script>
+/* #canvas-wrap is BOKEH's video frame: fitCanvas() logic (16:9 box = canvas area
+   − 24px, centred by #canvas-area's flex; recomputed on resize/fullscreenchange).
+   Unlike BOKEH (fixed 1920×1080 canvas) ANAMORPHIC's canvas follows the source /
+   desqueeze, so it is NOT sized here: CSS contains it in the box (#cv rule in
+   <style id="syntech-uniform">). Standalone-safe, no globals. */
+(function(){
+  'use strict';
+  function synFitFrame(){
+    var area=document.getElementById('canvas-area'),wrap=document.getElementById('canvas-wrap');
+    if(!area||!wrap)return;
+    var aw=area.clientWidth-24,ah=area.clientHeight-24;
+    if(aw<=0||ah<=0)return; /* not laid out (hidden iframe): keep the last size */
+    var asp=16/9,w,h;
+    if(aw/ah>asp){h=ah;w=Math.round(h*asp);}else{w=aw;h=Math.round(w/asp);}
+    wrap.style.width=w+'px';wrap.style.height=h+'px';
+  }
+  window.addEventListener('resize',synFitFrame);
+  document.addEventListener('fullscreenchange',function(){setTimeout(synFitFrame,100);});
+  synFitFrame();
+})();
+</script>
+<!-- SYNTECH-UNIFORM-END -->
 <!-- SYNTECH-BRIDGE-START (shell integration; standalone-safe) -->
 <script>
 (function(){
