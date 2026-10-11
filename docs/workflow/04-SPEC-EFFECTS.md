@@ -32,7 +32,7 @@ export, and their own hotkeys. Ids below are the `ModuleId`s.
   `sl-distortFalloff`, `sl-distortSqueeze`, `sl-distortSwirl`.
 - **Reactive**: video-driven (no AudioContext found in this build).
 
-## `anamorphic_lab` — Anamorphic Lab  (~155 KB)
+## `anamorphic_lab` — Anamorphic  (~155 KB)
 
 - **Tech**: WebGL shaders + 2D canvases + MediaPipe SelfieSegmentation.
 - **Controls**: full cinema-lens rig — `s-fStop`, `s-bokeh`, `s-bokehMM`,
@@ -56,7 +56,7 @@ export, and their own hotkeys. Ids below are the `ModuleId`s.
 - **Port note**: 2D-canvas logic can render offscreen and upload to the node's
   GL texture per frame; the mask comes from the shared PersonMask service.
 
-## `blob_tracker` — BLOB STATE TRACKER  (~367 KB, the largest)
+## `blob_tracker` — BLOB TRACKER  (~367 KB, the largest)
 
 - **Tech**: **three.js r128** + multiple 2D canvases. Contour tracking,
   optical flow, connection lines/graph visuals over tracked blobs. Hardest

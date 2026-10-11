@@ -1,4 +1,4 @@
-/* Phase 6 static parity — ANAMORPHIC LAB standalone vs SynEngine node.
+/* Phase 6 static parity — ANAMORPHIC standalone vs SynEngine node.
  * Same method as Phase 5: both sides pinned and fed the SAME injected person
  * mask (standalone via its global bkOnSegResults(), engine via the PersonMask
  * tap). The standalone caps its canvas at 1280×720 (resizeCanvasToVideo

@@ -77,3 +77,23 @@ export const DAY_BACKDROPS: Hole[] = Object.values(HOLES.boxes);
 
 /** The bottom-right corner opening — the raw-video reference. Lit whole by day. */
 export const VIDEO_BOX: Hole = HOLES.videoBoxes[0];
+
+/**
+ * GEMINI_FLOOR_Y — where the black of the Gemini opening ENDS at the bottom
+ * (the cage material starts), as a fraction of the viewport height, measured at
+ * the centre column of the API-key card. Across the card's width it ranges
+ * 0.9174..0.9205 (the far right edge curls up into the corner: 0.9091), so the
+ * centre column is the card's own floor. Measured from public/assets/cage.webp,
+ * not nudged by eye. Regenerate with:
+ *   NODE_PATH=/opt/node22/lib/node_modules node tools/frame/measure-gemini-floor.cjs
+ */
+export const GEMINI_FLOOR_Y = 0.9194;
+
+/**
+ * How far the floor lies BELOW the bottom of the Gemini panel's scroll area
+ * (positive) or above it (negative), as a CSS length. The panel box ends at
+ * (y + h) * 100vh - 5px (cageBox inset), and its 1px border sits inside that.
+ * AiDirector's key form uses it to centre the card between the header's violet
+ * line and the floor rather than between the line and the panel's own bottom.
+ */
+export const GEMINI_FLOOR_BELOW_SCROLL = `calc(${((GEMINI_FLOOR_Y - (HOLES.gemini.y + HOLES.gemini.h)) * 100).toFixed(4)}vh + 6px)`;

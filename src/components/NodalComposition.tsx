@@ -33,7 +33,7 @@ export interface EffectMeta {
 export const EFFECT_META: Record<ModuleId, EffectMeta> = {
   blob_tracker: { name: 'BLOB TRACKER', short: 'Vertex displacement', color: '#e0913f' },
   blob_reveal: { name: 'BLOB REVEAL', short: 'Negative-mask reveal', color: '#c65b9c' },
-  anamorphic_lab: { name: 'ANAMORPHIC LAB', short: 'Lens flare stretch', color: '#5bb0c4' },
+  anamorphic_lab: { name: 'ANAMORPHIC', short: 'Lens flare stretch', color: '#5bb0c4' },
   analog: { name: 'ANALOG', short: 'CRT / sync jitter', color: '#6ea8e0' },
   bokeh: { name: 'BOKEH', short: 'Depth-of-field disks', color: '#9b6fd0' },
 };

@@ -20,6 +20,10 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
 - **Center hero**: on launch, the animated brain graph (`VfxCanvas`) — the
   app's "second brain": VFX SYNTECH core firing neural connections to every
   effect. This space is where the video/effect appears while working.
+  Dragging one hub onto another links them into the chain (bright persistent
+  links are drawn); the graph shows **no chain overlay/HUD** (no "CHAIN … Open
+  Lab / Clear" bar — operator request 2026-10-11). Open the Lab from the left
+  bar; clear/edit the chain in the node graph panel.
 - **Below the hero**: the node graph panel (`NodalComposition`) — this IS the
   Lab's wiring surface — plus the Gemini 3.8 panel (`AiDirector`, §9) beside
   it.
@@ -146,7 +150,7 @@ Rules:
   one on its **right (out)**. INPUT has only a **right** port. OUTPUT has only
   a **left** port.
 - **Add Node** (top-left of the panel) opens the effect list in **alphabetical
-  order**: ANALOG, ANAMORPHIC LAB, BLOB REVEAL, BLOB TRACKER, BOKEH. Selecting
+  order**: ANALOG, ANAMORPHIC, BLOB REVEAL, BLOB TRACKER, BOKEH. Selecting
   one inserts its node between INPUT and OUTPUT.
 - **Connecting**: press on a port, **drag** a wire to another node's port,
   release on the port → connected. (Current click-to-toggle ports must be

@@ -97,7 +97,7 @@ bokeh — BOKEH STATE · cinematic depth of field
   Needs: ONE clear person in frame, mid shot or close-up. With NO person in frame the whole image counts as background: the entire frame melts into bokeh and the background warps/FX cover everything — it is NOT invisible, it is a blurred mess with no subject. It passes the frame through unchanged only until the person mask has loaded (or when the mask could not load — see "person mask" in the RENDER line). Weak on wide shots where the person is tiny.
   Suits: the "shot on a cinema lens" upgrade for phone footage; an artist performing to camera at night with lights behind; car interiors with the city passing; clubs; isolating the artist from a busy background; a background that moshes or melts while the face stays intact.
 
-anamorphic_lab — Anamorphic Lab · cinema lens + film grade
+anamorphic_lab — Anamorphic · cinema lens + film grade
   Look: a full Panavision-style rig in one pass. Anamorphic squeeze and oval barrel, letterbox to 2.39 (any ratio 1.78–2.8), horizontal streak bloom on highlights, an auto-tracked anamorphic FLARE on the brightest hotspot (gold or cold blue, length and thickness), film HALATION (red-orange glow around highlights), chromatic aberration toward the edges, exposure, warm/cool split-tone, black lift, S-curve contrast, filmic highlight rolloff, saturation, grain, elliptical vignette. Optional subject-aware background blur by focal length and f-stop, and a "ghost" double-exposure mask flip.
   Music: nothing built in — routes make the light breathe (exposure, halation, flare, streak bloom on the bass or the beat).
   Needs: nothing for the grade and the lens; the flare needs a real light source in frame; the background blur needs a person (only when it is switched on).
@@ -111,7 +111,7 @@ blob_reveal — BLOB REVEAL · rotoscope engine
   Suits: intros, the drop into a hook, a dark verse, performance in front of lights/strobes/LED walls, club and concert footage, a stylised rotoscope section.
   Rebuilds the frame from the RAW source: it must be the FIRST effect of a chain.
 
-blob_tracker — BLOB STATE TRACKER · surveillance / data HUD
+blob_tracker — BLOB TRACKER · surveillance / data HUD
   Look: computer-vision overlay on the bright blobs of the frame — markers (squares, rectangles, circles or corner brackets) with ID and area labels, neon graph lines connecting nearby blobs, organic contours (edge-based or following the person), optical-flow arrows with fading trails, Matrix-style number/letter fill, FX inside the blobs or on the background (invert, thermal camera, CCTV security cam with timestamp and CAM ID, liquid row shift, datamosh blocks, RGB-split glitch), a water-ripple simulation over the whole frame, a floating 3D eight-panel "AI analysis" montage, chaos points.
   Music: reacts out of the box — the connection lines pump their width on the bass and their glow blooms with the loudness (built-in carrier). The rest is pre-wired but only shows once that FX is switched ON: the water ripple (rippleOn, off by default) hits on every beat, datamosh (fxData) rides the hi-hats, the RGB glitch (fxGlitch) spikes on the beat, the 3D panels (panelsEnabled) swell on the bass and tumble with the video's motion. These factory routes run 0.4–0.6 deep on purpose.
   Needs: distinct light points or strong contrast (night city, car lights, crowds, stage lights, phone screens on faces, dancers under light).

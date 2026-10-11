@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BLOB STATE TRACKER</title>
+<title>BLOB TRACKER</title><!-- SYNTECH: name, operator request 2026-10-11 -->
 <script src="../vendor/three.min.js"></script><!-- SYNTECH Phase-10: vendored three.js r128 (offline) — was cdnjs -->
 <style>
 @import url('../vendor/fonts/effects.css'); /* SYNTECH Phase-10: vendored fonts (offline) — was Google Fonts CDN */
@@ -1242,7 +1242,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
       <div id="cam-pip"><video id="cam-vid" autoplay muted playsinline></video><div id="cam-pip-lbl">WEBCAM LIVE</div></div>
       <div id="drop-ov">
         <div class="drop-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
-        <div class="drop-title">BLOB STATE TRACKER</div>
+        <div class="drop-title">BLOB TRACKER</div><!-- SYNTECH: name, operator request 2026-10-11 -->
         <div class="drop-sub">VIDEO — IMAGE — WEBCAM — CAMERA</div>
         <button class="drop-browse" id="browse-btn">SOURCE</button>
       </div>
@@ -1253,7 +1253,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
   <!-- ──────────────────────────────── PANEL ──────────────────────────────── -->
   <div id="panel">
     <div id="pro-takeover">
-      <div id="pro-takeover-header">◈ BLOB STATE — TERMINAL OUTPUT</div>
+      <div id="pro-takeover-header">◈ BLOB TRACKER — TERMINAL OUTPUT</div><!-- SYNTECH: name, operator request 2026-10-11 -->
       <div id="pro-takeover-body"><span id="pro-takeover-cursor"></span></div>
     </div>
 
@@ -1803,7 +1803,7 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
 
 <!-- BOTTOM BAR -->
 <div id="bottombar">
-  <span class="bb-s">BLOB STATE TRACKER</span>
+  <span class="bb-s">BLOB TRACKER</span><!-- SYNTECH: name, operator request 2026-10-11 -->
   <span class="bb-s bb-hi" id="bb-mode">TRACKER</span>
   <span class="bb-s" id="bb-src">NO INPUT</span>
   <span class="bb-s" style="margin-left:auto" id="bb-r">--:--</span>
@@ -6285,7 +6285,7 @@ function _proType(text,speed,onDone){
 function _proRunBoot(){
   const body=_proBody(),cur=_proCur();
   if(body){body.innerHTML='';body.appendChild(cur);}
-  _proInstant('♦ BLOB STATE TRACKER  PRO MODE','#c8a000');
+  _proInstant('♦ BLOB TRACKER  PRO MODE','#c8a000'); /* SYNTECH: name, operator request 2026-10-11 */
   const now=new Date(Date.now()+2*3600000);
   _proInstant(now.toISOString().replace('T',' ').slice(0,19),'#335533');
   _proInstant('');

@@ -29,6 +29,17 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-11 (pomeriggio) — ritocchi chiesti dall'operatore, FATTI:**
+nomi BLOB TRACKER / ANAMORPHIC ovunque si vedono (ModuleId invariati);
+riquadro API key di Gemini centrato tra la linea viola e la cornice
+(`GEMINI_FLOOR_Y` in `src/cage/cage.ts`, rigenerabile con
+`tools/frame/measure-gemini-floor.cjs` — da rilanciare se cambia `cage.webp`);
+tolto l'avviso "CHAIN … Open Lab / Clear" dal grafo della Home. Da fargli
+guardare sull'app vera. Aperto (LOW): con l'errore lungo della chiave in una
+finestra piccola il riquadro non ci sta e resta qualche px più in alto
+(proposta del revisore: spacer `flex: 0 1 max(0px, GEMINI_FLOOR_BELOW_SCROLL)`
+al posto del padding superiore extra).
+
 **SESSIONE 2026-10-11 (Lab nuovo + nomi degli effetti).** Da far provare
 all'operatore sull'app vera:
 - **Lab**: mettere 2–3 nodi nella composizione (es. blob tracker, analog,
@@ -151,6 +162,30 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-10-11 (pomeriggio) — Nomi, riquadro Gemini centrato, via l'avviso CHAIN
+
+Richiesta: *"blob state tracker si chiama solo blob tracker, anamorphic lab si
+chiama solo anamorphic… il riquadro della api key deve essere centrato nello
+spazio nero dalla linea viola fino alla cornice… se clicco su lab e lo rispengo
+non mi deve uscire l'avviso CHAIN … Open Lab / Clear"*.
+
+- **Sonnet** — nomi visibili: standalone blob_tracker (title, drop-title, bottom
+  bar, terminal/pro mode) e anamorphic_lab (title, logo, drop-title) con marker
+  `SYNTECH:`; App, NodalComposition, VfxCanvas, nodo anamorphic_lab, ai-roles,
+  verify-phase2, spec 03/04/05. ModuleId, chiavi localStorage, testid invariati.
+  Rimosso il `graph-chain-hud` da VfxCanvas (+ props `onChainOpen/onChainClear`,
+  `clearChain` in App): il collegamento tra hub e le linee della catena restano.
+- **Sonnet** — `tools/frame/measure-gemini-floor.cjs` misura sul `cage.webp`
+  dove finisce il nero sotto il riquadro (colonna centrale: 0.9194 del viewport;
+  nota: il pavimento è SOTTO il box del pannello, non sopra) → `GEMINI_FLOOR_Y`
+  + `GEMINI_FLOOR_BELOW_SCROLL` in `src/cage/cage.ts`; KeyForm in
+  `AiDirector.tsx` centrato con `my-auto` e padding simmetrico.
+- **Opus (revisione) — PASS.** lint pulito, build ok, verify-ui-cage 18/18,
+  verify-phase2 27/27, verify-gemini 11/11 (274). Spazio sopra/sotto il riquadro
+  (notte): 55.1/54.6 a 1440×900, 35.7/35.6 a 1366×768, 81.5/81.5 a 1920×1080;
+  di giorno ~1px più alto per il bordo sfumato della cornice. Nessun avviso
+  CHAIN su Home, con Lab acceso o dopo averlo spento; nessun pageerror.
 
 ### 2026-10-11 — Il Lab rifatto: effetti impilati come dentro un effetto; ogni effetto col suo nome
 

@@ -14,9 +14,6 @@ interface VfxCanvasProps {
   chain?: ModuleId[];
   /** Drag released from one hub onto another: link them into the chain */
   onChainLink?: (from: ModuleId, to: ModuleId) => void;
-  /** Open the Lab with the current chain */
-  onChainOpen?: () => void;
-  onChainClear?: () => void;
 }
 
 interface GraphNode {
@@ -55,8 +52,6 @@ export default function VfxCanvas({
   isDayMode = false,
   chain,
   onChainLink,
-  onChainOpen,
-  onChainClear,
 }: VfxCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
@@ -278,7 +273,7 @@ export default function VfxCanvas({
         { glowHue: '#7c3aed', id: 'analog', label: 'ANALOG', angle: Math.PI / 4 + 0.1, dist: 130 * scale, color: '#ffffff', glow: ACCENT },
         { glowHue: '#a78bfa', id: 'blob_reveal', label: 'BLOB REVEAL', angle: Math.PI - 0.5, dist: 140 * scale, color: '#ffffff', glow: ACCENT },
         { glowHue: '#6d28d9', id: 'bokeh', label: 'BOKEH', angle: -Math.PI / 2 - 0.3, dist: 125 * scale, color: '#ffffff', glow: ACCENT },
-        { glowHue: '#c4b5fd', id: 'anamorphic_lab', label: 'ANAMORPHIC LAB', angle: Math.PI + 0.4, dist: 110 * scale, color: '#ffffff', glow: ACCENT },
+        { glowHue: '#c4b5fd', id: 'anamorphic_lab', label: 'ANAMORPHIC', angle: Math.PI + 0.4, dist: 110 * scale, color: '#ffffff', glow: ACCENT },
       ];
 
       // Add central master core node representing the root index.md / Obsidian Vault main core
@@ -1058,35 +1053,6 @@ export default function VfxCanvas({
       onMouseUp={handleMouseUp}
     >
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" />
-
-      {/* Signal chain HUD: linking hub nodes builds the chain (phase 5) */}
-      {chain && chain.length >= 2 && (
-        <div
-          data-testid="graph-chain-hud"
-          className={`absolute left-1/2 -translate-x-1/2 bottom-3 flex items-center gap-3 px-3 py-2 rounded border font-mono text-[9px] uppercase tracking-widest ${
-            isDayMode ? 'bg-white/90 border-violet-500/50 text-neutral-700' : 'bg-black/85 border-violet-500/40 text-neutral-300'
-          }`}
-        >
-          <span className="text-violet-500 font-extrabold">CHAIN</span>
-          <span data-testid="graph-chain-label">{chain.map((id) => id.replace(/_/g, ' ').toUpperCase()).join(' → ')}</span>
-          <button
-            type="button"
-            data-testid="graph-chain-open"
-            onClick={onChainOpen}
-            className="px-2 py-1 rounded bg-violet-500 text-black font-bold hover:bg-violet-400 cursor-pointer"
-          >
-            Open Lab
-          </button>
-          <button
-            type="button"
-            data-testid="graph-chain-clear"
-            onClick={onChainClear}
-            className="px-2 py-1 rounded border border-violet-500/40 text-violet-500 hover:bg-violet-500/10 cursor-pointer"
-          >
-            Clear
-          </button>
-        </div>
-      )}
 
       {micPermissionDenied && signalSource === 'MIC_AUDIO_03' && (
         <div className="absolute inset-x-4 bottom-14 flex items-center gap-2 px-3 py-2 bg-red-950/80 border border-red-900/40 text-red-200 rounded font-mono text-xs">

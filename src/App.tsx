@@ -375,7 +375,6 @@ export default function App() {
     if (from === to) return;
     setChainTo([...graphChain.filter((x) => x !== from && x !== to), from, to]);
   };
-  const clearChain = () => setComp((prev) => ({ ...prev, wires: wiresFromChain([]) }));
 
   // ── SHARED SOURCE (a video with its audio, or a still photo): the INPUT node ──
   // kind/mime/size/lastModified come straight from the picked File: the Gemini
@@ -657,7 +656,7 @@ export default function App() {
     },
     {
       id: 'anamorphic_lab',
-      name: 'ANAMORPHIC LAB',
+      name: 'ANAMORPHIC',
       description: 'Horizontal lens flare stretching and ultra-wide aspect distortion generator.',
       status: 'STANDBY',
       parameters: {
@@ -1102,8 +1101,6 @@ export default function App() {
                             isDayMode={isDayMode}
                             isStreaming={true}
                             onChainLink={(from, to) => handleChainLink(from, to)}
-                            onChainOpen={openLab}
-                            onChainClear={clearChain}
                             chain={graphChain}
                           />
                         )}

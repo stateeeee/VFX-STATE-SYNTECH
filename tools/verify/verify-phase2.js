@@ -77,7 +77,7 @@ const readState = (page) =>
   /* ── 1. Add Node menu strictly alphabetical ── */
   await page.click('[data-testid="nodal-add"]');
   const menuNames = await page.$$eval('[data-testid="nodal-add-menu"] button', (els) => els.map((e) => e.textContent.trim()));
-  step('Add Node menu alphabetical', JSON.stringify(menuNames) === JSON.stringify(['ANALOG', 'ANAMORPHIC LAB', 'BLOB REVEAL', 'BLOB TRACKER', 'BOKEH']), menuNames.join(', '));
+  step('Add Node menu alphabetical', JSON.stringify(menuNames) === JSON.stringify(['ANALOG', 'ANAMORPHIC', 'BLOB REVEAL', 'BLOB TRACKER', 'BOKEH']), menuNames.join(', '));
 
   /* ── 2. add analog + blob_tracker → auto-wired IN→analog→blob_tracker→OUT ── */
   await page.click('[data-testid="nodal-add-analog"]');

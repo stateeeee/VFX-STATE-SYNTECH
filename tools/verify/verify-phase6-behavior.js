@@ -1,4 +1,4 @@
-/* Phase 6 behavior suite — ANAMORPHIC LAB checks a paused-frame pixel
+/* Phase 6 behavior suite — ANAMORPHIC checks a paused-frame pixel
  * comparison cannot cover:
  *  A. real MediaPipe path through the shared PersonMask
  *  B. playing-video long-exposure parity on boot defaults

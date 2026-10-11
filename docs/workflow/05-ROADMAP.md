@@ -56,7 +56,7 @@ from the bridge.
       (INPUT right-only, OUTPUT left-only, effects both).
 - [ ] Ghosting: node not connected on both sides → ~50% opacity + excluded
       from chain.
-- [ ] Add Node menu strictly alphabetical: ANALOG, ANAMORPHIC LAB, BLOB
+- [ ] Add Node menu strictly alphabetical: ANALOG, ANAMORPHIC, BLOB
       REVEAL, BLOB TRACKER, BOKEH.
 - [ ] Chain order derives from wiring; ChainLab rack reflects the same state
       both ways (existing shared composition state).

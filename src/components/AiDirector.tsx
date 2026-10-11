@@ -50,6 +50,7 @@ import {
   type UploadMeta,
 } from '../ai/client';
 import { elementToJpeg, sampleVideoFrames } from '../ai/capture';
+import { GEMINI_FLOOR_BELOW_SCROLL } from '../cage/cage';
 
 /* ═══════════════════════════════════════════════════════════════
    GEMINI 3.8 — the panel (src/ai/contract.ts is the wire format).
@@ -862,9 +863,19 @@ function KeyForm({ k, status, error, errorMessage, model, onSubmitKey }: { k: In
   // a long explanation gets its own full-width line, still above the field
   const errLong = !!errText && errText.length > 48;
   return (
-    <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+    // The card is centred between the header's violet line and the cage's floor
+    // (GEMINI_FLOOR_Y), not the panel's own box: the extra padding goes on the
+    // side that is short of the floor. my-auto (not justify-center) so a window
+    // too small for the card scrolls instead of clipping its top.
+    <div
+      className="flex-1 overflow-y-auto flex flex-col px-4 custom-scrollbar"
+      style={{
+        paddingTop: `calc(1rem + max(0px, ${GEMINI_FLOOR_BELOW_SCROLL}))`,
+        paddingBottom: `calc(1rem + max(0px, -1 * ${GEMINI_FLOOR_BELOW_SCROLL}))`,
+      }}
+    >
       <form
-        className={k.card}
+        className={`${k.card} my-auto shrink-0`}
         onSubmit={(e) => {
           e.preventDefault();
           if (checking) return;

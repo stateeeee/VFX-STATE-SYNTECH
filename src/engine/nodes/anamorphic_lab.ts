@@ -565,7 +565,7 @@ interface Progs {
 
 export class AnamorphicLabNode implements EngineNode {
   readonly id = 'anamorphic_lab';
-  readonly name = 'Anamorphic Lab';
+  readonly name = 'Anamorphic';
   enabled = true;
   readonly params = PARAMS;
 
