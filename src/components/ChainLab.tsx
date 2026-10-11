@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { ArrowLeft, ArrowDown, ArrowUp, AudioLines, Camera, Diamond, Film, Link2, Mic, Music, Pause, Play as PlayIcon, Power, Repeat, Save, Trash2 } from 'lucide-react';
+import { Pause, Play as PlayIcon, Repeat, Trash2, Upload } from 'lucide-react';
 import { SynEngine, EngineNode, SourceKind } from '../engine/SynEngine';
 import { NODE_FACTORY } from '../engine/nodes';
 import { AudioEngine, AudioMode, FileTransport } from '../engine/AudioEngine';
@@ -14,10 +14,20 @@ import {
   PARAM_FLOORS, PROTECTED_KEYS,
 } from '../ai/contract';
 import { elementToJpeg, recordClip } from '../ai/capture';
+// the opened-effect look (topbar, viewport brackets, metallic sections), scoped under .syn-fxlab
+import './chainLab.css';
 
 export interface ChainLabProps {
   isDayMode: boolean;
-  onBack: () => void;
+  /**
+   * The shell keeps the Lab mounted once opened and only hides it (Home, an
+   * opened effect, the Lab toggle): false = hidden. While hidden the render
+   * loop is paused (unless a Master export or a Gemini capture needs it) and
+   * the UI mirror stops; params, routes, source and audio choice all stay,
+   * the media pause with the loop (the webcam and the mic switch off — see
+   * parkMedia).
+   */
+  visible?: boolean;
   /**
    * The wired chain owned by the shell (node graph wiring order). The rack
    * mirrors it live: listed effects run in this order, the rest sit
@@ -26,8 +36,11 @@ export interface ChainLabProps {
   chain?: ModuleId[];
   /** rack toggles / reorders lift the new enabled order back to the shell */
   onChainChange?: (chain: ModuleId[]) => void;
-  /** name of a saved chain preset to load on mount (Projects nav) */
-  initialPreset?: string;
+  /**
+   * a saved chain preset to load (Projects nav): applied on mount, and again
+   * whenever `seq` changes on a Lab that is already mounted
+   */
+  presetRequest?: { name: string; seq: number } | null;
   /**
    * Source shared with the dashboard's Nodal Composition — a video or a
    * still photo (kind defaults to video). When set, the lab loads this
@@ -122,7 +135,7 @@ const findParam = (engine: SynEngine, key: string): { node: EngineNode; p: Param
  * use (PLAN §4.4) — the AI is one more hand on the rack, not a side door.
  */
 const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
-  { isDayMode, onBack, chain: chainProp, onChainChange, initialPreset, initialSource, onSourcePicked },
+  { isDayMode, visible = true, chain: chainProp, onChainChange, presetRequest, initialSource, onSourcePicked },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -164,6 +177,101 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   // bump to re-read node state after any mutation (params live in the nodes)
   const [, setRev] = useState(0);
   const bump = () => setRev((r) => r + 1);
+  // what the INPUT pill shows (sourceNameRef is what the Gemini handle reads)
+  const [sourceName, setSourceName] = useState('');
+  const nameSource = (name: string) => {
+    sourceNameRef.current = name;
+    setSourceName(name);
+  };
+  const [presetOpen, setPresetOpen] = useState(false);
+  // open / closed per effect (node id) and per sub-section ('id::group'):
+  // everything starts closed; kept across reorders, forgotten when the effect
+  // leaves the chain (re-added, it comes back closed — see the chainKey effect)
+  const [openFx, setOpenFx] = useState<Record<string, boolean>>({});
+  const [openGrp, setOpenGrp] = useState<Record<string, boolean>>({});
+
+  /* ── render loop vs visibility ──
+     Hidden (Home / an opened effect / Lab toggled off) the loop is paused:
+     nothing on screen needs it. Two things keep it running anyway: a Master
+     export drives renderFrame itself (the loop must stay OFF then, it is the
+     export's to restart), and a Gemini capture still in flight (an Agent run
+     started in the Lab, then Home) needs live frames and live signals —
+     `holdRef` counts those. Every change of any of the three goes through
+     syncLoop. engine.start() is idempotent.
+     The media follow the loop (parkMedia / unparkMedia): when it pauses, the
+     source video and a playing Track are paused — and remembered, so only
+     those resume when it runs again (Clip audio is the video's own sound: it
+     goes silent and comes back with it, its mode untouched); the webcam and
+     the mic are switched off for good (camera light / mic off while nobody
+     looks — the operator presses them again). A photo needs nothing. Parking
+     waits for the export / the last hold like the loop does. */
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  const holdRef = useRef(0);
+  const parkedVideoRef = useRef<HTMLVideoElement | null>(null);
+  const parkedTrackRef = useRef(false);
+  const parkMedia = () => {
+    const engine = engineRef.current;
+    const audio = audioRef.current!;
+    if (!engine) return;
+    if (engine.kind === 'webcam') {
+      engine.stopSource(); // same as the Webcam button's stop
+      setSourceKind('none');
+    }
+    if (audio.mode === 'mic') {
+      audio.stop(); // same as the Mic button's stop
+      setAudioOn(false);
+      setAudioMode('off');
+    }
+    const v = engine.kind === 'video' ? engine.video : null;
+    if (v && !v.paused) {
+      v.pause();
+      parkedVideoRef.current = v;
+    }
+    if (audio.pauseFile()) parkedTrackRef.current = true;
+  };
+  const unparkMedia = () => {
+    const engine = engineRef.current;
+    const v = parkedVideoRef.current;
+    parkedVideoRef.current = null;
+    // only the element that was paused, and only if it is still the source
+    if (v && engine && engine.video === v && v.paused) void v.play().catch(() => {});
+    if (parkedTrackRef.current) {
+      parkedTrackRef.current = false;
+      audioRef.current!.resumeFile();
+    }
+  };
+  const syncLoop = () => {
+    const engine = engineRef.current;
+    if (!engine || exportingRef.current) return;
+    if (visibleRef.current || holdRef.current > 0) {
+      engine.start();
+      unparkMedia();
+    } else {
+      engine.stop();
+      parkMedia();
+    }
+  };
+  /** run a capture with the loop guaranteed on (released when it settles) */
+  const withLiveLoop = <T,>(run: () => Promise<T>): Promise<T> => {
+    holdRef.current++;
+    syncLoop();
+    return run().finally(() => {
+      holdRef.current = Math.max(0, holdRef.current - 1);
+      syncLoop();
+    });
+  };
+  // dev-only tap for the parity/verification protocol (06-VERIFICATION):
+  // lets headless runs pin the resolution and drive the source deterministically;
+  // `lab` is the same LabHandle the Gemini panel holds. Re-published each time
+  // the Lab is shown again (the suites reset it to spot "the Lab is up").
+  const publishDevTap = () => {
+    const engine = engineRef.current;
+    if (!engine || !(import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) return;
+    (window as unknown as Record<string, unknown>).__SYN = {
+      engine, audio: audioRef.current, bus: busRef.current, mask: maskRef.current, lab: labRef.current,
+    };
+  };
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -186,8 +294,10 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     busRef.current!.snapshot(engine.chain);
     // opened from the Projects nav: restore the requested saved chain and
     // lift its enabled order back up so the node-graph wiring follows
-    if (initialPreset) {
-      const p = readPresets().find((x) => x.name === initialPreset);
+    // (a later request on this mounted Lab is the presetRequest effect's)
+    if (presetRequest) {
+      presetSeqRef.current = presetRequest.seq;
+      const p = readPresets().find((x) => x.name === presetRequest.name);
       if (p) {
         applyPresetTo(engine, p);
         onChainChange?.(engine.chain.filter((n) => n.enabled).map((n) => n.id as ModuleId));
@@ -227,16 +337,9 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     };
     engine.onFps = setFps;
     engine.onResScale = (s) => setResPct(Math.round(s * 100));
-    engine.start();
     engineRef.current = engine;
-    // dev-only tap for the parity/verification protocol (06-VERIFICATION):
-    // lets headless runs pin the resolution and drive the source deterministically;
-    // `lab` is the same LabHandle the Gemini panel holds
-    if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
-      (window as unknown as Record<string, unknown>).__SYN = {
-        engine, audio: audioRef.current, bus: busRef.current, mask: maskRef.current, lab: labRef.current,
-      };
-    }
+    syncLoop(); // a Lab mounted hidden does not render until shown
+    publishDevTap();
     return () => {
       audioRef.current?.stop();
       maskRef.current?.dispose();
@@ -253,6 +356,26 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     };
   }, []);
 
+  // shown / hidden by the shell: pause or resume the loop; the dev tap is
+  // published again on every show
+  useEffect(() => {
+    syncLoop();
+    if (visible) publishDevTap();
+    else setPresetOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  // Projects nav on a Lab that is already mounted: load the requested preset
+  // (the seq changes on every request, so the same name can be asked twice)
+  const presetSeqRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!presetRequest || !engineRef.current || presetSeqRef.current === presetRequest.seq) return;
+    presetSeqRef.current = presetRequest.seq;
+    const p = readPresets().find((x) => x.name === presetRequest.name);
+    if (p) loadPreset(p);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetRequest?.seq]);
+
   // Live rack ⇄ wiring sync (Phase 2): when the shell's wired chain changes,
   // reorder the engine chain to [chain..., bypassed rest] and set enabled
   // flags to match. Rack edits go the other way through emitChain().
@@ -264,6 +387,12 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     const order = [...active, ...engine.chain.map((n) => n.id as ModuleId).filter((id) => !active.includes(id))];
     engine.chain.sort((a, b) => order.indexOf(a.id as ModuleId) - order.indexOf(b.id as ModuleId));
     engine.chain.forEach((n) => { n.enabled = active.includes(n.id as ModuleId); });
+    // an effect that left the chain forgets its open sections
+    const gone = (k: string) => !active.includes(k.split('::')[0] as ModuleId);
+    const prune = (m: Record<string, boolean>) =>
+      Object.keys(m).some(gone) ? Object.fromEntries(Object.entries(m).filter(([k]) => !gone(k))) : m;
+    setOpenFx(prune);
+    setOpenGrp(prune);
     bump();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chainKey]);
@@ -331,7 +460,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     const url = initialSource?.url;
     if (!engine || !url || loadedUrlRef.current === url) return;
     loadedUrlRef.current = url;
-    sourceNameRef.current = initialSource?.name ?? '';
+    nameSource(initialSource?.name ?? '');
     releaseClip();
     // a newer pick (or a dispose) took over while this one loaded: the
     // engine already dropped this element — leave the UI and the clip
@@ -342,6 +471,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         if (!current()) return;
         setSourceKind(engine.kind);
         setError(null);
+        syncLoop(); // loaded while the Lab is hidden: the new clip waits paused too
         void retapClip();
       })
       .catch((e) => { if (current()) setError((e as Error).message); });
@@ -351,6 +481,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   // low-rate UI mirror of the live signals (meters + modulated readouts)
   useEffect(() => {
     const id = setInterval(() => {
+      if (!visibleRef.current) return; // hidden: nothing on screen to mirror into
       const lv = audioRef.current!.levels;
       const va = videoAnRef.current!;
       setSignals({ bass: lv.bass, loud: lv.loud, treble: lv.treble, beat: lv.beat, bpm: lv.bpm, motion: va.motion, bright: va.bright });
@@ -376,6 +507,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       setAudioOn(true);
       setAudioMode('mic');
       setError(null);
+      syncLoop(); // the Lab was hidden while the permission prompt was up: mic off again
     } catch (e) {
       setError('Audio in: ' + (e as Error).message);
     }
@@ -390,6 +522,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       setAudioOn(true);
       setAudioMode('file');
       setError(null);
+      syncLoop(); // hidden meanwhile: the track waits paused
     } catch (e) {
       setError('Audio file: ' + (e as Error).message);
     }
@@ -502,7 +635,10 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       // SOURCE and OUTPUT of the same frame: both stills are drawn in the
       // microtask right after a render (see beforeFrame) — elementToJpeg
       // draws synchronously, before its first await
-      grabPair: (maxSide = 768) => new Promise((resolve) => {
+      // (each capture that reads the OUTPUT or the signals holds the render
+      // loop on, so a run started in the Lab still sees live frames if the
+      // operator goes Home meanwhile — see withLiveLoop)
+      grabPair: (maxSide = 768) => withLiveLoop(() => new Promise((resolve) => {
         const none = { source: null, output: null };
         if (!engineRef.current?.source || exportingRef.current) return resolve(none);
         const deadline = performance.now() + GRAB_WAIT_MS;
@@ -533,9 +669,10 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
           timer = window.setTimeout(attempt, GRAB_FALLBACK_MS);
         };
         arm();
-      }),
+      })),
 
-      grabSourceFrames: async (n, maxSide = 768) => {
+      // held like the others: on a hidden Lab the clip plays for the window
+      grabSourceFrames: (n, maxSide = 768) => withLiveLoop(async () => {
         const out: MediaPart[] = [];
         const engine = engineRef.current;
         const count = clamp(Math.floor(Number(n)) || 0, 0, MAX_LIVE_FRAMES);
@@ -564,7 +701,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
           if (part) out.push(part);
         }
         return out;
-      },
+      }),
 
       recordOutputClip: async (sec) => {
         const engine = engineRef.current;
@@ -573,10 +710,10 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         const stream = audio.getOutputStream();
         const s = Number.isFinite(sec) && sec > 0 ? sec : 4;
         const what = !stream ? ' (no audio)' : audio.mode === 'mic' ? ' with mic audio' : ' with music';
-        return recordClip(engine.canvas, stream, s, `OUTPUT clip ${s}s${what}`);
+        return withLiveLoop(() => recordClip(engine.canvas, stream, s, `OUTPUT clip ${s}s${what}`));
       },
 
-      signalSummary: (sec) => new Promise<SignalSummary>((resolve) => {
+      signalSummary: (sec) => withLiveLoop(() => new Promise<SignalSummary>((resolve) => {
         const windowSec = clamp(Number.isFinite(sec) ? sec : 0, 0, 30);
         const audio = audioRef.current!;
         const va = videoAnRef.current!;
@@ -622,7 +759,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         if (windowSec <= 0) return finish();
         const id = window.setInterval(sample, 100);
         window.setTimeout(() => { window.clearInterval(id); sample(); finish(); }, windowSec * 1000);
-      }),
+      })),
 
       chainState: (): ChainState => {
         const engine = engineRef.current;
@@ -845,9 +982,10 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       // the engine never revokes a caller's URL: the previous pick is ours
       if (ownUrlRef.current) URL.revokeObjectURL(ownUrlRef.current);
       ownUrlRef.current = url;
-      sourceNameRef.current = file.name;
+      nameSource(file.name);
       setSourceKind(engine.kind);
       setError(null);
+      syncLoop(); // hidden meanwhile: the new clip waits paused
       void retapClip();
     } catch (e) {
       URL.revokeObjectURL(url);
@@ -867,10 +1005,11 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       releaseClip();
       pendingRetapRef.current = false; // the webcam has no soundtrack to follow
       await engine.startWebcam();
-      sourceNameRef.current = 'webcam';
+      nameSource('webcam');
       // read back, not assumed: a start overtaken by another load leaves that one
       setSourceKind(engine.kind);
       setError(null);
+      syncLoop(); // the Lab was hidden while the camera started: camera off again
     } catch (e) {
       setError('Webcam: ' + (e as Error).message);
     }
@@ -944,413 +1083,471 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         });
         void video.play().catch(() => {});
         engine.adaptiveRes = prevAdaptive;
-        engine.start();
       }
     } catch (e) {
       setExportMsg('✗ ' + (e as Error).message);
     } finally {
       exportingRef.current = false;
       setExporting(false);
+      // the live loop comes back only if the Lab is on screen (or a capture
+      // holds it): an export finished while the operator was Home stays paused
+      syncLoop();
     }
   };
 
-  const chain = engineRef.current?.chain ?? [];
+  /* ── render: the Lab looks like an opened effect ─────────────────────
+     topbar (logo · INPUT · AUDIO · FPS/RES) + one row of the shared commands
+     over [viewport (fixed) | panel (the only thing that scrolls)]. The panel
+     lists ONLY the wired chain, in its order: one collapsible section per
+     effect (its name bar is sticky while open; clicking it closes it), and
+     inside it the effect's controls in closed sub-sections by
+     ParamSchema.group, like the standalone panel. Order and bypass live in
+     the node graph. */
 
-  const nodeCard = (node: EngineNode, idx: number) => (
-    <div
-      key={node.id}
-      className={`border rounded p-3 space-y-2 transition-colors ${
-        node.enabled
-          ? isDayMode ? 'border-violet-500/50 bg-white' : 'border-violet-500/40 bg-[#0c0c0c]'
-          : isDayMode ? 'border-neutral-200 bg-neutral-50 opacity-60' : 'border-white/10 bg-black/40 opacity-60'
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 font-mono text-[10px] font-extrabold tracking-widest">
-          <span className="text-violet-500">{String(idx + 1).padStart(2, '0')}</span>
-          <span className={isDayMode ? 'text-neutral-900' : 'text-white'}>{node.name}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            title="Move up the chain"
-            onClick={() => { engineRef.current?.swapNodes(idx, idx - 1); bump(); emitChain(); }}
-            disabled={idx === 0}
-            className="p-1 rounded border border-violet-500/20 text-violet-500 hover:bg-violet-500/10 disabled:opacity-30 cursor-pointer"
-          >
-            <ArrowUp className="w-3 h-3" />
-          </button>
-          <button
-            title="Move down the chain"
-            onClick={() => { engineRef.current?.swapNodes(idx, idx + 1); bump(); emitChain(); }}
-            disabled={idx === chain.length - 1}
-            className="p-1 rounded border border-violet-500/20 text-violet-500 hover:bg-violet-500/10 disabled:opacity-30 cursor-pointer"
-          >
-            <ArrowDown className="w-3 h-3" />
-          </button>
-          <button
-            title={node.enabled ? 'Bypass this node' : 'Enable this node'}
-            data-testid={`toggle-${node.id}`}
-            onClick={() => { node.enabled = !node.enabled; bump(); emitChain(); }}
-            className={`p-1 rounded border cursor-pointer ${
-              node.enabled ? 'border-violet-500 bg-violet-500 text-black' : 'border-violet-500/30 text-neutral-500'
-            }`}
-          >
-            <Power className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
+  // the wired chain, in render order — the only effects the panel lists
+  const active = (engineRef.current?.chain ?? []).filter((n) => n.enabled);
 
-      {node.enabled && (
-        <div className="space-y-1.5">
-          {node.params.map((p) =>
-            p.type === 'boolean' ? (
-              <label key={p.key} className={`flex items-center justify-between font-mono text-[9px] uppercase tracking-wider cursor-pointer ${isDayMode ? 'text-neutral-600' : 'text-neutral-400'}`}>
-                {p.label}
-                <input
-                  type="checkbox"
-                  data-testid={`param-${node.id}-${p.key}`}
-                  checked={Number(node.getParam(p.key)) >= 0.5}
-                  onChange={(e) => { node.setParam(p.key, e.target.checked ? 1 : 0); bump(); }}
-                  className="accent-[var(--syn-accent)]"
-                />
-              </label>
-            ) : (() => {
-              const bus = busRef.current!;
-              const base = bus.getBase(node, p.key);
-              const mod = bus.getMod(node, p.key);
-              const dec = (p.step ?? 1) < 1 ? 2 : 0;
-              // cycle the route: off → bass → loud → treble → beat → motion → bright → off
-              const cycleMod = () => {
-                const order: (ModSource | null)[] = [null, ...MOD_SOURCES];
-                const next = order[(order.indexOf(mod?.source ?? null) + 1) % order.length];
-                bus.setMod(node, p.key, next ? { source: next, amount: mod?.amount ?? 0.5 } : null);
-                bump();
-              };
-              return (
-                <div key={p.key} className="space-y-0.5">
-                  <div className={`flex justify-between items-center font-mono text-[9px] uppercase tracking-wider ${isDayMode ? 'text-neutral-600' : 'text-neutral-400'}`}>
-                    <span>{p.label}</span>
-                    <span className="flex items-center gap-1.5">
-                      {p.reactive && (
-                        <button
-                          type="button"
-                          title="Audio modulation source (PLAN §4.4: base + audio × amount)"
-                          data-testid={`mod-src-${node.id}-${p.key}`}
-                          onClick={cycleMod}
-                          className={`px-1 rounded border text-[8px] font-bold cursor-pointer ${
-                            mod ? 'border-amber-400 bg-amber-400/20 text-amber-400' : 'border-violet-500/25 text-neutral-500 hover:text-violet-500'
-                          }`}
-                        >
-                          {mod ? mod.source.toUpperCase() : '~'}
-                        </button>
-                      )}
-                      <span className="text-violet-500 font-bold">{base.toFixed(dec)}</span>
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    data-testid={`param-${node.id}-${p.key}`}
-                    min={p.min}
-                    max={p.max}
-                    step={p.step}
-                    value={base}
-                    onChange={(e) => { bus.setBase(node, p.key, parseFloat(e.target.value)); bump(); }}
-                    className="w-full h-1 accent-[var(--syn-accent)] cursor-pointer"
-                  />
-                  {mod && (
-                    <div className="flex items-center gap-1.5">
-                      <span className={`font-mono text-[8px] uppercase ${isDayMode ? 'text-neutral-500' : 'text-neutral-500'}`}>AMT</span>
-                      <input
-                        type="range"
-                        data-testid={`mod-amt-${node.id}-${p.key}`}
-                        min={-1}
-                        max={1}
-                        step={0.05}
-                        value={mod.amount}
-                        onChange={(e) => { bus.setMod(node, p.key, { source: mod.source, amount: parseFloat(e.target.value) }); bump(); }}
-                        className="flex-1 h-1 accent-amber-400 cursor-pointer"
-                      />
-                      <span data-testid={`mod-val-${node.id}-${p.key}`} className="font-mono text-[8px] text-amber-400 w-9 text-right">
-                        {Number(node.getParam(p.key)).toFixed(dec)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              );
-            })()
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const toggleFx = (id: string, head: HTMLElement) => {
+    if (openFx[id]) {
+      // closing from deep inside a long effect: bring its (now closed) bar
+      // back to the top of the panel instead of leaving the view far below it
+      const sec = head.closest('section');
+      const panel = panelRef.current;
+      if (sec && panel && sec.offsetTop < panel.scrollTop) panel.scrollTop = sec.offsetTop;
+    }
+    setOpenFx((m) => ({ ...m, [id]: !m[id] }));
+  };
+  const toggleGrp = (k: string) => setOpenGrp((m) => ({ ...m, [k]: !m[k] }));
+
+  /** a node's params in sub-sections, in the order each group first appears;
+   *  params without a group gather in 'Parameters' */
+  const groupsOf = (node: EngineNode) => {
+    const out: { name: string; params: ParamSchema[] }[] = [];
+    node.params.forEach((p) => {
+      const name = p.group?.trim() || 'Parameters';
+      let g = out.find((x) => x.name === name);
+      if (!g) {
+        g = { name, params: [] };
+        out.push(g);
+      }
+      g.params.push(p);
+    });
+    return out;
+  };
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+  // the preset popover closes on a click anywhere else
+  const presetWrapRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!presetOpen) return;
+    const away = (e: PointerEvent) => {
+      if (presetWrapRef.current && !presetWrapRef.current.contains(e.target as Node)) setPresetOpen(false);
+    };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [presetOpen]);
+
+  /** one parameter: a switch, or a slider (+ the ~ route chip, + AMT when routed) */
+  const control = (node: EngineNode, p: ParamSchema) => {
+    if (p.type === 'boolean') {
+      const on = Number(node.getParam(p.key)) >= 0.5;
+      return (
+        <label key={p.key} className={`fxl-switch${on ? ' on' : ''}`} title={p.aiHint}>
+          <input
+            type="checkbox"
+            className="fxl-sr"
+            data-testid={`param-${node.id}-${p.key}`}
+            checked={on}
+            onChange={(e) => { node.setParam(p.key, e.target.checked ? 1 : 0); bump(); }}
+          />
+          <span className="fxl-led" />
+          <span className="fxl-switch-txt">{p.label}</span>
+        </label>
+      );
+    }
+    const bus = busRef.current!;
+    const base = bus.getBase(node, p.key);
+    const mod = bus.getMod(node, p.key);
+    const dec = (p.step ?? 1) < 1 ? 2 : 0;
+    // cycle the route: off → bass → loud → treble → beat → motion → bright → off
+    const cycleMod = () => {
+      const order: (ModSource | null)[] = [null, ...MOD_SOURCES];
+      const next = order[(order.indexOf(mod?.source ?? null) + 1) % order.length];
+      bus.setMod(node, p.key, next ? { source: next, amount: mod?.amount ?? 0.5 } : null);
+      bump();
+    };
+    return (
+      <div key={p.key} className="fxl-ctrl">
+        <div className="fxl-row">
+          <span className="fxl-lbl" title={p.aiHint}>{p.label}</span>
+          <span className="fxl-track">
+            <input
+              type="range"
+              className="fxl-slider"
+              data-testid={`param-${node.id}-${p.key}`}
+              min={p.min}
+              max={p.max}
+              step={p.step}
+              value={base}
+              onChange={(e) => { bus.setBase(node, p.key, parseFloat(e.target.value)); bump(); }}
+            />
+          </span>
+          <span className="fxl-val">{base.toFixed(dec)}</span>
+          {p.reactive ? (
+            <button
+              type="button"
+              title="Modulation source: base + signal × amount (click to cycle)"
+              data-testid={`mod-src-${node.id}-${p.key}`}
+              onClick={cycleMod}
+              className={`fxl-mod${mod ? ' on' : ''}`}
+            >
+              {mod ? mod.source.toUpperCase() : '~'}
+            </button>
+          ) : (
+            <span className="fxl-mod-slot" />
           )}
         </div>
-      )}
-    </div>
-  );
+        {mod && (
+          <div className="fxl-row">
+            <span className="fxl-lbl fxl-amt">AMT</span>
+            <span className="fxl-track">
+              <input
+                type="range"
+                className="fxl-slider mod"
+                data-testid={`mod-amt-${node.id}-${p.key}`}
+                min={-1}
+                max={1}
+                step={0.05}
+                value={mod.amount}
+                onChange={(e) => { bus.setMod(node, p.key, { source: mod.source, amount: parseFloat(e.target.value) }); bump(); }}
+              />
+            </span>
+            <span data-testid={`mod-val-${node.id}-${p.key}`} className="fxl-val mod">
+              {Number(node.getParam(p.key)).toFixed(dec)}
+            </span>
+            <span className="fxl-mod-slot" />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const inputLabel = sourceKind === 'none'
+    ? 'NONE'
+    : (sourceKind === 'webcam' ? 'WEBCAM' : sourceName || sourceKind).toUpperCase();
+  const audioLabel = audioMode === 'off' ? 'OFF' : audioMode === 'file' ? 'TRACK' : audioMode.toUpperCase();
+  const pct = (v: number) => `${Math.min(100, Math.round(v * 100))}%`;
 
   return (
-    <div className="flex flex-col flex-1 min-h-[600px]">
-      {/* toolbar */}
-      <div className={`flex items-center justify-between gap-3 px-4 md:px-6 py-3 border-b transition-colors duration-300 ${isDayMode ? 'border-violet-500/15 bg-[#f7f5f0]' : 'border-violet-500/20 bg-black'}`}>
-        <button
-          type="button"
-          onClick={onBack}
-          className={`flex items-center gap-2 font-mono text-[10px] font-bold tracking-[0.2em] uppercase px-3 py-2 rounded border transition-colors cursor-pointer ${isDayMode ? 'border-violet-500/40 text-violet-700 hover:bg-violet-500/10' : 'border-violet-500/30 text-violet-500 hover:bg-violet-500/10'}`}
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Back to console
-        </button>
-        <div className="flex items-center gap-4 font-mono text-[10px] uppercase tracking-widest">
-          <span className={`flex items-center gap-1.5 font-extrabold ${isDayMode ? 'text-neutral-900' : 'text-white'}`}>
-            <Link2 className="w-3 h-3 text-violet-500" />
-            LAB <span className="text-violet-500">// SYNENGINE</span>
+    <div className="syn-fxlab" data-testid="chain-lab" data-theme={isDayMode ? 'day' : 'night'}>
+      {/* #topbar */}
+      <div className="fxl-topbar">
+        <div className="fxl-logo">LAB</div>
+        <div className="fxl-sep" />
+        <div className={`fxl-pill${sourceKind !== 'none' ? ' live' : ''}`} data-testid="chain-input" title={sourceName || undefined}>
+          <span className="fxl-dot" />
+          <span className="fxl-pill-pre">INPUT</span>
+          <span className="fxl-pill-val">{inputLabel}</span>
+        </div>
+        <div className={`fxl-pill${audioOn ? ' amber' : ''}`} data-testid="chain-audio">
+          <span className="fxl-dot" />
+          <span className="fxl-pill-pre">AUDIO</span>
+          <span className="fxl-pill-val">{audioLabel}</span>
+        </div>
+        {exporting && (
+          <div className="fxl-pill rec">
+            <span className="fxl-dot" />
+            <span className="fxl-pill-val">MASTER</span>
+          </div>
+        )}
+        <div className="fxl-fps">
+          <span>FPS <b data-testid="chain-fps">{fps}</b></span>
+          <span title="Adaptive internal render resolution (§6): steps down when the frame rate falls under budget">
+            RES <b className={resPct < 100 ? 'low' : ''} data-testid="chain-res">{resPct}%</b>
           </span>
-          <span className={isDayMode ? 'text-neutral-600' : 'text-neutral-400'}>
-            FPS <b className="text-violet-500" data-testid="chain-fps">{fps}</b>
-          </span>
-          <span
-            title="Adaptive internal render resolution (§6): steps down when the frame rate falls under budget"
-            className={isDayMode ? 'text-neutral-600' : 'text-neutral-400'}
-          >
-            RES <b className={resPct < 100 ? 'text-amber-400' : 'text-violet-500'} data-testid="chain-res">{resPct}%</b>
-          </span>
-          <button
-            type="button"
-            data-testid="chain-master"
-            onClick={runMasterExport}
-            disabled={exporting}
-            title={sourceKind === 'video' ? 'Render the whole chain to MP4 at native resolution' : 'Master export needs a video source'}
-            className="flex items-center gap-1.5 font-mono text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 rounded bg-violet-500 text-black hover:bg-violet-400 disabled:opacity-40 cursor-pointer"
-          >
-            <Diamond className="w-3 h-3" /> Master MP4
-          </button>
-          {exportMsg && (
-            <span data-testid="chain-export-msg" className="text-[9px] text-violet-500 normal-case tracking-normal max-w-56 truncate">{exportMsg}</span>
-          )}
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col lg:flex-row min-h-0">
-        {/* stage */}
-        <div className="flex-1 bg-black flex items-center justify-center p-3 min-h-[320px] relative">
-          <canvas ref={canvasRef} data-testid="chain-canvas" className="max-w-full max-h-full border border-violet-500/20" />
-          {sourceKind === 'none' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
-              <div className="font-mono text-[11px] tracking-[0.3em] text-violet-500 font-bold">NO SIGNAL</div>
-              <div className="font-mono text-[9px] tracking-widest text-neutral-500 uppercase">Load a video or photo, or start the webcam →</div>
+      {/* the shared commands (source, audio, presets, master) */}
+      <div className="fxl-cmds">
+        <button type="button" className="fxl-btn" onClick={() => fileRef.current?.click()} title="Load a video or a photo">
+          Video / Photo
+        </button>
+        <button
+          type="button"
+          className={`fxl-btn${sourceKind === 'webcam' ? ' on' : ''}`}
+          onClick={toggleWebcam}
+          title={sourceKind === 'webcam' ? 'Stop the webcam' : 'Use the webcam'}
+        >
+          <span className="fxl-led" /> {sourceKind === 'webcam' ? 'Stop cam' : 'Webcam'}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="video/*,image/*"
+          data-testid="chain-file"
+          className="hidden"
+          onChange={(e) => loadSourceFile(e.target.files?.[0] ?? null)}
+        />
+        <span className="fxl-gap" />
+        {/* the active audio buttons also carry `border-amber-400`: verify-gemini.cjs reads it as "on" */}
+        <button
+          type="button"
+          onClick={toggleAudio}
+          data-testid="audio-toggle"
+          title="React to the microphone"
+          className={`fxl-btn${audioMode === 'mic' ? ' on border-amber-400' : ''}`}
+        >
+          <span className="fxl-led" /> {audioMode === 'mic' ? 'Live' : 'Mic'}
+        </button>
+        <button
+          type="button"
+          onClick={() => audioFileRef.current?.click()}
+          data-testid="audio-file-btn"
+          title="React to a music track"
+          className={`fxl-btn${transport ? ' on border-amber-400' : ''}`}
+        >
+          <span className="fxl-led" /> Track
+        </button>
+        <button
+          type="button"
+          onClick={toggleClipAudio}
+          data-testid="audio-clip"
+          disabled={sourceKind !== 'video'}
+          title={sourceKind === 'video' ? "React to the source video's own soundtrack" : 'Needs a video source'}
+          className={`fxl-btn${audioMode === 'clip' ? ' on border-amber-400' : ''}`}
+        >
+          <span className="fxl-led" /> Clip
+        </button>
+        <input
+          ref={audioFileRef}
+          type="file"
+          accept="audio/*"
+          data-testid="audio-file"
+          className="hidden"
+          onChange={(e) => loadAudioFile(e.target.files?.[0] ?? null)}
+        />
+        <span className="fxl-gap" />
+        {/* chain presets: the whole rack in localStorage (decision #9) */}
+        <div className="fxl-pop-wrap" ref={presetWrapRef}>
+          <button
+            type="button"
+            className={`fxl-btn${presetOpen ? ' on' : ''}`}
+            data-testid="preset-toggle"
+            onClick={() => setPresetOpen((o) => !o)}
+            title="Save or load a chain preset"
+          >
+            Preset
+          </button>
+          {presetOpen && (
+            <div className="fxl-pop" data-testid="preset-pop">
+              <div className="fxl-pop-title">CHAIN PRESETS</div>
+              <div className="fxl-pop-row">
+                <input
+                  type="text"
+                  className="fxl-input"
+                  data-testid="preset-name"
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') savePreset(); }}
+                  placeholder="preset name"
+                  autoFocus
+                />
+                <button type="button" className="fxl-btn" onClick={savePreset} data-testid="preset-save" disabled={!presetName.trim()}>
+                  Save
+                </button>
+              </div>
+              {presets.length === 0 ? (
+                <p className="fxl-pop-note">No saved chains yet — the whole chain (order, params, routes) is stored.</p>
+              ) : (
+                <div className="fxl-pop-list">
+                  {presets.map((p) => (
+                    <div key={p.name} className="fxl-pop-item">
+                      <span title={p.name}>{p.name}</span>
+                      <button
+                        type="button"
+                        className="fxl-btn"
+                        onClick={() => { loadPreset(p); setPresetOpen(false); }}
+                        data-testid={`preset-load-${p.name}`}
+                      >
+                        Load
+                      </button>
+                      <button
+                        type="button"
+                        className="fxl-btn"
+                        onClick={() => deletePreset(p.name)}
+                        data-testid={`preset-del-${p.name}`}
+                        title="Delete preset"
+                      >
+                        <Trash2 className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
+        <button
+          type="button"
+          data-testid="chain-master"
+          onClick={runMasterExport}
+          disabled={exporting}
+          title={sourceKind === 'video' ? 'Render the whole chain to MP4 at native resolution' : 'Master export needs a video source'}
+          className="fxl-btn primary"
+        >
+          ◆ Master MP4
+        </button>
+        {exportMsg && (
+          <span data-testid="chain-export-msg" className={`fxl-msg${exportMsg.startsWith('✗') ? ' err' : ''}`} title={exportMsg}>
+            {exportMsg}
+          </span>
+        )}
+      </div>
 
-        {/* control rail */}
-        <div className={`w-full lg:w-72 shrink-0 border-t lg:border-t-0 lg:border-l p-4 space-y-4 overflow-y-auto scrollbar-thin transition-colors ${isDayMode ? 'border-violet-500/15 bg-[#faf9f5]' : 'border-violet-500/15 bg-[#080808]'}`}>
-          <div className="space-y-2">
-            <div className="font-mono text-[9px] font-extrabold tracking-widest text-violet-500 uppercase border-b border-violet-500/15 pb-1">Source</div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => fileRef.current?.click()}
-                title="Load a video or a photo"
-                className="flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase px-2 py-2 rounded border border-violet-500/30 text-violet-500 hover:bg-violet-500/10 cursor-pointer"
-              >
-                <Film className="w-3 h-3" /> Video / Photo
-              </button>
-              <button
-                onClick={toggleWebcam}
-                className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase px-2 py-2 rounded border cursor-pointer ${sourceKind === 'webcam' ? 'border-violet-500 bg-violet-500 text-black' : 'border-violet-500/30 text-violet-500 hover:bg-violet-500/10'}`}
-              >
-                <Camera className="w-3 h-3" /> {sourceKind === 'webcam' ? 'Stop' : 'Webcam'}
-              </button>
+      <div className="fxl-main">
+        {/* left: the one video, fixed — it never scrolls */}
+        <div className="fxl-stage-col">
+          <div className="fxl-stage">
+            <div className="fxl-viewport">
+              <canvas ref={canvasRef} data-testid="chain-canvas" />
             </div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="video/*,image/*"
-              data-testid="chain-file"
-              className="hidden"
-              onChange={(e) => loadSourceFile(e.target.files?.[0] ?? null)}
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={toggleAudio}
-                data-testid="audio-toggle"
-                title="React to the microphone"
-                className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase whitespace-nowrap px-2 py-2 rounded border cursor-pointer ${
-                  audioMode === 'mic' ? 'border-amber-400 bg-amber-400/15 text-amber-400' : 'border-violet-500/30 text-violet-500 hover:bg-violet-500/10'
-                }`}
-              >
-                <Mic className="w-3 h-3" /> {audioMode === 'mic' ? 'Live' : 'Mic'}
-              </button>
-              <button
-                onClick={() => audioFileRef.current?.click()}
-                data-testid="audio-file-btn"
-                title="React to a music track"
-                className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase whitespace-nowrap px-2 py-2 rounded border cursor-pointer ${
-                  transport ? 'border-amber-400 bg-amber-400/15 text-amber-400' : 'border-violet-500/30 text-violet-500 hover:bg-violet-500/10'
-                }`}
-              >
-                <Music className="w-3 h-3" /> Track
-              </button>
-              <button
-                onClick={toggleClipAudio}
-                data-testid="audio-clip"
-                disabled={sourceKind !== 'video'}
-                title={sourceKind === 'video' ? "React to the source video's own soundtrack" : 'Needs a video source'}
-                className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] font-bold tracking-wider uppercase whitespace-nowrap px-2 py-2 rounded border cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
-                  audioMode === 'clip' ? 'border-amber-400 bg-amber-400/15 text-amber-400' : 'border-violet-500/30 text-violet-500 hover:bg-violet-500/10'
-                }`}
-              >
-                <AudioLines className="w-3 h-3" /> Clip
-              </button>
-            </div>
-            <input
-              ref={audioFileRef}
-              type="file"
-              accept="audio/*"
-              data-testid="audio-file"
-              className="hidden"
-              onChange={(e) => loadAudioFile(e.target.files?.[0] ?? null)}
-            />
+            <div className="fxl-vignette" />
+            <div className="fxl-brackets" />
+            {sourceKind === 'none' && (
+              <div className="fxl-nosignal">
+                <Upload className="fxl-nosignal-icon w-7 h-7" strokeWidth={1.4} />
+                <div className="fxl-nosignal-title">NO SIGNAL</div>
+                <div className="fxl-nosignal-sub">VIDEO — IMAGE — WEBCAM</div>
+                <button type="button" className="fxl-btn" onClick={() => fileRef.current?.click()}>Source</button>
+              </div>
+            )}
+          </div>
+
+          {/* status strip: route · track transport · signals · SEG · errors */}
+          <div className="fxl-strip">
+            <span className="fxl-route" data-testid="chain-route">
+              SOURCE → {active.map((n, i) => <React.Fragment key={n.id}><b>{n.name.toUpperCase()}</b>{i < active.length - 1 ? ' → ' : ''}</React.Fragment>)}
+              {active.length ? ' → ' : ''}OUT
+            </span>
             {transport && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => audioRef.current!.togglePlay()}
-                    data-testid="audio-playpause"
-                    className="p-1 rounded border border-amber-400/40 text-amber-400 hover:bg-amber-400/10 cursor-pointer"
-                  >
-                    {transport.playing ? <Pause className="w-3 h-3" /> : <PlayIcon className="w-3 h-3" />}
-                  </button>
-                  <span data-testid="audio-track-name" className={`flex-1 truncate font-mono text-[8px] ${isDayMode ? 'text-neutral-600' : 'text-neutral-400'}`}>{transport.name}</span>
-                  <button
-                    onClick={() => audioRef.current!.setLoop(!transport.loop)}
-                    title="Loop"
-                    className={`p-1 rounded border cursor-pointer ${transport.loop ? 'border-amber-400 text-amber-400' : 'border-violet-500/25 text-neutral-500'}`}
-                  >
-                    <Repeat className="w-3 h-3" />
-                  </button>
-                </div>
+              <span className="fxl-group">
+                <button
+                  type="button"
+                  className="fxl-icon-btn on"
+                  onClick={() => audioRef.current!.togglePlay()}
+                  data-testid="audio-playpause"
+                  title={transport.playing ? 'Pause the track' : 'Play the track'}
+                >
+                  {transport.playing ? <Pause /> : <PlayIcon />}
+                </button>
+                <span data-testid="audio-track-name" className="fxl-track-name" title={transport.name}>{transport.name}</span>
                 <input
                   type="range"
+                  className="fxl-slider mod"
+                  style={{ width: 70 }}
                   data-testid="audio-seek"
                   min={0}
                   max={transport.duration || 0}
                   step={0.1}
                   value={transport.currentTime}
                   onChange={(e) => audioRef.current!.seek(parseFloat(e.target.value))}
-                  className="w-full h-1 accent-amber-400 cursor-pointer"
                 />
-              </div>
+                <button
+                  type="button"
+                  className={`fxl-icon-btn${transport.loop ? ' on' : ''}`}
+                  onClick={() => audioRef.current!.setLoop(!transport.loop)}
+                  title="Loop"
+                >
+                  <Repeat />
+                </button>
+              </span>
             )}
             {audioOn && (
-              <div className="space-y-1">
+              <span className="fxl-group">
                 {(['bass', 'loud', 'treble'] as const).map((band) => (
-                  <div key={band} className="flex items-center gap-1.5 font-mono text-[8px] uppercase">
-                    <span className={`w-9 ${isDayMode ? 'text-neutral-500' : 'text-neutral-500'}`}>{band}</span>
-                    <div className={`flex-1 h-1 rounded overflow-hidden ${isDayMode ? 'bg-neutral-200' : 'bg-white/10'}`}>
-                      <div className="h-full bg-amber-400 transition-[width] duration-100" style={{ width: `${Math.min(100, Math.round(signals[band] * 100))}%` }} />
-                    </div>
-                    <span data-testid={`audio-${band}`} className="w-6 text-right text-amber-400">{Math.round(signals[band] * 100)}</span>
-                  </div>
-                ))}
-                <div className="flex items-center gap-1.5 font-mono text-[8px] uppercase">
-                  <span className={isDayMode ? 'text-neutral-500' : 'text-neutral-500'}>beat</span>
-                  <span
-                    className="w-2 h-2 rounded-full bg-amber-400"
-                    style={{ opacity: 0.15 + signals.beat * 0.85 }}
-                  />
-                  <span className={`ml-auto ${isDayMode ? 'text-neutral-500' : 'text-neutral-500'}`}>
-                    BPM <b className="text-amber-400" data-testid="audio-bpm">{signals.bpm ?? '--'}</b>
+                  <span key={band} className="fxl-meter" title={band}>
+                    {band.slice(0, 1)}
+                    <span className="fxl-meter-bar"><i style={{ width: pct(signals[band]) }} /></span>
+                    <b data-testid={`audio-${band}`}>{Math.round(signals[band] * 100)}</b>
                   </span>
-                </div>
-              </div>
+                ))}
+                <span className="fxl-beat" style={{ opacity: 0.15 + signals.beat * 0.85 }} title="beat" />
+                <span>BPM <b data-testid="audio-bpm" style={{ color: 'var(--syn-fx-t4)', fontWeight: 400 }}>{signals.bpm ?? '--'}</b></span>
+              </span>
             )}
             {sourceKind !== 'none' && (
-              <div className="space-y-1">
+              <span className="fxl-group">
                 {(['motion', 'bright'] as const).map((band) => (
-                  <div key={band} className="flex items-center gap-1.5 font-mono text-[8px] uppercase">
-                    <span className={`w-9 ${isDayMode ? 'text-neutral-500' : 'text-neutral-500'}`}>{band}</span>
-                    <div className={`flex-1 h-1 rounded overflow-hidden ${isDayMode ? 'bg-neutral-200' : 'bg-white/10'}`}>
-                      <div className="h-full bg-violet-500 transition-[width] duration-100" style={{ width: `${Math.min(100, Math.round(signals[band] * 100))}%` }} />
-                    </div>
-                    <span data-testid={`signal-${band}`} className="w-6 text-right text-violet-500">{Math.round(signals[band] * 100)}</span>
-                  </div>
+                  <span key={band} className="fxl-meter video" title={band}>
+                    {band === 'motion' ? 'MOT' : 'BRI'}
+                    <span className="fxl-meter-bar"><i style={{ width: pct(signals[band]) }} /></span>
+                    <b data-testid={`signal-${band}`}>{Math.round(signals[band] * 100)}</b>
+                  </span>
                 ))}
-              </div>
-            )}
-            {(audioOn || sourceKind !== 'none') && (
-              <p className={`font-mono text-[8px] leading-relaxed ${isDayMode ? 'text-neutral-500' : 'text-neutral-600'}`}>
-                Route any signal onto a reactive parameter with the <b className="text-amber-400">~</b> chip next to its value.
-              </p>
+              </span>
             )}
             {segState !== 'off' && (
-              <div data-testid="seg-status" className={`font-mono text-[8px] uppercase tracking-widest ${
-                segState === 'ready' ? 'text-violet-500' : segState === 'loading' ? 'text-amber-400' : 'text-red-400'
-              }`}>
-                SEG: {segState === 'ready' ? 'READY' : segState === 'loading' ? 'LOADING MODEL…' : 'UNAVAILABLE'}
-              </div>
-            )}
-            {error && <div className="font-mono text-[9px] text-red-400">{error}</div>}
-          </div>
-
-          {/* chain presets: full rack state in localStorage (decision #9) */}
-          <div className="space-y-2">
-            <div className="font-mono text-[9px] font-extrabold tracking-widest text-violet-500 uppercase border-b border-violet-500/15 pb-1">Presets</div>
-            <div className="flex gap-1.5">
-              <input
-                type="text"
-                data-testid="preset-name"
-                value={presetName}
-                onChange={(e) => setPresetName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') savePreset(); }}
-                placeholder="preset name"
-                className={`flex-1 min-w-0 font-mono text-[9px] px-2 py-1.5 rounded border bg-transparent outline-none ${
-                  isDayMode ? 'border-neutral-300 text-neutral-800 placeholder-neutral-400' : 'border-violet-500/25 text-white placeholder-neutral-600'
-                }`}
-              />
-              <button
-                onClick={savePreset}
-                data-testid="preset-save"
-                disabled={!presetName.trim()}
-                className="flex items-center gap-1 font-mono text-[9px] font-bold uppercase px-2 py-1.5 rounded border border-violet-500/30 text-violet-500 hover:bg-violet-500/10 disabled:opacity-30 cursor-pointer"
+              <span
+                data-testid="seg-status"
+                className={segState === 'ready' ? 'fxl-seg-ready' : segState === 'loading' ? 'fxl-seg-loading' : 'fxl-seg-error'}
               >
-                <Save className="w-3 h-3" /> Save
-              </button>
-            </div>
-            {presets.length === 0 && (
-              <p className={`font-mono text-[8px] ${isDayMode ? 'text-neutral-400' : 'text-neutral-600'}`}>
-                No saved chains yet — the whole rack (order, bypass, params, routes) is stored.
-              </p>
+                SEG: {segState === 'ready' ? 'READY' : segState === 'loading' ? 'LOADING MODEL…' : 'UNAVAILABLE'}
+              </span>
             )}
-            {presets.map((p) => (
-              <div key={p.name} className={`flex items-center gap-1.5 font-mono text-[9px] px-2 py-1.5 rounded border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-white/10 bg-black/40'}`}>
-                <span className={`flex-1 truncate ${isDayMode ? 'text-neutral-800' : 'text-white'}`}>{p.name}</span>
-                <button
-                  onClick={() => loadPreset(p)}
-                  data-testid={`preset-load-${p.name}`}
-                  className="px-1.5 py-0.5 rounded bg-violet-500 text-black font-bold uppercase text-[8px] hover:bg-violet-400 cursor-pointer"
-                >
-                  Load
-                </button>
-                <button
-                  onClick={() => deletePreset(p.name)}
-                  data-testid={`preset-del-${p.name}`}
-                  title="Delete preset"
-                  className="p-1 rounded border border-violet-500/20 text-neutral-500 hover:text-red-400 cursor-pointer"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            ))}
+            {error && <span className="fxl-err" data-testid="chain-error">{error}</span>}
           </div>
+        </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between font-mono text-[9px] font-extrabold tracking-widest text-violet-500 uppercase border-b border-violet-500/15 pb-1">
-              <span>Signal chain</span>
-              <span className={isDayMode ? 'text-neutral-500' : 'text-neutral-500'}>SOURCE → {chain.filter((n) => n.enabled).map((n) => n.id.toUpperCase()).join(' → ') || 'OUT'} → OUT</span>
+        {/* right: the effects of the wired chain — the only part that scrolls */}
+        <div className="fxl-panel" ref={panelRef} data-testid="chain-panel">
+          {active.length === 0 ? (
+            <div className="fxl-empty" data-testid="chain-empty">
+              No effects in the chain.<br />
+              Add effects with <b>+ Add Node</b> in the node graph and wire them INPUT → … → OUTPUT.
             </div>
-            {chain.map((n, i) => nodeCard(n, i))}
-          </div>
-
-          <p className={`font-mono text-[8px] leading-relaxed ${isDayMode ? 'text-neutral-500' : 'text-neutral-600'}`}>
-            Native SynEngine nodes — one WebGL context, effects composed in series on the same frame.
-            The full standalone effects remain available from the library while porting continues.
-          </p>
+          ) : (
+            active.map((node, i) => {
+              const open = !!openFx[node.id];
+              return (
+                <section key={node.id} className={`fxl-fx${open ? ' open' : ''}`} data-testid={`fx-${node.id}`}>
+                  <button
+                    type="button"
+                    className={`fxl-fx-head${open ? '' : ' collapsed'}`}
+                    aria-expanded={open}
+                    data-testid={`fx-head-${node.id}`}
+                    title={open ? `Close ${node.name}` : `Open ${node.name}`}
+                    onClick={(e) => toggleFx(node.id, e.currentTarget)}
+                  >
+                    <span className="fxl-fx-idx">{String(i + 1).padStart(2, '0')}</span>
+                    <span className="fxl-fx-name">{node.name.toUpperCase()}</span>
+                    <span className="fxl-chev">▼</span>
+                  </button>
+                  {open && groupsOf(node).map((g) => {
+                    const k = `${node.id}::${g.name}`;
+                    const gOpen = !!openGrp[k];
+                    return (
+                      <div key={g.name} className={`fxl-sec${gOpen ? ' open' : ''}`}>
+                        <button
+                          type="button"
+                          className={`fxl-sec-head${gOpen ? '' : ' collapsed'}`}
+                          aria-expanded={gOpen}
+                          data-testid={`fx-sec-${node.id}-${slug(g.name)}`}
+                          onClick={() => toggleGrp(k)}
+                        >
+                          <span className="fxl-sec-mark" />
+                          <span className="fxl-sec-title">{g.name}</span>
+                          <span className="fxl-chev">▼</span>
+                        </button>
+                        {gOpen && <div className="fxl-sec-body">{g.params.map((p) => control(node, p))}</div>}
+                      </div>
+                    );
+                  })}
+                </section>
+              );
+            })
+          )}
         </div>
       </div>
     </div>

@@ -11,6 +11,7 @@
  *     → magenta raises mean R and B;
  *  D. no page errors. */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -37,6 +38,7 @@ const grabRGBsrc = `(sel)=>{const cv=document.querySelector(sel);const off=docum
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]', { state: 'attached', timeout: 120000 });
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(2000);
   await en.evaluate(async () => {
     const S = window.__SYN; S.engine.adaptiveRes = false; S.engine.setResScale(2 / 3);
@@ -45,8 +47,8 @@ const grabRGBsrc = `(sel)=>{const cv=document.querySelector(sel);const off=docum
   });
 
   const grabRGB = () => en.evaluate(`(${grabRGBsrc})('[data-testid="chain-canvas"]')`);
-  const setNum = (k, val) => en.evaluate(({ k, val }) => { const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; const el = document.querySelector(`[data-testid="param-blob_tracker-${k}"]`); if (el && el.type === 'range') { setV.call(el, val); el.dispatchEvent(new Event('change', { bubbles: true })); } }, { k, val });
-  const setBool = (k, on) => en.evaluate(({ k, on }) => { const el = document.querySelector(`[data-testid="param-blob_tracker-${k}"]`); if (el && el.checked !== on) el.click(); }, { k, on });
+  const setNum = (k, val) => L.setNum(en, 'blob_tracker', k, val);
+  const setBool = (k, on) => L.setBool(en, 'blob_tracker', k, on);
   const avgRGB = async (n, gap = 220) => { const acc = [0, 0, 0]; for (let i = 0; i < n; i++) { await en.waitForTimeout(gap); const c = await grabRGB(); acc[0] += c[0]; acc[1] += c[1]; acc[2] += c[2]; } return acc.map((v) => v / n); };
   const settle = async (ms = 1400) => { await en.waitForTimeout(ms); return grabRGB(); };
 

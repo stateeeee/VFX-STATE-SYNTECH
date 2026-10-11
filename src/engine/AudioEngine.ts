@@ -219,6 +219,24 @@ export class AudioEngine {
     else el.pause();
   }
 
+  /** pause a playing track; true when it was playing (the caller resumes
+   *  only what it paused — a hidden Lab, see ChainLab parkMedia) */
+  pauseFile(): boolean {
+    const el = this.fileEl;
+    if (!el || !this.transport || this.mode !== 'file' || el.paused) return false;
+    el.pause();
+    this.transport.playing = false;
+    return true;
+  }
+
+  /** resume the track pauseFile() paused, if it is still the input */
+  resumeFile(): void {
+    const el = this.fileEl;
+    if (!el || !this.transport || this.mode !== 'file' || !el.paused) return;
+    void el.play().catch(() => {});
+    this.transport.playing = true;
+  }
+
   setLoop(loop: boolean): void {
     if (this.fileEl) this.fileEl.loop = loop;
     if (this.transport) this.transport.loop = loop;

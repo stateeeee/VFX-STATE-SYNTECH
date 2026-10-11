@@ -2,7 +2,8 @@
  * Roadmap acceptance: build INPUT → analog → blob_tracker → OUTPUT purely by
  * dragging, both nodes ACTIVE, detach one wire → node ghosts + leaves the
  * chain readout. Plus: armed violet toggle survives navigation, Add Node
- * menu alphabetical, port sides enforced, ChainLab rack ⇄ graph sync. */
+ * menu alphabetical, port sides enforced, Lab toggle (hidden, not unmounted),
+ * Lab panel ⇄ graph sync (the panel lists only the wired chain). */
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -137,64 +138,77 @@ const readState = (page) =>
   s = await readState(page);
   step('restore full chain', s.chainCount === '2 fx · live');
 
-  /* ── 7. AI Lab armed toggle: violet, survives navigation, manual disarm ── */
-  const navClass = () => page.getAttribute('[data-testid="nav-ailab"]', 'class');
-  step('AI Lab starts disarmed', !(await navClass()).includes('text-violet-500'));
+  /* ── 7. Lab toggle: lit while on screen, stays MOUNTED when hidden ──
+     (new behaviour: nav-ailab is lit only while the Lab is on screen; Home /
+     an opened effect only HIDE it — its params, source and audio survive —
+     and a second Lab click toggles it off again) */
+  const navClass = (tid = 'nav-ailab') => page.getAttribute(`[data-testid="${tid}"]`, 'class');
+  const lit = async (tid) => (await navClass(tid)).includes('text-violet-500');
+  const labVisible = () => page.locator('[data-testid="chain-canvas"]').isVisible().catch(() => false);
+  const labMounted = async () => !!(await page.$('[data-testid="chain-canvas"]'));
+  step('Lab starts off (nav-ailab not lit, Home lit, Lab not mounted yet)', !(await lit('nav-ailab')) && (await lit('nav-home')) && !(await labMounted()));
   await page.click('[data-testid="nav-ailab"]');
   await page.waitForTimeout(800);
-  step('arming turns nav violet', (await navClass()).includes('text-violet-500'));
-  const labVisible = () => page.locator('[data-testid="chain-canvas"]').isVisible().catch(() => false);
-  step('armed lab shows ChainLab surface', await labVisible());
+  step('Lab click lights nav-ailab and shows the Lab surface', (await lit('nav-ailab')) && !(await lit('nav-home')) && (await labVisible()));
 
-  // navigation: open an effect → lab hidden but still armed; Home → lab back
+  // an opened effect covers the Lab: Lab hidden but still mounted, nav-ailab no longer lit
   await page.click('[data-testid="effect-card-analog"]');
   await page.waitForTimeout(1200);
-  step('effect opens over armed lab, nav stays violet', (await navClass()).includes('text-violet-500') && !(await labVisible()));
+  step('effect opens over the Lab: Lab hidden but still mounted', !(await labVisible()) && (await labMounted()) && !(await lit('nav-ailab')));
+  // Home: dashboard shown (Home lit), Lab hidden and NOT unmounted — it no longer returns "armed"
   await page.click('[data-testid="nav-home"]');
   await page.waitForTimeout(600);
-  step('Home returns to armed lab (still violet)', (await navClass()).includes('text-violet-500') && (await labVisible()));
+  step('Home hides the Lab and shows the dashboard (Lab stays mounted)',
+    (await lit('nav-home')) && !(await lit('nav-ailab')) && !(await labVisible()) && (await labMounted()) && (await page.locator('[data-testid="nodal-svg"]').isVisible()));
+  await page.click('[data-testid="nav-ailab"]');
+  await page.waitForTimeout(600);
+  step('Lab click after Home shows the (still mounted) Lab again', (await labVisible()) && (await lit('nav-ailab')));
 
-  /* ── 8. rack ⇄ graph sync (both ways) ── */
-  const rackReadout = () => page.evaluate(() => {
-    const els = [...document.querySelectorAll('[data-testid^="toggle-"]')];
-    return els.map((el) => ({
-      id: el.getAttribute('data-testid').replace('toggle-', ''),
-      on: el.className.includes('bg-violet-500'),
-    }));
-  });
-  let rack = await rackReadout();
-  const rackOn = rack.filter((r) => r.on).map((r) => r.id);
-  step('rack mirrors wired chain', JSON.stringify(rackOn) === JSON.stringify(['analog', 'blob_tracker']), JSON.stringify(rack));
+  /* ── 8. node graph ⇄ Lab panel sync ──
+     (the rack toggle-<id> bypass buttons are gone: bypass and order come
+     from the node-graph wiring; the Lab panel lists ONLY the wired effects,
+     in chain order, as fx-head-<id>) */
+  const panelIds = () => page.evaluate(() => [...document.querySelectorAll('[data-testid^="fx-head-"]')].map((el) => el.getAttribute('data-testid').replace('fx-head-', '')));
+  const toGraph = async () => { await page.click('[data-testid="nav-home"]'); await page.waitForTimeout(400); };
+  const toLab = async () => { await page.click('[data-testid="nav-ailab"]'); await page.waitForTimeout(600); };
+  let ids = await panelIds();
+  step('Lab panel lists the wired chain in order', JSON.stringify(ids) === JSON.stringify(['analog', 'blob_tracker']), JSON.stringify(ids));
 
-  // rack → graph: bypass analog in the rack
-  await page.click('[data-testid="toggle-analog"]');
-  await page.waitForTimeout(400);
+  // graph → panel: re-route INPUT straight to blob_tracker; analog leaves the chain
+  await toGraph();
+  await dragPort(page, 'port-out-IN', 'port-in-blob_tracker');
   s = await readState(page);
-  step('rack bypass propagates to graph wiring',
+  step('graph rewire bypasses analog (IN→blob_tracker→OUT)',
     s.analog.state === 'BYPASS' && s.wires['IN'] === 'blob_tracker' && s.wires['blob_tracker'] === 'OUT',
     JSON.stringify(s.wires));
+  await toLab();
+  ids = await panelIds();
+  step('bypassed effect leaves the Lab panel', JSON.stringify(ids) === JSON.stringify(['blob_tracker']), JSON.stringify(ids));
 
-  // graph → rack: re-wire analog back in via drag (lab still open below? node graph is on dashboard)
-  await page.click('[data-testid="toggle-analog"]'); // re-enable via rack (appends at end)
-  await page.waitForTimeout(400);
+  // graph → panel: wire analog back in AFTER blob_tracker (order change)
+  await toGraph();
+  await dragPort(page, 'port-out-blob_tracker', 'port-in-analog');
+  await dragPort(page, 'port-out-analog', 'port-in-OUT');
   s = await readState(page);
-  rack = await rackReadout();
-  step('rack re-enable appends to chain', s.wires['blob_tracker'] === 'analog' && s.wires['analog'] === 'OUT', JSON.stringify(s.wires));
-  step('rack order mirrors new chain', JSON.stringify(rack.filter((r) => r.on).map((r) => r.id)) === JSON.stringify(['blob_tracker', 'analog']), JSON.stringify(rack));
+  step('graph re-add appends analog after blob_tracker',
+    s.wires['IN'] === 'blob_tracker' && s.wires['blob_tracker'] === 'analog' && s.wires['analog'] === 'OUT', JSON.stringify(s.wires));
+  await toLab();
+  ids = await panelIds();
+  step('Lab panel order mirrors the new chain', JSON.stringify(ids) === JSON.stringify(['blob_tracker', 'analog']), JSON.stringify(ids));
 
-  // graph → rack: drag rewire on the dashboard graph while lab armed
-  await dragPort(page, 'port-out-IN', 'port-in-analog'); // IN→analog (replaces IN→blob_tracker)
-  await page.waitForTimeout(300);
+  // graph → panel: IN→analog replaces IN→blob_tracker (blob_tracker drops out)
+  await toGraph();
+  await dragPort(page, 'port-out-IN', 'port-in-analog');
   s = await readState(page);
-  const rackAfterDrag = await rackReadout();
-  step('graph drag propagates into rack',
-    s.wires['IN'] === 'analog' && JSON.stringify(rackAfterDrag.filter((r) => r.on).map((r) => r.id)) !== JSON.stringify(['blob_tracker', 'analog']) ? true : rackAfterDrag.some((r) => r.id === 'analog' && r.on),
-    `wires=${JSON.stringify(s.wires)} rack=${JSON.stringify(rackAfterDrag)}`);
+  await toLab();
+  ids = await panelIds();
+  step('graph drag propagates into the Lab panel', s.wires['IN'] === 'analog' && s.blob_tracker.state === 'BYPASS' && JSON.stringify(ids) === JSON.stringify(['analog']),
+    `wires=${JSON.stringify(s.wires)} panel=${JSON.stringify(ids)}`);
 
-  // manual disarm
+  // the Lab button toggles the Lab off again; it is hidden, not unmounted
   await page.click('[data-testid="nav-ailab"]');
   await page.waitForTimeout(500);
-  step('manual click disarms (violet off, lab gone)', !(await navClass()).includes('text-violet-500') && !(await labVisible()));
+  step('second Lab click hides the Lab (nav off, still mounted)', !(await lit('nav-ailab')) && !(await labVisible()) && (await labMounted()));
 
   /* ── 9. persistence across reload ── */
   await page.reload({ waitUntil: 'load' });

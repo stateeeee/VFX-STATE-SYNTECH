@@ -5,6 +5,7 @@
  * Plus a feedback step-response: after a seek, trails make the output
  * converge gradually instead of snapping. */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -82,7 +83,9 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   await en.click('[data-testid="nodal-add-analog"]');
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]');
+  await L.openLabSections(en); // Lab panel: effects + sub-sections are collapsed by default
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(1500);
 
   // pin the engine: adaptive res off, native 1:1, then pause both at t=1.0
@@ -124,18 +127,8 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
     led('btn-mirror', B2.feedbackMirror); led('btn-sort', B2.sortEnabled); led('btn-react', B2.reactEnabled);
     if (typeof clearFeedback === 'function') clearFeedback();
   }, { N: NEUTRAL, B: BOOLS_OFF, over });
-  const applyEN = (over) => en.evaluate(({ N, B, over }) => {
-    const P2 = { ...N, ...over }; const B2 = { ...B, ...over };
-    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
-    Object.keys(P2).forEach((k) => {
-      const el = document.querySelector(`[data-testid="param-analog-${k}"]`);
-      if (el && el.type === 'range') { setV.call(el, P2[k]); el.dispatchEvent(new Event('change',{bubbles:true})); }
-    });
-    Object.keys(B2).forEach((k) => {
-      const el = document.querySelector(`[data-testid="param-analog-${k}"]`);
-      if (el && el.type === 'checkbox' && el.checked !== !!B2[k]) el.click();
-    });
-  }, { N: NEUTRAL, B: BOOLS_OFF, over });
+  // every key must exist as a Lab control (applyParams throws on a missing one)
+  const applyEN = (over) => L.applyParams(en, 'analog', { ...NEUTRAL, ...BOOLS_OFF, ...over });
   const grab = (page, sel) => page.evaluate(`(${grabOnceSrc})(${JSON.stringify(sel)})`);
 
   /* ── static parity per config ── */

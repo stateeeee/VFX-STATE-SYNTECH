@@ -14,6 +14,7 @@
  * ids (fit() only runs on load, so the forced size sticks). minPx and blob
  * scaling depend on W×H, so the match must be exact. */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -92,7 +93,9 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   await en.click('[data-testid="nodal-add-blob_reveal"]');
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]', { state: 'attached', timeout: 120000 });
+  await L.openLabSections(en); // Lab panel: effects + sub-sections are collapsed by default
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(2000);
 
   /* pin engine → 1280×720, seg OFF, paused on t=1.0 */
@@ -145,14 +148,8 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
       el.dispatchEvent(new Event('input', { bubbles: true }));
     });
   }, { P2: { ...DEFAULTS, ...over }, SL });
-  const applyEN = (over) => en.evaluate((P2) => {
-    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    Object.entries(P2).forEach(([k, val]) => {
-      const el = document.querySelector(`[data-testid="param-blob_reveal-${k}"]`);
-      if (!el || el.type !== 'range') return;
-      setV.call(el, val); el.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-  }, { ...DEFAULTS, ...over });
+  // every key must exist as a Lab control (applyParams throws on a missing one)
+  const applyEN = (over) => L.applyParams(en, 'blob_reveal', { ...DEFAULTS, ...over });
   const grab = (page, sel) => page.evaluate(`(${grabOnceSrc})(${JSON.stringify(sel)})`);
   // paused source → output is static once the param change has propagated one
   // rendered frame; a light settle guards against grabbing mid-update

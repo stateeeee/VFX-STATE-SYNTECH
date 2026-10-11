@@ -3,6 +3,7 @@
  * sides (engine ~59fps vs standalone ~4fps in this sandbox, so wall-time
  * comparison is meaningless — per-frame math is the 1:1 claim). */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers
 const path = require('path');
 const SCRATCH = '__SCRATCH__';
 const DW = 128, DH = 72;
@@ -50,6 +51,7 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]');
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(1500);
   await en.evaluate(async () => {
     const S = window.__SYN;

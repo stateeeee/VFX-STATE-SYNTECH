@@ -40,15 +40,63 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
 
 ## 3. Lab activation model
 
-- The Lab nav button (testid still `nav-ailab`) is a **mode toggle**: click →
-  turns violet (`--syn-accent`) and **stays lit until manually toggled off**.
-  It can be armed at any time — while an effect is open, or from the empty
-  dashboard.
-- While armed, the composition runs live: the enabled node chain processes the
-  INPUT source in real time on the SynEngine surface (`ChainLab`), and the
-  node graph below reflects/edits the same state.
-- Toggling the Lab off returns to the normal dashboard; the composition state
-  (nodes, wiring, params) is preserved for the next time it is armed.
+- The Lab nav button (testid still `nav-ailab`, label **Lab**) toggles the Lab:
+  click → the Lab takes the hero opening and the button turns violet
+  (`--syn-accent`); click again → the Lab is hidden. The button is lit only
+  while the Lab is on screen.
+- **Home leaves the Lab too** (and any open effect, and the Gemini mode);
+  opening an effect from the library also covers it. In every case the Lab is
+  only **hidden, never unmounted**: once opened it stays mounted for the
+  session, so its params, routes, source, audio, open sections — and the
+  Gemini panel's handle on it — survive. While hidden its render loop is
+  paused (resumed on show; the effect clock goes on from where it was, it does
+  not restart at 0); a running Master export, or a Gemini capture that
+  was already in flight, keeps it rendering until it ends.
+- **The media follow the loop.** When the loop pauses (hidden, no export, no
+  capture holding it): the source video and a playing Track are paused and
+  come back playing on show (only what was playing — a Track the operator had
+  paused stays paused); Clip audio is the video's own sound, so it goes silent
+  and comes back with it, still CLIP. The **webcam and the mic are switched
+  off** (camera light and mic released) and stay off on show — the operator
+  presses Webcam / Mic again. A still photo needs nothing. A Gemini capture on
+  a hidden Lab plays the clip / Track for its window (the capture needs the
+  live picture and music), then they pause again; a source picked on Home
+  while the Lab is hidden loads paused.
+- The Lab looks like an **opened standalone effect** (its own dark look in
+  both themes, `src/components/chainLab.css`, tokens `--syn-fx-*`), filling
+  the hero opening exactly (fullscreen too):
+  - **Top bar** — logo `LAB`, `INPUT` pill (source name / NONE), `AUDIO` pill
+    (OFF / MIC / TRACK / CLIP), FPS and RES% (`chain-fps`, `chain-res`).
+  - **Command row** — Video / Photo (`chain-file`), Webcam, Mic
+    (`audio-toggle`), Track (`audio-file-btn` / `audio-file`), Clip
+    (`audio-clip`), Preset (popover: `preset-name`, `preset-save`,
+    `preset-load-<name>`, `preset-del-<name>`), Master MP4 (`chain-master`,
+    `chain-export-msg`).
+  - **Left: the one video** (`chain-canvas`, fit-contained, corner brackets),
+    fixed — it never scrolls. Under it a slim strip: the route
+    (SOURCE → … → OUT), the track transport when a track is loaded, the
+    audio meters + BPM when audio is on, motion/brightness, SEG status, errors.
+  - **Right: the parameter panel** (~290 px, the only part that scrolls) lists
+    **only the effects of the wired chain, in wiring order** — one section per
+    effect, **all closed** the first time the Lab opens. Clicking an effect's
+    name bar (`fx-head-<id>`) opens it; while open the bar is sticky at the top
+    of the panel, and clicking it closes the effect again. Inside, the
+    effect's controls are grouped in **sub-sections by `ParamSchema.group`**
+    (the standalone panel's section names, in the order they first appear;
+    params without a group go under "Parameters"), all closed until clicked
+    (`fx-sec-<id>-<group-slug>`). Open / closed state is kept per effect and
+    per sub-section across reorders and hide/show; an effect removed from the
+    chain forgets it (added back, it comes back closed).
+  - Controls behave as before: sliders write the ParamBus base, switches the
+    node; reactive params keep the `~` route chip (cycles
+    off → bass → loud → treble → beat → motion → bright), the AMT slider and
+    the live modulated value (`param-…`, `mod-src-…`, `mod-amt-…`,
+    `mod-val-…`).
+  - **Order and bypass live in the node graph only** (the old rack's up/down
+    and bypass buttons are gone). An empty chain shows "Add effects with
+    + Add Node in the node graph".
+- Projects → a saved chain opens the Lab and loads that preset, whether the
+  Lab was never opened, is hidden, or is on screen.
 
 ## 4. Save semantics (operator decision: settings/presets only)
 
@@ -259,13 +307,17 @@ the recording's own load never shows up as a performance problem.
   `ai-opt-fix-rows-<i>`, with its adjusted notes) and after ("Changed:").
   **Apply fix** per issue (`ai-opt-fix-<i>`, then a small Undo next to
   "Applied", `ai-opt-fix-undo-<i>`) or **Apply all** (`ai-opt-fix-all`).
-- A result made on a Lab that has since closed (Agent, Optimizer) — or, for
-  the Art Director, a read of another source than the one loaded now — stays
-  readable but dimmed, opens with "Earlier run — on a Lab that has closed" /
-  "Read of <name>, not the current source — run Analyze again for this one."
-  (`ai-agent-stale`, `ai-opt-stale`, `ai-ad-stale`), and its actions are off.
-  When the Lab (or the source) changes, the tab scrolls back to its action
-  row.
+- There is **one Lab per session** (§3: once opened it stays mounted), so its
+  handle never changes: hiding and showing the Lab (Home, an opened effect, the
+  Lab toggle) does not make an Agent or Optimizer result stale — it stays
+  live, its Undo / Apply fix keep working on the same Lab. The Art Director's
+  read of another source than the one loaded now stays readable but dimmed,
+  opens with "Read of <name>, not the current source — run Analyze again for
+  this one." (`ai-ad-stale`), and its actions are off; the tab scrolls back to
+  its action row when the source changes. The Agent / Optimizer stale path
+  ("Earlier run — on a Lab that has closed", `ai-agent-stale`, `ai-opt-stale`)
+  stays in the panel as defensive code for a handle that changes, which the
+  shell no longer does.
 
 ### 9.7 Art Director → Agent handoff
 
@@ -307,9 +359,16 @@ the recording's own load never shows up as a performance problem.
   it says "The Agent's last run was undone: judges the Lab as it is" / "The
   Agent's last run was on another chain: judges the Lab as it is" (or "No
   Agent run yet…", `ai-opt-agent-line`) and sends `lastAgent: null`.
-- A run is bound to the Lab it started on: if the Lab is closed or reopened
-  mid-run, the run stops ("The Lab changed — run again"), and Undo / Apply
-  fix stay disabled on any other Lab (the stale result, §9.6).
+- A run is bound to the Lab handle it started on. Since the Lab is mounted
+  once for the session, hiding it mid-run (Home, an opened effect, the Lab
+  toggle) does **not** stop the run: its captures hold the render loop (and
+  the clip / Track, §3) live until each one settles, the plan is applied to
+  the hidden Lab, and its Undo is there when the Lab is back. The "The Lab
+  changed — run again" stop and the disabled Undo / Apply fix on another Lab
+  (the stale result, §9.6) remain only as defensive code for a handle that
+  changes. A webcam or
+  mic switched off by the hide (§3) is gone for the rest of the run: a later
+  capture finds no webcam picture.
 - A Master export makes the Lab refuse grabs, plans and reverts. The panel
   learns of it from those refusals only (a ready Lab giving no frame, a
   refused apply or undo): it stops before any upload or request ("A Master

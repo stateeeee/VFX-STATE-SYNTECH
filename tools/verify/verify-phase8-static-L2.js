@@ -8,6 +8,7 @@
  * like bokeh's stochastic bgfx). 'default' re-confirms L1 (the bgFxMode-off
  * branch is a no-op with no FX). */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -66,7 +67,9 @@ const ALL_FX = Object.keys(FX_BTN);
   await en.click('[data-testid="nodal-add-blob_tracker"]');
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]', { state: 'attached', timeout: 120000 });
+  await L.openLabSections(en); // Lab panel: effects + sub-sections are collapsed by default
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(2000);
 
   await en.evaluate(async () => {
@@ -91,11 +94,9 @@ const ALL_FX = Object.keys(FX_BTN);
       ALL_FX.forEach((k) => { const el = document.getElementById(FX_BTN[k]); const want = !!flags[k]; if (el.classList.contains('on') !== want) el.click(); });
       const bgb = document.getElementById('btn-bgfx'); if (bgb.classList.contains('on') !== !!bg) bgb.click();
     }, { FX_BTN, flags, bg, ALL_FX });
-    await en.evaluate(({ FX_PARAM, flags, bg, ALL_FX }) => {
-      const click = (tid, want) => { const el = document.querySelector(`[data-testid="param-blob_tracker-${tid}"]`); if (el && el.type === 'checkbox' && el.checked !== want) el.click(); };
-      ALL_FX.forEach((k) => click(FX_PARAM[k], !!flags[k]));
-      click('bgFxMode', !!bg);
-    }, { FX_PARAM, flags, bg, ALL_FX });
+    const target = { bgFxMode: bg ? 1 : 0 };
+    ALL_FX.forEach((k) => { target[FX_PARAM[k]] = flags[k] ? 1 : 0; });
+    await L.applyParams(en, 'blob_tracker', target); // throws if any control is missing
   };
   const settled = async (page, sel) => {
     let prev = await grab(page, sel);
@@ -136,7 +137,7 @@ const ALL_FX = Object.keys(FX_BTN);
 
   // text fill (random) — changes output both sides in bg mode
   await setState({}, true);
-  await en.evaluate(() => { const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; const el = document.querySelector('[data-testid="param-blob_tracker-textMode"]'); setV.call(el, 1); el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await L.setNum(en, 'blob_tracker', 'textMode', 1);
   await sa.evaluate(() => { const el = document.getElementById('fx-nums'); if (!el.classList.contains('on')) el.click(); });
   await sa.waitForTimeout(700);
   const tS = await grabSA(), tE = await grabEN();

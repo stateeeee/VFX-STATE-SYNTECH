@@ -7,6 +7,7 @@
  * Time-seeded looks (flare flicker, breathing, heavy grain) are excluded
  * here and covered behaviorally. */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -116,7 +117,9 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   await en.click('[data-testid="nodal-add-anamorphic_lab"]');
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]', { state: 'attached', timeout: 120000 });
+  await L.openLabSections(en); // Lab panel: effects + sub-sections are collapsed by default
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(2000);
 
   /* pin: standalone caps its canvas at 1280×720 → engine at resScale 2/3 */
@@ -185,15 +188,8 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
       set(k, v);
     });
   }, { P2: { ...DEFAULTS, ...over }, BOOLS });
-  const applyEN = (over) => en.evaluate((P2) => {
-    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    Object.entries(P2).forEach(([k, v]) => {
-      const el = document.querySelector(`[data-testid="param-anamorphic_lab-${k}"]`);
-      if (!el) return;
-      if (el.type === 'range') { setV.call(el, v); el.dispatchEvent(new Event('change', { bubbles: true })); }
-      else if (el.type === 'checkbox' && el.checked !== !!v) el.click();
-    });
-  }, { ...DEFAULTS, ...over });
+  // every key must exist as a Lab control (applyParams throws on a missing one)
+  const applyEN = (over) => L.applyParams(en, 'anamorphic_lab', { ...DEFAULTS, ...over });
   const grab = (page, sel) => page.evaluate(`(${grabOnceSrc})(${JSON.stringify(sel)})`);
 
   // the f-stop easing advances per RENDERED frame when frame time exceeds the

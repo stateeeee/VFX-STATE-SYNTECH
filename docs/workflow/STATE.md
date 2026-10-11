@@ -29,6 +29,37 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-11 (Lab nuovo + nomi degli effetti).** Da far provare
+all'operatore sull'app vera:
+- **Lab**: mettere 2–3 nodi nella composizione (es. blob tracker, analog,
+  anamorphic) → Lab nella barra di sinistra. A destra solo le sezioni chiuse
+  degli effetti, nell'ordine dei nodi; clic sul nome → sottosezioni chiuse come
+  nell'effetto originale; clic su una sottosezione → parametri. Il nome resta
+  in cima mentre si scorre e richiude l'effetto. Sorgente, Webcam, Mic / Track /
+  Clip, Preset e Master MP4 sono nella barra sopra il video.
+- **Home / Lab**: Home ora esce anche dal Lab; tornando nel Lab i parametri ci
+  sono ancora. Uscendo, video e musica si mettono in pausa, webcam e mic si
+  spengono (vanno riaccesi a mano).
+- **Nomi**: ogni effetto scrive il suo nome in alto a sinistra.
+
+Aperti nati da questa sessione (tutti LOW, dalla revisione Opus):
+- **Gemini con Lab nascosto:** se l'operatore va su Home mentre l'Agent cattura,
+  tra una cattura e la successiva webcam/mic possono spegnersi (documentato in
+  03-SPEC §9.8). Fix proposto: in `withLiveLoop` (`ChainLab.tsx`) chiamare
+  `window.setTimeout(syncLoop, 0)` nel `finally` invece di `syncLoop()`.
+- **Costo della grafica del Lab:** con tutte le sottosezioni aperte il Lab perde
+  ~3 fps in sandbox (animazioni infinite dei titoli). Se serve: animare
+  `fxl-glow/iri/topline/hue` solo in hover o sulla sezione aperta.
+- **Token `--syn-fx-*`** stanno in `src/components/chainLab.css` (scoped
+  `.syn-fxlab`), non in `src/index.css`: spostarli o annotare l'eccezione.
+- **Suite `verify-phase8-L5.js`:** dipende dal numero di frame (attese fisse in
+  ms); ora che il canvas è a schermo è al limite. Aspettare N frame di
+  `__SYN.engine.frame` invece dei millisecondi.
+- **`verify-phase8-static-L3` edge-fill** fallisce anche su HEAD (DETECT=MOTION su
+  frame fermo): questione di parità della suite, preesistente.
+- I parametri a scelta (es. `blob_tracker.detect`) sono ancora slider: in futuro
+  etichette per le opzioni in `ParamSchema` → bottoni come negli effetti.
+
 **SESSIONE 2026-10-09 (workflow multi-modello + 4 richieste).** Da far provare
 all'operatore sull'app vera, in quest'ordine:
 - **Blob tracker → sezione Body**: FACE / HANDS / BODY su un suo video trap con
@@ -120,6 +151,55 @@ sezione ANAMORPHIC dell'app bokeh** (non serve uno shot di `anamorphic_lab`).
 Non riaprirle.
 
 ## Log
+
+### 2026-10-11 — Il Lab rifatto: effetti impilati come dentro un effetto; ogni effetto col suo nome
+
+Richiesta dell'operatore: *"la sezione lab non mi piace eliminala… se aggiungo 3
+nodi e seleziono lab mi deve apparire una schermata uguale a quando seleziono gli
+effetti, solo che si trovano uno sotto l'altro… il video è unico, scorre la parte
+a destra… sezioni chiuse… una sezione col nome dell'effetto in cima a tutto, così
+se ci clicco sopra si richiudono"*; più: Bokeh deve scrivere BOKEH in alto a
+sinistra. Domande fatte e risposte: dentro l'effetto **sottosezioni chiuse** come
+nell'originale; **tutti** gli effetti col proprio nome.
+
+Diagnosi del "bloccato": il vecchio `ChainLab` aveva `min-h-[600px]` dentro
+l'apertura `overflow-hidden` → la colonna comandi era tagliata e non scorreva.
+
+Fatto (routing 09-MODEL-ROUTING):
+- **Sonnet** — `group` su ogni parametro dei 5 nodi (`src/engine/nodes/*.ts`) col
+  titolo della sezione dello standalone; anamorphic_lab, blob_tracker e bokeh
+  riordinati nell'ordine del pannello (stesse righe, solo ordine: verificato dal
+  revisore byte per byte; nulla dipende dall'indice). `ParamSchema.group` in
+  `src/bridge/types.ts`.
+- **Opus** — `ChainLab.tsx` render riscritto + `src/components/chainLab.css`
+  (scoped `.syn-fxlab`, token `--syn-fx-*`, font vendorizzati): barra in alto come
+  gli effetti (LAB, INPUT, AUDIO, FPS, RES + Video/Photo, Webcam, Mic, Track, Clip,
+  Preset in popover, Master MP4), video fisso a sinistra, pannello a destra che è
+  l'unica cosa che scorre; una sezione chiusa per effetto cablato, nome sticky che
+  richiude, sottosezioni chiuse per `group`. Tolti Back to console e su/giù/bypass
+  (ordine e bypass stanno nel grafo). `App.tsx`: il Lab si monta alla prima apertura
+  e poi si nasconde soltanto (Home, Lab, apertura di un effetto); Home esce anche dal
+  Lab; Projects carica un preset anche nel Lab già montato. Lab nascosto = render
+  loop in pausa, video/Track in pausa, webcam e mic spenti (`parkMedia`), tranne
+  durante catture Gemini/export. `SynEngine` stop/start non azzera più il tempo
+  degli effetti; `AudioEngine.pauseFile/resumeFile`. 03-SPEC §3, §9.6, §9.8
+  aggiornati.
+- **Regista** — loghi degli standalone: ANALOG, ANAMORPHIC LAB, BLOB TRACKER,
+  BOKEH (righe singole con commento `SYNTECH:`; BLOB REVEAL lo era già).
+- **Sonnet** — suite di verifica adattate: `tools/verify/lab-helpers.cjs` (apre le
+  sezioni, i setter falliscono invece di non fare nulla) + phase2/3/4/5/6/7/8/9.
+
+Verifica: revisione **Opus giro 1 = FAIL** (Lab nascosto lasciava audio/webcam
+accesi; suite rotte; spec §9; orologio; sezioni riaperte) → corretto → **giro 2 =
+PASS**. `npm run lint` pulito, `npm run build` ok. verify-gemini 11/11 (274
+controlli). Suite: phase2 27/27, phase3 14/14, phase4 20/20, phase5/6/7-behavior
+14/9/14, phase7-static 13/13, phase8-chain 6/6, L3b/L5/L6/L7b/L7c/L4 tutte verdi,
+phase9-export 7/7; i fallimenti rimasti (static-L2 cinque step, static-L3
+edge-fill, phase5/6-static "EMA 14×") falliscono identici su HEAD. Playwright:
+3 nodi → 3 sezioni chiuse nell'ordine giusto; apertura effetto/sottosezione;
+slider → parametro del nodo; scroll del pannello con video fermo e nome sticky;
+Home → pausa, Lab → stesso stato; 5 effetti; giorno/notte; fullscreen; nessun
+pageerror.
 
 ### 2026-10-10 (sera) — Barra di sinistra, nodi eliminabili, icone YouTube
 

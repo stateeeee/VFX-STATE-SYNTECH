@@ -9,6 +9,7 @@
  * with a direct 1:1 value mapping exercise processForDetect / getBinary /
  * findBlobs / drawBlobMarker / drawConnections. */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -85,7 +86,9 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   await en.click('[data-testid="nodal-add-blob_tracker"]');
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]', { state: 'attached', timeout: 120000 });
+  await L.openLabSections(en); // Lab panel: effects + sub-sections are collapsed by default
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(2000);
 
   const pinned = await en.evaluate(async () => {
@@ -125,14 +128,8 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
       el.value = val; el.dispatchEvent(new Event('input', { bubbles: true }));
     });
   }, { P2: { ...DEFAULTS, ...over }, SL });
-  const applyEN = (over) => en.evaluate((P2) => {
-    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    Object.entries(P2).forEach(([k, val]) => {
-      const el = document.querySelector(`[data-testid="param-blob_tracker-${k}"]`);
-      if (!el || el.type !== 'range') return;
-      setV.call(el, val); el.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-  }, { ...DEFAULTS, ...over });
+  // every key must exist as a Lab control (applyParams throws on a missing one)
+  const applyEN = (over) => L.applyParams(en, 'blob_tracker', { ...DEFAULTS, ...over });
   const grab = (page, sel) => page.evaluate(`(${grabOnceSrc})(${JSON.stringify(sel)})`);
   const settled = async (page, sel) => {
     let prev = await grab(page, sel);

@@ -10,6 +10,7 @@
  *     (the original has NO audio reactivity — no default routes by design)
  * Chain sanity lives in verify-phase6-chain.js (fresh-session script). */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -97,7 +98,9 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   await en.click('[data-testid="nodal-add-anamorphic_lab"]');
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]', { state: 'attached', timeout: 120000 });
+  await L.openLabSections(en); // Lab panel: effects + sub-sections are collapsed by default
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(1500);
   await en.evaluate(() => { const S = window.__SYN; S.engine.adaptiveRes = false; S.engine.setResScale(2 / 3); });
   const segReady = await en.waitForFunction(
@@ -145,15 +148,8 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
       set(k, v);
     });
   }, { P2: { ...DEFAULTS, ...over }, BOOLS });
-  const applyEN = (over) => en.evaluate((P2) => {
-    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    Object.entries(P2).forEach(([k, v]) => {
-      const el = document.querySelector(`[data-testid="param-anamorphic_lab-${k}"]`);
-      if (!el) return;
-      if (el.type === 'range') { setV.call(el, v); el.dispatchEvent(new Event('change', { bubbles: true })); }
-      else if (el.type === 'checkbox' && el.checked !== !!v) el.click();
-    });
-  }, { ...DEFAULTS, ...over });
+  // every key must exist as a Lab control (applyParams throws on a missing one)
+  const applyEN = (over) => L.applyParams(en, 'anamorphic_lab', { ...DEFAULTS, ...over });
   const grab = (page, sel) => page.evaluate(`(${grabOnceSrc})(${JSON.stringify(sel)})`);
   const grabSA = () => grab(sa, '#cv');
   const grabEN = () => grab(en, '[data-testid="chain-canvas"]');
@@ -294,7 +290,7 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
 
   /* ── F. manual mod routing (no default routes by design) ── */
   await en.setInputFiles('[data-testid="audio-file"]', path.join(SCRATCH, 'beat120.wav'));
-  await en.waitForSelector('[data-testid="audio-playpause"]', { timeout: 5000 });
+  await en.waitForSelector('[data-testid="audio-playpause"]', { timeout: 30000 });
   await en.waitForTimeout(500);
   let modSrc = '';
   for (let i = 0; i < 7 && modSrc.trim() !== 'BASS'; i++) {

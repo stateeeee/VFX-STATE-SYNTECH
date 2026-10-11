@@ -205,7 +205,9 @@ export default function App() {
   // SAVE / PROJECTS nav actions (phase 6: placeholders become minimal features)
   const [savedFlash, setSavedFlash] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(false);
-  const [chainPresetToOpen, setChainPresetToOpen] = useState<string | null>(null);
+  // a saved chain asked for from Projects; `seq` makes every pick a new request,
+  // so a Lab that is already mounted (shown or hidden) loads it too
+  const [chainPresetToOpen, setChainPresetToOpen] = useState<{ name: string; seq: number } | null>(null);
   const [systemSearch, setSystemSearch] = useState(''); // Phase 10: filter the effect cards by name
   const effectHostRef = useRef<EffectHostHandle | null>(null);
 
@@ -269,13 +271,21 @@ export default function App() {
 
   // Real effect currently open full-terminal (null = dashboard/home view)
   const [openEffectId, setOpenEffectId] = useState<ModuleId | null>(null);
-  // Lab (native SynEngine): effects composed in series, phase 5 MVP
+  // Lab (native SynEngine): effects composed in series. `chainOpen` = the Lab
+  // is the surface the operator chose (nav-ailab lit). Once opened, the Lab
+  // stays MOUNTED for the rest of the session and is only hidden (Home, an
+  // opened effect, the Lab toggle): its params, routes, source and audio
+  // survive, and its render loop pauses while hidden (ChainLab `visible`).
   const [chainOpen, setChainOpen] = useState(false);
+  const [labMounted, setLabMounted] = useState(false);
+  if (chainOpen && !labMounted) setLabMounted(true);
+  // what is on screen: an opened effect always covers the Lab
+  const labVisible = chainOpen && !openEffectId;
 
-  // Synchronize isStreaming with whether the Lab is open
+  // Synchronize isStreaming with whether the Lab is on screen
   useEffect(() => {
-    setIsStreaming(chainOpen);
-  }, [chainOpen]);
+    setIsStreaming(labVisible);
+  }, [labVisible]);
 
   // ── COMPOSITION STATE (shared by the Nodal Composition + the Lab) ──
   // The effects present in the composition, each with its enabled flag.
@@ -411,6 +421,7 @@ export default function App() {
     setActiveModule(id);
     if (hasRealEffect(id)) {
       setOpenEffectId(id);
+      setChainOpen(false); // the effect takes the hero; the Lab stays mounted, hidden
     }
   };
 
@@ -479,7 +490,9 @@ export default function App() {
   // panel names it when Google says this key cannot use it
   const [geminiModel, setGeminiModel] = useState<string>(GEMINI_MODEL_DEFAULT);
   const geminiActive = geminiStatus === 'active';
-  // the Lab's handle — what the Agent and the Optimizer drive (null while closed)
+  // the Lab's handle — what the Agent and the Optimizer drive. Null until the
+  // Lab is first opened; then the same object for the whole session (hiding
+  // the Lab never unmounts it)
   const labRef = useRef<LabHandle>(null);
 
   /** a validation's verdict → the panel state. Only a key Google rejected is
@@ -718,22 +731,23 @@ export default function App() {
 
   const handleBufferSizeChange = (size: number) => setBufferSize(size);
 
-  const isHome = !chainOpen && !openEffectId;
+  const isHome = !labVisible && !openEffectId;
 
   // ── left-sidebar navigation (the real commands, re-skinned per reference) ──
   const navItems: Array<{ key: string; label: string; Icon: any; active: boolean; onClick: () => void; title?: string }> = [
-    // Home closes the open effect / Gemini panel; the Lab stays armed —
-    // only a manual click on its own toggle disarms it (03-SPEC-SHELL §3)
-    { key: 'home', label: 'Home', Icon: null /* the brand logo, rendered by the rail */, active: isHome, onClick: () => { handleEffectClose(); setActiveGeminiMode(null); } },
+    // Home leaves whatever covers the hero — an open effect AND the Lab —
+    // and closes the Gemini mode. The Lab is only hidden: it keeps its params
+    // and comes back as it was on the next Lab click (03-SPEC-SHELL §3)
+    { key: 'home', label: 'Home', Icon: null /* the brand logo, rendered by the rail */, active: isHome, onClick: () => { handleEffectClose(); setChainOpen(false); setActiveGeminiMode(null); } },
     { key: 'save', label: savedFlash ? 'Saved' : 'Save', Icon: SaveIcon, active: savedFlash, onClick: handleSaveSession, title: 'Save the current session (module, theme) to this browser' },
     { key: 'projects', label: 'Projects', Icon: FolderIcon, active: projectsOpen, onClick: () => setProjectsOpen(true), title: 'Saved effect chains' },
     // the key stays 'ailab' (nav-ailab): the verify suites address it by testid
-    { key: 'ailab', label: 'Lab', Icon: AiIcon, active: chainOpen, onClick: toggleLab },
+    { key: 'ailab', label: 'Lab', Icon: AiIcon, active: labVisible, onClick: toggleLab },
   ];
 
   // where the Gemini panel is working: the Agent and the Optimizer drive the
   // Lab only; the Art Director works anywhere (03-SPEC-SHELL, D2)
-  const geminiSurface: 'home' | 'lab' | 'effect' = openEffectId ? 'effect' : chainOpen ? 'lab' : 'home';
+  const geminiSurface: 'home' | 'lab' | 'effect' = openEffectId ? 'effect' : labVisible ? 'lab' : 'home';
   /** "Use this chain": the Art Director's proposal becomes the wired chain, in the Lab */
   const applyGeminiChain = (list: ModuleId[]) => {
     setChainTo(list);
@@ -992,7 +1006,7 @@ export default function App() {
                       <li
                         key={c.savedAt}
                         className={`flex items-center justify-between p-3 rounded border cursor-pointer group ${isDayMode ? 'border-neutral-200 hover:border-violet-500 hover:bg-violet-500/5' : 'border-ink-700 hover:border-violet-500/50 hover:bg-violet-500/10'}`}
-                        onClick={() => { setChainPresetToOpen(c.name); setChainOpen(true); setProjectsOpen(false); }}
+                        onClick={() => { setChainPresetToOpen((prev) => ({ name: c.name, seq: (prev?.seq ?? 0) + 1 })); openLab(); setProjectsOpen(false); }}
                       >
                         <div className="flex flex-col">
                           <span className="font-bold text-sm tracking-wide">{c.name}</span>
@@ -1026,19 +1040,20 @@ export default function App() {
                     className={`syn-hole relative rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-white' : 'border-ink-700/60 bg-ink-900'} overflow-hidden flex flex-col${isHeroFullscreen ? ' syn-hero-fs' : ''}`}
                     style={cageBox(HOLES.hero)}
                   >
-                    {/* armed Lab stays mounted under an open effect so its
-                        composition (nodes, wiring, params) survives navigation.
-                        Fullscreen only: a flex column lets the lab's own `flex-1` fill
-                        the screen (normally it keeps its natural height, opening clips it) */}
-                    {chainOpen && (
-                      <div className={openEffectId ? 'hidden' : isHeroFullscreen ? 'w-full h-full flex flex-col' : 'w-full h-full'}>
+                    {/* the Lab, once opened, stays mounted for the session and is only
+                        hidden (Home, an open effect, the Lab toggle) so its composition
+                        (nodes, wiring, params, routes) survives navigation; hidden, its
+                        render loop is paused. It fills the opening exactly (h-full), in
+                        fullscreen too. */}
+                    {labMounted && (
+                      <div className={labVisible ? 'w-full h-full min-h-0' : 'hidden'}>
                         <ChainLab
                           ref={labRef}
                           isDayMode={isDayMode}
-                          onBack={() => setChainOpen(false)}
+                          visible={labVisible}
                           chain={graphChain}
                           onChainChange={setChainTo}
-                          initialPreset={chainPresetToOpen ?? undefined}
+                          presetRequest={chainPresetToOpen}
                           initialSource={compSource}
                           onSourcePicked={onSourceFile}
                         />
@@ -1052,7 +1067,7 @@ export default function App() {
                         isDayMode={isDayMode}
                         onBack={handleEffectClose}
                       />
-                    ) : chainOpen ? null : (
+                    ) : labVisible ? null : (
                       <>
                         {/* background: the source if chosen (a photo sits in the
                             same box as the clip), else the brain graph */}
@@ -1122,7 +1137,9 @@ export default function App() {
                         aria-label="Exit fullscreen"
                         data-testid="hero-fullscreen-exit"
                         onClick={toggleHeroFullscreen}
-                        className="absolute bottom-10 right-3 z-50 w-10 h-10 flex items-center justify-center rounded-lg bg-black/55 text-white opacity-60 hover:opacity-100 focus-visible:opacity-100 transition-opacity cursor-pointer"
+                        /* with the Lab on screen it sits at the bottom-right of the Lab's
+                           image, clear of its parameter panel (290px) */
+                        className={`absolute bottom-10 ${labVisible ? 'right-[304px]' : 'right-3'} z-50 w-10 h-10 flex items-center justify-center rounded-lg bg-black/55 text-white opacity-60 hover:opacity-100 focus-visible:opacity-100 transition-opacity cursor-pointer`}
                       >
                         <FullscreenIcon exit className="w-9 h-9" />
                       </button>

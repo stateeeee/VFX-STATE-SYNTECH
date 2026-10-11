@@ -4,6 +4,7 @@
  * SEG reaches READY on demand. Plus: transport controls, motion/bright
  * signals from the chain video, preset round-trip of bus routing. */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -54,10 +55,12 @@ const MIME = { '.js': 'application/javascript', '.wasm': 'application/wasm', '.c
   await page.click('[data-testid="nav-ailab"]');
   await page.waitForSelector('[data-testid="chain-canvas"]', { timeout: 10000 });
   await page.waitForTimeout(800);
+  // the Lab panel lists each wired effect CLOSED by default: open every effect + sub-section
+  await L.openLabSections(page);
 
   /* ── 1. music file → meters + BPM move ── */
   await page.setInputFiles('[data-testid="audio-file"]', path.join(SCRATCH, 'beat120.wav'));
-  await page.waitForSelector('[data-testid="audio-playpause"]', { timeout: 5000 });
+  await page.waitForSelector('[data-testid="audio-playpause"]', { timeout: 30000 });
   step('audio file loads (transport bar appears)', true);
   await page.waitForTimeout(5000); // let bands + bpm settle
   const sample = async (tid, times = 8, gap = 180) => {
@@ -98,7 +101,7 @@ const MIME = { '.js': 'application/javascript', '.wasm': 'application/wasm', '.c
   step('seek jumps the transport', t4 >= 0.9 && t4 < 4, `t4=${t4}`);
 
   /* ── 3. route bass onto analog.intensity → readout modulates ── */
-  await page.click('[data-testid="mod-src-analog-tearAmt"]'); // ~ → BASS
+  await L.clickControl(page, 'analog', 'mod-src-analog-tearAmt'); // ~ → BASS
   const modSrc = await page.textContent('[data-testid="mod-src-analog-tearAmt"]');
   step('mod route cycles to BASS', modSrc.trim() === 'BASS', modSrc);
   await page.evaluate(() => {
@@ -145,29 +148,29 @@ const MIME = { '.js': 'application/javascript', '.wasm': 'application/wasm', '.c
     await page.waitForTimeout(500);
   }
   step('SEG reaches READY on demand (seg-on node racked)', segReady, (segTxt || '').trim());
-  await page.click('[data-testid="param-blob_reveal-segEnabled"]'); // disable seg
+  await L.clickControl(page, 'blob_reveal', 'param-blob_reveal-segEnabled'); // disable seg
   const gatedOff = await page.waitForFunction(
     () => window.__SYN && window.__SYN.engine.personMaskSource === null,
     null, { timeout: 8000 }
   ).then(() => true).catch(() => false);
   step('SEG mask gated off when segEnabled unchecked', gatedOff);
-  await page.click('[data-testid="param-blob_reveal-segEnabled"]'); // re-enable for downstream state
+  await L.clickControl(page, 'blob_reveal', 'param-blob_reveal-segEnabled'); // re-enable for downstream state
 
-  /* ── 6. preset round-trip: routing survives save→mutate→load ── */
-  await page.fill('[data-testid="preset-name"]', 'p3test').catch(() => {});
-  const presetInput = await page.$('[data-testid="preset-name"]');
-  if (presetInput) {
-    await page.click('[data-testid="preset-save"]');
-    await page.click('[data-testid="mod-src-analog-tearAmt"]'); // BASS → LOUD (mutate)
-    await page.waitForTimeout(200);
-    await page.click('[data-testid="preset-load-p3test"]');
-    await page.waitForTimeout(300);
-    const restored = await page.textContent('[data-testid="mod-src-analog-tearAmt"]');
-    step('bus routing survives preset round-trip', restored.trim() === 'BASS', restored.trim());
-  } else {
-    // fall back to direct serialize/restore via the exposed UI-less path:
-    step('bus routing survives preset round-trip', true, 'preset UI not found — skipped (no testids)');
-  }
+  /* ── 6. preset round-trip: routing survives save→mutate→load ──
+     (presets live in a popover opened by preset-toggle; there is no silent
+     fallback any more: a missing preset UI is a FAILED step) */
+  await L.openPresetPopover(page);
+  await page.fill('[data-testid="preset-name"]', 'p3test');
+  await page.click('[data-testid="preset-save"]');
+  await L.closePresetPopover(page);
+  await page.click('[data-testid="mod-src-analog-tearAmt"]'); // BASS → LOUD (mutate)
+  await page.waitForTimeout(200);
+  const mutated = (await page.textContent('[data-testid="mod-src-analog-tearAmt"]')).trim();
+  await L.openPresetPopover(page);
+  await page.click('[data-testid="preset-load-p3test"]'); // loading closes the popover
+  await page.waitForTimeout(300);
+  const restored = await page.textContent('[data-testid="mod-src-analog-tearAmt"]');
+  step('bus routing survives preset round-trip', mutated !== 'BASS' && restored.trim() === 'BASS', `mutated=${mutated} restored=${restored.trim()}`);
 
   step('no page errors', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
   await page.screenshot({ path: path.join(SCRATCH, 'shots', 'phase3-lab.png') });

@@ -5,6 +5,7 @@
  * independent frame histories, so not pixel-identical — same as bokeh's
  * temporal passes). Long-exposure per side isolates the flow overlay. */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -58,7 +59,9 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   await en.click('[data-testid="nodal-add-blob_tracker"]');
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]', { state: 'attached', timeout: 120000 });
+  await L.openLabSections(en); // Lab panel: effects + sub-sections are collapsed by default
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(1500);
   await en.evaluate(() => { const S = window.__SYN; S.engine.adaptiveRes = false; S.engine.setResScale(2 / 3); });
 
@@ -66,7 +69,7 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   const grabSA = () => grab(sa, '#dc'), grabEN = () => grab(en, '[data-testid="chain-canvas"]');
   const setFlow = async (on) => {
     await sa.evaluate((on) => { const b = document.getElementById('flow-on-btn'); if (b.classList.contains('on') !== on) b.click(); }, on);
-    await en.evaluate((on) => { const el = document.querySelector('[data-testid="param-blob_tracker-flowOn"]'); if (el && el.checked !== on) el.click(); }, on);
+    await L.setBool(en, 'blob_tracker', 'flowOn', on);
   };
   const longExposure = async (grabber, n = 10) => {
     const acc = new Array(DW * DH).fill(0);

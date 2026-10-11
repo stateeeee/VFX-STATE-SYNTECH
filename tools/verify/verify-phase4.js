@@ -5,6 +5,7 @@
  * structural metrics computed identically on both sides. Stochastic passes
  * (noise/tear/dropout) are judged by behavior (temporal variance), not pixels. */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -182,7 +183,9 @@ const gradRatio = (g) => {
   await en.click('[data-testid="nodal-add-analog"]');
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]');
+  await L.openLabSections(en); // Lab panel: effects + sub-sections are collapsed by default
   await en.setInputFiles('[data-testid="chain-file"]', clipPath);
+  await L.waitForSource(en);
   await en.waitForTimeout(2500);
   // let the adaptive resolution settle (SwiftShader steps 1 → .75 → .5;
   // every step resizes node targets and clears the feedback buffer)
@@ -199,19 +202,9 @@ const gradRatio = (g) => {
   });
   step('engine: analog node runs on the clip', /1280x720|960x540|640x360/.test(enSize), `canvas ${enSize} res=${lastRes}%`);
 
-  const applyEngine = (cfg) => en.evaluate(({ N, B, over }) => {
-    const P2 = { ...N, ...over };
-    const B2 = { ...B, ...over };
-    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    Object.keys(P2).forEach((k) => {
-      const el = document.querySelector(`[data-testid="param-analog-${k}"]`);
-      if (el && el.type === 'range') { setV.call(el, P2[k]); el.dispatchEvent(new Event('change', { bubbles: true })); }
-    });
-    Object.keys(B2).forEach((k) => {
-      const el = document.querySelector(`[data-testid="param-analog-${k}"]`);
-      if (el && el.type === 'checkbox' && el.checked !== !!B2[k]) el.click();
-    });
-  }, { N: NEUTRAL, B: BOOLS_OFF, over: cfg });
+  // every key must exist as a Lab control (applyParams throws on a missing one); the
+  // Lab lists each wired effect CLOSED, applyParams opens the sections on demand
+  const applyEngine = (cfg) => L.applyParams(en, 'analog', { ...NEUTRAL, ...BOOLS_OFF, ...cfg });
 
   /* ── 3. run the configs on both sides ── */
   const grab = async (page, sel) => {
@@ -279,8 +272,17 @@ const gradRatio = (g) => {
     `values ${reactVals.map((v) => (v ?? NaN).toFixed(2)).join(',')} spread ${rSpread.toFixed(2)}`);
 
   /* ── 6. chain sanity: analog + 2 dummies, fps + no GL errors ── */
-  await en.click('[data-testid="toggle-blob_reveal"]');
-  await en.click('[data-testid="toggle-bokeh"]');
+  // the old rack bypass buttons are gone: order/bypass come from the node graph. Go Home
+  // (the Lab stays mounted, only hidden), wire the two extra nodes, come back to the Lab.
+  await en.click('[data-testid="nav-home"]');
+  await en.click('[data-testid="nodal-add"]');
+  await en.click('[data-testid="nodal-add-blob_reveal"]');
+  await en.click('[data-testid="nodal-add"]');
+  await en.click('[data-testid="nodal-add-bokeh"]');
+  await en.click('[data-testid="nav-ailab"]');
+  await en.waitForSelector('[data-testid="chain-canvas"]', { state: 'visible' });
+  const chainIds = await en.evaluate(() => window.__SYN.engine.chain.filter((n) => n.enabled).map((n) => n.id));
+  step('chain is analog + blob_reveal + bokeh (wired through the node graph)', JSON.stringify(chainIds) === JSON.stringify(['analog', 'blob_reveal', 'bokeh']), JSON.stringify(chainIds));
   await en.waitForTimeout(4000);
   const fps = parseInt(await en.textContent('[data-testid="chain-fps"]'));
   const res = await en.textContent('[data-testid="chain-res"]');

@@ -93,7 +93,7 @@ const STEPS = [
   [4, 'photo → Art Director → Use this chain (In use, Agent tab) → Optimizer, audio off'],
   [5, 'video → Art Director: stale read flagged, upload once, then reuse'],
   [6, 'Use this chain → Agent: auto Clip, fileUri + clip, adjusted rows, per-key Undo'],
-  [7, 'Optimizer: numbered issues, fix rows, shared LIFO undo, stale results'],
+  [7, 'Optimizer: numbered issues, fix rows, shared LIFO undo, results survive a Lab hide/show'],
   [8, 'silent clip: no-soundtrack note, picture only, truthful Sends'],
   [9, 'key rejected mid-session → relocked'],
   [10, 'HTTP contract'],
@@ -681,6 +681,11 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
       os === 'Sends: 4s output clip (silent) + 1 frame pair + 2s of live signals + the chain + the checks + the art direction', os);
     // the operator wires one ordinary music route by hand (the rack's ~ button:
     // off → bass): with audio off it is waiting for music, not an error
+    // LAB-REDESIGN: controls live in closed sections now — open the effect and its sub-sections first
+    await page.evaluate(() => { const h = document.querySelector('[data-testid="fx-head-anamorphic_lab"]'); if (h && h.getAttribute('aria-expanded') === 'false') h.click(); });
+    await sleep(300);
+    await page.evaluate(() => { document.querySelectorAll('[data-testid^="fx-sec-anamorphic_lab-"][aria-expanded="false"]').forEach((h) => h.click()); });
+    await sleep(300);
     const wired = await page.evaluate(() => {
       for (const el of document.querySelectorAll('[data-testid^="mod-src-anamorphic_lab-"]')) {
         const key = `anamorphic_lab.${el.getAttribute('data-testid').slice('mod-src-anamorphic_lab-'.length)}`;
@@ -736,8 +741,8 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
   /* ── 5 ── */
   await step(5, async () => {
     // back to Home with the Lab closed (nav-ailab toggles), then the video as the INPUT source
-    if (await page.$(sel('chain-canvas'))) await domClick(page, 'nav-ailab');
-    check(' Lab closed, Home on screen', await page.waitForSelector(sel('chain-canvas'), { state: 'detached', timeout: 10_000 }).then(() => true).catch(() => false));
+    if (await page.locator(sel('chain-canvas')).isVisible().catch(() => false)) await domClick(page, 'nav-ailab');
+    check(' Lab closed, Home on screen', await page.waitForSelector(sel('chain-canvas'), { state: 'hidden', timeout: 10_000 }).then(() => true).catch(() => false));
     await page.locator(sel('source-file')).setInputFiles(fx.video);
     check(' video shown on Home (hero-video)', await visible(page, 'hero-video', 10_000));
     check(' Art Director tab on screen', await openRole(page, 'art_director', 'ai-ad-run'));
@@ -796,9 +801,9 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
 
   /* ── 6 ── */
   await step(6, async () => {
-    if (await page.$(sel('chain-canvas'))) { // still open after a failed step 5: close it first (nav-ailab toggles)
+    if (await page.locator(sel('chain-canvas')).isVisible().catch(() => false)) { // still open after a failed step 5: close it first (nav-ailab toggles)
       await domClick(page, 'nav-ailab');
-      await page.waitForSelector(sel('chain-canvas'), { state: 'detached', timeout: 10_000 }).catch(() => {});
+      await page.waitForSelector(sel('chain-canvas'), { state: 'hidden', timeout: 10_000 }).catch(() => {});
     }
     // "Use this chain" on the VIDEO result: wires it, opens the Lab, and keeps
     // the proposal (now with the music read) as the art direction
@@ -1138,47 +1143,28 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(" the Optimizer: 'The Agent's last run was undone: judges the Lab as it is', no plan in Sends",
       al2 === "The Agent's last run was undone: judges the Lab as it is" && !/Agent's last plan/.test(await sendsLine(page)), al2);
 
-    // ── the Lab closes and reopens: both results belong to a Lab that is gone ──
+    // ── the Lab hides and shows again (LAB-REDESIGN 2026-10-10): it stays mounted, so it is the
+    //    SAME Lab — both results stay live, nothing turns stale ──
+    const handle0 = await page.evaluate(() => { window.__labBefore = window.__SYN.lab; return true; });
     await domClick(page, 'nav-ailab');
-    const closed = await page.waitForSelector(sel('chain-canvas'), { state: 'detached', timeout: 10_000 }).then(() => true).catch(() => false);
+    const closed = await page.waitForSelector(sel('chain-canvas'), { state: 'hidden', timeout: 10_000 }).then(() => true).catch(() => false);
     const reopened = closed && await openLabVia(page, () => domClick(page, 'nav-ailab'));
-    check(' the Lab closed and reopened (a new Lab handle)', reopened);
+    check(' the Lab hid and showed again (the same Lab handle)', reopened && handle0 && await page.evaluate(() => window.__SYN.lab === window.__labBefore));
     if (!reopened) return;
     await page.evaluate(() => window.__SYN.lab.whenReady(20_000)).catch(() => false);
-    const ov = await page.waitForSelector(sel('ai-opt-stale'), { state: 'visible', timeout: 6000 }).then(() => true).catch(() => false);
-    const ost = await page.evaluate(() => {
-      const r = document.querySelector('[data-testid="ai-opt-result"]');
-      return {
-        line: (document.querySelector('[data-testid="ai-opt-stale"]')?.textContent || '').trim(),
-        first: r?.firstElementChild?.getAttribute('data-testid') || '',
-        dim: !!r?.querySelector('.opacity-50'),
-        off: ['ai-opt-fix-0', 'ai-opt-fix-all', 'ai-opt-undo'].map((t) => document.querySelector(`[data-testid="${t}"]`)?.disabled ?? null),
-      };
-    });
-    check(` Optimizer: its result opens with '${STALE_LAB}', dimmed, Apply fix / Apply all / Undo off`,
-      ov && ost.line === STALE_LAB && ost.first === 'ai-opt-stale' && ost.dim && ost.off.every((d) => d === true), JSON.stringify(ost));
+    await sleep(800);
+    check(' Optimizer: its result is still live (no stale banner)', await page.$(sel('ai-opt-stale')) === null);
     check(' Agent tab on screen', await openRole(page, 'agent', 'ai-agent-run'));
-    const av = await page.waitForSelector(sel('ai-agent-stale'), { state: 'visible', timeout: 6000 }).then(() => true).catch(() => false);
-    const ast = await page.evaluate(() => {
-      const r = document.querySelector('[data-testid="ai-agent-result"]');
-      return {
-        line: (document.querySelector('[data-testid="ai-agent-stale"]')?.textContent || '').trim(),
-        first: r?.firstElementChild?.getAttribute('data-testid') || '',
-        dim: !!r?.querySelector('.opacity-50'),
-        label: /\d+ changes? on that Lab/.test(r?.textContent || ''),
-        undo: document.querySelector('[data-testid="ai-agent-undo"]')?.disabled ?? null,
-      };
-    });
-    check(` Agent: its card opens with '${STALE_LAB}', '… on that Lab', dimmed, its Undo off`,
-      av && ast.line === STALE_LAB && ast.first === 'ai-agent-stale' && ast.label && ast.dim && ast.undo === true, JSON.stringify(ast));
+    await sleep(500);
+    check(' Agent: its card is still live (no stale banner)', await page.$(sel('ai-agent-stale')) === null);
   });
 
   /* ── 8 ── */
   await step(8, async () => {
     // a clip with no audio track on the INPUT node, then the Lab on it
-    if (await page.$(sel('chain-canvas'))) {
+    if (await page.locator(sel('chain-canvas')).isVisible().catch(() => false)) {
       await domClick(page, 'nav-ailab');
-      await page.waitForSelector(sel('chain-canvas'), { state: 'detached', timeout: 10_000 }).catch(() => {});
+      await page.waitForSelector(sel('chain-canvas'), { state: 'hidden', timeout: 10_000 }).catch(() => {});
     }
     const prev = await page.evaluate(() => document.querySelector('[data-testid="hero-video"]')?.src || '');
     await page.locator(sel('source-file')).setInputFiles(fx.silent);

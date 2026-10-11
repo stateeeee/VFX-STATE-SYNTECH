@@ -6,6 +6,7 @@
  * The bokeh kernel's gold-noise jitter is clock-seeded per side, so a small
  * per-pixel shimmer is expected — thresholds match the Phase 4 gates. */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -115,7 +116,9 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   await en.click('[data-testid="nodal-add-bokeh"]');
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]');
+  await L.openLabSections(en); // Lab panel: effects + sub-sections are collapsed by default
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(2000);
 
   /* pin both sides on the same frame */
@@ -179,15 +182,8 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
     });
     updateBshapeUI((P2.bshapeX + 1) / 2, (1 - P2.bshapeY) / 2);
   }, { ...DEFAULTS, ...over });
-  const applyEN = (over) => en.evaluate((P2) => {
-    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    Object.entries(P2).forEach(([k, v]) => {
-      const el = document.querySelector(`[data-testid="param-bokeh-${k}"]`);
-      if (!el) return;
-      if (el.type === 'range') { setV.call(el, v); el.dispatchEvent(new Event('change', { bubbles: true })); }
-      else if (el.type === 'checkbox' && el.checked !== !!v) el.click();
-    });
-  }, { ...DEFAULTS, ...over });
+  // every key must exist as a Lab control (applyParams throws on a missing one)
+  const applyEN = (over) => L.applyParams(en, 'bokeh', { ...DEFAULTS, ...over });
   const grab = (page, sel) => page.evaluate(`(${grabOnceSrc})(${JSON.stringify(sel)})`);
 
   const summary = {};

@@ -141,6 +141,8 @@ export class SynEngine {
   private rafId = 0;
   private frame = 0;
   private startT = 0;
+  /** performance.now() when the loop last stopped; null = never started / running */
+  private stoppedAt: number | null = null;
   private fpsCount = 0;
   private fpsT = 0;
   fps = 0;
@@ -409,10 +411,18 @@ export class SynEngine {
     [c[i], c[j]] = [c[j], c[i]];
   }
 
+  /* stop() / start() pause the effect clock instead of resetting it: stop()
+     notes when the loop stopped, start() shifts startT by the time spent
+     stopped, so `time` goes on from where it was (a hidden Lab shown again,
+     a capture hold) instead of jumping back to 0. The first start() sets it. */
   start(): void {
     if (this.rafId) return;
-    this.startT = performance.now();
-    this.fpsT = this.startT;
+    const t = performance.now();
+    if (this.stoppedAt === null) this.startT = t;
+    else this.startT += t - this.stoppedAt;
+    this.stoppedAt = null;
+    this.fpsT = t;
+    this.fpsCount = 0;
     const tick = (now: number) => {
       this.rafId = requestAnimationFrame(tick);
       this.renderFrame(now);
@@ -424,8 +434,10 @@ export class SynEngine {
   }
 
   stop(): void {
-    if (this.rafId) cancelAnimationFrame(this.rafId);
+    if (!this.rafId) return;
+    cancelAnimationFrame(this.rafId);
     this.rafId = 0;
+    this.stoppedAt = performance.now();
   }
 
   renderFrame(now: number): void {

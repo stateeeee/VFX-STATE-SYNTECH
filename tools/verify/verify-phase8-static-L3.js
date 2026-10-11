@@ -4,6 +4,7 @@
  * Sweeps contour smooth / expand / fill. (Smart mode = a separate MediaPipe
  * dep, not ported — deferred.) */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -67,17 +68,17 @@ const CONFIGS = [
   await en.click('[data-testid="nodal-add-blob_tracker"]');
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]', { state: 'attached', timeout: 120000 });
+  await L.openLabSections(en); // Lab panel: effects + sub-sections are collapsed by default
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(2000);
 
   await en.evaluate(async () => {
     const S = window.__SYN; S.engine.adaptiveRes = false; S.engine.setResScale(2 / 3);
     const v = S.engine.source; v.pause(); v.currentTime = 1.0;
     await Promise.race([new Promise((r) => { const on = () => { v.removeEventListener('seeked', on); r(); }; v.addEventListener('seeked', on); }), new Promise((r) => setTimeout(r, 2500))]);
-    // enable edge contour
-    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    const cm = document.querySelector('[data-testid="param-blob_tracker-ctMode"]'); setV.call(cm, 1); cm.dispatchEvent(new Event('change', { bubbles: true }));
   });
+  await L.setNum(en, 'blob_tracker', 'ctMode', 1); // enable edge contour
   await sa.evaluate(async () => {
     const dc = document.getElementById('dc'); dc.width = 1280; dc.height = 720;
     const v = document.getElementById('vid'); v.pause(); v.currentTime = 1.0;
@@ -94,12 +95,7 @@ const CONFIGS = [
     const ex = document.getElementById('ct-expand-sl'); ex.value = c.expand; ex.dispatchEvent(new Event('input', { bubbles: true }));
     const fl = document.getElementById('ct-fill'); if (fl.classList.contains('on') !== !!c.fill) fl.click();
   }, { c });
-  const applyEN = (c) => en.evaluate(({ c }) => {
-    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    const set = (k, val) => { const el = document.querySelector(`[data-testid="param-blob_tracker-${k}"]`); if (el && el.type === 'range') { setV.call(el, val); el.dispatchEvent(new Event('change', { bubbles: true })); } };
-    set('ctSmooth', c.smooth); set('ctExpand', c.expand);
-    const fl = document.querySelector('[data-testid="param-blob_tracker-ctFill"]'); if (fl && fl.checked !== !!c.fill) fl.click();
-  }, { c });
+  const applyEN = (c) => L.applyParams(en, 'blob_tracker', { ctSmooth: c.smooth, ctExpand: c.expand, ctFill: c.fill ? 1 : 0 });
 
   const summary = {};
   for (const cfg of CONFIGS) {

@@ -522,42 +522,37 @@ const jsSmoothstep = (e0: number, e1: number, x: number) => {
  * standalone's BOOT state: the P literals overlaid with the `isco` preset
  * it applies on load. No audio reactivity exists in the original (its one
  * AudioContext is REC export plumbing) → no defaultRoutes. */
+// Entries are ordered by the standalone panel sections (`group` = its .sec-title).
 const PARAMS: ParamSchema[] = [
-  { key: 'segEnabled', label: 'Person Mask', type: 'boolean', value: 1, aiHint: '(on/off switch) Subject segmentation for the background-blur pre-pass; without it (or at 0mm) the pre-pass is skipped, like the standalone before its detector loads' },
-  // grade
-  { key: 'exposure', label: 'Exposure', type: 'number', value: 0.05, min: -2, max: 2, step: 0.02, reactive: true, aiHint: 'Stops of exposure applied before the grade (2^x gain)' },
-  { key: 'temp', label: 'Temperature', type: 'number', value: 0.58, min: -1, max: 1, step: 0.01, reactive: true, aiHint: 'Warm/cool split-tone grade: + = golden shadows, − = cool blue' },
-  { key: 'lift', label: 'Lift', type: 'number', value: 0.05, min: 0, max: 0.15, step: 0.002, aiHint: 'Black lift — raises shadows toward a milky film base' },
-  { key: 'contrast', label: 'Contrast', type: 'number', value: 0.32, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'S-curve contrast around mid grey' },
-  { key: 'sat', label: 'Saturation', type: 'number', value: 0.8, min: 0, max: 1.8, step: 0.01, reactive: true, aiHint: 'Color saturation; >1 oversaturates' },
-  { key: 'rolloff', label: 'Rolloff', type: 'number', value: 0.58, min: 0, max: 1, step: 0.01, aiHint: 'Filmic highlight shoulder — compresses highlights like print film' },
-  { key: 'lutMix', label: 'LUT Mix', type: 'number', value: 0, min: 0, max: 1, step: 0.01, aiHint: 'LUT blend (identity in this build — the sampleLUT path is a pass-through)' },
-  // texture
-  { key: 'grain', label: 'Grain', type: 'number', value: 0.08, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Instax/VHS grain: mid-tone noise, scan shimmer, chroma bleed' },
-  { key: 'bokeh', label: 'Bokeh Bloom', type: 'number', value: 0.42, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Horizontal anisotropic highlight bloom — anamorphic streak glow' },
-  { key: 'halation', label: 'Halation', type: 'number', value: 0.52, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Warm red-orange glow bleeding around bright areas, film halation' },
-  { key: 'ca', label: 'Chromatic Ab.', type: 'number', value: 0.28, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Radial RGB fringe growing toward the frame edges' },
-  // optics
-  { key: 'barrel', label: 'Barrel', type: 'number', value: 0.26, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Oval-lens radial distortion, stronger on the vertical axis' },
-  { key: 'vignette', label: 'Vignette', type: 'number', value: 0.44, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Elliptical anamorphic lens vignette' },
-  { key: 'squeeze', label: 'Squeeze', type: 'number', value: 1.15, min: 1, max: 2.2, step: 0.02, reactive: true, aiHint: 'Horizontal anamorphic squeeze of the sampled frame (1=off, ~2=2×); also drives the oval bokeh ratio' },
-  { key: 'ratio', label: 'Ratio', type: 'number', value: 2.39, min: 1.78, max: 2.8, step: 0.01, aiHint: 'Target widescreen aspect ratio for the letterbox crop' },
-  { key: 'letterbox', label: 'Letterbox', type: 'boolean', value: 1, aiHint: '(on/off switch) Crop toward centre to the target ratio (black bands outside)' },
-  { key: 'breathing', label: 'Breathing', type: 'boolean', value: 0, aiHint: '(on/off switch) Subtle live lens-breathing zoom oscillation' },
-  // flare
-  { key: 'flareMaster', label: 'Flare Master', type: 'boolean', value: 0, aiHint: '(on/off switch) Master gate for the auto-detected anamorphic flare' },
-  { key: 'flare', label: 'Flare', type: 'boolean', value: 0, aiHint: '(on/off switch) Flare stage on/off (needs Flare Master too, like the standalone)' },
-  { key: 'flareAmt', label: 'Flare Amount', type: 'number', value: 0.65, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Intensity of the horizontal blue/gold flare streak at the auto-detected hotspot' },
-  { key: 'flareLength', label: 'Flare Length', type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, aiHint: '0 short beam, 1 full-width streak' },
-  { key: 'flareColor', label: 'Flare Color', type: 'number', value: 0, min: 0, max: 1, step: 0.01, aiHint: '0 classic gold core, 1 cold blue' },
-  { key: 'flareHeight', label: 'Flare Height', type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, aiHint: '0 razor-thin line, 1 thick beam' },
-  // subject-aware bokeh pre-pass
-  { key: 'bokehMM', label: 'Bokeh mm', type: 'number', value: 0, min: 0, max: 200, step: 1, reactive: true, aiHint: 'Focal length of the subject-aware background blur (0 = off, zero cost); drives bloom + background magnification' },
-  { key: 'fStop', label: 'F-Stop', type: 'number', value: 4, min: 0.95, max: 22, step: 0.05, reactive: true, aiHint: 'Aperture driving the background CoC radius (f/0.95 ≈ 80px … f/22 ≈ 3.5px), eased ~120ms like a focus rack' },
-  { key: 'ovalFineTune', label: 'Oval Fine Tune', type: 'number', value: 0, min: -0.3, max: 0.5, step: 0.01, aiHint: 'Manual trim on the oval bokeh-disc ratio (squeeze + trim, floor 1.0)' },
-  { key: 'ghostGlitch', label: 'Ghost FX', type: 'boolean', value: 0, aiHint: '(on/off switch) Deliberate mask flip — the ghosted double-exposure segmentation look' },
-  // compare
-  { key: 'compare', label: 'Compare Split', type: 'boolean', value: 0, aiHint: '(on/off switch) A/B split: raw left half, graded right half' },
+  { key: 'compare', group: 'Exposure', label: 'Compare Split', type: 'boolean', value: 0, aiHint: '(on/off switch) A/B split: raw left half, graded right half' },
+  { key: 'exposure', group: 'Exposure', label: 'Exposure', type: 'number', value: 0.05, min: -2, max: 2, step: 0.02, reactive: true, aiHint: 'Stops of exposure applied before the grade (2^x gain)' },
+  { key: 'temp', group: 'Color Temperature', label: 'Temperature', type: 'number', value: 0.58, min: -1, max: 1, step: 0.01, reactive: true, aiHint: 'Warm/cool split-tone grade: + = golden shadows, − = cool blue' },
+  { key: 'lift', group: 'Color Temperature', label: 'Lift', type: 'number', value: 0.05, min: 0, max: 0.15, step: 0.002, aiHint: 'Black lift — raises shadows toward a milky film base' },
+  { key: 'contrast', group: 'Color Temperature', label: 'Contrast', type: 'number', value: 0.32, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'S-curve contrast around mid grey' },
+  { key: 'sat', group: 'Color Temperature', label: 'Saturation', type: 'number', value: 0.8, min: 0, max: 1.8, step: 0.01, reactive: true, aiHint: 'Color saturation; >1 oversaturates' },
+  { key: 'rolloff', group: 'Color Temperature', label: 'Rolloff', type: 'number', value: 0.58, min: 0, max: 1, step: 0.01, aiHint: 'Filmic highlight shoulder — compresses highlights like print film' },
+  { key: 'lutMix', group: 'Color Temperature', label: 'LUT Mix', type: 'number', value: 0, min: 0, max: 1, step: 0.01, aiHint: 'LUT blend (identity in this build — the sampleLUT path is a pass-through)' },
+  { key: 'grain', group: 'Texture / Bokeh', label: 'Grain', type: 'number', value: 0.08, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Instax/VHS grain: mid-tone noise, scan shimmer, chroma bleed' },
+  { key: 'bokeh', group: 'Texture / Bokeh', label: 'Bokeh Bloom', type: 'number', value: 0.42, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Horizontal anisotropic highlight bloom — anamorphic streak glow' },
+  { key: 'halation', group: 'Texture / Bokeh', label: 'Halation', type: 'number', value: 0.52, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Warm red-orange glow bleeding around bright areas, film halation' },
+  { key: 'ca', group: 'Texture / Bokeh', label: 'Chromatic Ab.', type: 'number', value: 0.28, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Radial RGB fringe growing toward the frame edges' },
+  { key: 'letterbox', group: 'Anamorphic Optics', label: 'Letterbox', type: 'boolean', value: 1, aiHint: '(on/off switch) Crop toward centre to the target ratio (black bands outside)' },
+  { key: 'breathing', group: 'Anamorphic Optics', label: 'Breathing', type: 'boolean', value: 0, aiHint: '(on/off switch) Subtle live lens-breathing zoom oscillation' },
+  { key: 'squeeze', group: 'Anamorphic Optics', label: 'Squeeze', type: 'number', value: 1.15, min: 1, max: 2.2, step: 0.02, reactive: true, aiHint: 'Horizontal anamorphic squeeze of the sampled frame (1=off, ~2=2×); also drives the oval bokeh ratio' },
+  { key: 'ratio', group: 'Anamorphic Optics', label: 'Ratio', type: 'number', value: 2.39, min: 1.78, max: 2.8, step: 0.01, aiHint: 'Target widescreen aspect ratio for the letterbox crop' },
+  { key: 'barrel', group: 'Anamorphic Optics', label: 'Barrel', type: 'number', value: 0.26, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Oval-lens radial distortion, stronger on the vertical axis' },
+  { key: 'vignette', group: 'Anamorphic Optics', label: 'Vignette', type: 'number', value: 0.44, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Elliptical anamorphic lens vignette' },
+  { key: 'ovalFineTune', group: 'Anamorphic Optics', label: 'Oval Fine Tune', type: 'number', value: 0, min: -0.3, max: 0.5, step: 0.01, aiHint: 'Manual trim on the oval bokeh-disc ratio (squeeze + trim, floor 1.0)' },
+  { key: 'bokehMM', group: 'Ghost', label: 'Bokeh mm', type: 'number', value: 0, min: 0, max: 200, step: 1, reactive: true, aiHint: 'Focal length of the subject-aware background blur (0 = off, zero cost); drives bloom + background magnification' },
+  { key: 'ghostGlitch', group: 'Ghost', label: 'Ghost FX', type: 'boolean', value: 0, aiHint: '(on/off switch) Deliberate mask flip — the ghosted double-exposure segmentation look' },
+  { key: 'segEnabled', group: 'Bokeh', label: 'Person Mask', type: 'boolean', value: 1, aiHint: '(on/off switch) Subject segmentation for the background-blur pre-pass; without it (or at 0mm) the pre-pass is skipped, like the standalone before its detector loads' },
+  { key: 'fStop', group: 'Bokeh', label: 'F-Stop', type: 'number', value: 4, min: 0.95, max: 22, step: 0.05, reactive: true, aiHint: 'Aperture driving the background CoC radius (f/0.95 ≈ 80px … f/22 ≈ 3.5px), eased ~120ms like a focus rack' },
+  { key: 'flareMaster', group: 'Flare', label: 'Flare Master', type: 'boolean', value: 0, aiHint: '(on/off switch) Master gate for the auto-detected anamorphic flare' },
+  { key: 'flare', group: 'Flare', label: 'Flare', type: 'boolean', value: 0, aiHint: '(on/off switch) Flare stage on/off (needs Flare Master too, like the standalone)' },
+  { key: 'flareAmt', group: 'Flare', label: 'Flare Amount', type: 'number', value: 0.65, min: 0, max: 1, step: 0.01, reactive: true, aiHint: 'Intensity of the horizontal blue/gold flare streak at the auto-detected hotspot' },
+  { key: 'flareLength', group: 'Flare', label: 'Flare Length', type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, aiHint: '0 short beam, 1 full-width streak' },
+  { key: 'flareColor', group: 'Flare', label: 'Flare Color', type: 'number', value: 0, min: 0, max: 1, step: 0.01, aiHint: '0 classic gold core, 1 cold blue' },
+  { key: 'flareHeight', group: 'Flare', label: 'Flare Height', type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, aiHint: '0 razor-thin line, 1 thick beam' },
 ];
 
 interface Progs {

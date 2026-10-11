@@ -11,6 +11,7 @@
  *  E. the beatReact default route modulates its readout with the beat
  * Chain sanity lives in verify-phase7-chain.js. */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -84,7 +85,9 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
   await en.click('[data-testid="nodal-add-blob_reveal"]');
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]', { state: 'attached', timeout: 120000 });
+  await L.openLabSections(en); // Lab panel: effects + sub-sections are collapsed by default
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(1500);
   await en.evaluate(() => { const S = window.__SYN; S.engine.adaptiveRes = false; S.engine.setResScale(2 / 3); });
   const segReady = await en.waitForFunction(
@@ -147,18 +150,8 @@ const mad = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.
       if (btn.classList.contains('on') !== segOn) btn.click();
     }
   }, { P2: { ...DEFAULTS, ...over }, SL, segOn });
-  const applyEN = (over, segOn) => en.evaluate(({ P2, segOn }) => {
-    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    Object.entries(P2).forEach(([k, val]) => {
-      const el = document.querySelector(`[data-testid="param-blob_reveal-${k}"]`);
-      if (!el || el.type !== 'range') return;
-      setV.call(el, val); el.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    if (segOn !== undefined) {
-      const seg = document.querySelector('[data-testid="param-blob_reveal-segEnabled"]');
-      if (seg && seg.checked !== segOn) seg.click();
-    }
-  }, { P2: { ...DEFAULTS, ...over }, segOn });
+  // every key must exist as a Lab control (applyParams throws on a missing one)
+  const applyEN = (over, segOn) => L.applyParams(en, 'blob_reveal', { ...DEFAULTS, ...over, ...(segOn !== undefined ? { segEnabled: segOn ? 1 : 0 } : {}) });
 
   const pauseBoth = async (t) => {
     await sa.evaluate(async (tt) => {

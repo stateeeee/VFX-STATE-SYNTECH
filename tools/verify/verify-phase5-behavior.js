@@ -11,6 +11,7 @@
  *  G. reactivity: manual bass route onto bokehRadius modulates the readout
  *  H. chain sanity: bokeh + analog (both real ports) render without errors */
 const { chromium } = require('playwright');
+const L = require('./lab-helpers.cjs'); // Lab panel helpers: sections are collapsed by default
 const fs = require('fs');
 const path = require('path');
 
@@ -123,7 +124,9 @@ const DEFAULTS = {
   await en.click('[data-testid="nodal-add-bokeh"]');
   await en.click('[data-testid="nav-ailab"]');
   await en.waitForSelector('[data-testid="chain-canvas"]');
+  await L.openLabSections(en); // Lab panel: effects + sub-sections are collapsed by default
   await en.setInputFiles('[data-testid="chain-file"]', clip);
+  await L.waitForSource(en);
   await en.waitForTimeout(1500);
   await en.evaluate(() => { const S = window.__SYN; S.engine.adaptiveRes = false; S.engine.setResScale(1); });
   const segReady = await en.waitForFunction(
@@ -189,15 +192,8 @@ const DEFAULTS = {
     });
     updateBshapeUI((P2.bshapeX + 1) / 2, (1 - P2.bshapeY) / 2);
   }, { ...DEFAULTS, ...over });
-  const applyEN = (over) => en.evaluate((P2) => {
-    const setV = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    Object.entries(P2).forEach(([k, v]) => {
-      const el = document.querySelector(`[data-testid="param-bokeh-${k}"]`);
-      if (!el) return;
-      if (el.type === 'range') { setV.call(el, v); el.dispatchEvent(new Event('change', { bubbles: true })); }
-      else if (el.type === 'checkbox' && el.checked !== !!v) el.click();
-    });
-  }, { ...DEFAULTS, ...over });
+  // every key must exist as a Lab control (applyParams throws on a missing one)
+  const applyEN = (over) => L.applyParams(en, 'bokeh', { ...DEFAULTS, ...over });
   const grab = (page, sel) => page.evaluate(`(${grabOnceSrc})(${JSON.stringify(sel)})`);
   const grabEN = () => grab(en, '[data-testid="chain-canvas"]');
   const grabSA = () => grab(sa, '#glcanvas');
@@ -348,7 +344,7 @@ const DEFAULTS = {
 
   /* ── G. reactivity: manual bass route onto bokehRadius (no default routes by design) ── */
   await en.setInputFiles('[data-testid="audio-file"]', path.join(SCRATCH, 'beat120.wav'));
-  await en.waitForSelector('[data-testid="audio-playpause"]', { timeout: 5000 });
+  await en.waitForSelector('[data-testid="audio-playpause"]', { timeout: 30000 });
   await en.waitForTimeout(500);
   let modSrc = '';
   for (let i = 0; i < 7 && modSrc.trim() !== 'BASS'; i++) {

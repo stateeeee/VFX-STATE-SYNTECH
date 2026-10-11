@@ -48,21 +48,21 @@ import { ParamSchema } from '../../bridge/types';
 const PW = 320, PH = 180; // fixed blob-detection resolution (standalone cProc)
 
 const PARAMS: ParamSchema[] = [
-  { key: 'segEnabled', label: 'Person Mask', type: 'boolean', value: 1, aiHint: '(on/off switch) Reveal the segmented subject on top of the blob windows; off shows only the bright-region blob windows, like the standalone before its segmenter loads' },
+  { key: 'segEnabled', group: 'Rotoscope · Seg', label: 'Person Mask', type: 'boolean', value: 1, aiHint: '(on/off switch) Reveal the segmented subject on top of the blob windows; off shows only the bright-region blob windows, like the standalone before its segmenter loads' },
   // rotoscope / seg
-  { key: 'segThr', label: 'Threshold', type: 'number', value: 40, min: 5, max: 95, step: 1, aiHint: 'Mask conditioning threshold (brightness/contrast on the mask RGB before the alpha-driven cut) — matches the standalone control' },
-  { key: 'erode', label: 'Erode', type: 'number', value: 4, min: 0, max: 30, step: 1, reactive: true, aiHint: 'Shrinks the subject mask inward (kills segmentation halos) via the inset-redraw trick' },
-  { key: 'feather', label: 'Feather', type: 'number', value: 3, min: 0, max: 30, step: 1, reactive: true, aiHint: 'Soft blur on the subject mask edge (free GPU feather)' },
-  { key: 'opacity', label: 'Opacity', type: 'number', value: 1, min: 0.1, max: 1, step: 0.01, reactive: true, aiHint: 'Opacity of the revealed subject over the blob windows' },
-  { key: 'segN', label: 'Seg every N', type: 'number', value: 1, min: 1, max: 6, step: 1, aiHint: 'Refresh the person mask every Nth arrival — higher = staler mask, cheaper (reproduces the standalone send-every-N)' },
+  { key: 'segThr', group: 'Rotoscope · Seg', label: 'Threshold', type: 'number', value: 40, min: 5, max: 95, step: 1, aiHint: 'Mask conditioning threshold (brightness/contrast on the mask RGB before the alpha-driven cut) — matches the standalone control' },
+  { key: 'erode', group: 'Rotoscope · Seg', label: 'Erode', type: 'number', value: 4, min: 0, max: 30, step: 1, reactive: true, aiHint: 'Shrinks the subject mask inward (kills segmentation halos) via the inset-redraw trick' },
+  { key: 'feather', group: 'Rotoscope · Seg', label: 'Feather', type: 'number', value: 3, min: 0, max: 30, step: 1, reactive: true, aiHint: 'Soft blur on the subject mask edge (free GPU feather)' },
+  { key: 'opacity', group: 'Rotoscope · Seg', label: 'Opacity', type: 'number', value: 1, min: 0.1, max: 1, step: 0.01, reactive: true, aiHint: 'Opacity of the revealed subject over the blob windows' },
+  { key: 'segN', group: 'Rotoscope · Seg', label: 'Seg every N', type: 'number', value: 1, min: 1, max: 6, step: 1, aiHint: 'Refresh the person mask every Nth arrival — higher = staler mask, cheaper (reproduces the standalone send-every-N)' },
   // blob detection
-  { key: 'lumThr', label: 'Lum Thresh', type: 'number', value: 170, min: 0, max: 255, step: 1, reactive: true, aiHint: 'Luminance above which a pixel is part of a bright blob' },
-  { key: 'minArea', label: 'Min Area', type: 'number', value: 300, min: 20, max: 5000, step: 20, aiHint: 'Smallest blob (in full-res px²) that survives — rejects speckle' },
-  { key: 'maxBlobs', label: 'Max Blobs', type: 'number', value: 14, min: 1, max: 30, step: 1, reactive: true, aiHint: 'Keep only the N largest blobs' },
-  { key: 'dilate', label: 'Dilate', type: 'number', value: 4, min: 0, max: 20, step: 1, reactive: true, aiHint: 'Grow bright regions before detection so nearby specks merge into one blob' },
+  { key: 'lumThr', group: 'Blob Detection', label: 'Lum Thresh', type: 'number', value: 170, min: 0, max: 255, step: 1, reactive: true, aiHint: 'Luminance above which a pixel is part of a bright blob' },
+  { key: 'minArea', group: 'Blob Detection', label: 'Min Area', type: 'number', value: 300, min: 20, max: 5000, step: 20, aiHint: 'Smallest blob (in full-res px²) that survives — rejects speckle' },
+  { key: 'maxBlobs', group: 'Blob Detection', label: 'Max Blobs', type: 'number', value: 14, min: 1, max: 30, step: 1, reactive: true, aiHint: 'Keep only the N largest blobs' },
+  { key: 'dilate', group: 'Blob Detection', label: 'Dilate', type: 'number', value: 4, min: 0, max: 20, step: 1, reactive: true, aiHint: 'Grow bright regions before detection so nearby specks merge into one blob' },
   // audio-reactive expansion
-  { key: 'audioExp', label: 'Audio Exp', type: 'number', value: 24, min: 0, max: 60, step: 1, reactive: true, aiHint: 'Max px each blob window expands at full audio energy (scaled by Audio React)' },
-  { key: 'beatReact', label: 'Audio React', type: 'number', value: 0, min: 0, max: 1, step: 0.01, reactive: true, defaultRoute: { source: 'loud', amount: 0.9 }, aiHint: 'Live audio-energy amount (0..1) driving blob expansion — pre-wired to loudness so blobs breathe with the music, like the standalone beatExpand' },
+  { key: 'audioExp', group: 'Blob Detection', label: 'Audio Exp', type: 'number', value: 24, min: 0, max: 60, step: 1, reactive: true, aiHint: 'Max px each blob window expands at full audio energy (scaled by Audio React)' },
+  { key: 'beatReact', group: 'Audio Reactive', label: 'Audio React', type: 'number', value: 0, min: 0, max: 1, step: 0.01, reactive: true, defaultRoute: { source: 'loud', amount: 0.9 }, aiHint: 'Live audio-energy amount (0..1) driving blob expansion — pre-wired to loudness so blobs breathe with the music, like the standalone beatExpand' },
 ];
 
 export class BlobRevealNode implements EngineNode {
