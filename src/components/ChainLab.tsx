@@ -1411,7 +1411,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         <div className="fxl-stage-col">
           <div className="fxl-stage">
             <div className="fxl-viewport">
-              <canvas ref={canvasRef} data-testid="chain-canvas" />
+              <canvas ref={canvasRef} data-testid="chain-canvas" className={sourceKind === 'webcam' ? 'fxl-mirror' : undefined} />
             </div>
             <div className="fxl-vignette" />
             <div className="fxl-brackets" />

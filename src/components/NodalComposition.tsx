@@ -41,7 +41,6 @@ export const EFFECT_META: Record<ModuleId, EffectMeta> = {
   time_machine: { name: 'TIME MACHINE', short: 'Temporal displacement', color: '#8b5cf6' },
   quadtree: { name: 'QUADTREE', short: 'Recursive subdivision', color: '#8b5cf6' },
   pointcloud: { name: 'POINTCLOUD', short: 'Video point cloud', color: '#8b5cf6' },
-  datamosh: { name: 'DATAMOSH', short: 'Codec mosh', color: '#8b5cf6' },
 };
 
 const INPUT_COLOR = '#57bf8a';

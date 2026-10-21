@@ -226,8 +226,8 @@ chrome). Contract every effect follows:
 - No user accounts, no server-side persistence, no collaborative editing.
 - No mobile layout work (desktop browser is the target).
 - No new effects beyond the original five **in the Lab** until the roadmap says so.
-  (2026-10-21, operator decision: five more *standalone-only* effects — INVISIBLE,
-  TIME MACHINE, QUADTREE, POINTCLOUD, DATAMOSH — are listed in the effects column and
+  (2026-10-21, operator decision: four more *standalone-only* effects — INVISIBLE,
+  TIME MACHINE, QUADTREE, POINTCLOUD — are listed in the effects column and
   open full-screen like the others. They wear the same §5.1 chrome, but have **no**
   SynEngine node, no brain-graph hub and no node-graph entry; the shell's `isLabModule`
   (= `MODULE_IDS` in `src/ai/contract.ts`) keeps them out of chains, saved

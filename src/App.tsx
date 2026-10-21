@@ -48,7 +48,7 @@ const readAppTimerMs = (): number => {
 
 // ── serial wiring helpers (03-SPEC-SHELL §6: chain order = wiring order) ──
 /** Only the five SynEngine-ported effects can sit in a chain / the Lab; the standalone-only ones (invisible,
- *  time_machine, quadtree, pointcloud, datamosh) open as an iframe and have no NODE_FACTORY entry yet. */
+ *  time_machine, quadtree, pointcloud) open as an iframe and have no NODE_FACTORY entry yet. */
 const isLabModule = (id: unknown): id is ModuleId => typeof id === 'string' && (MODULE_IDS as readonly string[]).includes(id);
 
 const wiresFromChain = (list: ModuleId[]): WireMap => {
@@ -684,7 +684,6 @@ export default function App() {
     { id: 'time_machine', name: 'TIME MACHINE', description: 'Temporal displacement through a buffer of past frames.', status: 'STANDBY', parameters: {} },
     { id: 'quadtree', name: 'QUADTREE', description: 'Recursive quadtree subdivision of the image.', status: 'STANDBY', parameters: {} },
     { id: 'pointcloud', name: 'POINTCLOUD', description: 'Video rebuilt as a bloomed 3D point cloud.', status: 'STANDBY', parameters: {} },
-    { id: 'datamosh', name: 'DATAMOSH', description: 'I-frame / P-frame datamosh with pixel recycling and glitch layer.', status: 'STANDBY', parameters: {} },
   ]);
 
   const currentModule = modules.find((m) => m.id === activeModule) || modules[0];

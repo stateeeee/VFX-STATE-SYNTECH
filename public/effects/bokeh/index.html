@@ -278,6 +278,7 @@ body {
   border-left:1px solid rgba(255,255,255,.07);
   display:flex; flex-direction:column;
   overflow-y:auto; flex-shrink:0;
+  overflow-x:hidden; overscroll-behavior-x:none; /* SYNTECH-UNIFORM: vertical scroll only (the ::before shimmer is 200% wide) */
   position:relative;
   background:
     radial-gradient(circle at  7%  10%, rgba(255,255,255,.22) 0%, transparent 10%),

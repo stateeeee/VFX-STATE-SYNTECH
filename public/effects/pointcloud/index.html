@@ -49,12 +49,6 @@
 </style>
 <!-- SYNTECH-UNIFORM-START: shared BOKEH chrome — operator request 2026-10-11 -->
 <link rel="stylesheet" href="../shared/syn-chrome.css">
-<style id="syntech-uniform">
-/* The idle sphere IS this effect's look (the original shows it, with a faint title, until a
-   source is loaded): BOKEH's drop overlay keeps its markup, border and text but is see-through,
-   so the sphere stays visible behind it. */
-#drop-overlay { background:transparent; }
-</style>
 <!-- SYNTECH-UNIFORM-END -->
 </head>
 <body translate="no" class="notranslate">
@@ -76,7 +70,6 @@
     <div id="canvas-wrap">
       <div id="frame-outline"></div>
       <canvas id="c"></canvas>
-      <div id="res-tag">480 × 270 · POINTCLOUD</div>
       <div id="drop-overlay">
         <div class="drop-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
         <div class="drop-title">POINTCLOUD</div>

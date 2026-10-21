@@ -29,6 +29,21 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-21 (notte) — ritocchi chiesti dall'operatore, FATTI e su `main`.**
+- **DATAMOSH eliminato**: cartella `public/effects/datamosh/`, ModuleId, scheda, registry, nome nel node graph
+  via (`ShaderPass.js` vendorizzato resta: lo importa `EffectComposer`, quindi serve a POINTCLOUD). Restano 4 effetti nuovi: INVISIBLE, TIME MACHINE,
+  QUADTREE, POINTCLOUD. (I "datamosh" dentro Bokeh e Blob Tracker sono altri effetti e non si toccano.)
+- **POINTCLOUD** ora è uguale agli altri: tolta la scritta "480 × 270 · POINTCLOUD" in alto e tolto l'override
+  che rendeva trasparente l'overlay (la sfera idle non si vede più dietro: a vuoto è identico a Bokeh).
+- **INVISIBLE**: tolta la riga "PINCH 👌 = ON / OFF" dall'overlay del canvas (il gesto e la riga PINCH GESTURE
+  nel pannello restano).
+- **Pannello di destra** (Source / Export / parametri) in tutti gli effetti: scorre solo su/giù. `#panel`
+  `overflow-x:hidden` in `syn-chrome.css` (chiude l'aperto (3) qui sotto) e in Bokeh.
+- **Lab, webcam**: ora si vede come uno specchio (la tua destra a destra), come in tutti gli effetti. Solo a
+  schermo (`.fxl-mirror`, CSS): render, catture di Gemini ed export restano nell'orientamento vero della camera;
+  conseguenza: le scritte dei tracker (ID, area) appaiono rovesciate nella webcam del Lab. Se l'operatore
+  intendeva l'opposto (vederla non specchiata), togliere la classe in `ChainLab.tsx`.
+
 **SESSIONE 2026-10-21 (sera) — 5 nuovi effetti standalone: INVISIBLE, TIME MACHINE, QUADTREE, POINTCLOUD, DATAMOSH.**
 Su richiesta dell'operatore (file HTML suoi). Cosa c'è ora:
 - Schede nella colonna degli effetti (in coda: INVISIBLE, TIME MACHINE, QUADTREE, POINTCLOUD, DATAMOSH);

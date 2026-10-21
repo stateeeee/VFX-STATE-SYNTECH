@@ -581,6 +581,8 @@ body {
 .logo::before, .logo::after { content:none; }
 #fps-display { margin-left:0; }
 #panel { scrollbar-gutter:auto; overscroll-behavior:auto; }
+/* the panel only scrolls up/down: its ::before shimmer layer is 200% wide and used to open a sideways scroll */
+#panel { overflow-x:hidden; overscroll-behavior-x:none; }
 .sec-mark { opacity:1; filter:none; }
 .info-cell { border-radius:0; }
 .led-btn::before { border-radius:0; }

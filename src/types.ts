@@ -1,4 +1,4 @@
-export type ModuleId = 'blob_tracker' | 'analog' | 'blob_reveal' | 'bokeh' | 'anamorphic_lab' | 'invisible' | 'time_machine' | 'quadtree' | 'pointcloud' | 'datamosh';
+export type ModuleId = 'blob_tracker' | 'analog' | 'blob_reveal' | 'bokeh' | 'anamorphic_lab' | 'invisible' | 'time_machine' | 'quadtree' | 'pointcloud';
 export type ActiveTab = string;
 export type SignalSource = string;
 
