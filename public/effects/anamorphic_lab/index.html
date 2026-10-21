@@ -2535,6 +2535,7 @@ function updateSrcInfo(file,res){
   if(file!==null&&fi)fi.textContent=file||'--';
   if(res!==null&&ri)ri.textContent=res||'--';
 }
+let _recAx=null,_recSrc=null,_recDst=null; /* SYNTECH-FIX: audio del video nel REC */
 function stopAllSources(){
   try{vid.pause();}catch(e){}
   if(vid._objUrl){URL.revokeObjectURL(vid._objUrl);vid._objUrl=null;}
@@ -2589,7 +2590,7 @@ function loadFile(file){
   document.getElementById('drop-overlay').classList.remove('hidden'); /* SYNTECH-UNIFORM: was #drop-hint */
   updateSrcInfo(file.name,'Loading…');
   vid.onerror=()=>{updateSrcInfo(null,'Error');toast('⚠ Error loading video',3000);};
-  vid.muted=true;vid.playsInline=true;
+  vid.muted=false;vid.playsInline=true; /* SYNTECH-FIX: un video caricato deve avere l'audio; webcam/camera restano mute */
   let loaded=false;
   const onReady=()=>{
     if(loaded)return;
@@ -2599,7 +2600,8 @@ function loadFile(file){
     cv.classList.add('on');
     document.getElementById('drop-overlay').classList.add('hidden'); /* SYNTECH-UNIFORM: was #drop-hint */
     updateSrcInfo(file.name,vid.videoWidth+'×'+vid.videoHeight);
-    const p=vid.play();if(p&&typeof p.catch==='function')p.catch(()=>{});
+    /* se il browser rifiuta l'avvio con audio, riparte muto invece di non partire */
+    const p=vid.play();if(p&&typeof p.catch==='function')p.catch(e=>{if(e&&e.name==='NotAllowedError'){vid.muted=true;vid.play().catch(()=>{});}});
   };
   vid.onloadedmetadata=onReady;vid.onloadeddata=onReady;vid.oncanplay=onReady;vid.oncanplaythrough=onReady;
   vid._objUrl=URL.createObjectURL(file);
@@ -2760,11 +2762,12 @@ function toggleRec(){
     const stream=_expCanvas.captureStream(30);
     if(srcMode==='video'&&!vid.muted){
       try{
-        const ax=new(window.AudioContext||window.webkitAudioContext)();
-        const src=ax.createMediaElementSource(vid);
-        src.connect(ax.destination);
+        /* SYNTECH-FIX: createMediaElementSource è una-tantum per elemento → contesto e sorgente riusati ai REC successivi */
+        if(!_recAx){_recAx=new(window.AudioContext||window.webkitAudioContext)();_recSrc=_recAx.createMediaElementSource(vid);_recSrc.connect(_recAx.destination);}
+        if(_recAx.state==='suspended')_recAx.resume();
+        const ax=_recAx,src=_recSrc;
         const dst=ax.createMediaStreamDestination();
-        src.connect(dst);
+        src.connect(dst);_recDst=dst;
         dst.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
       }catch(e){}
     }
@@ -2779,6 +2782,7 @@ function toggleRec(){
     catch(e){try{mediaRec=new MediaRecorder(stream);}catch(e2){toast('REC not supported');return;}}
     mediaRec.ondataavailable=e=>{if(e.data.size>0)recChunks.push(e.data);};
     mediaRec.onstop=()=>{
+      if(_recDst&&_recSrc){try{_recSrc.disconnect(_recDst);}catch(e){}_recDst=null;} /* SYNTECH-FIX */
       if(_expRAF){cancelAnimationFrame(_expRAF);_expRAF=null;}
       const ext=mediaRec.mimeType&&mediaRec.mimeType.includes('mp4')?'mp4':'webm';
       const blob=new Blob(recChunks,{type:mediaRec.mimeType||'video/webm'});

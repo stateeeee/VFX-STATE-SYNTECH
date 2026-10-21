@@ -1341,7 +1341,12 @@ async function startMic(){
 }
 function stopMic(){
   if(micSrc){micSrc.disconnect();micSrc=null;}
-  if(audioCtx){audioCtx.close();audioCtx=null;}
+  /* SYNTECH-FIX: chiudere il contesto zittiva il video per sempre (il suo audio passa da vidAudioSrc, una-tantum):
+     se esiste, il contesto resta vivo e il video torna a uscire direttamente su destination. */
+  if(audioCtx){
+    if(vidAudioSrc){try{vidAudioSrc.disconnect();vidAudioSrc.connect(audioCtx.destination);}catch(_){}}
+    else{audioCtx.close();audioCtx=null;}
+  }
   analyser=null;micEnabled=false;freqBuf=null;waveBuf=null;
   document.getElementById('btn-mic').classList.remove('amber-on');
   document.getElementById('btn-mic').querySelector('.led-txt').textContent='OFF';
@@ -1611,7 +1616,10 @@ function loadFile(f){
   vid.srcObject=null; vid.src=vidURL;
   if(old)URL.revokeObjectURL(old);
   srcMode='video';
-  vid.play().catch(e=>console.warn('play() file bloccato:',e));
+  /* SYNTECH-FIX: un video caricato deve avere l'audio (come negli altri effetti). Il tag <video> nasce
+     muted; se il browser rifiuta l'avvio con audio, riparte muto invece di non partire. */
+  vid.muted=false;
+  vid.play().catch(e=>{if(e&&e.name==='NotAllowedError'){vid.muted=true;vid.play().catch(()=>{});}else console.warn('play() file bloccato:',e);});
   armVideoLoad(()=>{
     setInfo(f.name,vid.videoWidth+'×'+vid.videoHeight,fmtDur(vid.duration));
     fit();
@@ -1659,6 +1667,7 @@ async function toggleWebcam(){
     endSource();
     vid.removeAttribute('src');
     if(vidURL){URL.revokeObjectURL(vidURL);vidURL=null;}
+    vid.muted=true; // SYNTECH-FIX: la webcam resta muta (nessun ritorno audio)
     vid.srcObject=s;
     srcMode='webcam';
     vid.play().catch(e=>console.warn('play() webcam bloccato:',e));
@@ -1698,11 +1707,12 @@ document.getElementById('rec-btn').addEventListener('click',function(){
     const stream=dc.captureStream(fps);
 
     // Route audio into recording stream
-    if(audioCtx){
+    const recTap=analyser||vidAudioSrc; // SYNTECH-FIX: dopo MIC OFF il contesto resta aperto senza analyser → registra l'audio del video
+    if(audioCtx&&recTap){
       try{
         const dst=audioCtx.createMediaStreamDestination();
         // connect analyser output (which has video+mic mixed)
-        analyser?.connect(dst);
+        recTap.connect(dst);
         dst.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
       }catch(_){}
     }

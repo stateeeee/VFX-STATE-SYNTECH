@@ -29,6 +29,13 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-21 — audio dei video in ANAMORPHIC e BLOB REVEAL, FATTO.**
+Prima il `<video>` restava `muted` anche con un file caricato; ora un video caricato parte
+con l'audio (se il browser rifiuta l'avvio con audio, riparte muto invece di fermarsi),
+la webcam/camera restano mute. Il REC di ANAMORPHIC ora include l'audio del video anche
+alle registrazioni successive alla prima (contesto audio riusato). Da provare:
+caricare un video in entrambi e sentire l'audio.
+
 **SESSIONE 2026-10-11 (notte) — timer, timeline, sorgenti, FPS, XY pad: FATTO e su `main`.**
 Da far provare all'operatore sull'app vera:
 - **Timer**: in alto a destra nella Home il `SESSION` parte all'apertura dell'app; in ogni
