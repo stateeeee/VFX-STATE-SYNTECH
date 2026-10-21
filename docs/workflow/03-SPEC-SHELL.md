@@ -27,7 +27,7 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
 - **Below the hero**: the node graph panel (`NodalComposition`) — this IS the
   Lab's wiring surface — plus the Gemini 3.8 panel (`AiDirector`, §9) beside
   it.
-- **Right sidebar**: the effects library (5 cards; artwork images arrive
+- **Right sidebar**: the effects library (10 cards since 2026-10-21; artwork images arrive
   later).
 
 ## 2. Single-effect mode
@@ -225,7 +225,14 @@ chrome). Contract every effect follows:
 
 - No user accounts, no server-side persistence, no collaborative editing.
 - No mobile layout work (desktop browser is the target).
-- No new effects beyond the five until the roadmap says so.
+- No new effects beyond the original five **in the Lab** until the roadmap says so.
+  (2026-10-21, operator decision: five more *standalone-only* effects — INVISIBLE,
+  TIME MACHINE, QUADTREE, POINTCLOUD, DATAMOSH — are listed in the effects column and
+  open full-screen like the others. They wear the same §5.1 chrome, but have **no**
+  SynEngine node, no brain-graph hub and no node-graph entry; the shell's `isLabModule`
+  (= `MODULE_IDS` in `src/ai/contract.ts`) keeps them out of chains, saved
+  compositions and Gemini "Open in Lab". Their Lab ports come later, with the 1:1
+  parity protocol.)
 
 ## 9. Gemini 3.8 panel (Art Director · Agent · Optimizer)
 

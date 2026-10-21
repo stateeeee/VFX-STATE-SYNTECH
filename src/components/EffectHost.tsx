@@ -85,7 +85,7 @@ const EffectHost = forwardRef<EffectHostHandle, EffectHostProps>(function Effect
         src={iframeSrc + '/index.html'}
         className="w-full h-full border-none block"
         title={module?.name || 'Effect'}
-        allow="camera; microphone"
+        allow="camera; microphone; autoplay"
         allowFullScreen
       />
     </div>

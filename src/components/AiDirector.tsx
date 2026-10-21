@@ -939,7 +939,8 @@ function KeyForm({ k, status, error, errorMessage, model, onSubmitKey }: { k: In
 /* ── "this role works in the Lab" ────────────────────────────── */
 
 function NeedsLab({ k, what, openEffectId, hasSource, onOpenLab }: { k: Ink; what: string; openEffectId: ModuleId | null; hasSource: boolean; onOpenLab: () => void }) {
-  const fx = openEffectId ? effectName(openEffectId) : null;
+  // only the Lab-ported effects carry over as a chain (the standalone-only ones have no Lab node yet)
+  const fx = openEffectId && (MODULE_IDS as readonly string[]).includes(openEffectId) ? effectName(openEffectId) : null;
   return (
     <div className={k.card}>
       <p className={k.text}>

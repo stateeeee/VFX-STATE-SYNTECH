@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POINTCLOUD</title>
+<!-- ═══════════════════════════════════════════════════════════════════════
+     POINTCLOUD — by STATE (operator's original: "POINT CLOUD", standalone
+     three.js r160 page with a fullscreen canvas, a bottom bar ▲VIDEO ◎WEBCAM
+     + 5 sliders and a PTS/FPS HUD).
+
+     GROUND TRUTH = the original's <script type="module">: scene, shaders,
+     geometry, uniforms, bloom, camera drift and slider bindings are copied
+     verbatim below. Every change to that script is marked SYNTECH-UNIFORM
+     (shared chrome / frame sizing / UI wiring), SYNTECH-SOURCE (IMAGE source,
+     WEBCAM toggle) or SYNTECH-FIX (audio, play() rejection, stale listeners).
+     The old fullscreen UI (bar, HUD, idle title) is replaced by BOKEH's chrome
+     (docs/workflow/03-SPEC-SHELL.md §5.1); three is loaded from the vendored
+     r160 ES module (../vendor/three160/), no CDN.
+     ═══════════════════════════════════════════════════════════════════════ -->
+<style>
+@import url('../vendor/fonts/effects.css'); /* SYNTECH: vendored fonts (offline), like BOKEH */
+
+/* ═══════════════════════════════════════════════════════
+   SLIDERS — chrome metallic  (BOKEH verbatim, public/effects/bokeh/index.html)
+   ═══════════════════════════════════════════════════════ */
+.ctrl-row { display:flex; align-items:center; gap:8px; }
+.ctrl-lbl { width:70px; flex-shrink:0; font-size:8px; letter-spacing:1px; color:var(--t2); text-transform:uppercase; }
+.ctrl-track { flex:1; height:18px; display:flex; align-items:center; }
+.daw-slider {
+  -webkit-appearance:none; width:100%; height:2px;
+  background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.12));
+  outline:none; cursor:ew-resize; border-radius:1px;
+  box-shadow:inset 0 1px 0 rgba(0,0,0,.4),0 1px 0 rgba(255,255,255,.06);
+}
+.daw-slider::-webkit-slider-thumb {
+  -webkit-appearance:none; width:9px; height:22px;
+  background:linear-gradient(180deg,rgba(255,255,255,.5) 0%,#e0d0a0 10%,#c8a830 40%,#a07820 65%,#5a4010 85%,rgba(255,255,255,.2) 100%);
+  border:none; cursor:ew-resize; border-radius:2px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8);
+}
+.daw-slider::-webkit-slider-thumb:hover { box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 0 16px rgba(232,192,0,.7),0 0 32px rgba(180,120,255,.3),0 2px 8px rgba(0,0,0,.8); }
+.daw-slider::-moz-range-thumb { width:9px; height:22px; background:linear-gradient(180deg,#e0d0a0,#c8a830,#a07820,#5a4010); border:none; cursor:ew-resize; border-radius:2px; box-shadow:0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8); }
+.ctrl-val { width:40px; text-align:right; font-size:9.5px; color:var(--t4); font-variant-numeric:tabular-nums; letter-spacing:.5px; text-shadow:0 0 6px rgba(232,192,0,.3); }
+
+/* the original's canvas rule was "display:block; width:100%; height:100%" on a fullscreen page;
+   here the renderer sizes it to #canvas-wrap (see fitRenderer in the module) */
+#c { display:block; }
+</style>
+<!-- SYNTECH-UNIFORM-START: shared BOKEH chrome — operator request 2026-10-11 -->
+<link rel="stylesheet" href="../shared/syn-chrome.css">
+<style id="syntech-uniform">
+/* The idle sphere IS this effect's look (the original shows it, with a faint title, until a
+   source is loaded): BOKEH's drop overlay keeps its markup, border and text but is see-through,
+   so the sphere stays visible behind it. */
+#drop-overlay { background:transparent; }
+</style>
+<!-- SYNTECH-UNIFORM-END -->
+</head>
+<body translate="no" class="notranslate">
+
+<!-- SYNTECH-UNIFORM-START: BOKEH's top bar (logo · sep · INPUT · ENGINE · timecode→work timer · FPS) -->
+<div id="topbar">
+  <div class="logo notranslate">POINTCLOUD</div>
+  <div class="tb-sep"></div>
+  <div class="pill" id="pill-status"><div class="dot"></div><span class="pill-pre">INPUT</span><span id="pill-label">NONE</span></div>
+  <div class="pill engine" id="pill-engine"><div class="dot"></div><span class="pill-pre">ENGINE</span><span id="pill-engine-lbl">LOADING</span></div>
+  <div id="timecode">00:00:00:00</div>
+  <div id="fps-display">FPS <b id="fps-val">0</b></div>
+</div>
+
+<div id="main">
+
+  <!-- CANVAS — BOKEH's 16:9 frame -->
+  <div id="canvas-area">
+    <div id="canvas-wrap">
+      <div id="frame-outline"></div>
+      <canvas id="c"></canvas>
+      <div id="res-tag">480 × 270 · POINTCLOUD</div>
+      <div id="drop-overlay">
+        <div class="drop-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <div class="drop-title">POINTCLOUD</div>
+        <div class="drop-sub">IMAGE — VIDEO — WEBCAM</div>
+        <button class="drop-source-btn" id="source-center-btn">SOURCE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL -->
+  <div id="panel">
+
+    <!-- SOURCE — BOKEH's layout: IMAGE · VIDEO · WEBCAM -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="src">
+        <div class="sec-mark" id="src-mark"></div>
+        <span class="sec-title">Source</span>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sb-src" style="gap:8px">
+        <div class="seg-row">
+          <button class="seg-btn" id="src-image">IMAGE</button>
+          <button class="seg-btn" id="src-video">VIDEO</button>
+          <button class="seg-btn" id="src-webcam">WEBCAM</button>
+        </div>
+        <div class="info-grid" style="margin-top:2px">
+          <div class="info-cell"><div class="ic-lbl">File</div><div class="ic-val dim" id="info-file">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val amber" id="info-res">--</div></div>
+        </div>
+        <div class="row"><div class="lbl">Playback</div><div class="led-btn" id="btn-play"><div class="led"></div><div class="led-txt" id="play-label">PAUSED</div><div class="kbd-badge">SPC</div></div></div>
+        <div class="row"><div class="lbl">Loop</div><div class="led-btn on" id="btn-loop"><div class="led"></div><div class="led-txt" id="loop-label">LOOP ON</div></div></div>
+        <div class="row"><div class="lbl">Webcam</div><div class="led-btn" id="btn-webcam"><div class="led" id="webcam-led"></div><div class="led-txt" id="webcam-label">WEBCAM OFF</div></div></div>
+      </div>
+    </div>
+
+    <!-- POINTCLOUD — the original's five sliders (same ids, ranges, steps, defaults, labels) -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="pc">
+        <div class="sec-mark" id="pc-mark"></div>
+        <div class="sec-title">Pointcloud</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-pc">
+        <div class="ctrl-row">
+          <div class="ctrl-lbl">DEPTH</div>
+          <div class="ctrl-track"><input type="range" class="daw-slider" id="sDepth" min="0.2" max="6" step="0.1" value="2.2"></div>
+          <div class="ctrl-val" id="vDepth">2.2</div>
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-lbl">SIZE</div>
+          <div class="ctrl-track"><input type="range" class="daw-slider" id="sSize" min="0.3" max="4" step="0.1" value="1.4"></div>
+          <div class="ctrl-val" id="vSize">1.4</div>
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-lbl">BRIGHT</div>
+          <div class="ctrl-track"><input type="range" class="daw-slider" id="sBri" min="0.3" max="3.5" step="0.1" value="1.2"></div>
+          <div class="ctrl-val" id="vBri">1.2</div>
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-lbl">NOISE</div>
+          <div class="ctrl-track"><input type="range" class="daw-slider" id="sNoise" min="0" max="1.5" step="0.05" value="0.28"></div>
+          <div class="ctrl-val" id="vNoise">0.28</div>
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-lbl">BLOOM</div>
+          <div class="ctrl-track"><input type="range" class="daw-slider" id="sBloom" min="0" max="3" step="0.1" value="1.1"></div>
+          <div class="ctrl-val" id="vBloom">1.1</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INFO — always open on load (the original's HUD: PTS · FPS) -->
+    <div class="section">
+      <div class="sec-head" data-sec="info">
+        <div class="sec-mark" id="info-mark"></div>
+        <span class="sec-title">Info</span>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body" id="sb-info">
+        <div class="info-grid">
+          <div class="info-cell"><div class="ic-lbl">FPS</div><div class="ic-val amber" id="ic-fps">0</div></div>
+          <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val dim" id="ic-source">NONE</div></div>
+          <div class="info-cell"><div class="ic-lbl">Resolution</div><div class="ic-val dim" id="ic-res">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">PTS</div><div class="ic-val amber" id="ic-pts">–</div></div>
+          <div class="ic-credit" style="grid-column:1/-1;padding:6px 10px 4px;font-size:7px;letter-spacing:2.5px;color:var(--t2);text-align:center;text-transform:uppercase;border-top:1px solid rgba(255,255,255,.05);background:rgba(0,0,0,.3)">POINTCLOUD — by STATE</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SMOKE BLOBS -->
+    <div id="panel-smoke">
+      <div class="smoke-blob s1"></div>
+      <div class="smoke-blob s2"></div>
+      <div class="smoke-blob s3"></div>
+    </div>
+
+  </div><!-- /panel -->
+</div><!-- /main -->
+
+<div id="bottombar"></div>
+<!-- SYNTECH-UNIFORM-END -->
+
+<!-- the original's file input (#fi, was video/* only) and video element (loop · muted · inline) -->
+<input id="fi" type="file" accept="video/*" style="display:none">
+<video id="vid" style="display:none" playsinline loop muted crossorigin="anonymous"></video>
+
+<!-- SYNTECH-UNIFORM-START: panel accordion (BOKEH's, runs first and independently of WebGL) + 16:9 frame fit -->
+<script>
+'use strict';
+try {
+  window.getSecBody = function(secKey){
+    return document.getElementById('sec-'+secKey) || document.getElementById('sb-'+secKey);
+  };
+  window.setSectionState = function(head, body, isClosed){
+    body.classList.toggle('hidden', isClosed);
+    head.classList.toggle('closed', isClosed);
+    head.classList.toggle('collapsed', isClosed);
+    head.setAttribute('aria-expanded', String(!isClosed));
+  };
+  window.openSection = function(secKey){
+    const head = document.querySelector(`.sec-head[data-sec="${secKey}"]`);
+    const b = getSecBody(secKey);
+    if(!head || !b) return;
+    setSectionState(head, b, false);
+    b.scrollIntoView({behavior:'smooth',block:'nearest'});
+  };
+  document.querySelectorAll('.sec-head').forEach(h=>{
+    const b = getSecBody(h.dataset.sec);
+    if(!b) return;
+    h.addEventListener('click',()=>{
+      const willBeClosed = !b.classList.contains('hidden');
+      setSectionState(h, b, willBeClosed);
+      if(!willBeClosed) b.scrollIntoView({behavior:'smooth', block:'nearest'});
+    });
+  });
+  /* true = closed at load; every section closed except Info (§5.1) */
+  const SECTION_INITIAL_CLOSED = { src:true, pc:true, info:false };
+  Object.entries(SECTION_INITIAL_CLOSED).forEach(([key, closed])=>{
+    const head = document.querySelector(`.sec-head[data-sec="${key}"]`);
+    const body = getSecBody(key);
+    if(head && body) setSectionState(head, body, closed);
+  });
+} catch(e) {
+  console.error('Section accordion init failed:', e);
+}
+
+/* SOURCE center button — opens + scrolls to the Source section (BOKEH) */
+document.getElementById('source-center-btn').addEventListener('click', ()=>{
+  openSection('src');
+  document.getElementById('panel').scrollTo({top:0, behavior:'smooth'});
+});
+
+/* 16:9 frame inside the canvas area (BOKEH's fitCanvas): sizes #canvas-wrap only — the
+   three.js renderer follows #canvas-wrap through a ResizeObserver (module below). */
+function fitCanvas(){
+  const area=document.getElementById('canvas-area'),wrap=document.getElementById('canvas-wrap');
+  const aw=Math.max(1,area.clientWidth-24),ah=Math.max(1,area.clientHeight-24);
+  const asp=16/9;
+  let w,h;
+  if(aw/ah>asp){h=ah;w=Math.round(h*asp);}else{w=aw;h=Math.round(w/asp);}
+  wrap.style.width=Math.max(1,w)+'px'; wrap.style.height=Math.max(1,h)+'px';
+}
+window.addEventListener('resize',fitCanvas);
+document.addEventListener('fullscreenchange',()=>setTimeout(fitCanvas,100));
+try{ new ResizeObserver(fitCanvas).observe(document.getElementById('canvas-area')); }catch(e){}
+fitCanvas();
+</script>
+<!-- SYNTECH-UNIFORM-END -->
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three160/three.module.js",
+    "three/addons/": "../vendor/three160/addons/"
+  }
+}
+</script>
+<!-- SYNTECH: importmap targets were https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js and
+     …/three@0.160.0/examples/jsm/ — same r160, vendored under ../vendor/three160/ (offline) -->
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const GRID_W = 480;
+const GRID_H = 270;
+const N      = GRID_W * GRID_H;
+
+/* SYNTECH-UNIFORM: the canvas lives in BOKEH's 16:9 frame — every size below is #canvas-wrap's
+   (was innerWidth / innerHeight of the fullscreen page). */
+const wrapEl = document.getElementById('canvas-wrap');
+const W0 = Math.max(1, wrapEl.clientWidth), H0 = Math.max(1, wrapEl.clientHeight);
+
+// ─── RENDERER ────────────────────────────────────────────────────────────────
+const canvas   = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({
+  canvas, antialias: false, alpha: false,
+  powerPreference: 'high-performance',
+});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(W0, H0); // SYNTECH-UNIFORM: was (innerWidth, innerHeight)
+renderer.toneMapping         = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, W0 / H0, 0.01, 200); // SYNTECH-UNIFORM: was innerWidth / innerHeight
+camera.position.set(0, 0, 7);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(W0, H0), 1.1, 0.55, 0.0); // SYNTECH-UNIFORM: was (innerWidth, innerHeight)
+composer.addPass(bloom);
+
+// ─── VERTEX SHADER ───────────────────────────────────────────────────────────
+const vertexShader = /* glsl */`
+  precision highp float;
+  precision highp sampler2D;
+
+  attribute vec2  aUV;
+  attribute float aRnd;
+  attribute float aSize;
+
+  uniform sampler2D uVideo;
+  uniform float uTime;
+  uniform float uTransition;
+  uniform float uDepth;
+  uniform float uSizeMult;
+  uniform float uBrightness;
+  uniform float uNoiseMult;
+  uniform float uPixelRatio;
+  uniform float uAspect;
+  uniform bool  uMirrorX;
+
+  varying vec3  vColor;
+  varying float vAlpha;
+
+  // ── Simplex Noise 3D ──────────────────────────────────────────────────────
+  vec3 mod289v3(vec3 x) { return x - floor(x*(1./289.))*289.; }
+  vec4 mod289v4(vec4 x) { return x - floor(x*(1./289.))*289.; }
+  vec4 permute(vec4 x)  { return mod289v4(((x*34.)+1.)*x); }
+  vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314*r; }
+
+  float snoise(vec3 v) {
+    const vec2 C = vec2(1./6., 1./3.);
+    const vec4 D = vec4(0., 0.5, 1., 2.);
+    vec3 i  = floor(v + dot(v, C.yyy));
+    vec3 x0 = v - i + dot(i, C.xxx);
+    vec3 g  = step(x0.yzx, x0.xyz);
+    vec3 l  = 1. - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+    vec3 x1 = x0 - i1 + C.xxx;
+    vec3 x2 = x0 - i2 + C.yyy;
+    vec3 x3 = x0 - D.yyy;
+    i = mod289v3(i);
+    vec4 p = permute(permute(permute(
+      i.z+vec4(0.,i1.z,i2.z,1.))
+      +i.y+vec4(0.,i1.y,i2.y,1.))
+      +i.x+vec4(0.,i1.x,i2.x,1.));
+    float n_ = 0.142857142857;
+    vec3  ns  = n_*D.wyz - D.xzx;
+    vec4  j   = p - 49.*floor(p*ns.z*ns.z);
+    vec4  x_  = floor(j*ns.z);
+    vec4  y_  = floor(j - 7.*x_);
+    vec4  x   = x_*ns.x + ns.yyyy;
+    vec4  y   = y_*ns.x + ns.yyyy;
+    vec4  h   = 1. - abs(x) - abs(y);
+    vec4  b0  = vec4(x.xy, y.xy);
+    vec4  b1  = vec4(x.zw, y.zw);
+    vec4  s0  = floor(b0)*2.+1.;
+    vec4  s1  = floor(b1)*2.+1.;
+    vec4  sh  = -step(h, vec4(0.));
+    vec4  a0  = b0.xzyw + s0.xzyw*sh.xxyy;
+    vec4  a1  = b1.xzyw + s1.xzyw*sh.zzww;
+    vec3  p0  = vec3(a0.xy, h.x);
+    vec3  p1  = vec3(a0.zw, h.y);
+    vec3  p2  = vec3(a1.xy, h.z);
+    vec3  p3  = vec3(a1.zw, h.w);
+    vec4  norm = taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+    p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+    vec4 m = max(0.6 - vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)), 0.);
+    m = m*m;
+    return 42.*dot(m*m, vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
+  vec3 rndSphere(float s) {
+    float phi   = s * 6.28318;
+    float theta = acos(2.*fract(s*137.508)-1.);
+    float r     = 2. + fract(s*73.137)*1.2;
+    return vec3(sin(theta)*cos(phi)*r, sin(theta)*sin(phi)*r, cos(theta)*r);
+  }
+
+  void main() {
+    // ── Sample video (flip Y fix + optional webcam mirror) ────────────────
+    float tx = uMirrorX ? 1.0 - aUV.x : aUV.x;
+    float ty = 1.0 - aUV.y;          // FLIP FIX: invert Y for correct orientation
+    vec4 col  = texture2D(uVideo, vec2(tx, ty));
+    float luma = dot(col.rgb, vec3(0.299, 0.587, 0.114));
+
+    // ── Video cloud position ──────────────────────────────────────────────
+    float scale = 3.4;
+    vec3 vidPos = vec3(
+      (aUV.x - 0.5) * uAspect * scale,
+      (aUV.y - 0.5) * scale,
+      (luma  - 0.3) * uDepth
+    );
+
+    // ── Simplex noise displacement (Phase 3) ─────────────────────────────
+    float freq = 0.55;
+    float spd  = 0.32;
+    vec3 nc    = vec3(vidPos.xy * freq, uTime * spd);
+
+    float nx = snoise(nc);
+    float ny = snoise(nc + vec3(3.7, 1.4, 0.0));
+    float nz = snoise(nc + vec3(1.1,-2.3, 0.0));
+
+    float lw = 0.4 + luma * 0.9;
+    vec3 disp = vec3(nx, ny, nz * 0.6) * uNoiseMult * lw;
+
+    // Surface wave ripple
+    float wave = sin(vidPos.x * 1.8 + uTime * 1.1) *
+                 cos(vidPos.y * 1.4 + uTime * 0.85) * 0.06;
+    disp.z += wave * uNoiseMult;
+
+    vidPos += disp;
+
+    // ── Idle sphere ───────────────────────────────────────────────────────
+    vec3 idlePos = rndSphere(aRnd);
+    idlePos.x += sin(uTime*0.28 + aRnd*6.28)*0.05;
+    idlePos.y += cos(uTime*0.35 + aRnd*3.14)*0.05;
+    idlePos.z += sin(uTime*0.22 + aRnd*2.72)*0.05;
+
+    float t  = smoothstep(0.0, 1.0, uTransition);
+    vec3 pos = mix(idlePos, vidPos, t);
+
+    // ── Color ─────────────────────────────────────────────────────────────
+    vec3 idle_c = vec3(0.40+0.20*sin(aRnd*6.28), 0.65+0.15*cos(aRnd*3.14), 1.0);
+    vColor  = mix(idle_c, col.rgb * uBrightness, t);
+    vAlpha  = mix(0.80, clamp(luma*2.2, 0.0, 1.0), t);
+
+    // ── Size ──────────────────────────────────────────────────────────────
+    float ls = mix(1.0, 0.5 + luma*0.9, t);
+    vec4 mv  = modelViewMatrix * vec4(pos, 1.0);
+    gl_PointSize = (aSize * uSizeMult * uPixelRatio * ls * 230.0) / max(0.001, -mv.z);
+    gl_Position  = projectionMatrix * mv;
+  }
+`;
+
+const fragmentShader = /* glsl */`
+  varying vec3  vColor;
+  varying float vAlpha;
+  void main() {
+    if (vAlpha < 0.008) discard;
+    vec2  uv   = gl_PointCoord - 0.5;
+    float d    = length(uv) * 2.0;
+    float core = 1.0 - smoothstep(0.0,  0.45, d);
+    float halo = 1.0 - smoothstep(0.25, 1.0,  d);
+    float a    = core * 0.95 + halo * 0.18;
+    if (a < 0.004) discard;
+    gl_FragColor = vec4(vColor * (1.0 + core * 0.8), a * vAlpha);
+  }
+`;
+
+// ─── GEOMETRY ────────────────────────────────────────────────────────────────
+const geo    = new THREE.BufferGeometry();
+const uvArr  = new Float32Array(N * 2);
+const rndArr = new Float32Array(N);
+const sizArr = new Float32Array(N);
+const posArr = new Float32Array(N * 3);
+
+for (let i = 0; i < N; i++) {
+  uvArr[i*2]   = ((i % GRID_W) + 0.5) / GRID_W;
+  uvArr[i*2+1] = (Math.floor(i / GRID_W) + 0.5) / GRID_H;
+  rndArr[i]    = Math.random();
+  sizArr[i]    = Math.random() < 0.9
+    ? 0.003 + Math.random() * 0.004
+    : 0.007 + Math.random() * 0.007;
+}
+
+geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+geo.setAttribute('aUV',      new THREE.BufferAttribute(uvArr,  2));
+geo.setAttribute('aRnd',     new THREE.BufferAttribute(rndArr, 1));
+geo.setAttribute('aSize',    new THREE.BufferAttribute(sizArr, 1));
+
+const uniforms = {
+  uVideo:      { value: new THREE.Texture() },
+  uTime:       { value: 0 },
+  uTransition: { value: 0 },
+  uDepth:      { value: 2.2 },
+  uSizeMult:   { value: 1.4 },
+  uBrightness: { value: 1.2 },
+  uNoiseMult:  { value: 0.28 },
+  uPixelRatio: { value: renderer.getPixelRatio() },
+  uAspect:     { value: 16 / 9 },
+  uMirrorX:    { value: false },
+};
+
+const mat = new THREE.ShaderMaterial({
+  vertexShader, fragmentShader, uniforms,
+  transparent: true, depthWrite: false, depthTest: true,
+  blending: THREE.AdditiveBlending,
+});
+
+const cloud = new THREE.Points(geo, mat);
+scene.add(cloud);
+
+// ─── VIDEO ───────────────────────────────────────────────────────────────────
+const vid = document.getElementById('vid');
+let videoTex = null, playing = false, transition = 0;
+
+function activateVideo(isCam) {
+  if (videoTex) videoTex.dispose();
+  videoTex = new THREE.VideoTexture(vid);
+  videoTex.minFilter = THREE.LinearFilter;
+  videoTex.magFilter = THREE.LinearFilter;
+  videoTex.format    = THREE.RGBAFormat;
+  videoTex.flipY     = false;          // manual orientation in shader
+  uniforms.uVideo.value   = videoTex;
+  uniforms.uMirrorX.value = !!isCam;
+  const ar = vid.videoWidth > 0 ? vid.videoWidth / vid.videoHeight : 16/9;
+  uniforms.uAspect.value  = ar;
+  playing = true;
+  sourceShown(vid.videoWidth, vid.videoHeight); // SYNTECH-UNIFORM: was document.getElementById('idle').classList.add('gone')
+}
+
+/* ═══ SYNTECH-SOURCE-START: IMAGE source + source state (IMAGE · VIDEO · WEBCAM like every effect) ═══
+   A still image is uploaded once as a THREE.Texture with the same settings as the VideoTexture
+   above (linear filters, RGBA, flipY=false — the shader flips Y) and feeds the same uVideo
+   uniform, so the cloud is built from it exactly as from a paused video frame. */
+let srcMode = 'none';      // 'none' | 'video' | 'image' | 'webcam'
+let srcReq  = 0;           // the latest source request wins (stale loads / permissions are ignored)
+let imgTex  = null, imgURL = null, vidURL = null, camStream = null, camBusy = false;
+
+function activateImage(img) {
+  if (videoTex) { videoTex.dispose(); videoTex = null; }
+  if (imgTex) imgTex.dispose();
+  imgTex = new THREE.Texture(img);
+  imgTex.minFilter = THREE.LinearFilter;
+  imgTex.magFilter = THREE.LinearFilter;
+  imgTex.format    = THREE.RGBAFormat;
+  imgTex.flipY     = false;            // manual orientation in shader (as for the video)
+  imgTex.generateMipmaps = false;      // as VideoTexture
+  imgTex.needsUpdate = true;           // one upload: a still never changes
+  uniforms.uVideo.value   = imgTex;
+  uniforms.uMirrorX.value = false;
+  const w = img.naturalWidth, h = img.naturalHeight;
+  uniforms.uAspect.value  = w > 0 && h > 0 ? w / h : 16/9;
+  playing = true;
+  sourceShown(w, h);
+}
+function dropImageTex() { if (imgTex) { imgTex.dispose(); imgTex = null; } if (imgURL) { URL.revokeObjectURL(imgURL); imgURL = null; } }
+function stopCamStream() { if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; } }
+
+const $ = id => document.getElementById(id);
+const SRC_LABEL = { none: 'NONE', video: 'VIDEO', image: 'IMAGE', webcam: 'WEBCAM' };
+function sourceShown(w, h) {
+  $('drop-overlay').classList.add('hidden');
+  const res = (w > 0 && h > 0) ? w + '×' + h : '--';
+  $('info-res').textContent = res;
+  $('ic-res').textContent = res;
+  syncSourceUI();
+}
+function syncSourceUI() {
+  $('pill-label').textContent = SRC_LABEL[srcMode];
+  $('ic-source').textContent  = SRC_LABEL[srcMode];
+  $('src-mark').classList.toggle('on', srcMode !== 'none');
+  $('src-image').classList.toggle('on',  srcMode === 'image');
+  $('src-video').classList.toggle('on',  srcMode === 'video');
+  $('src-webcam').classList.toggle('on', srcMode === 'webcam');
+  const live = (srcMode === 'video' || srcMode === 'webcam') && !vid.paused && !vid.ended;
+  $('btn-play').classList.toggle('on', live);
+  $('play-label').textContent = srcMode === 'image' ? 'STILL' : (live ? 'PLAYING' : 'PAUSED');
+  $('btn-loop').classList.toggle('on', vid.loop);
+  $('loop-label').textContent = vid.loop ? 'LOOP ON' : 'LOOP OFF';
+  $('btn-webcam').classList.toggle('on', srcMode === 'webcam');
+  $('webcam-label').textContent = srcMode === 'webcam' ? 'WEBCAM ON' : 'WEBCAM OFF';
+}
+['play', 'pause', 'ended', 'emptied'].forEach(ev => vid.addEventListener(ev, syncSourceUI));
+
+/* SYNTECH-FIX: a loaded video must be HEARD (the <video> is born muted for the webcam). Unmute
+   before play(); if the browser refuses playback with sound (NotAllowedError, no user gesture)
+   start it muted instead of not at all. Any other rejection (AbortError: a newer source replaced
+   this one) is only logged and never mutes. */
+function playWithAudio() {
+  vid.muted = false;
+  const p = vid.play();
+  if (p && p.catch) p.catch(e => {
+    if (e && e.name === 'NotAllowedError') { vid.muted = true; vid.play().catch(() => {}); }
+    else console.warn('play() file bloccato:', e);
+  });
+}
+function togglePlay() {
+  if (srcMode !== 'video') return;
+  if (vid.paused || vid.ended) playWithAudio(); else vid.pause();
+}
+function toggleLoop() { vid.loop = !vid.loop; syncSourceUI(); }
+
+function loadImage(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const my = ++srcReq;
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    if (my !== srcReq) { URL.revokeObjectURL(url); return; }   // another source was picked meanwhile
+    stopCamStream();                                            // only now: a bad file keeps the old source
+    vid.pause(); vid.srcObject = null; vid.removeAttribute('src'); vid.load();
+    if (vidURL) { URL.revokeObjectURL(vidURL); vidURL = null; }
+    dropImageTex();
+    imgURL = url; srcMode = 'image';
+    $('info-file').textContent = file.name.length > 18 ? file.name.slice(0, 16) + '...' : file.name;
+    activateImage(img);
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); console.warn('IMAGE: impossibile decodificare', file.name); };
+  img.src = url;
+}
+
+function stopWebcam() {
+  ++srcReq;
+  stopCamStream();
+  vid.pause(); vid.srcObject = null;
+  srcMode = 'none';
+  playing = false;          // the cloud flows back into the idle sphere (reverse of the intro morph)
+  $('info-file').textContent = '--';
+  $('info-res').textContent = '--';
+  $('ic-res').textContent = '--';
+  $('drop-overlay').classList.remove('hidden');
+  syncSourceUI();
+}
+async function toggleWebcam() {
+  if (srcMode === 'webcam') { stopWebcam(); return; }
+  if (camBusy) return;
+  camBusy = true;
+  const my = ++srcReq;
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    if (my !== srcReq) { s.getTracks().forEach(t => t.stop()); return; } // a file was picked while asking
+    stopCamStream();
+    vid.pause(); vid.removeAttribute('src');
+    if (vidURL) { URL.revokeObjectURL(vidURL); vidURL = null; }
+    vid.muted = true;        // SYNTECH-FIX: the webcam stays muted (no audio feedback), as in the original
+    camStream = s;
+    vid.srcObject = s;
+    srcMode = 'webcam';
+    $('info-file').textContent = 'WEBCAM';
+    vid.addEventListener('loadeddata', () => {
+      if (my !== srcReq) return;
+      dropImageTex();
+      activateVideo(true);
+    }, { once: true });
+    vid.play().catch(e => console.warn('play() webcam bloccato:', e));
+    syncSourceUI();
+  } catch(e) { alert('Webcam non disponibile:\n' + e.message); }
+  finally { camBusy = false; }
+}
+
+function srcSelect(mode) {
+  const fi = $('fi');
+  if (mode === 'image') { fi.accept = 'image/*'; fi.click(); }
+  else if (mode === 'video') { fi.accept = 'video/*'; fi.click(); }
+  else if (mode === 'webcam') toggleWebcam();
+}
+function loadAny(file) {
+  if (!file) return;
+  if (file.type.startsWith('image/')) loadImage(file);
+  else if (file.type.startsWith('video/')) loadFile(file);
+}
+$('src-image').addEventListener('click',  () => srcSelect('image'));
+$('src-video').addEventListener('click',  () => srcSelect('video'));
+$('src-webcam').addEventListener('click', () => srcSelect('webcam'));
+$('btn-webcam').addEventListener('click', () => toggleWebcam());
+$('btn-play').addEventListener('click', () => togglePlay());
+$('btn-loop').addEventListener('click', () => toggleLoop());
+/* SPC = playback (BOKEH's shortcut; the original had none) */
+document.addEventListener('keydown', e => {
+  const t = e.target, tag = t && t.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || (t && t.isContentEditable)) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.code !== 'Space') return;
+  if (srcMode !== 'video') return;
+  e.preventDefault();
+  togglePlay();
+});
+$('pill-engine-lbl').textContent = 'WEBGL';
+/* ═══ SYNTECH-SOURCE-END ═══ */
+
+// ─── CAMERA DRIFT ────────────────────────────────────────────────────────────
+function driftCamera(t) {
+  const a = t * 0.038;
+  camera.position.x = Math.sin(a)       * 0.98;
+  camera.position.y = Math.sin(a * 0.5) * 0.28;
+  camera.position.z = 7.0 + Math.cos(a * 0.35) * 0.55;
+  camera.lookAt(0, Math.sin(t * 0.025) * 0.04, 0);
+}
+
+// ─── LOOP ────────────────────────────────────────────────────────────────────
+let lastT = 0, fpsAcc = 0, fpsN = 0;
+document.getElementById('ic-pts').textContent = N.toLocaleString(); // SYNTECH-UNIFORM: was #hPts (HUD) → Info "PTS"
+
+function animate(ts) {
+  requestAnimationFrame(animate);
+  const t  = ts * 0.001;
+  const rawDt = t - lastT;                // SYNTECH-UNIFORM: the FPS reading uses the real frame time …
+  const dt = Math.min(rawDt, 0.05);       // … the clamped dt still drives the morph, as in the original
+  lastT = t;
+
+  fpsAcc += rawDt; fpsN++;                // SYNTECH-UNIFORM: was "+= dt" — with the 0.05 clamp it could never read below 20 fps
+  if (fpsAcc > 0.7) {
+    const v = srcMode !== 'none' ? Math.round(fpsN / fpsAcc) : 0; // SYNTECH-UNIFORM: FPS 0 with no source, like BOKEH
+    document.getElementById('fps-val').textContent = v;           // SYNTECH-UNIFORM: was #hFps (HUD)
+    document.getElementById('ic-fps').textContent = v;            // SYNTECH-UNIFORM: was #sFps (bottom bar)
+    fpsAcc = 0; fpsN = 0;
+  }
+
+  if (playing) transition = Math.min(1, transition + dt * 0.8);
+  else transition = Math.max(0, transition - dt * 0.8); // SYNTECH-SOURCE: webcam off → back to the idle sphere (0 until a first source: unchanged)
+  uniforms.uTime.value       = t;
+  uniforms.uTransition.value = transition;
+  /* SYNTECH-SOURCE: was "if (videoTex) videoTex.needsUpdate = true;". No upload from a stopped webcam (the
+     texture keeps its last frame for the morph back) nor from a video element that has no frame yet while
+     a new source loads (that upload fails — "texImage2D: no video" — and leaves the texture as it was). */
+  if (videoTex && srcMode !== 'none' && vid.readyState >= vid.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
+
+  driftCamera(t);
+  composer.render();
+}
+
+// ─── SLIDERS ─────────────────────────────────────────────────────────────────
+function bindSlider(id, valId, key, dec, fn) {
+  const el = document.getElementById(id);
+  const vl = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    const v = parseFloat(el.value);
+    if (fn) fn(v); else uniforms[key].value = v;
+    vl.textContent = v.toFixed(dec);
+  });
+}
+bindSlider('sDepth', 'vDepth', 'uDepth',      1);
+bindSlider('sSize',  'vSize',  'uSizeMult',   1);
+bindSlider('sBri',   'vBri',   'uBrightness', 1);
+bindSlider('sNoise', 'vNoise', 'uNoiseMult',  2);
+bindSlider('sBloom', 'vBloom', null, 1, v => bloom.strength = v);
+
+// ─── LOAD VIDEO ──────────────────────────────────────────────────────────────
+function loadFile(file) {
+  if (!file || !file.type.startsWith('video/')) return;
+  const my = ++srcReq;                  // SYNTECH-FIX: a stale 'loadeddata' (older pick / webcam) must not activate this one
+  stopCamStream();                      // SYNTECH-FIX: release the webcam (the original left it running)
+  const old = vidURL;
+  vidURL = URL.createObjectURL(file);
+  vid.srcObject = null;
+  vid.src = vidURL;
+  if (old) URL.revokeObjectURL(old);
+  srcMode = 'video';                    // SYNTECH-SOURCE
+  $('info-file').textContent = file.name.length > 18 ? file.name.slice(0, 16) + '...' : file.name;
+  vid.addEventListener('loadeddata', () => {
+    if (my !== srcReq) return;          // SYNTECH-FIX
+    dropImageTex();                     // SYNTECH-SOURCE: the still stays on screen until the video has a frame
+    activateVideo(false);
+  }, { once: true });
+  playWithAudio();                      // SYNTECH-FIX: was vid.play() (muted, rejection unhandled)
+  syncSourceUI();
+}
+
+/* SYNTECH-UNIFORM: ▲ VIDEO / ◎ WEBCAM of the old bottom bar → Source section (IMAGE · VIDEO · WEBCAM) */
+document.getElementById('fi').addEventListener('change', e => {
+  const f = e.target.files[0]; e.target.value = '';
+  loadAny(f);
+});
+
+/* drag & drop anywhere (the original's gesture), now images too; BOKEH's drag-over frame */
+const CA = $('canvas-area'), DO = $('drop-overlay');
+CA.addEventListener('dragenter', e => { e.preventDefault(); DO.classList.remove('hidden'); DO.classList.add('drag-over'); });
+CA.addEventListener('dragleave', e => { if (CA.contains(e.relatedTarget)) return; DO.classList.remove('drag-over'); if (srcMode !== 'none') DO.classList.add('hidden'); });
+document.body.addEventListener('dragover', e => e.preventDefault());
+document.body.addEventListener('drop', e => {
+  e.preventDefault();
+  DO.classList.remove('drag-over');
+  const f = [...(e.dataTransfer?.files||[])].find(f => f.type.startsWith('video/') || f.type.startsWith('image/'));
+  if (f) loadAny(f);
+  else if (srcMode !== 'none') DO.classList.add('hidden');
+});
+
+/* SYNTECH-UNIFORM: the renderer, composer (bloom) and camera follow #canvas-wrap (BOKEH's 16:9
+   frame, resized by fitCanvas and by the timeline appearing under the video) — was a window
+   'resize' listener on innerWidth / innerHeight. Same four calls as the original. */
+function fitRenderer() {
+  const w = Math.max(1, wrapEl.clientWidth), h = Math.max(1, wrapEl.clientHeight);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  composer.render();        // repaint now: setSize cleared the canvas after this frame's render
+}
+new ResizeObserver(fitRenderer).observe(wrapEl);
+
+/* SYNTECH-UNIFORM: state for ../shared/syn-extras.js (timeline, FPS 0 without a source) — read by the tail block */
+window.PointcloudFX = {
+  hasSource:  () => srcMode !== 'none',
+  video:      () => srcMode === 'video' ? vid : null,
+  togglePlay: () => togglePlay(),
+  toggleLoop: () => toggleLoop(),
+  isLoop:     () => !!vid.loop,
+};
+syncSourceUI();
+
+animate(0);
+</script>
+
+<!-- SYNTECH-UNIFORM-START: section-mark sync (shared, same as BOKEH's syncSectionTitleGradients) + green INPUT pill -->
+<script src="../shared/syn-chrome.js"></script>
+<!-- SYNTECH-UNIFORM-END -->
+<!-- SYNTECH-BRIDGE-START (shell integration; standalone-safe) -->
+<script>
+(function(){
+  'use strict';
+  if(window.parent===window)return; /* opened standalone: stay silent */
+  var MODULE_ID='pointcloud';
+
+  function slVals(){var o={};var els=document.querySelectorAll('input[type="range"]');
+    for(var i=0;i<els.length;i++){if(els[i].id)o[els[i].id]=els[i].value;}return o;}
+  /* unchanged values are skipped: NOISE's default 0.28 sits off its 0.05 step, so the input reads
+     back "0.3" — re-applying that would move the untouched default to 0.30 */
+  function slApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el&&el.type==='range'&&el.value!==String(o[id])){el.value=o[id];
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));}}}
+  function collect(){return {sliders:slVals()};}
+  function apply(s){if(!s)return;slApply(s.sliders);}
+  window.addEventListener('message',function(ev){
+    var d=ev&&ev.data;
+    if(!d||typeof d!=='object'||typeof d.type!=='string')return;
+    if(d.type==='syn:get-settings'){
+      var p={};try{p=collect()||{};}catch(e){}
+      try{window.parent.postMessage({type:'syn:settings',payload:p},'*');}catch(e){}
+    }else if(d.type==='syn:apply-settings'){
+      try{apply(d.payload||{});}catch(e){}
+    }
+  });
+  function announce(){try{window.parent.postMessage({type:'syn:ready',payload:{id:MODULE_ID}},'*');}catch(e){}}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',announce);
+  else announce();
+})();
+</script>
+<!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
+<script src="../shared/syn-extras.js"></script>
+<script>
+/* the effect's state lives in the module script (window.PointcloudFX, set when it runs) */
+SynExtras.attach({
+  hasSource:function(){ var p=window.PointcloudFX; return !!(p&&p.hasSource()); },
+  video:function(){ var p=window.PointcloudFX; return p?p.video():null; },
+  togglePlay:function(){ var p=window.PointcloudFX; if(p) p.togglePlay(); },
+  toggleLoop:function(){ var p=window.PointcloudFX; if(p) p.toggleLoop(); },
+  isLoop:function(){ var p=window.PointcloudFX; return !!(p&&p.isLoop()); }
+});
+</script>
+<!-- SYNTECH-UNIFORM-END -->
+</body>
+</html>

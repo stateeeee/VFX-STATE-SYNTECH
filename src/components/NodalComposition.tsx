@@ -36,6 +36,12 @@ export const EFFECT_META: Record<ModuleId, EffectMeta> = {
   anamorphic_lab: { name: 'ANAMORPHIC', short: 'Lens flare stretch', color: '#5bb0c4' },
   analog: { name: 'ANALOG', short: 'CRT / sync jitter', color: '#6ea8e0' },
   bokeh: { name: 'BOKEH', short: 'Depth-of-field disks', color: '#9b6fd0' },
+  // standalone-only effects: not in RACK_ORDER / MENU_ORDER, so they never appear in the node graph yet
+  invisible: { name: 'INVISIBLE', short: 'Person cloak', color: '#8b5cf6' },
+  time_machine: { name: 'TIME MACHINE', short: 'Temporal displacement', color: '#8b5cf6' },
+  quadtree: { name: 'QUADTREE', short: 'Recursive subdivision', color: '#8b5cf6' },
+  pointcloud: { name: 'POINTCLOUD', short: 'Video point cloud', color: '#8b5cf6' },
+  datamosh: { name: 'DATAMOSH', short: 'Codec mosh', color: '#8b5cf6' },
 };
 
 const INPUT_COLOR = '#57bf8a';

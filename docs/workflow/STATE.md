@@ -29,6 +29,38 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-21 (sera) — 5 nuovi effetti standalone: INVISIBLE, TIME MACHINE, QUADTREE, POINTCLOUD, DATAMOSH.**
+Su richiesta dell'operatore (file HTML suoi). Cosa c'è ora:
+- Schede nella colonna degli effetti (in coda: INVISIBLE, TIME MACHINE, QUADTREE, POINTCLOUD, DATAMOSH);
+  cliccandole si apre l'effetto a tutto schermo, come gli altri. ModuleId nuovi: `invisible`,
+  `time_machine`, `quadtree`, `pointcloud`, `datamosh` (`src/types.ts`, `effects-registry.ts`).
+  **Solo standalone**: niente nodo SynEngine, niente hub nel brain graph, niente voce nel node graph;
+  `isLabModule` (App.tsx) li tiene fuori da catene, composizioni salvate e "Open in Lab" di Gemini
+  (il revisore aveva trovato un crash del Lab da lì: corretto). Grafica delle schede: arriverà dopo
+  (per ora solo il nome, come richiesto).
+- Ognuno ha la grafica uniforme di Bokeh (§5.1): barra in alto, riquadro 16:9, pannello 296 px, solo Info
+  aperta, IMAGE · VIDEO · WEBCAM, timer di lavoro, timeline sotto il video, bridge Save/riapri.
+  INVISIBLE: pannelli Source → Invisible → XY Pad → Export → Shortcuts → Info (come chiesto).
+  POINTCLOUD e DATAMOSH avevano un'interfaccia tutta diversa (barra in basso): rifatta nella grafica
+  di Bokeh; hanno guadagnato la sorgente IMAGE e un riquadro che segue la cornice.
+- **Audio**: in tutti e 5, un video caricato si sente (muto solo se il browser blocca l'avvio con audio,
+  poi si riattiva al primo click/tasto; la webcam resta muta). I REC di quelli che registrano contengono
+  l'audio, anche alle registrazioni successive. `EffectHost` ora ha `allow="camera; microphone; autoplay"`.
+- **Offline**: three.js r160 vendorizzato in `public/effects/vendor/three160/` (modulo min + addons
+  EffectComposer/RenderPass/UnrealBloomPass/ShaderPass), modello `selfie_multiclass_256x256.tflite`
+  (16 MB) in `vendor/mediapipe/tasks-vision/` per INVISIBLE; nessun CDN, nessuna dipendenza npm nuova.
+- Parità con gli originali: render identico pixel per pixel (o ≤ 0.004/255) con clip fissa per tutti e 5;
+  le differenze sono solo cornice/dimensionamento/audio/sorgenti (segnate SYNTECH-*).
+Da far provare all'operatore sull'app vera (GPU): fluidità di POINTCLOUD / DATAMOSH / INVISIBLE
+(qui il test è solo su swiftshader), il gesto pinch di INVISIBLE con webcam, l'audio col suo video.
+Da decidere con lui: (1) la frase "PINCH 👌 = ON / OFF" nell'overlay di INVISIBLE è stata tenuta (Bokeh non
+ha righe extra); (2) DATAMOSH con una *foto*: l'algoritmo originale senza movimento sbiadisce tra un
+I-frame e l'altro (tenuto così; con IFRAME alto resta visibile); (3) il pannello di Bokeh e delle pagine
+condivise ha un `::before` più largo del pannello che allunga lo scroll orizzontale interno (già in Bokeh:
+fix = `#panel{overflow-x:hidden}` in `syn-chrome.css` + Bokeh insieme); (4) i messaggi della barra bassa
+(`#bb-warn`) restano nascosti, come in ANALOG.
+Aperto: porting Lab (SynEngine) dei 5 nuovi — non richiesto ora; note di port nei report degli agenti.
+
 **SESSIONE 2026-10-21 — audio dei video in ANAMORPHIC e BLOB REVEAL, FATTO.**
 Prima il `<video>` restava `muted` anche con un file caricato; ora un video caricato parte
 con l'audio (se il browser rifiuta l'avvio con audio, riparte muto invece di fermarsi),

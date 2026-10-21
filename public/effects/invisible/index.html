@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+<meta charset="UTF-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>INVISIBLE STATE</title>
+<!--
+  INVISIBLE — by STATE. Operator-supplied standalone effect (2026-10-21), ported into
+  VFX SYNTECH. The RENDERING (shaders FU / FM / FC, plate learning, matte, MediaPipe
+  segmentation + hands, pinch gesture, capture-BG countdown, XY pad, REC) is the
+  operator's original, unchanged: the <script> below is the original's, with only the
+  edits marked SYNTECH-UNIFORM (ids of BOKEH's chrome) and SYNTECH-FIX (audio, offline).
+  The old top bar / frame / panel styling is replaced by BOKEH's shared chrome
+  (03-SPEC-SHELL §5.1): ../shared/syn-chrome.css + syn-chrome.js + syn-extras.js.
+-->
+<style>
+@import url('../vendor/fonts/effects.css'); /* SYNTECH: vendored fonts (offline) — was Google Fonts CDN */
+
+/* ═══════════════════════════════════════════════════════
+   INVISIBLE — effect widgets (from the original, values unchanged).
+   The original's chrome (top bar, #ca frame, panel, sections, LED/segment
+   buttons, REC button) is NOT here: it is BOKEH's, from ../shared/syn-chrome.css.
+   ═══════════════════════════════════════════════════════ */
+:root{--am:#e8c000;--bd:#20183a;--bh:#38286a;--cy:#00e0c0;--rd:#f03020} /* the original's short token names, same values as BOKEH's --amber/--border/--border-hi/--cyan/--red */
+#cd{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:35;pointer-events:none;font:900 150px var(--cond);color:var(--t4);text-shadow:0 0 40px rgba(232,192,0,.6)}#cd small{font:400 11px var(--mono);letter-spacing:5px;color:#fff;text-shadow:0 0 10px #000}
+#toast{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);background:rgba(14,10,30,.97);border:1px solid var(--bh);color:var(--am);font-size:9px;padding:7px 22px;letter-spacing:2px;z-index:40;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+#xy{position:relative;width:100%;aspect-ratio:1;background:radial-gradient(ellipse at 25% 20%,rgba(180,100,255,.08),transparent 50%),radial-gradient(ellipse at 75% 80%,rgba(0,120,255,.08),transparent 50%),rgba(4,2,12,.7);border:1px solid rgba(255,255,255,.1);cursor:crosshair;overflow:hidden;touch-action:none}
+#xy::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(140,100,255,.2) 1px,transparent 1px),linear-gradient(90deg,rgba(140,100,255,.2) 1px,transparent 1px),linear-gradient(rgba(80,60,180,.1) 1px,transparent 1px),linear-gradient(90deg,rgba(80,60,180,.1) 1px,transparent 1px);background-size:50px 50px,50px 50px,10px 10px,10px 10px;opacity:.5}
+.xh{position:absolute;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(200,160,255,.3),transparent)}.xv{position:absolute;top:0;bottom:0;width:1px;background:linear-gradient(180deg,transparent,rgba(200,160,255,.3),transparent)}
+#xd{position:absolute;width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#fff,#ffe880 20%,#e8c000 50%,#c08000);box-shadow:0 0 10px rgba(232,192,0,.8),0 3px 8px rgba(0,0,0,.8);transform:translate(-50%,-50%);pointer-events:none}
+.xe{position:absolute;font-size:7.5px;letter-spacing:2px;color:rgba(200,180,255,.4);pointer-events:none}
+#xvals{display:flex;justify-content:space-between;font-size:8.5px;letter-spacing:1px;color:var(--t2)}#xvals b{color:var(--t4);font-weight:500}
+.hint{font-size:7.5px;letter-spacing:.5px;color:var(--t2);line-height:1.9}
+#hs{font-size:8px;letter-spacing:2px;color:var(--t2);text-align:center;border:1px solid var(--bd);padding:4px}#hs.p{color:var(--cy);border-color:var(--cy)}
+#cv{display:block;width:100%;height:100%;object-fit:contain} /* SYNTECH-UNIFORM: the picture is CONTAINED in BOKEH's 16:9 frame (was: absolute, contain in the whole #ca); cv.width/height (= source / export resolution) untouched */
+
+/* ═══════════════════════════════════════════════════════
+   BOKEH widgets not in the shared sheet — copied verbatim from
+   public/effects/bokeh/index.html (SLIDERS 524–544, SHORTCUTS 756–758,
+   #rec-time 735–736 as #rt).
+   ═══════════════════════════════════════════════════════ */
+.ctrl-row { display:flex; align-items:center; gap:8px; }
+.ctrl-lbl { width:70px; flex-shrink:0; font-size:8px; letter-spacing:1px; color:var(--t2); text-transform:uppercase; }
+.ctrl-track { flex:1; height:18px; display:flex; align-items:center; }
+.daw-slider {
+  -webkit-appearance:none; width:100%; height:2px;
+  background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.12));
+  outline:none; cursor:ew-resize; border-radius:1px;
+  box-shadow:inset 0 1px 0 rgba(0,0,0,.4),0 1px 0 rgba(255,255,255,.06);
+}
+.daw-slider::-webkit-slider-thumb {
+  -webkit-appearance:none; width:9px; height:22px;
+  background:linear-gradient(180deg,rgba(255,255,255,.5) 0%,#e0d0a0 10%,#c8a830 40%,#a07820 65%,#5a4010 85%,rgba(255,255,255,.2) 100%);
+  border:none; cursor:ew-resize; border-radius:2px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8);
+}
+.daw-slider::-webkit-slider-thumb:hover { box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 0 16px rgba(232,192,0,.7),0 0 32px rgba(180,120,255,.3),0 2px 8px rgba(0,0,0,.8); }
+.daw-slider::-moz-range-thumb { width:9px; height:22px; background:linear-gradient(180deg,#e0d0a0,#c8a830,#a07820,#5a4010); border:none; cursor:ew-resize; border-radius:2px; box-shadow:0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8); }
+.ctrl-val { width:40px; text-align:right; font-size:9.5px; color:var(--t4); font-variant-numeric:tabular-nums; letter-spacing:.5px; text-shadow:0 0 6px rgba(232,192,0,.3); }
+.sc-row { display:flex; align-items:center; gap:10px; padding:2px 0; }
+.sc-key { padding:3px 9px; background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03),rgba(0,0,0,.1)); border:1px solid rgba(255,255,255,.15); border-bottom-color:rgba(0,0,0,.3); font-size:8px; color:var(--t3); min-width:26px; text-align:center; border-radius:2px; box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 2px 3px rgba(0,0,0,.4); }
+.sc-desc { font-size:8.5px; color:var(--t2); }
+#rt { text-align:center; font-size:13px; letter-spacing:4px; color:var(--t2); font-variant-numeric:tabular-nums; margin-top:4px; }
+#rt.on { color:var(--red); text-shadow:0 0 12px rgba(240,48,32,.6); }
+</style>
+<!-- SYNTECH-UNIFORM-START: shared BOKEH chrome — operator request 2026-10-11 -->
+<link rel="stylesheet" href="../shared/syn-chrome.css">
+<style id="syntech-uniform">
+/* The original's own timeline bar (#tlb: time + scrub) is replaced by the shared
+   BLOB REVEAL timeline (../shared/syn-extras.js). Hidden, not deleted: the
+   original script still writes to it (its own JS sets display:flex inline). */
+#tlb { display:none !important; }
+</style>
+<!-- SYNTECH-UNIFORM-END -->
+</head>
+<body translate="no" class="notranslate">
+<video id="vid" playsinline muted style="display:none"></video>
+
+<!-- TOPBAR — SYNTECH-UNIFORM: BOKEH's (name · sep · INPUT · ENGINE · work timer · FPS), was "VFX" logo + INPUT/RENDER pills + video time -->
+<div id="topbar">
+  <div class="logo notranslate">INVISIBLE</div>
+  <div class="tb-sep"></div>
+  <div class="pill" id="pin"><div class="dot"></div><span class="pill-pre">INPUT</span><span id="pl">NONE</span></div>
+  <div class="pill engine" id="pill-engine"><div class="dot"></div><span class="pill-pre">ENGINE</span><span id="pill-engine-lbl">IDLE</span></div><!-- mirrors the AI state (Info › AI): IDLE / LOADING / READY / ERROR -->
+  <div class="pill" id="pill-rec" style="display:none"><div class="dot"></div><span>● REC</span></div>
+  <div id="timecode">00:00:00:00</div>
+  <div id="fps-display">FPS <b id="fps-val">0</b></div>
+</div>
+
+<div id="main">
+
+  <!-- CANVAS — SYNTECH-UNIFORM: BOKEH's 16:9 frame (#canvas-wrap + #frame-outline) and drop overlay; was #ca -->
+  <div id="canvas-area">
+    <div id="canvas-wrap">
+      <div id="frame-outline"></div>
+      <canvas id="cv" width="1280" height="720"></canvas>
+      <div id="drop-overlay">
+        <div class="drop-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <div class="drop-title">INVISIBLE</div>
+        <div class="drop-sub">IMAGE — VIDEO — WEBCAM</div>
+        <div class="drop-sub" style="opacity:.6">PINCH  👌  = ON / OFF</div><!-- the original's gesture hint, kept -->
+        <button class="drop-source-btn" id="source-center-btn">SOURCE</button>
+      </div>
+    </div>
+    <div id="cd"><span>3</span><small>ESCI DALL'INQUADRATURA</small></div>
+    <div id="toast"></div>
+  </div>
+
+  <!-- PANEL — order requested by the operator: Source, Invisible, then the original's order (XY Pad, Export, Shortcuts), Info last and open -->
+  <div id="panel">
+
+    <!-- SOURCE -->
+    <div class="section" id="sec-source-wrap">
+      <div class="sec-head closed" data-s="src">
+        <div class="sec-mark" id="src-mark"></div>
+        <span class="sec-title">Source</span>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="s-src">
+        <div class="seg-row">
+          <button class="seg-btn" id="bi">IMAGE</button>
+          <button class="seg-btn" id="bv">VIDEO</button>
+          <button class="seg-btn" id="bw">WEBCAM</button>
+        </div>
+        <div class="row"><div class="lbl">Playback</div><div class="led-btn" id="bpl"><div class="led"></div><div class="led-txt" id="pll">PAUSED</div><div class="kbd-badge">SPC</div></div></div>
+        <div class="row"><div class="lbl">Loop</div><div class="led-btn on" id="blp"><div class="led"></div><div class="led-txt" id="lpl">LOOP ON</div></div></div>
+        <div class="row"><div class="lbl">Fullscreen</div><div class="led-btn" id="bfs"><div class="led"></div><div class="led-txt">FULLSCREEN</div></div></div>
+        <input type="file" id="fv1" accept="video/*" hidden><input type="file" id="fi1" accept="image/*" hidden>
+      </div>
+    </div>
+
+    <!-- INVISIBLE -->
+    <div class="section">
+      <div class="sec-head closed" data-s="inv">
+        <div class="sec-mark" id="inv-mark"></div>
+        <span class="sec-title">Invisible</span>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="s-inv">
+        <div class="row"><div class="lbl">Invisible</div><div class="led-btn" id="bfx"><div class="led"></div><div class="led-txt" id="fxl">INVISIBLE OFF</div><div class="kbd-badge">X</div></div></div>
+        <div class="row"><div class="lbl">Gesture</div><div class="led-btn on" id="bges"><div class="led"></div><div class="led-txt">PINCH GESTURE</div></div></div>
+        <div id="hs">HAND —</div>
+        <div id="sli" style="display:flex;flex-direction:column;gap:8px"></div>
+        <div class="row"><div class="lbl">Background</div><div class="led-btn" id="bcap"><div class="led"></div><div class="led-txt">CAPTURE BG</div><div class="kbd-badge">B</div></div></div>
+        <div class="row"><div class="lbl">Plate</div><div class="led-btn" id="brp"><div class="led"></div><div class="led-txt">RESET PLATE</div></div></div>
+        <div class="hint">Mano aperta + pollice/indice uniti = ON/OFF.<br>CAPTURE BG (tasto B): esci dall'inquadratura per 3s+1.5s e catturo lo sfondo vero. Senza cattura lo sfondo si impara da solo (meno preciso).</div>
+      </div>
+    </div>
+
+    <!-- XY PAD -->
+    <div class="section">
+      <div class="sec-head closed" data-s="xy">
+        <div class="sec-mark"></div>
+        <span class="sec-title">XY Pad</span>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="s-xy">
+        <div id="xy"><div class="xh" id="xh"></div><div class="xv" id="xvl"></div><div id="xd"></div><span class="xe" style="top:5px;left:50%;transform:translateX(-50%)">MAX</span><span class="xe" style="bottom:5px;left:50%;transform:translateX(-50%)">CLEAN</span><span class="xe" style="left:4px;top:50%;transform:translateY(-50%) rotate(-90deg)">CALM</span><span class="xe" style="right:4px;top:50%;transform:translateY(-50%) rotate(90deg)">CHAOS</span></div>
+        <div id="xvals"><span>INVISIBLE&nbsp;<b id="xyv">1.00</b></span><span>CHAOS&nbsp;<b id="xxv">0.50</b></span></div>
+        <div class="hint">Y → quantità di invisibilità<br>X → caos / distorsione del bordo</div>
+      </div>
+    </div>
+
+    <!-- EXPORT -->
+    <div class="section">
+      <div class="sec-head closed" data-s="rec">
+        <div class="sec-mark" id="rec-mark"></div>
+        <span class="sec-title">Export</span>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="s-rec">
+        <button class="rec-btn" id="brec"><div class="rec-dot"></div>REC MP4</button>
+        <div id="rt">00:00:00</div>
+      </div>
+    </div>
+
+    <!-- SHORTCUTS -->
+    <div class="section">
+      <div class="sec-head closed" data-s="key"><div class="sec-mark"></div><span class="sec-title">Shortcuts</span><div class="sec-chevron">▼</div></div>
+      <div class="sec-body hidden" id="s-key">
+        <div class="sc-row"><div class="sc-key">V</div><div class="sc-desc">Load video</div></div>
+        <div class="sc-row"><div class="sc-key">I</div><div class="sc-desc">Load image</div></div>
+        <div class="sc-row"><div class="sc-key">W</div><div class="sc-desc">Toggle webcam</div></div>
+        <div class="sc-row"><div class="sc-key">X</div><div class="sc-desc">Invisible on/off</div></div>
+        <div class="sc-row"><div class="sc-key">B</div><div class="sc-desc">Capture background</div></div>
+        <div class="sc-row"><div class="sc-key">R</div><div class="sc-desc">Rec start/stop</div></div>
+        <div class="sc-row"><div class="sc-key">Space</div><div class="sc-desc">Play / Pause</div></div>
+      </div>
+    </div>
+
+    <!-- INFO — always open on load (BOKEH's layout) -->
+    <div class="section">
+      <div class="sec-head" data-s="inf">
+        <div class="sec-mark" id="info-mark"></div>
+        <span class="sec-title">Info</span>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body" id="s-inf">
+        <div class="info-grid">
+          <div class="info-cell"><div class="ic-lbl">FPS</div><div class="ic-val amber" id="ic-fps">0</div></div>
+          <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val dim" id="iS">NONE</div></div>
+          <div class="info-cell"><div class="ic-lbl">Resolution</div><div class="ic-val dim" id="iR">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">AI</div><div class="ic-val dim" id="iA">IDLE</div></div>
+          <div class="ic-credit">INVISIBLE — by STATE</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SMOKE BLOBS -->
+    <div id="panel-smoke">
+      <div class="smoke-blob s1"></div>
+      <div class="smoke-blob s2"></div>
+      <div class="smoke-blob s3"></div>
+    </div>
+
+  </div><!-- /panel -->
+</div><!-- /main -->
+
+<!-- the original's timeline bar — hidden (SYNTECH-UNIFORM, see <style id="syntech-uniform">); the shared one replaces it. #tt = the original's top-bar video time, now shown by that timeline. -->
+<div id="tlb"><span id="tt">--:--</span><span id="tc">00:00</span><input type="range" id="tl" min="0" max="1000" value="0"></div>
+<div id="bottombar"></div>
+
+<script>
+'use strict';
+const $=id=>document.getElementById(id),cv=$('cv'),vid=$('vid');
+let _t;function toast(m,d=2400){const e=$('toast');e.textContent=m;e.style.opacity=1;clearTimeout(_t);_t=setTimeout(()=>e.style.opacity=0,d)}
+const gl=cv.getContext('webgl2',{antialias:false,preserveDrawingBuffer:true,alpha:false});
+if(!gl){toast('WebGL2 non disponibile',9e3);throw new Error('no webgl2')}
+/* ── SHADERS ── */
+const VS=`#version 300 es
+in vec2 p;out vec2 v;void main(){v=p*.5+.5;gl_Position=vec4(p,0,1);}`;
+/* FU: apprende lo sfondo (plate) dove la persona non c'è; alpha = "visto" */
+const FU=`#version 300 es
+precision highp float;in vec2 v;out vec4 o;uniform sampler2D uS,uP,uM;uniform float uK;uniform vec2 uTx;
+void main(){float m=0.;for(int i=-2;i<=2;i++)for(int j=-2;j<=2;j++)m=max(m,texture(uM,v+vec2(i,j)*uTx*3.).r);
+vec4 p=textureLod(uP,v,0.);float a=p.a;vec3 old=p.rgb/max(a,1e-3),s=texture(uS,v).rgb;
+float vis=1.-smoothstep(.12,.35,m);float k=a<.02?1.:(a<.98?max(uK,.1):uK);
+vec3 c=mix(old,s,k*vis);float na=mix(a,1.,vis*(a<.02?1.:min(1.,max(uK*6.,a<.98?.3:0.))));o=vec4(c*na,na);}`;
+/* FM: matte ad alta risoluzione = segmentazione ∪ differenza dallo sfondo reale ∪ movimento; G = echo/scia */
+const FM=`#version 300 es
+precision highp float;in vec2 v;out vec4 o;uniform sampler2D uS,uP,uM,uV,uE;
+uniform vec2 uTx;uniform vec3 uG;uniform float uReal,uGrow,uFea,uDil,uDT,uDec,uMot;
+float mk(vec2 u){return texture(uM,u).r;}
+float seg(vec2 u){vec3 c=texture(uS,u).rgb;vec2 st=uTx*(.6+uFea*.45);float sa=0.,sw=0.;
+for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 k=vec2(i,j),p=u+k*st;vec3 d=texture(uS,p).rgb-c;
+float w=exp(-dot(k,k)*.35-dot(d,d)*150.)+1e-4;sa+=mk(p)*w;sw+=w;}
+float th=.5-uGrow*.4;return smoothstep(th-.12,th+.12,sa/sw);}
+vec4 pl(vec2 u){vec4 p=textureLod(uP,u,0.);return vec4(p.rgb/max(p.a,1e-3)*uG,p.a);}
+void main(){float s=seg(v);float dl=0.;
+for(int i=0;i<12;i++){float a=float(i)*.5236;vec2 d=vec2(cos(a),sin(a));dl=max(dl,mk(v+d*uDil));dl=max(dl,mk(v+d*uDil*.5));}
+dl=smoothstep(.15,.5,max(dl,s));
+vec2 ts=1.5/vec2(textureSize(uS,0));float dif=0.;
+vec2 of[5]=vec2[5](vec2(0),vec2(ts.x,0),vec2(-ts.x,0),vec2(0,ts.y),vec2(0,-ts.y));
+for(int i=0;i<5;i++){vec2 u=v+of[i];vec4 p=pl(u);dif+=length(texture(uS,u).rgb-p.rgb)*step(.9,p.a)*.2;}
+float dm=smoothstep(uDT,uDT*2.,dif)*uReal*dl;
+float mv=smoothstep(.09,.22,length(texture(uS,v).rgb-texture(uV,v).rgb))*dl*uMot;
+float m=max(max(s,dm),mv*.8);
+vec2 te=1.2/vec2(textureSize(uE,0));vec4 pr=texture(uE,v);
+float e0=(pr.g*4.+texture(uE,v+vec2(te.x,0)).g+texture(uE,v-vec2(te.x,0)).g+texture(uE,v+vec2(0,te.y)).g+texture(uE,v-vec2(0,te.y)).g)/8.;
+o=vec4(m,max(m,e0*uDec),0.,1.);}`;
+/* FC: composizione — sfondo reale nel corpo, nastri di metallo liquido sul bordo, onda d'urto */
+const FC=`#version 300 es
+precision highp float;in vec2 v;out vec4 o;uniform sampler2D uS,uP,uE;
+uniform vec2 uRes,uC;uniform vec3 uG;uniform float uMir,uOn0,uOn1,uT,uAmt,uGho,uEw,uDist,uCha,uTime;
+float hs(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float nz(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hs(i),hs(i+vec2(1,0)),f.x),mix(hs(i+vec2(0,1)),hs(i+1.),f.x),f.y);}
+vec3 plate(vec2 u){vec4 p=textureLod(uP,u,0.);vec3 c=p.rgb/max(p.a,1e-3);
+if(p.a<.98){vec3 f=vec3(0);for(int l=2;l<9;l++){vec4 s=textureLod(uP,u,float(l));if(s.a>.3){f=s.rgb/s.a;break;}if(l==8)f=s.rgb/max(s.a,1e-3);}
+f+=(hs(u*uRes+uTime)-.5)*.03;c=mix(f,c,smoothstep(.2,.98,p.a));}return c*uG;}
+float Bm(vec2 u,vec2 x,vec2 y){return(texture(uE,u).r*2.+texture(uE,u+x).r+texture(uE,u-x).r+texture(uE,u+y).r+texture(uE,u-y).r)/6.;}
+float Be(vec2 u,vec2 x,vec2 y){return(texture(uE,u).g*2.+texture(uE,u+x).g+texture(uE,u-x).g+texture(uE,u+y).g+texture(uE,u-y).g)/6.;}
+vec2 gm(vec2 u,float w){vec2 x=vec2(w/uRes.x,0.),y=vec2(0.,w/uRes.y);return vec2(Bm(u+x,x,y)-Bm(u-x,x,y),Bm(u+y,x,y)-Bm(u-y,x,y));}
+vec2 ge(vec2 u,float w){vec2 x=vec2(w/uRes.x,0.),y=vec2(0.,w/uRes.y);return vec2(Be(u+x,x,y)-Be(u-x,x,y),Be(u+y,x,y)-Be(u-y,x,y));}
+void main(){vec2 u=vec2(uMir>.5?1.-v.x:v.x,v.y);float asp=uRes.x/uRes.y,t=uTime;
+vec2 dv=(u-uC)*vec2(asp,1.);float d=length(dv);vec2 dir=dv/max(d,1e-4);dir.x/=asp;
+float act=uT<1.4?1.:0.,R=uT*1.5,fd=1.-uT/1.4;
+float bump=exp(-pow((d-R)/.2,2.))*act*fd;
+float f=uT>=1.4?1.:smoothstep(R+.05,R-.05,d);float on=mix(uOn0,uOn1,f)*uAmt;
+vec2 ru=u+dir*(bump*.07+sin((d-R)*55.)*bump*bump*.012);
+float w=(uEw*.35+.8)*uRes.x/1280.;
+vec2 wob=(vec2(nz(ru*3.5+t*.5),nz(ru*3.5-t*.4+9.))-.5)*uCha*.022;vec2 q=ru+wob;
+vec2 g4=gm(q,w*4.);float dl=smoothstep(.04,.35,length(g4));
+float row=floor(q.y*70.),tk=floor(t*9.);
+float sl=(hs(vec2(row,tk))-.5)*step(.72,hs(vec2(row+3.,tk)))*uCha*.05*dl;
+vec2 g=gm(q,w)+gm(q,w*2.6)*.4+ge(q,w*1.5)*.8;
+float fg=nz(q*vec2(asp,1.)*7.+t*.25);float band=smoothstep(.02,.32,length(g))*mix(1.,smoothstep(.2,.6,fg+.25),uCha*.9)+smoothstep(.1,.5,length(g4))*smoothstep(.55,.8,nz(q*5.+13.))*.35;band=clamp(band,0.,1.);
+vec3 n=normalize(vec3(-g*3.,.4));float nv=n.z;float th=(nz(q*vec2(asp,1.)*11.+t*.2)-.5)*2.6*(.4+uCha);n.xy=mat2(cos(th),-sin(th),sin(th),cos(th))*n.xy;vec2 off=n.xy*uDist*.1;
+vec3 refr=vec3(plate(q+off).r,plate(q+off*1.18).g,plate(q+off*1.42).b);
+vec3 rf=reflect(vec3(0,0,-1),n);vec3 refl=plate(q+rf.xy*.18);
+float sky=.5+.5*rf.y+(nz(rf.xy*4.+t*.15)-.5)*.5;
+vec3 env=mix(vec3(.3,.32,.33),vec3(1.2),smoothstep(.1,.9,sky));refl=mix(refl,env,.4);
+float fr=pow(1.-nv,2.);vec3 ch=mix(refr*.85,refl,.4+.55*fr);
+vec3 irid=.5+.5*cos(6.2832*(vec3(0.,.33,.67)+nv*1.3+nz(q*5.)*.4));ch=mix(ch,ch*irid*1.7,.16);ch=mix(ch,vec3(dot(ch,vec3(.333))),.4)*vec3(.97,1.,.93);
+ch+=pow(max(dot(n,normalize(vec3(-.5,.7,.5))),0.),48.)*1.5+pow(max(dot(n,normalize(vec3(.6,-.3,.6))),0.),64.)*.8;
+ch*=.78+.22*smoothstep(.2,.95,nv+.25*nz(q*28.));ch=pow(clamp(ch,0.,1.5),vec3(1.12))*1.08;
+vec3 cam=vec3(texture(uS,ru+dir*bump*.012).r,texture(uS,ru).g,texture(uS,ru-dir*bump*.012).b);
+float bnd=exp(-pow((d-R)/.24,2.))*act;cam=mix(cam,vec3(dot(cam,vec3(.333)))*vec3(.95,1.,1.06)*1.15,bnd*.75);
+vec3 bg=plate(ru+vec2(sl,0.)+n.xy*uDist*.03);
+float mi=smoothstep(.35,.65,Bm(ru,vec2(w*.5/uRes.x,0.),vec2(0.,w*.5/uRes.y)));
+vec3 base=mix(cam,bg,mi*uGho*on);vec3 col=mix(base,ch,clamp(band*1.6,0.,1.)*on);
+col+=exp(-pow((d-R)/.03,2.))*act*fd*.22*vec3(.7,.85,1.);o=vec4(col,1.);}`;
+function prog(fs){const mk=(t,s)=>{const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(x));return x};
+const p=gl.createProgram();gl.attachShader(p,mk(gl.VERTEX_SHADER,VS));gl.attachShader(p,mk(gl.FRAGMENT_SHADER,fs));gl.bindAttribLocation(p,0,'p');gl.linkProgram(p);
+if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));gl.useProgram(p);['uS','uP','uM','uV','uE'].forEach((n,i)=>gl.uniform1i(gl.getUniformLocation(p,n),i));return p}
+let PU,PM,PC;try{PU=prog(FU);PM=prog(FM);PC=prog(FC)}catch(e){toast('Shader: '+e.message,15000);console.error(e);throw e}
+gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+gl.disable(gl.BLEND);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
+function uni(p,o){for(const k in o){const l=gl.getUniformLocation(p,k),v=o[k];if(l===null)continue;Array.isArray(v)?(v.length===3?gl.uniform3f(l,v[0],v[1],v[2]):gl.uniform2f(l,v[0],v[1])):gl.uniform1f(l,v)}}
+const bind=(u,t)=>{gl.activeTexture(gl.TEXTURE0+u);gl.bindTexture(gl.TEXTURE_2D,t)};
+function mkT(w,h,ifmt,fmt,mip){const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,ifmt,w,h,0,fmt,gl.UNSIGNED_BYTE,null);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,mip?gl.LINEAR_MIPMAP_LINEAR:gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);if(mip)gl.generateMipmap(gl.TEXTURE_2D);return t}
+function mkFB(w,h,mip,cl){const t=mkT(w,h,gl.RGBA8,gl.RGBA,mip),f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);gl.clearColor(0,0,0,cl);gl.clear(gl.COLOR_BUFFER_BIT);return{t,f}}
+/* ── STATE ── */
+const P={gho:100,fea:2,grow:10,hair:25,ew:4,dist:60,ad:12,echo:55,dt:60};
+let W=1280,H=720,srcMode='none',img=null,imgDirty=false,mirror=false,paused=false,loop=true,webcamStream=null;
+let padX=.5,padY=1,fxOn=false,o0=0,o1=0,tS=-1e9,pc=[.5,.5],gesture=true;
+const srcTs=[mkT(2,2,gl.RGBA8,gl.RGBA,false),mkT(2,2,gl.RGBA8,gl.RGBA,false)];let sI=0,hf=false,newFrame=false;
+const MW=256,MH=256,maskBuf=new Uint8Array(MW*MH),rawBuf=new Uint8Array(MW*MH),tmpBuf=new Uint8Array(MW*MH),handBuf=new Uint8Array(MW*MH),maskT=mkT(MW,MH,gl.R8,gl.RED,false);
+let handAge=99,bootN=0,BOOT=90,plate=[],pi=0,PW=2,PH=2,mat=[],mi=0,TW=2,TH=2,maskReady=false,segDirty=true,plateReal=false,capAt=0,gain=[1,1,1],plS=null,gN=0;
+function allocPlate(){bootN=0;plate.concat(mat).forEach(x=>{gl.deleteTexture(x.t);gl.deleteFramebuffer(x.f)});
+PW=Math.max(2,W>>1);PH=Math.max(2,H>>1);plate=[mkFB(PW,PH,true,0),mkFB(PW,PH,true,0)];pi=0;
+TW=Math.max(2,Math.round(W*.66));TH=Math.max(2,Math.round(H*.66));mat=[mkFB(TW,TH,false,1),mkFB(TW,TH,false,1)];mi=0;gl.bindFramebuffer(gl.FRAMEBUFFER,null)}
+function upMask(){bind(2,maskT);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texImage2D(gl.TEXTURE_2D,0,gl.R8,MW,MH,0,gl.RED,gl.UNSIGNED_BYTE,maskBuf)}
+function resetPlate(){allocPlate();maskBuf.fill(0);rawBuf.fill(0);handBuf.fill(0);handAge=99;upMask();maskReady=false;segDirty=true;plateReal=false;capAt=0;plS=null;gain=[1,1,1];$('cd').style.display='none';$('bcap').classList.remove('on')}
+function resizeTo(w,h){const s=Math.min(1,1920/w,1080/h);W=Math.max(2,Math.round(w*s/2)*2);H=Math.max(2,Math.round(h*s/2)*2);cv.width=W;cv.height=H;resetPlate();$('iR').textContent=W+'×'+H}
+/* ── MEDIAPIPE (segmentazione persone + mani) ── */
+/* SYNTECH-FIX: MediaPipe fully local (offline) — was cdn.jsdelivr.net @mediapipe/tasks-vision@0.10.14 + storage.googleapis.com models;
+   the two model files are byte-identical to those URLs (selfie_multiclass_256x256 float32, hand_landmarker float16/1) */
+const MPV='../vendor/mediapipe/tasks-vision',SEG_URL=MPV+'/selfie_multiclass_256x256.tflite',HAND_URL=MPV+'/hand_landmarker.task';
+let seg=null,hand=null,mpState='idle',lastTs=0,lastSeg=0,segN=0;
+async function loadMP(){if(mpState!=='idle')return;mpState='loading';$('iA').textContent='LOADING';toast('⟳ Loading MediaPipe…',9000);
+try{const M=await import(MPV+'/vision_bundle.mjs');const fs=await M.FilesetResolver.forVisionTasks(MPV+'/wasm');
+const mk=(C,url,d,ex)=>C.createFromOptions(fs,{baseOptions:{modelAssetPath:url,delegate:d},runningMode:'VIDEO',...ex});
+const both=async(C,url,ex)=>{try{return await mk(C,url,'GPU',ex)}catch(e){return await mk(C,url,'CPU',ex)}};
+seg=await both(M.ImageSegmenter,SEG_URL,{outputConfidenceMasks:true,outputCategoryMask:false});
+hand=await both(M.HandLandmarker,HAND_URL,{numHands:2});mpState='ready';$('iA').textContent='READY';toast('✓ Segmentazione + mani pronte')}
+catch(e){mpState='idle';$('iA').textContent='ERROR';console.error(e);toast('MediaPipe: '+(e.message||e)+' — serve localhost/HTTPS + rete',7000)}}
+function morph(){const rp=P.hair*.28,rx=Math.round(rp/(W/MW)),ry=Math.round(rp/(H/MH));
+if(rx>0||ry>0){for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){let m=0;for(let k=-rx;k<=rx;k++)m=Math.max(m,rawBuf[y*MW+Math.min(MW-1,Math.max(0,x+k))]);tmpBuf[y*MW+x]=m}
+for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){let m=0;for(let k=-ry;k<=ry;k++)m=Math.max(m,tmpBuf[Math.min(MH-1,Math.max(0,y+k))*MW+x]);const i=y*MW+x;maskBuf[i]=Math.max(rawBuf[i],m*.9)}}
+else maskBuf.set(rawBuf);
+if(handAge<4)for(let i=0;i<maskBuf.length;i++)if(handBuf[i]>maskBuf[i])maskBuf[i]=handBuf[i]}
+function runSeg(src,now){const ts=lastTs=Math.max(lastTs+1,Math.round(now));const r=seg.segmentForVideo(src,ts),mm=r.confidenceMasks;if(!mm||!mm.length)return;
+const f=mm[0].getAsFloat32Array(),w=mm[0].width,h=mm[0].height;
+for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){const sv=f[Math.min(h-1,(y*h/MH)|0)*w+Math.min(w-1,(x*w/MW)|0)],nv=(1-sv)*255,i=(MH-1-y)*MW+x;rawBuf[i]=srcMode==='image'?nv:rawBuf[i]*.2+nv*.8}morph();
+mm.forEach(m=>m.close&&m.close());r.close&&r.close();upMask();maskReady=true;segDirty=false}
+/* ── GESTO PINCH ── */
+let latch=false,pSince=0,rel=0,lastTog=0,pinS=false;
+const hc=document.createElement('canvas');hc.width=MW;hc.height=MH;const hx=hc.getContext('2d',{willReadFrequently:true});
+const HB=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+function drawHands(lms){if(!lms.length){if(++handAge===4)handBuf.fill(0);return}
+hx.setTransform(1,0,0,1,0,0);hx.clearRect(0,0,MW,MH);hx.setTransform(MW/W,0,0,MH/H,0,0);hx.fillStyle=hx.strokeStyle='#fff';hx.lineCap=hx.lineJoin='round';
+for(const lm of lms){const q=lm.map(p=>[p.x*W,p.y*H]);hx.lineWidth=Math.max(8,Math.hypot(q[0][0]-q[9][0],q[0][1]-q[9][1])*.2);
+hx.beginPath();[0,1,5,9,13,17].forEach((k,i)=>i?hx.lineTo(q[k][0],q[k][1]):hx.moveTo(q[k][0],q[k][1]));hx.closePath();hx.fill();
+hx.beginPath();HB.forEach(([a,b])=>{hx.moveTo(q[a][0],q[a][1]);hx.lineTo(q[b][0],q[b][1])});hx.stroke()}
+const d=hx.getImageData(0,0,MW,MH).data;for(let y=0;y<MH;y++)for(let x=0;x<MW;x++)handBuf[(MH-1-y)*MW+x]=d[(y*MW+x)*4+3];handAge=0}
+function runHands(now){const ts=lastTs=Math.max(lastTs+1,Math.round(now));const lms=hand.detectForVideo(vid,ts).landmarks||[];drawHands(lms);let pin=null;
+for(const lm of lms){const d=(a,b)=>Math.hypot(lm[a].x-lm[b].x,lm[a].y-lm[b].y),sz=d(0,9)||1;
+const ext=[[12,10],[16,14],[20,18]].every(([t,q])=>d(0,t)>d(0,q)*1.1);if(ext&&d(4,8)/sz<(pinS?.35:.25)){pin=[(lm[4].x+lm[8].x)/2,1-(lm[4].y+lm[8].y)/2];break}}
+const hs=$('hs');pinS=!!pin;if(pin&&!gesture){hs.textContent='HAND — TRACK';hs.className=''}else if(pin){hs.textContent='HAND — PINCH';hs.className='p';if(!latch){if(!pSince)pSince=now;if(now-pSince>160&&now-lastTog>900){latch=true;lastTog=now;setFx(!fxOn,pin)}}rel=0}
+else{pSince=0;hs.className='';hs.textContent=lms.length?'HAND — OPEN':'HAND —';if(latch){if(!rel)rel=now;if(now-rel>300){latch=false;rel=0}}}}
+function setFx(on,c){if(on===fxOn)return;o0=fxOn?1:0;o1=on?1:0;fxOn=on;tS=performance.now();pc=c||[.5,.5];$('bfx').classList.toggle('on',on);$('fxl').textContent=on?'INVISIBLE ON':'INVISIBLE OFF'}
+/* ── GAIN ESPOSIZIONE: confronta live e sfondo catturato fuori dalla persona ── */
+const gc=document.createElement('canvas');gc.width=48;gc.height=27;const gx=gc.getContext('2d',{willReadFrequently:true});
+function smallFrame(){gx.drawImage(srcMode==='image'?img:vid,0,0,48,27);return gx.getImageData(0,0,48,27).data}
+function estGain(){if(!plateReal||!plS||!maskReady||srcMode==='image')return;const d=smallFrame();const a=[0,0,0],b=[0,0,0];let n=0;
+for(let y=1;y<26;y++)for(let x=1;x<47;x++){const mx=Math.round((x+.5)/48*MW),my=MH-1-Math.round((y+.5)/27*MH);let mm=0;
+for(let j=-3;j<=3;j+=3)for(let i=-3;i<=3;i+=3)mm=Math.max(mm,maskBuf[Math.min(MH-1,Math.max(0,my+j))*MW+Math.min(MW-1,Math.max(0,mx+i))]);
+if(mm>25)continue;const k=(y*48+x)*4;for(let c=0;c<3;c++){a[c]+=d[k+c];b[c]+=plS[k+c]}n++}
+if(n<150)return;for(let c=0;c<3;c++){const g=Math.max(.6,Math.min(1.6,a[c]/Math.max(1,b[c])));gain[c]+=(g-gain[c])*.2}}
+function maskArea(){let n=0;for(let i=0;i<rawBuf.length;i++)if(rawBuf[i]>128)n++;return n/rawBuf.length}
+function lockPlate(){plateReal=true;gain=[1,1,1];plS=new Uint8ClampedArray(smallFrame());$('bcap').classList.add('on');toast('✓ Sfondo appreso — puoi entrare',3000)}
+function startCapture(){if(srcMode==='none'){toast('Carica prima una sorgente');return}if(srcMode==='image'){toast('Su foto lo sfondo viene ricostruito da solo');return}allocPlate();plateReal=false;plS=null;gain=[1,1,1];capAt=performance.now();$('bcap').classList.remove('on');$('cd').style.display='flex'}
+/* ── RENDER LOOP ── */
+let fc=0,lf=performance.now();const HAS_RVFC='requestVideoFrameCallback' in vid;
+if(HAS_RVFC){const f=()=>{newFrame=true;vid.requestVideoFrameCallback(f)};vid.requestVideoFrameCallback(f)}
+function frame(now){requestAnimationFrame(frame);if(srcMode==='none')return;
+try{let learn=true,capturing=false;
+if(capAt){const el=(now-capAt)/1000,cd=$('cd').firstChild;
+if(el<3){learn=false;cd.textContent=Math.ceil(3-el)}else if(el<4.6){capturing=true;cd.textContent='●'}
+else{capAt=0;$('cd').style.display='none';plateReal=true;gain=[1,1,1];plS=new Uint8ClampedArray(smallFrame());$('bcap').classList.add('on');toast('✓ Sfondo catturato')}}
+let dirty=false;gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+if(srcMode==='image'){if(imgDirty){for(let i=0;i<2;i++){bind(0,srcTs[i]);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img)}imgDirty=false;hf=true;dirty=true}}
+else if(vid.readyState>=2&&(!HAS_RVFC||newFrame||!hf)){newFrame=false;sI^=1;bind(0,srcTs[sI]);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,vid);hf=true;dirty=true}
+if(!hf)return;
+if(mpState==='ready'){const s=srcMode==='image'?img:vid;
+if(srcMode==='image'){if(segDirty){runSeg(s,now);dirty=true}}
+else if(dirty){runSeg(s,now);if((segN++&1)===0)runHands(now)}}
+if(dirty){if((gN++&7)===0)estGain();
+if((maskReady||capturing||(srcMode!=='image'&&!plateReal))&&learn){const a=plate[pi],b=plate[1-pi];gl.bindFramebuffer(gl.FRAMEBUFFER,b.f);gl.viewport(0,0,PW,PH);gl.useProgram(PU);bind(0,srcTs[sI]);bind(1,a.t);bind(2,maskT);
+uni(PU,{uK:capturing?.2:plateReal?P.ad/100*.02:.002+P.ad/100*.25,uTx:[1/MW,1/MH]});gl.drawArrays(gl.TRIANGLE_STRIP,0,4);gl.bindTexture(gl.TEXTURE_2D,b.t);gl.generateMipmap(gl.TEXTURE_2D);pi=1-pi;if(!plateReal&&!capAt){if(bootN===0)toast('Resta fuori inquadratura: apprendo lo sfondo…',4000);if(++bootN>=BOOT){if(!maskReady||maskArea()<.04)lockPlate();else bootN=BOOT-30}}}
+const pm=mat[mi],nm=mat[1-mi];gl.bindFramebuffer(gl.FRAMEBUFFER,nm.f);gl.viewport(0,0,TW,TH);gl.useProgram(PM);
+bind(0,srcTs[sI]);bind(1,plate[pi].t);bind(2,maskT);bind(3,srcTs[1-sI]);bind(4,pm.t);
+uni(PM,{uTx:[1/MW,1/MH],uG:gain,uReal:plateReal?1:0,uGrow:P.grow/50,uFea:P.fea,uDil:.04,uDT:.22-P.dt/100*.17,uDec:.7+.28*P.echo/100,uMot:1});
+gl.drawArrays(gl.TRIANGLE_STRIP,0,4);mi=1-mi}
+gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,H);gl.useProgram(PC);bind(0,srcTs[sI]);bind(1,plate[pi].t);bind(4,mat[mi].t);
+uni(PC,{uMir:mirror?1:0,uOn0:o0,uOn1:o1,uT:Math.min(1.5,(now-tS)/650),uAmt:padY,uGho:P.gho/100,uEw:P.ew,uDist:P.dist/100,uCha:padX,uTime:now/1000,uC:pc,uRes:[W,H],uG:gain});
+gl.drawArrays(gl.TRIANGLE_STRIP,0,4)}catch(e){console.error(e)}
+fc++;if(now-lf>700){const f=Math.round(fc*1000/(now-lf));fc=0;lf=now;$('fps-val').textContent=f;$('ic-fps').textContent=f/* SYNTECH-UNIFORM: BOKEH's FPS ids (were #fv / #iF) */}}
+requestAnimationFrame(frame);
+/* ── SOURCES ── */
+function onSrc(label,name,w,h){hf=false;resizeTo(w,h);fxOn=false;o0=o1=0;tS=-1e9;$('bfx').classList.remove('on');$('fxl').textContent='INVISIBLE OFF';
+$('pl').textContent=label;$('iS').textContent=label;$('pin').className='pill live';$('drop-overlay').classList.add('hidden');/* SYNTECH-UNIFORM: INPUT pill green with any source, as BOKEH (was: only WEBCAM); BOKEH's drop overlay (was #drop) */
+['bi','bv','bw'].forEach(b=>$(b).classList.toggle('on',(b==='bi'&&label==='IMAGE')||(b==='bv'&&label==='VIDEO')||(b==='bw'&&label==='WEBCAM')));
+$('tlb').style.display=label==='VIDEO'?'flex':'none';upPlay();loadMP();toast('▶ '+name)}
+function stopCam(){if(webcamStream){webcamStream.getTracks().forEach(t=>t.stop());webcamStream=null}}
+/* SYNTECH-FIX: after the muted autoplay fallback the next user gesture restores the audio of the loaded file */
+let _autoMuted=false;
+['pointerdown','keydown'].forEach(ev=>document.addEventListener(ev,()=>{if(_autoMuted&&srcMode==='video'&&!vid.srcObject)vid.muted=false;_autoMuted=false},true));
+function loadVideo(f){stopCam();srcMode='none';vid.srcObject=null;vid.src=URL.createObjectURL(f);vid.muted=false;vid.loop=loop;mirror=false;paused=false;img=null;
+vid.onloadeddata=()=>{srcMode='video';onSrc('VIDEO',f.name,vid.videoWidth,vid.videoHeight);vid.play().catch(e=>{if(e&&e.name==='NotAllowedError'){vid.muted=true;_autoMuted=true;vid.play().catch(()=>{})}})/* SYNTECH-FIX: muted only if the browser refuses audible playback (an AbortError must not mute the file) */}}
+function loadImage(f){stopCam();vid.pause();srcMode='none';const im=new Image();im.onload=()=>{img=im;imgDirty=true;mirror=false;srcMode='image';onSrc('IMAGE',f.name,im.naturalWidth,im.naturalHeight)};im.src=URL.createObjectURL(f)}
+async function loadWebcam(){if(srcMode==='webcam'){stopCam();vid.srcObject=null;srcMode='none';$('pl').textContent='NONE';$('iS').textContent='NONE';$('bw').classList.remove('on');$('pin').className='pill';toast('Webcam off');return}
+try{const s=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30}},audio:false});
+stopCam();vid.pause();vid.removeAttribute('src');webcamStream=s;vid.srcObject=s;vid.muted=true;mirror=true;img=null;paused=false;
+vid.onloadeddata=()=>{srcMode='webcam';onSrc('WEBCAM','Webcam ON',vid.videoWidth,vid.videoHeight)};await vid.play()}catch(e){toast('Webcam error: '+e.message,3500)}}
+function upPlay(){const p=!paused&&srcMode==='video';$('bpl').classList.toggle('on',p);$('pll').textContent=p?'PLAYING':'PAUSED'}
+function togglePlay(){if(srcMode!=='video')return;paused=!paused;paused?vid.pause():vid.play().catch(()=>{})/* SYNTECH-FIX: no unhandled rejection when play() is interrupted */;upPlay()}
+/* ── UI ── */
+document.querySelectorAll('.sec-head').forEach(h=>h.addEventListener('click',()=>{h.classList.toggle('closed');$('s-'+h.dataset.s).classList.toggle('hidden')}));/* SYNTECH-UNIFORM: BOKEH's section head (.sec-head / .closed, were .sh / .c) */
+[['gho','Ghost Opacity',0,100],['fea','Mask Feather',0,12],['grow','Mask Grow/Shrink',-50,50],['hair','Hair Cover',0,100],['ew','Edge Width',1,20],['dist','Edge Distortion',0,100],['ad','Plate Adapt',0,100],['echo','Echo Trail',0,100],['dt','BG Sensitivity',0,100]].forEach(([k,l,mn,mx])=>{
+/* SYNTECH-UNIFORM: BOKEH's slider markup (.ctrl-row/.ctrl-lbl/.ctrl-track/.daw-slider/.ctrl-val), ids sl-<key>/sv-<key> for the bridge; same label/range/default/step */
+const r=document.createElement('div');r.className='ctrl-row';r.innerHTML=`<div class="ctrl-lbl">${l}</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sl-${k}" min="${mn}" max="${mx}" value="${P[k]}" step="1"></div><div class="ctrl-val" id="sv-${k}">${P[k]}</div>`;
+const s=r.querySelector('input'),v=r.querySelector('.ctrl-val');s.addEventListener('input',()=>{P[k]=+s.value;v.textContent=s.value;if(k==='hair'&&maskReady){morph();upMask()}});$('sli').appendChild(r)});
+$('bfx').addEventListener('click',()=>setFx(!fxOn,[.5,.5]));$('brp').addEventListener('click',()=>{resetPlate();toast('Plate reset')});$('bcap').addEventListener('click',startCapture);
+$('bges').addEventListener('click',function(){gesture=!gesture;this.classList.toggle('on',gesture);$('hs').style.opacity=gesture?1:.35});
+$('bi').addEventListener('click',()=>$('fi1').click());$('bv').addEventListener('click',()=>$('fv1').click());$('bw').addEventListener('click',loadWebcam);
+$('fv1').addEventListener('change',e=>{if(e.target.files[0])loadVideo(e.target.files[0]);e.target.value=''});$('fi1').addEventListener('change',e=>{if(e.target.files[0])loadImage(e.target.files[0]);e.target.value=''});
+$('bpl').addEventListener('click',togglePlay);$('blp').addEventListener('click',function(){loop=!loop;vid.loop=loop;this.classList.toggle('on',loop);$('lpl').textContent=loop?'LOOP ON':'LOOP OFF'});
+const fsBtn=()=>{const e=$('canvas-area')/* SYNTECH-UNIFORM: was #ca */;document.fullscreenElement?document.exitFullscreen():(e.requestFullscreen||e.webkitRequestFullscreen).call(e)};$('bfs').addEventListener('click',fsBtn);
+const ca=$('canvas-area');ca.addEventListener('dragover',e=>{e.preventDefault();$('drop-overlay').classList.add('drag-over')});ca.addEventListener('dragleave',()=>$('drop-overlay').classList.remove('drag-over'));/* SYNTECH-UNIFORM: BOKEH's ids/classes (were #ca, #drop, .dg) */
+ca.addEventListener('drop',e=>{e.preventDefault();$('drop-overlay').classList.remove('drag-over');const f=e.dataTransfer.files[0];if(!f)return;f.type.startsWith('video/')?loadVideo(f):f.type.startsWith('image/')&&loadImage(f)});
+$('drop-overlay').addEventListener('click',()=>{const h=document.querySelector('[data-s=src]');if(h.classList.contains('closed'))h.click();$('panel').scrollTo({top:0,behavior:'smooth'})});/* SYNTECH-UNIFORM: opens Source and scrolls the panel to it, as BOKEH's SOURCE button */
+$('tl').addEventListener('input',()=>{if(vid.duration)vid.currentTime=$('tl').value/1000*vid.duration});
+const fmt=s=>String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0');
+setInterval(()=>{if(srcMode==='video'&&vid.duration){const c=fmt(vid.currentTime)+' / '+fmt(vid.duration);$('tt').textContent=c;$('tc').textContent=c;$('tl').value=vid.currentTime/vid.duration*1000}else $('tt').textContent=srcMode==='webcam'?'◉ LIVE':'--:--'},200);
+/* XY pad: Y = invisibilità, X = caos bordo */
+const xy=$('xy');function setPad(nx,ny){padX=Math.max(0,Math.min(1,nx));padY=Math.max(0,Math.min(1,1-ny));$('xd').style.left=padX*100+'%';$('xd').style.top=(1-padY)*100+'%';$('xh').style.top=(1-padY)*100+'%';$('xvl').style.left=padX*100+'%';$('xyv').textContent=padY.toFixed(2);$('xxv').textContent=padX.toFixed(2)}
+let xd=false;const xp=e=>{const r=xy.getBoundingClientRect(),t=e.touches?e.touches[0]:e;setPad((t.clientX-r.left)/r.width,(t.clientY-r.top)/r.height)};
+xy.addEventListener('mousedown',e=>{xd=true;xp(e)});addEventListener('mousemove',e=>{if(xd)xp(e)});addEventListener('mouseup',()=>xd=false);
+xy.addEventListener('touchstart',e=>{e.preventDefault();xp(e)},{passive:false});xy.addEventListener('touchmove',e=>{e.preventDefault();xp(e)},{passive:false});setPad(.5,0);
+/* ── EXPORT MP4 (max qualità) ── */
+let mr=null,chunks=[],rInt=null,rStart=0,actx=null,asrc=null,adst=null;
+/* SYNTECH-FIX: createMediaElementSource is once per element → ONE context + source, reused by every REC and kept
+   connected to the speakers (the file stays audible); each recording gets its own MediaStreamDestination,
+   disconnected and stopped when that recording ends (endAudio). The context is never closed. */
+function audioTracks(){if(srcMode!=='video')return[];try{if(!actx){actx=new(window.AudioContext||window.webkitAudioContext)();asrc=actx.createMediaElementSource(vid);asrc.connect(actx.destination)}if(actx.state==='suspended')actx.resume();endAudio();adst=actx.createMediaStreamDestination();asrc.connect(adst);return adst.stream.getAudioTracks()}catch(e){return[]}}
+function endAudio(){if(!adst)return;try{asrc.disconnect(adst)}catch(e){}adst.stream.getTracks().forEach(t=>t.stop());adst=null}
+function toggleRec(){const b=$('brec');if(mr){mr.stop();return}
+if(srcMode==='none'){toast('Carica prima una sorgente');return}
+const st=cv.captureStream(30);audioTracks().forEach(t=>st.addTrack(t));chunks=[];
+const mime=['video/mp4;codecs=avc1.640028','video/mp4;codecs=avc1.42E01E','video/mp4','video/webm;codecs=vp9','video/webm'].find(m=>MediaRecorder.isTypeSupported(m))||'';
+try{mr=new MediaRecorder(st,{mimeType:mime||undefined,videoBitsPerSecond:50e6,audioBitsPerSecond:320e3})}catch(e){try{mr=new MediaRecorder(st)}catch(e2){endAudio()/* SYNTECH-FIX */;toast('REC non supportato');return}}
+mr.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+mr.onstop=()=>{const ext=(mr.mimeType||'').includes('mp4')?'mp4':'webm',a=document.createElement('a');a.href=URL.createObjectURL(new Blob(chunks,{type:mr.mimeType||'video/webm'}));a.download='invisible_'+Date.now()+'.'+ext;document.body.appendChild(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(a.href)},1000);
+b.classList.remove('on');clearInterval(rInt);$('rt').textContent='00:00:00';$('rt').classList.remove('on');mr=null;
+endAudio();st.getTracks().forEach(t=>t.stop());$('pill-rec').style.display='none';/* SYNTECH-FIX: release this recording's audio destination + capture tracks; SYNTECH-UNIFORM: BOKEH's REC pill */
+toast('⬇ '+ext.toUpperCase()+' salvato')};
+mr.start(100);rStart=Date.now();b.classList.add('on');$('rt').classList.add('on');$('pill-rec').style.display='flex';/* SYNTECH-UNIFORM: BOKEH's REC pill */
+rInt=setInterval(()=>{const s=Math.round((Date.now()-rStart)/1000);$('rt').textContent=[s/3600,s%3600/60,s%60].map(x=>String(Math.floor(x)).padStart(2,'0')).join(':')},500)}
+$('brec').addEventListener('click',toggleRec);
+addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'&&e.target.type!=='range')return;
+switch(e.key.toLowerCase()){case'v':$('fv1').click();break;case'i':$('fi1').click();break;case'w':loadWebcam();break;case'x':setFx(!fxOn,[.5,.5]);break;case'r':toggleRec();break;case'b':startCapture();break;case' ':e.preventDefault();togglePlay();break}});
+allocPlate();
+</script>
+<!-- SYNTECH-UNIFORM-START: BOKEH chrome — section line/title sync, green INPUT pill, 16:9 video frame, ENGINE pill (operator request 2026-10-11) -->
+<script src="../shared/syn-chrome.js"></script>
+<script>
+(function(){
+  'use strict';
+  /* #canvas-wrap = BOKEH's video frame: fitCanvas() logic (16:9 box = canvas area − 24px,
+     centred by #canvas-area's flex). Follows the FRAME, not the window: ResizeObserver on
+     #canvas-area (+ resize / fullscreenchange like BOKEH). The canvas backing size
+     (= source resolution, the original's resizeTo) is not touched: CSS contains it. */
+  var area=document.getElementById('canvas-area'),wrap=document.getElementById('canvas-wrap');
+  function synFitFrame(){
+    var aw=area.clientWidth-24,ah=area.clientHeight-24;
+    if(aw<=0||ah<=0)return; /* not laid out (hidden iframe): keep the last size */
+    var asp=16/9,w,h;
+    if(aw/ah>asp){h=ah;w=Math.round(h*asp);}else{w=aw;h=Math.round(w/asp);}
+    wrap.style.width=w+'px';wrap.style.height=h+'px';
+  }
+  window.addEventListener('resize',synFitFrame);
+  document.addEventListener('fullscreenchange',function(){setTimeout(synFitFrame,100);});
+  try{new ResizeObserver(synFitFrame).observe(area);}catch(e){}
+  synFitFrame();
+  /* ENGINE pill = the original's AI state (Info › AI): read-only mirror */
+  var ai=document.getElementById('iA'),eng=document.getElementById('pill-engine-lbl');
+  function syncEngine(){var t=ai.textContent;if(eng.textContent!==t)eng.textContent=t;}
+  syncEngine();
+  try{new MutationObserver(syncEngine).observe(ai,{childList:true,characterData:true,subtree:true});}catch(e){}
+})();
+</script>
+<!-- SYNTECH-UNIFORM-END -->
+<!-- SYNTECH-BRIDGE-START (shell integration; standalone-safe) -->
+<script>
+(function(){
+  'use strict';
+  if(window.parent===window)return; /* opened standalone: stay silent */
+  var MODULE_ID='invisible';
+
+  /* the nine Invisible sliders (#sl-gho … #sl-dt); the hidden #tl of the old timeline is excluded */
+  function slVals(){var o={};var els=document.querySelectorAll('#sli input[type="range"]');
+    for(var i=0;i<els.length;i++){if(els[i].id)o[els[i].id]=els[i].value;}return o;}
+  function slApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el&&el.type==='range'&&el.closest('#sli')){el.value=o[id];
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));}}}
+  function ledGet(ids){var o={};for(var i=0;i<ids.length;i++){var el=document.getElementById(ids[i]);
+    if(el)o[ids[i]]=el.classList.contains('on');}return o;}
+  function ledApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(el&&el.classList.contains('on')!==!!o[id])el.click();}}
+  var TOGS=['bges'];
+  /* XY pad: padX = CHAOS, padY = INVISIBLE amount (the original's setPad(nx,ny) takes ny = 1−padY) */
+  function xyGet(){return (typeof padX==='number'&&typeof padY==='number')?{x:padX,y:padY}:null;}
+  function xyApply(p){if(!p||typeof setPad!=='function')return;
+    var x=parseFloat(p.x),y=parseFloat(p.y);if(isFinite(x)&&isFinite(y))setPad(x,1-y);}
+  function collect(){return {sliders:slVals(),toggles:ledGet(TOGS),xy:xyGet()};}
+  function apply(s){if(!s)return;slApply(s.sliders);ledApply(s.toggles);xyApply(s.xy);}
+  window.addEventListener('message',function(ev){
+    var d=ev&&ev.data;
+    if(!d||typeof d!=='object'||typeof d.type!=='string')return;
+    if(d.type==='syn:get-settings'){
+      var p={};try{p=collect()||{};}catch(e){}
+      try{window.parent.postMessage({type:'syn:settings',payload:p},'*');}catch(e){}
+    }else if(d.type==='syn:apply-settings'){
+      try{apply(d.payload||{});}catch(e){}
+    }
+  });
+  function announce(){try{window.parent.postMessage({type:'syn:ready',payload:{id:MODULE_ID}},'*');}catch(e){}}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',announce);
+  else announce();
+})();
+</script>
+<!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
+<script src="../shared/syn-extras.js"></script>
+<script>
+SynExtras.attach({
+  hasSource:function(){ return srcMode!=='none'; },
+  video:function(){ return srcMode==='video'?vid:null; },
+  /* the original's togglePlay() flips its own "paused" flag; re-align it with the element first
+     (a clip that ended without loop is paused by the browser) so one click always toggles */
+  togglePlay:function(){ if(paused!==(vid.paused||vid.ended))paused=!paused; togglePlay(); },
+  toggleLoop:function(){ document.getElementById('blp').click(); },
+  isLoop:function(){ return !!loop; }
+});
+/* SYNTECH-FIX: Playback LED → PAUSED when a clip ends without loop (as BLOB TRACKER, 2026-10-11) */
+vid.addEventListener('ended',function(){ if(srcMode==='video'&&!vid.loop){ paused=true; upPlay(); } });
+</script>
+<!-- SYNTECH-UNIFORM-END -->
+</body>
+</html>

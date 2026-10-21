@@ -28,7 +28,7 @@ import AudioMeter from './components/AudioMeter';
 import { gelMaterialTile } from './lib/gelTexture';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { HOLES, DAY_BACKDROPS, VIDEO_BOX, CAGE_BED, CAGE_SURFACE, cageBox, cagePlane } from './cage/cage';
-import { GEMINI_MODEL_DEFAULT, type AiErrorKind, type KeyResponse, type LabHandle, type StatusResponse } from './ai/contract';
+import { GEMINI_MODEL_DEFAULT, MODULE_IDS, type AiErrorKind, type KeyResponse, type LabHandle, type StatusResponse } from './ai/contract';
 import { AiError, aiGet, forgetKey, getStoredKey, isHostRefusal, storeKey, validateKey } from './ai/client';
 
 // explicit session snapshot for the SAVE nav action (decision #9: localStorage)
@@ -47,6 +47,10 @@ const readAppTimerMs = (): number => {
 };
 
 // ── serial wiring helpers (03-SPEC-SHELL §6: chain order = wiring order) ──
+/** Only the five SynEngine-ported effects can sit in a chain / the Lab; the standalone-only ones (invisible,
+ *  time_machine, quadtree, pointcloud, datamosh) open as an iframe and have no NODE_FACTORY entry yet. */
+const isLabModule = (id: unknown): id is ModuleId => typeof id === 'string' && (MODULE_IDS as readonly string[]).includes(id);
+
 const wiresFromChain = (list: ModuleId[]): WireMap => {
   const w: WireMap = {};
   let prev = 'IN';
@@ -305,7 +309,7 @@ export default function App() {
     try {
       const v3 = JSON.parse(localStorage.getItem(COMP_KEY) ?? 'null');
       if (v3 && Array.isArray(v3.nodes) && v3.wires && typeof v3.wires === 'object') {
-        const nodes = v3.nodes.filter((id: string) => id in EFFECTS_REGISTRY) as ModuleId[];
+        const nodes = v3.nodes.filter(isLabModule);
         const wires: WireMap = {};
         Object.entries(v3.wires as Record<string, unknown>).forEach(([f, t]) => {
           const okF = f === 'IN' || nodes.includes(f as ModuleId);
@@ -317,7 +321,7 @@ export default function App() {
       // migrate v2 (flat {id, enabled} list): enabled order becomes the wiring
       const v2 = JSON.parse(localStorage.getItem(COMP_KEY_V2) ?? 'null');
       if (Array.isArray(v2)) {
-        const valid = v2.filter((e) => e && typeof e.id === 'string' && e.id in EFFECTS_REGISTRY);
+        const valid = v2.filter((e) => e && isLabModule(e.id));
         const nodes = valid.map((e) => e.id as ModuleId);
         const chain = valid.filter((e) => e.enabled).map((e) => e.id as ModuleId);
         if (nodes.length) return { nodes, wires: wiresFromChain(chain) };
@@ -336,7 +340,7 @@ export default function App() {
 
   /** rebuild the serial wiring from an ordered chain (rack sync, AI, hubs) */
   const setChainTo = (list: ModuleId[]) => {
-    const dedup = list.filter((id, i) => list.indexOf(id) === i);
+    const dedup = list.filter((id, i) => isLabModule(id) && list.indexOf(id) === i);
     setComp((prev) => ({
       nodes: [...prev.nodes, ...dedup.filter((id) => !prev.nodes.includes(id))],
       wires: wiresFromChain(dedup),
@@ -674,6 +678,13 @@ export default function App() {
         diffractionGrating: { label: 'DIFFRACTION GRATING', value: 30, min: 0, max: 100, step: 1 },
       },
     },
+    // Standalone-only effects (no Lab / SynEngine port yet): listed so they open full-screen from the
+    // effect cards. They keep their own controls inside the iframe, so no shell-side parameters.
+    { id: 'invisible', name: 'INVISIBLE', description: 'Person cloak: segmentation-driven invisibility with pinch gesture and plate capture.', status: 'STANDBY', parameters: {} },
+    { id: 'time_machine', name: 'TIME MACHINE', description: 'Temporal displacement through a buffer of past frames.', status: 'STANDBY', parameters: {} },
+    { id: 'quadtree', name: 'QUADTREE', description: 'Recursive quadtree subdivision of the image.', status: 'STANDBY', parameters: {} },
+    { id: 'pointcloud', name: 'POINTCLOUD', description: 'Video rebuilt as a bloomed 3D point cloud.', status: 'STANDBY', parameters: {} },
+    { id: 'datamosh', name: 'DATAMOSH', description: 'I-frame / P-frame datamosh with pixel recycling and glitch layer.', status: 'STANDBY', parameters: {} },
   ]);
 
   const currentModule = modules.find((m) => m.id === activeModule) || modules[0];
@@ -780,7 +791,7 @@ export default function App() {
   };
   /** "Open in Lab": a standalone effect carries over as a one-node chain */
   const openGeminiLab = () => {
-    if (openEffectId) setChainTo([openEffectId]);
+    if (openEffectId && isLabModule(openEffectId)) setChainTo([openEffectId]);
     openLab();
   };
 

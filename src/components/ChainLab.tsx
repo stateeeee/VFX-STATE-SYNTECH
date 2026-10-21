@@ -284,7 +284,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     }
     const active = chainProp ?? [];
     const rack = [...active, ...RACK_ORDER.filter((id) => !active.includes(id))];
-    rack.forEach((id) => {
+    rack.filter((id) => NODE_FACTORY[id]).forEach((id) => {
       const node = NODE_FACTORY[id]();
       node.enabled = active.includes(id);
       engine.addNode(node);
