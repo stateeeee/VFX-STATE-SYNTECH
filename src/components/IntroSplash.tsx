@@ -39,11 +39,17 @@ export default function IntroSplash({ onDone }: { onDone: () => void }) {
     const v = videoRef.current;
     if (!v) return;
     let raf = 0;
-    const tick = () => {
+    const update = () => {
       if (v.duration > 0) setPct(Math.min(100, Math.round((100 * v.currentTime) / v.duration)));
+    };
+    const tick = () => {
+      update();
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
+    /* rAF may not fire at all (macOS CI runner: no vsync / occluded window,
+       counter stuck at 0% while the video ran); timeupdate does not depend on frames. */
+    v.addEventListener('timeupdate', update);
     const onEnded = () => { setPct(100); finish(); };
     v.addEventListener('ended', onEnded);
     v.addEventListener('error', finish);
@@ -54,6 +60,7 @@ export default function IntroSplash({ onDone }: { onDone: () => void }) {
     return () => {
       cancelAnimationFrame(raf);
       window.clearTimeout(giveUp);
+      v.removeEventListener('timeupdate', update);
       v.removeEventListener('ended', onEnded);
       v.removeEventListener('error', finish);
       window.removeEventListener('keydown', finish);

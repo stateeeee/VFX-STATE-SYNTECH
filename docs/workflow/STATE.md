@@ -44,6 +44,11 @@ terminale. L'app da doppio clic (Electron, `docs/workflow/DESKTOP.md`) viveva so
   sono risposte offline per scelta) → ora `GET /api/gemini/status` deve rispondere 200 con `serverKey:false`; e
   apre **tutti e dieci** gli effetti, non cinque. Sulla build Linux impacchettata: **38/38**.
 - `LEGGIMI.txt`, `DESKTOP.md`, `desktop/main.ts`, `06-VERIFICATION.md`: via Groq e "AI offline", dieci effetti.
+- Prima run CI: Windows verde, **Mac 37/38** — `LOADING` fermo a 0% con il video già a 3,8 s (il contatore era
+  guidato solo da `requestAnimationFrame`, che sul runner macOS non scattava affatto: nessun vsync / finestra
+  occlusa). `IntroSplash.tsx` aggiorna ora la percentuale anche su `timeupdate` del video, che non dipende dai
+  fotogrammi: lo stesso succederebbe su un Mac con la finestra coperta. Da tenere d'occhio: sul Mac l'intro è
+  finita in 13,0 s contro il limite di 14 del test (il video è partito tardi).
 - Da fare per l'operatore: scaricare `VFX-SYNTECH-0.10.0-Mac.zip` dalla pagina Releases, doppio clic, trascinare
   l'app in Applicazioni → **Sostituisci**. Preset e progetti restano (stessa origine `127.0.0.1:47291`). Il primo
   avvio richiede di nuovo "Apri comunque" (la firma ad-hoc cambia a ogni build).
