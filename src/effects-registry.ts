@@ -10,7 +10,8 @@ export const EFFECTS_REGISTRY: Record<ModuleId, { iframeSrc?: string }> = {
   invisible: { iframeSrc: '/effects/invisible' },
   time_machine: { iframeSrc: '/effects/time_machine' },
   quadtree: { iframeSrc: '/effects/quadtree' },
-  pointcloud: { iframeSrc: '/effects/pointcloud' }
+  pointcloud: { iframeSrc: '/effects/pointcloud' },
+  painting: { iframeSrc: '/effects/painting' }
 };
 
 export const hasRealEffect = (id: ModuleId): boolean => {

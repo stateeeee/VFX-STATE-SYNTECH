@@ -1,0 +1,2530 @@
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+<meta charset="UTF-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PAINTING STYLES</title>
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PAINTING — by STATE (operator's original: "PAINTING STYLES", paint_1.html,
+     added 2026-10-22 as a standalone-only effect, ModuleId "painting").
+
+     GROUND TRUTH = the original, copied verbatim. Its <script type="module">
+     (renderer, shaders, passes, bloom, grade, geometry styles, loop) is
+     unchanged except lines marked SYNTECH (importmap → vendored three
+     r160, two play() rejections handled, no texture upload from a video
+     element without a frame, the previous style's geometry disposed when a
+     style is rebuilt — the styles are reachable now). Every other change is a
+     delimited / commented SYNTECH-UNIFORM (shared chrome, frame sizing, the
+     engine's six style buttons + per-style sliders shown in the panel),
+     SYNTECH-FIX (audio, webcam release) or SYNTECH-BRIDGE (shell save / restore) edit.
+     ═══════════════════════════════════════════════════════════════════════ -->
+<style>
+@import url('../vendor/fonts/effects.css'); /* SYNTECH: vendored fonts (offline), like BOKEH — was Google Fonts CDN (JetBrains Mono 300–700 + Barlow Condensed 300–900) */
+
+/* ═══════════════════════════════════════════════════════
+   KEYFRAMES
+   ═══════════════════════════════════════════════════════ */
+@keyframes iri-logo {
+  0%   { background-position:0%   50%; }
+  50%  { background-position:100% 50%; }
+  100% { background-position:0%   50%; }
+}
+@keyframes shimmer-pass {
+  0%   { transform:translateX(-120%) skewX(-20deg); }
+  100% { transform:translateX(320%)  skewX(-20deg); }
+}
+@keyframes iri-border {
+  0%   { border-color:rgba(200,160,0,.5); }
+  25%  { border-color:rgba(100,180,255,.5); }
+  50%  { border-color:rgba(200,100,255,.5); }
+  75%  { border-color:rgba(255,120,200,.5); }
+  100% { border-color:rgba(200,160,0,.5); }
+}
+@keyframes iri-glow {
+  0%   { box-shadow:0 0 12px rgba(200,160,0,.4),0 0 30px rgba(200,160,0,.15); }
+  25%  { box-shadow:0 0 12px rgba(80,160,255,.4),0 0 30px rgba(80,160,255,.15); }
+  50%  { box-shadow:0 0 12px rgba(180,80,255,.4),0 0 30px rgba(180,80,255,.15); }
+  75%  { box-shadow:0 0 12px rgba(255,100,180,.4),0 0 30px rgba(255,100,180,.15); }
+  100% { box-shadow:0 0 12px rgba(200,160,0,.4),0 0 30px rgba(200,160,0,.15); }
+}
+@keyframes hue-spin {
+  from { filter:hue-rotate(0deg)   saturate(1.3) brightness(1.05); }
+  to   { filter:hue-rotate(360deg) saturate(1.3) brightness(1.05); }
+}
+@keyframes iri-dot-glow {
+  0%   { box-shadow:0 0 12px rgba(200,160,0,.8),0 0 28px rgba(200,160,0,.3); }
+  33%  { box-shadow:0 0 12px rgba(100,180,255,.8),0 0 28px rgba(100,180,255,.3); }
+  66%  { box-shadow:0 0 12px rgba(200,100,255,.8),0 0 28px rgba(200,100,255,.3); }
+  100% { box-shadow:0 0 12px rgba(200,160,0,.8),0 0 28px rgba(200,160,0,.3); }
+}
+@keyframes bracket-pulse {
+  0%,100% { opacity:.55; filter:drop-shadow(0 0 5px rgba(200,160,0,.5)); }
+  33%      { opacity:.7;  filter:drop-shadow(0 0 8px rgba(100,180,255,.6)); }
+  66%      { opacity:.7;  filter:drop-shadow(0 0 8px rgba(180,80,255,.6)); }
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.15} }
+@keyframes topline-shift {
+  0%   { background-position:0%   50%; }
+  100% { background-position:200% 50%; }
+}
+@keyframes smoke-a {
+  0%,100% { transform:translateX(0px)   translateY(0px)    scaleX(1.00) scaleY(1.00); opacity:.55; }
+  30%      { transform:translateX(12px)  translateY(-22px)  scaleX(1.18) scaleY(.85);  opacity:.30; }
+  65%      { transform:translateX(-8px)  translateY(-14px)  scaleX(.88)  scaleY(1.12); opacity:.42; }
+}
+@keyframes smoke-b {
+  0%,100% { transform:translateX(0px)   translateY(0px)    scaleX(1.00) scaleY(1.00); opacity:.42; }
+  40%      { transform:translateX(-14px) translateY(-28px)  scaleX(1.22) scaleY(.80);  opacity:.22; }
+  75%      { transform:translateX(9px)   translateY(-10px)  scaleX(.85)  scaleY(1.15); opacity:.35; }
+}
+@keyframes smoke-c {
+  0%,100% { transform:translateX(0px)  translateY(0px)   scaleX(1.00) scaleY(1.00); opacity:.35; }
+  50%      { transform:translateX(6px)  translateY(-18px) scaleX(1.12) scaleY(.88);  opacity:.18; }
+}
+@keyframes fluid-shimmer {
+  0%   { opacity:0;   transform:translateX(-100%) rotate(-15deg); }
+  10%  { opacity:.08; }
+  90%  { opacity:.06; }
+  100% { opacity:0;   transform:translateX(200%)  rotate(-15deg); }
+}
+@keyframes gel-breathe {
+  0%,100% { box-shadow:
+    inset 0 3px 18px rgba(255,255,255,.18),
+    inset 0 -3px 12px rgba(0,0,0,.45),
+    inset 3px 0 10px rgba(255,255,255,.06),
+    inset -3px 0 10px rgba(0,0,0,.22),
+    0 1px 0 rgba(255,255,255,.09),
+    0 2px 6px rgba(0,0,0,.5);
+  }
+  50% { box-shadow:
+    inset 0 4px 22px rgba(255,255,255,.22),
+    inset 0 -4px 14px rgba(0,0,0,.5),
+    inset 4px 0 12px rgba(255,255,255,.08),
+    inset -4px 0 12px rgba(0,0,0,.28),
+    0 1px 0 rgba(255,255,255,.12),
+    0 3px 8px rgba(0,0,0,.55);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   DESIGN TOKENS
+   ═══════════════════════════════════════════════════════ */
+:root {
+  --bg:        #04020a;
+  --bg-panel:  #06040e;
+  --bg-deep:   #020108;
+  --border:    #20183a;
+  --border-hi: #38286a;
+  --amber:     #e8c000;
+  --green:     #20e060;
+  --red:       #f03020;
+  --cyan:      #00e0c0;
+  --t4:#f2d458; --t3:#c89030; --t2:#7a5518; --t1:#3e2c0c;
+  --mono:'JetBrains Mono',monospace;
+  --cond:'Barlow Condensed',sans-serif;
+}
+*,*::before,*::after { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:var(--bg); color:var(--t4);
+  font-family:var(--mono); font-size:11px;
+  height:100vh; display:flex; flex-direction:column;
+  overflow:hidden; user-select:none; -webkit-font-smoothing:antialiased;
+}
+.notranslate { translate:none; }
+
+/* ═══════════════════════════════════════════════════════
+   TOPBAR
+   ═══════════════════════════════════════════════════════ */
+#topbar {
+  height:46px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.03) 0%,rgba(255,255,255,.01) 10%,transparent 40%,rgba(0,0,0,.25) 100%),
+    linear-gradient(180deg,#0e0c10 0%,#060408 100%);
+  border-bottom:1px solid rgba(255,255,255,.06);
+  display:flex; align-items:center; padding:0 16px; gap:12px;
+  flex-shrink:0; position:relative; overflow:hidden;
+}
+#topbar::before {
+  content:''; position:absolute; inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.08) 3px,rgba(0,0,0,.08) 4px);
+  pointer-events:none; z-index:0;
+}
+#topbar::after {
+  content:''; position:absolute; bottom:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffcc,#e8c000);
+  background-size:300% 100%; animation:topline-shift 6s linear infinite; pointer-events:none;
+}
+#topbar > * { position:relative; z-index:1; }
+
+.logo {
+  font-family:var(--cond); font-weight:900; font-size:16px;
+  letter-spacing:6px; white-space:nowrap;
+  color:var(--amber);
+  display:flex; align-items:center; gap:8px; position:relative;
+}
+
+.tb-sep { width:1px; height:22px; background:linear-gradient(180deg,transparent,rgba(255,255,255,.15),transparent); flex-shrink:0; }
+
+.pill {
+  display:flex; align-items:center; gap:6px; padding:4px 11px 4px 9px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.22) 0%,rgba(255,255,255,.06) 45%,rgba(255,255,255,.01) 50%,rgba(255,255,255,.06) 100%),
+    linear-gradient(180deg,#1c1a1e 0%,#0c0a0e 50%,#121014 100%);
+  border:1px solid rgba(255,255,255,.12); border-bottom-color:rgba(0,0,0,.5);
+  border-radius:3px; font-size:8px; letter-spacing:1.5px; color:var(--t3);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 2px 5px rgba(0,0,0,.55),0 4px 10px rgba(0,0,0,.25);
+  white-space:nowrap;
+}
+.pill .dot { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.2); flex-shrink:0; }
+.pill.live .dot { background:var(--green); box-shadow:0 0 8px rgba(32,224,96,.6); }
+.pill.live      { border-color:rgba(32,224,96,.25); color:rgba(160,255,200,.8); }
+.pill.rec-on .dot { background:var(--red); animation:blink 1s infinite; }
+.pill.engine .dot { background:var(--amber); box-shadow:0 0 8px rgba(232,192,0,.6); }
+.pill.engine      { border-color:rgba(232,192,0,.2); color:rgba(232,200,100,.8); }
+.pill-pre { font-size:6px; letter-spacing:1px; color:var(--t2); margin-right:1px; }
+
+#timecode { font-size:12px; letter-spacing:3px; color:var(--t3); font-variant-numeric:tabular-nums; margin-left:auto; min-width:100px; text-align:right; }
+#fps-display { font-size:9px; letter-spacing:2px; color:var(--t2); }
+#fps-display b { color:var(--cyan); font-weight:500; text-shadow:0 0 10px rgba(0,224,192,.6); }
+
+/* ═══════════════════════════════════════════════════════
+   MAIN LAYOUT
+   ═══════════════════════════════════════════════════════ */
+#main { display:flex; flex:1; overflow:hidden; }
+
+/* ═══════════════════════════════════════════════════════
+   CANVAS AREA
+   ═══════════════════════════════════════════════════════ */
+#canvas-area {
+  flex:1; background:#02000a;
+  display:flex; align-items:center; justify-content:center;
+  position:relative; overflow:hidden;
+}
+#canvas-wrap { position:relative; display:flex; align-items:center; justify-content:center; }
+#c { display:block; }
+#canvas-wrap::after {
+  content:''; position:absolute; inset:-1px;
+  border:1px solid rgba(255,255,255,.08); pointer-events:none; z-index:2;
+}
+#canvas-wrap::before {
+  content:''; position:absolute; inset:-6px;
+  background:
+    linear-gradient(var(--amber),var(--amber)) top left    / 20px 1px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) top left    / 1px 20px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) top right   / 20px 1px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) top right   / 1px 20px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) bottom left / 20px 1px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) bottom left / 1px 20px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) bottom right/ 20px 1px no-repeat,
+    linear-gradient(var(--amber),var(--amber)) bottom right/ 1px 20px no-repeat;
+  pointer-events:none; z-index:3;
+  animation:bracket-pulse 6s linear infinite;
+}
+#res-tag { position:absolute; top:8px; left:8px; font-size:8px; letter-spacing:1px; color:var(--t2); pointer-events:none; z-index:4; opacity:.6; }
+#frame-outline {
+  position:absolute; inset:-9px; pointer-events:none; z-index:29;
+  border:1px solid var(--amber);
+  animation:iri-border 6s linear infinite, iri-glow 6s linear infinite;
+}
+
+/* Drop overlay — identica a blob */
+#idle {
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:14px;
+  background:radial-gradient(ellipse at 50% 40%,rgba(12,10,14,.99) 0%,rgba(3,2,4,1) 100%);
+  border:1px solid rgba(255,255,255,.07); z-index:25; transition:border-color .15s;
+}
+#idle.drag-over { animation:iri-border 3s linear infinite; }
+#idle.gone-unused    { display:none; }
+
+/* Icona upload — SVG cloud-upload, identica a blob (no cerchio) */
+.drop-ico { width:64px; height:64px; display:flex; align-items:center; justify-content:center; color:var(--amber); opacity:.35; }
+
+/* Titolo iridescente — NO shimmer/riflesso, NO ::after */
+.drop-title {
+  font-family:var(--cond); font-size:32px; font-weight:700;
+  letter-spacing:9px; text-transform:uppercase;
+  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffd8,#e8c000);
+  background-size:300% 100%;
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  animation:iri-logo 5s linear infinite;
+}
+
+/* Sottotitolo */
+.drop-sub { font-size:9px; letter-spacing:3px; color:var(--t2); }
+
+/* Bottone SOURCE — stile esatto di blob .drop-browse */
+.drop-source-btn {
+  margin-top:10px; padding:10px 32px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.26) 0%,rgba(255,255,255,.08) 45%,rgba(255,255,255,.01) 50%,rgba(255,255,255,.06) 100%),
+    linear-gradient(180deg,#1e1c20 0%,#0e0c10 50%,#141214 100%);
+  border:1px solid rgba(255,255,255,.14); border-bottom-color:rgba(0,0,0,.5);
+  border-radius:4px;
+  color:var(--t3); font-family:var(--mono); font-size:9px; letter-spacing:3px;
+  cursor:pointer; transition:all .2s; text-transform:uppercase;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 3px 7px rgba(0,0,0,.6),0 6px 14px rgba(0,0,0,.3);
+  position:relative; overflow:hidden;
+}
+.drop-source-btn::after {
+  content:''; position:absolute; top:0; left:-100%; width:40%; height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.1),transparent);
+  animation:shimmer-pass 3s ease-in-out infinite;
+}
+.drop-source-btn:hover {
+  border-color:rgba(232,192,0,.5); color:var(--amber);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.20),0 0 20px rgba(232,192,0,.18),0 4px 10px rgba(0,0,0,.6);
+}
+#file-input { display:none; }
+
+/* Play overlay */
+#play-overlay { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.5); cursor:pointer; z-index:5; }
+#play-overlay.show { display:flex; }
+.play-ring { width:70px; height:70px; border-radius:50%; border:2px solid var(--amber); display:flex; align-items:center; justify-content:center; color:var(--amber); font-size:28px; transition:transform .15s,background .15s; }
+#play-overlay:hover .play-ring { background:rgba(232,192,0,.1); transform:scale(1.08); }
+
+/* ═══════════════════════════════════════════════════════
+   PANEL — BLACK GLOSSY FLUID WITH BUBBLES
+   ═══════════════════════════════════════════════════════ */
+#panel {
+  width:296px;
+  border-left:1px solid rgba(255,255,255,.07);
+  display:flex; flex-direction:column;
+  overflow-y:auto; flex-shrink:0;
+  position:relative;
+  background:
+    radial-gradient(circle at  7%  10%, rgba(255,255,255,.22) 0%, transparent 10%),
+    radial-gradient(ellipse 9% 3.5% at  9%  17%, rgba(0,0,0,.75) 0%, transparent 100%),
+    radial-gradient(circle at  9%  12%, rgba(0,0,0,.55) 0%, rgba(8,8,8,.3) 50%, transparent 57%,rgba(255,255,255,.30) 59%,rgba(255,255,255,.14) 67%,transparent 76%),
+    radial-gradient(circle at 78%  16%, rgba(255,255,255,.20) 0%, transparent 9%),
+    radial-gradient(ellipse 8% 3%   at 80%  23%, rgba(0,0,0,.7) 0%, transparent 100%),
+    radial-gradient(circle at 80%  18%, rgba(0,0,0,.5) 0%, rgba(8,8,8,.28) 48%, transparent 55%,rgba(255,255,255,.26) 57%,rgba(255,255,255,.12) 65%,transparent 74%),
+    radial-gradient(circle at 36%  31%, rgba(255,255,255,.25) 0%, transparent 14%),
+    radial-gradient(ellipse 11% 4.5% at 38% 40%, rgba(0,0,0,.8) 0%, transparent 100%),
+    radial-gradient(circle at 38%  33%, rgba(0,0,0,.6) 0%, rgba(6,6,6,.35) 53%, transparent 60%,rgba(255,255,255,.32) 62%,rgba(255,255,255,.16) 70%,transparent 79%),
+    radial-gradient(circle at 86%  46%, rgba(255,255,255,.18) 0%, transparent 10%),
+    radial-gradient(ellipse 9% 3.5% at 88% 54%, rgba(0,0,0,.68) 0%, transparent 100%),
+    radial-gradient(circle at 88%  48%, rgba(0,0,0,.5) 0%, rgba(8,8,8,.27) 51%, transparent 58%,rgba(255,255,255,.25) 60%,rgba(255,255,255,.11) 68%,transparent 77%),
+    radial-gradient(circle at 16%  61%, rgba(255,255,255,.21) 0%, transparent 12%),
+    radial-gradient(ellipse 10% 4%  at 18% 69%, rgba(0,0,0,.72) 0%, transparent 100%),
+    radial-gradient(circle at 18%  63%, rgba(0,0,0,.55) 0%, rgba(7,7,7,.32) 52%, transparent 59%,rgba(255,255,255,.28) 61%,rgba(255,255,255,.13) 69%,transparent 78%),
+    radial-gradient(circle at 58%  74%, rgba(255,255,255,.20) 0%, transparent 11%),
+    radial-gradient(ellipse 9% 3.5% at 60% 81%, rgba(0,0,0,.7) 0%, transparent 100%),
+    radial-gradient(circle at 60%  76%, rgba(0,0,0,.5) 0%, rgba(8,8,8,.28) 50%, transparent 57%,rgba(255,255,255,.26) 59%,rgba(255,255,255,.12) 67%,transparent 76%),
+    radial-gradient(circle at 53%   8%, rgba(255,255,255,.16) 0%, transparent 7%),
+    radial-gradient(circle at 55%  10%, rgba(0,0,0,.45) 0%, transparent 43%,rgba(255,255,255,.24) 45%,transparent 57%),
+    radial-gradient(circle at 23%  44%, rgba(255,255,255,.14) 0%, transparent 8%),
+    radial-gradient(circle at 25%  46%, rgba(0,0,0,.42) 0%, transparent 46%,rgba(255,255,255,.22) 48%,transparent 61%),
+    radial-gradient(circle at 70%  54%, rgba(255,255,255,.15) 0%, transparent 6%),
+    radial-gradient(circle at 72%  56%, rgba(0,0,0,.4) 0%, transparent 42%,rgba(255,255,255,.21) 44%,transparent 56%),
+    radial-gradient(ellipse 130% 80% at -8% -5%, rgba(255,255,255,.04) 0%,rgba(255,255,255,.01) 30%,transparent 55%),
+    radial-gradient(ellipse 130% 80% at 110% 115%, rgba(0,0,0,.9) 0%,rgba(0,0,0,.5) 35%,transparent 65%),
+    linear-gradient(160deg,#0e0c0e 0%,#080608 20%,#050405 45%,#0a080a 70%,#060406 100%);
+}
+
+#panel::-webkit-scrollbar { width:2px; }
+#panel::-webkit-scrollbar-track { background:rgba(0,0,0,.9); }
+#panel::-webkit-scrollbar-thumb { background:linear-gradient(180deg,rgba(255,255,255,.4),rgba(255,255,255,.1)); border-radius:1px; }
+
+#panel::before {
+  content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:linear-gradient(-15deg,transparent 30%,rgba(255,255,255,.05) 50%,rgba(255,255,255,.08) 52%,rgba(255,255,255,.04) 54%,transparent 70%);
+  width:200%; animation:fluid-shimmer 8s ease-in-out infinite;
+}
+#panel::after {
+  content:''; position:absolute; top:0; left:0; right:0; height:180px;
+  z-index:0; pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.09) 0%,rgba(255,255,255,.04) 20%,transparent 60%);
+}
+#panel > * { position:relative; z-index:1; }
+
+/* ═══════════════════════════════════════════════════════
+   SECTIONS
+   ═══════════════════════════════════════════════════════ */
+.section { position:relative; border-bottom:none; }
+.section::after {
+  content:''; position:absolute; bottom:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,transparent 0%,rgba(232,192,0,.18) 18%,rgba(128,200,255,.22) 36%,rgba(192,128,255,.20) 54%,rgba(255,144,192,.18) 72%,transparent 100%);
+  background-size:300% 100%;
+  animation:topline-shift 12s linear infinite;
+  pointer-events:none;
+}
+
+/* ═══════════════════════════════════════════════════════
+   SEC-HEAD — BLACK GLOSSY 3D INFLATED
+   ═══════════════════════════════════════════════════════ */
+.sec-head {
+  display:flex; align-items:center; height:34px; padding:0 14px; gap:10px;
+  position:relative; overflow:hidden; cursor:pointer;
+  background:
+    radial-gradient(ellipse 100% 60% at 50% -8%,rgba(255,255,255,.42) 0%,rgba(255,255,255,.22) 30%,rgba(255,255,255,.06) 55%,transparent 75%),
+    radial-gradient(ellipse 35% 100% at -4% 50%,rgba(255,255,255,.09) 0%,transparent 55%),
+    radial-gradient(ellipse 120% 65% at 55% 145%,rgba(0,0,0,.9) 0%,rgba(0,0,0,.5) 40%,transparent 68%),
+    radial-gradient(ellipse 65% 65% at 50% 50%,rgba(255,255,255,.025) 0%,transparent 70%),
+    linear-gradient(180deg,#1e1c22 0%,#141214 30%,#0a090b 60%,#0e0c10 85%,#181620 100%);
+  box-shadow:
+    inset 0  3px 16px rgba(255,255,255,.20),
+    inset 0 -3px 12px rgba(0,0,0,.75),
+    inset  3px 0  8px rgba(255,255,255,.05),
+    inset -3px 0  8px rgba(0,0,0,.3),
+    0 1px 0 rgba(255,255,255,.10),
+    0 2px 6px rgba(0,0,0,.6);
+  transition:background .15s,box-shadow .15s;
+  animation:gel-breathe 4s ease-in-out infinite;
+}
+.sec-head::before {
+  content:''; position:absolute; top:0; left:8%; right:8%; height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.50),rgba(255,255,255,.65),rgba(255,255,255,.50),transparent);
+  pointer-events:none;
+}
+.sec-head::after {
+  content:''; position:absolute; top:0; left:-80%; width:40%; height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent);
+  transform:skewX(-20deg); pointer-events:none; opacity:0;
+}
+.sec-head:hover::after { animation:shimmer-pass .6s ease-out forwards; opacity:1; }
+.sec-head:hover {
+  background:
+    radial-gradient(ellipse 100% 60% at 50% -8%,rgba(255,255,255,.50) 0%,rgba(255,255,255,.28) 30%,rgba(255,255,255,.08) 55%,transparent 75%),
+    radial-gradient(ellipse 35% 100% at -4% 50%,rgba(255,255,255,.12) 0%,transparent 55%),
+    radial-gradient(ellipse 120% 65% at 55% 145%,rgba(0,0,0,.85) 0%,transparent 65%),
+    linear-gradient(180deg,#282630 0%,#1c1a22 30%,#121014 60%,#161420 85%,#201e2a 100%);
+  box-shadow:
+    inset 0  4px 20px rgba(255,255,255,.26),
+    inset 0 -3px 12px rgba(0,0,0,.72),
+    0 1px 0 rgba(255,255,255,.14),
+    0 2px 10px rgba(0,0,0,.65);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   🔒 LOCKED FEATURE — SEC-MARK / SEC-TITLE COLOR SYNC — DO NOT DISABLE 🔒
+   ------------------------------------------------------------------------
+   L'utente ha chiesto esplicitamente che la lineetta (.sec-mark) a fianco
+   del nome di ogni sezione cambi colore ESATTAMENTE in sincro col testo
+   (.sec-title), come se un unico grande LED sottostante cambiasse colore
+   e testo/lineetta fossero dei "buchi" che lo rivelano.
+   Per questo .sec-mark usa lo STESSO gradiente, la STESSA background-size
+   e la STESSA animazione (iri-logo) di .sec-title, e viene incluso nella
+   funzione syncSectionTitleGradients() più sotto, così restano perfettamente
+   allineati nel tempo.
+   REGOLA PERMANENTE: non rimuovere, non "fissare" su un colore statico, e
+   non disaccoppiare questa animazione in future modifiche — anche se non
+   esplicitamente menzionata nel prompt — a meno che l'utente non lo chieda
+   di nuovo, esplicitamente, in un prompt futuro. Questo è un errore
+   sistematico già accaduto in passato: fare attenzione.
+   ══════════════════════════════════════════════════════════════════════ */
+.sec-mark {
+  width:2px; height:18px; flex-shrink:0; border-radius:1px;
+  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffd8,#e8c000);
+  background-size:300% 100%;
+  animation:iri-logo 5s linear infinite;
+  box-shadow:0 0 7px rgba(232,192,0,.4);
+}
+.sec-title {
+  font-family:var(--cond); font-size:11px; font-weight:700; letter-spacing:3.5px; text-transform:uppercase;
+  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffd8,#e8c000);
+  background-size:300% 100%;
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  animation:iri-logo 5s linear infinite;
+}
+.sec-chev { margin-left:auto; color:var(--t3); font-size:8px; transition:transform .18s; }
+.sec-chevron { margin-left:auto; color:var(--t3); font-size:8px; transition:transform .18s; }
+.sec-head.collapsed .sec-chev,
+.sec-head.closed    .sec-chev    { transform:rotate(-90deg); }
+.sec-head.collapsed .sec-chevron,
+.sec-head.closed    .sec-chevron { transform:rotate(-90deg); }
+.ic-credit { grid-column:1/-1; padding:6px 10px 4px; font-size:7px; letter-spacing:2.5px; color:var(--t2); text-align:center; text-transform:uppercase; border-top:1px solid rgba(255,255,255,.05); background:rgba(0,0,0,.3); }
+
+.sec-body {
+  padding:12px 13px; display:flex; flex-direction:column; gap:8px;
+  background:linear-gradient(180deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.35) 100%);
+  backdrop-filter:blur(6px);
+  border-top:1px solid rgba(255,255,255,.05);
+}
+.sec-body.hidden { display:none; }
+
+.row { display:flex; align-items:center; gap:8px; }
+.lbl { width:64px; flex-shrink:0; font-size:8px; letter-spacing:1px; color:var(--t2); text-transform:uppercase; }
+
+/* ═══════════════════════════════════════════════════════
+   LED TOGGLE BUTTONS — 3D glossy metallic
+   ═══════════════════════════════════════════════════════ */
+.led-btn {
+  flex:1; height:26px; display:flex; align-items:center; gap:7px; padding:0 10px;
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.22) 0%,rgba(255,255,255,.08) 40%,transparent 72%),
+    radial-gradient(ellipse 35% 100% at -5% 50%,rgba(255,255,255,.06) 0%,transparent 55%),
+    linear-gradient(180deg,#1a181c 0%,#0e0c10 35%,#080608 70%,#0c0a0e 100%);
+  border:1px solid rgba(255,255,255,.10); border-bottom-color:rgba(0,0,0,.65);
+  cursor:pointer; transition:all .12s; position:relative; overflow:hidden; border-radius:1px;
+  box-shadow:
+    inset 0  2px 10px rgba(255,255,255,.15),
+    inset 0 -2px  8px rgba(0,0,0,.65),
+    inset  2px 0  6px rgba(255,255,255,.04),
+    inset -2px 0  6px rgba(0,0,0,.25),
+    0 2px 5px rgba(0,0,0,.65);
+}
+.led-btn::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:48%;
+  background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.025)); pointer-events:none;
+}
+.led-btn::after {
+  content:''; position:absolute; top:0; left:-100%; width:50%; height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent);
+  transform:skewX(-15deg); pointer-events:none;
+}
+.led-btn:hover::after { animation:shimmer-pass .5s ease-out forwards; }
+.led-btn:hover {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.30) 0%,rgba(255,255,255,.12) 40%,transparent 72%),
+    linear-gradient(180deg,#242228 0%,#161418 35%,#0e0c10 70%,#141218 100%);
+  border-color:rgba(255,255,255,.16);
+}
+.led-btn.on {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.32) 0%,rgba(255,255,255,.14) 40%,transparent 72%),
+    linear-gradient(180deg,#221e26 0%,#141218 35%,#0c0a0e 70%,#121018 100%);
+  border-color:rgba(232,192,0,.42); border-bottom-color:rgba(0,0,0,.65);
+  animation:iri-glow 5s linear infinite;
+}
+.led { width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); flex-shrink:0; box-shadow:inset 0 1px 0 rgba(255,255,255,.1); }
+.led-btn.on .led { background:radial-gradient(circle at 35% 30%,#fff8c0,var(--amber)); border-color:rgba(255,240,100,.6); animation:iri-dot-glow 4s linear infinite; box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 0 8px rgba(232,192,0,.8); }
+.led-txt { font-size:8.5px; letter-spacing:1.5px; color:var(--t3); text-transform:uppercase; transition:color .12s; }
+.led-btn.on .led-txt { color:var(--t4); text-shadow:0 0 8px rgba(232,192,0,.3); }
+.led-btn:hover .led-txt { color:var(--t4); }
+.kbd-badge { margin-left:auto; padding:2px 5px; border:1px solid rgba(255,255,255,.15); font-size:7px; color:var(--t2); background:rgba(0,0,0,.3); border-radius:2px; box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 2px 3px rgba(0,0,0,.4); }
+
+/* Info cells */
+.info-grid { display:grid; grid-template-columns:1fr 1fr; gap:2px; background:rgba(0,0,0,.8); border:1px solid rgba(255,255,255,.07); }
+.info-cell {
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.18) 0%,rgba(255,255,255,.05) 45%,rgba(255,255,255,0) 50%,rgba(255,255,255,.04) 100%),
+    linear-gradient(180deg,#141214 0%,#080608 50%,#0e0c0e 100%);
+  padding:8px 10px; position:relative; overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 2px 4px rgba(0,0,0,.5);
+}
+.ic-lbl { font-size:7px; letter-spacing:2px; color:var(--t2); text-transform:uppercase; margin-bottom:4px; }
+.ic-val { font-size:16px; color:var(--t4); font-variant-numeric:tabular-nums; font-weight:300; line-height:1.2; }
+.ic-val.amber { background:linear-gradient(135deg,#ffe880,#e8c000,#c08000); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; filter:drop-shadow(0 0 6px rgba(232,192,0,.5)); }
+.ic-val.dim { color:var(--t3); font-size:11px; font-weight:400; }
+
+/* ═══════════════════════════════════════════════════════
+   ROTARY KNOB
+   ═══════════════════════════════════════════════════════ */
+.knob-group { display:flex; flex-direction:column; align-items:center; gap:3px; }
+.knob-outer {
+  width:48px; height:48px; border-radius:50%;
+  background:conic-gradient(from 225deg,var(--amber) 0deg,var(--amber) var(--fill,0deg),var(--border-hi) var(--fill,0deg),var(--border-hi) 270deg,transparent 270deg);
+  display:flex; align-items:center; justify-content:center;
+  padding:4px; cursor:ns-resize; transition:filter .1s;
+}
+.knob-outer:hover { filter:brightness(1.2); }
+.knob-outer:active { filter:brightness(1.4); }
+.knob {
+  width:40px; height:40px; border-radius:50%;
+  background:radial-gradient(circle at 38% 32%,#2a2040,#0a0818);
+  border:1px solid rgba(200,180,255,.25);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 2px 8px rgba(0,0,0,.8);
+  position:relative; transform:rotate(var(--rot,-135deg));
+}
+.knob-dot { position:absolute; top:4px; left:calc(50% - 1.5px); width:3px; height:9px; background:var(--amber); border-radius:1.5px; opacity:.9; box-shadow:0 0 6px rgba(232,192,0,.6); }
+.knob-lbl { font-size:7px; letter-spacing:.8px; color:var(--t2); text-transform:uppercase; text-align:center; line-height:1; }
+.knob-val { font-size:8px; color:var(--t4); font-variant-numeric:tabular-nums; text-align:center; line-height:1; text-shadow:0 0 6px rgba(232,192,0,.3); }
+.knob-row { display:flex; justify-content:space-around; align-items:flex-end; padding:4px 0; }
+
+/* ═══════════════════════════════════════════════════════
+   SLIDERS — chrome metallic
+   ═══════════════════════════════════════════════════════ */
+.ctrl-row { display:flex; align-items:center; gap:8px; }
+.ctrl-lbl { width:70px; flex-shrink:0; font-size:8px; letter-spacing:1px; color:var(--t2); text-transform:uppercase; }
+.ctrl-track { flex:1; height:18px; display:flex; align-items:center; }
+.daw-slider {
+  -webkit-appearance:none; width:100%; height:2px;
+  background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.12));
+  outline:none; cursor:ew-resize; border-radius:1px;
+  box-shadow:inset 0 1px 0 rgba(0,0,0,.4),0 1px 0 rgba(255,255,255,.06);
+}
+.daw-slider::-webkit-slider-thumb {
+  -webkit-appearance:none; width:9px; height:22px;
+  background:linear-gradient(180deg,rgba(255,255,255,.5) 0%,#e0d0a0 10%,#c8a830 40%,#a07820 65%,#5a4010 85%,rgba(255,255,255,.2) 100%);
+  border:none; cursor:ew-resize; border-radius:2px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8);
+}
+.daw-slider::-webkit-slider-thumb:hover { box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 0 16px rgba(232,192,0,.7),0 0 32px rgba(180,120,255,.3),0 2px 8px rgba(0,0,0,.8); }
+.daw-slider::-moz-range-thumb { width:9px; height:22px; background:linear-gradient(180deg,#e0d0a0,#c8a830,#a07820,#5a4010); border:none; cursor:ew-resize; border-radius:2px; box-shadow:0 0 10px rgba(200,168,48,.5),0 2px 6px rgba(0,0,0,.8); }
+.ctrl-val { width:40px; text-align:right; font-size:9.5px; color:var(--t4); font-variant-numeric:tabular-nums; letter-spacing:.5px; text-shadow:0 0 6px rgba(232,192,0,.3); }
+
+/* ═══════════════════════════════════════════════════════
+   SEGMENT BUTTONS
+   ═══════════════════════════════════════════════════════ */
+.seg-row { display:flex; gap:2px; }
+.seg-btn {
+  flex:1; height:27px;
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.20) 0%,rgba(255,255,255,.07) 40%,transparent 72%),
+    linear-gradient(180deg,#181618 0%,#0c0a0c 35%,#060406 65%,#0a080a 100%);
+  border:1px solid rgba(255,255,255,.09); border-bottom-color:rgba(0,0,0,.65);
+  font-family:var(--mono); font-size:8.5px; letter-spacing:1.5px; color:var(--t2);
+  cursor:pointer; text-transform:uppercase; transition:all .12s;
+  position:relative; overflow:hidden; border-radius:1px;
+  box-shadow:inset 0 2px 10px rgba(255,255,255,.13),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 4px rgba(0,0,0,.6);
+}
+.seg-btn::before { content:''; position:absolute; top:0; left:0; right:0; height:45%; background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.02)); pointer-events:none; }
+.seg-btn::after { content:''; position:absolute; top:0; left:-100%; width:50%; height:100%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent); transform:skewX(-15deg); pointer-events:none; }
+.seg-btn:hover::after { animation:shimmer-pass .5s ease-out forwards; }
+.seg-btn:hover {
+  color:var(--t4);
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.28) 0%,rgba(255,255,255,.10) 40%,transparent 72%),
+    linear-gradient(180deg,#222022 0%,#141214 35%,#0c0a0c 65%,#121012 100%);
+  border-color:rgba(255,255,255,.16);
+}
+.seg-btn.on {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -10%,rgba(255,255,255,.36) 0%,rgba(255,255,255,.16) 40%,transparent 72%),
+    linear-gradient(180deg,#282428 0%,#1a161a 35%,#100e10 65%,#181418 100%);
+  border-color:rgba(232,192,0,.48); border-bottom-color:rgba(0,0,0,.65);
+  color:var(--t4);
+  animation:iri-glow 5s linear infinite;
+  box-shadow:inset 0 3px 14px rgba(255,255,255,.24),inset 0 -2px 8px rgba(0,0,0,.65),0 2px 5px rgba(0,0,0,.65);
+  text-shadow:0 0 8px rgba(255,255,255,.2);
+}
+
+/* ═══════════════════════════════════════════════════════
+   SHORTCUTS
+   ═══════════════════════════════════════════════════════ */
+.sc-row { display:flex; align-items:center; gap:10px; padding:2px 0; }
+.sc-key { padding:3px 9px; background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03),rgba(0,0,0,.1)); border:1px solid rgba(255,255,255,.15); border-bottom-color:rgba(0,0,0,.3); font-size:8px; color:var(--t3); min-width:26px; text-align:center; border-radius:2px; box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 2px 3px rgba(0,0,0,.4); }
+.sc-desc { font-size:8.5px; color:var(--t2); }
+
+/* ═══════════════════════════════════════════════════════
+   SMOKE BLOBS — bottom of panel
+   ═══════════════════════════════════════════════════════ */
+#panel-smoke {
+  position:sticky; bottom:0; left:0; right:0;
+  height:80px; pointer-events:none; overflow:hidden; flex-shrink:0; z-index:10;
+  background:linear-gradient(180deg,transparent 0%,rgba(0,0,0,.5) 100%);
+}
+.smoke-blob { position:absolute; bottom:-20px; border-radius:50%; filter:blur(24px); }
+.smoke-blob.s1 { width:180px; height:70px; left:5%; background:radial-gradient(ellipse,rgba(255,255,255,.07),rgba(200,180,255,.05),transparent 70%); animation:smoke-a 7s ease-in-out infinite; }
+.smoke-blob.s2 { width:140px; height:60px; left:38%; background:radial-gradient(ellipse,rgba(255,255,255,.05),rgba(180,160,255,.04),transparent 70%); animation:smoke-b 9.5s ease-in-out infinite 1.8s; }
+.smoke-blob.s3 { width:100px; height:45px; left:64%; background:radial-gradient(ellipse,rgba(255,255,255,.06),rgba(220,200,255,.04),transparent 70%); animation:smoke-c 11s ease-in-out infinite 3.5s; }
+
+
+/* ═══════════════════════════════════════════════════════
+   PAINT — adattamenti minimi (id del motore, stati .ctrl/.vis)
+   ═══════════════════════════════════════════════════════ */
+#c { display:block; }
+#idle { transition:opacity .9s, visibility 0s; }
+#idle.gone { opacity:0; visibility:hidden; pointer-events:none; transition:opacity .9s, visibility 0s .9s; }
+button.seg-btn { padding:0; }
+.seg-btn.tight { letter-spacing:.5px; font-size:7.5px; }
+.ctrl-row.ctrl { display:none; }
+.ctrl-row.ctrl.vis { display:flex; }
+.knob-group input[type=range] { display:none; }
+.info-cell { min-width:0; }
+.ic-val { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* Effetto spento: sorgente originale sopra al canvas (stesso riquadro e stessa mappatura del motore) */
+#vid { display:none; }
+#canvas-wrap.fx-off #vid { display:block; position:absolute; inset:0; width:100%; height:100%; object-fit:fill; background:#000; z-index:1; }
+#pill-engine.off .dot { background:rgba(255,255,255,.15); box-shadow:none; }
+#pill-engine.off { border-color:var(--border); color:var(--t2); }
+#canvas-wrap.exporting #c { width:100% !important; height:100% !important; }
+#export-bar { height:3px; background:rgba(255,255,255,.08); overflow:hidden; margin-top:2px; }
+#export-fill { height:100%; width:0; background:linear-gradient(90deg,var(--amber),#ffe680); box-shadow:0 0 8px rgba(232,192,0,.5); transition:width .2s linear; }
+#export-status { font-size:7.5px; letter-spacing:1px; color:var(--t3); line-height:1.7; }
+#export-status:empty { display:none; }
+#export-status.err { color:var(--red); }
+.led-btn.dis { opacity:.45; }
+.led-btn.busy .led { animation:blink 1s infinite; }
+#src-status { font-size:7.5px; letter-spacing:1px; color:var(--t3); line-height:1.7; }
+#src-status:empty { display:none; }
+#src-status.err { color:var(--red); }
+
+/* Popup valore preciso (doppio click sui knob) */
+#knob-popup {
+  position:fixed; z-index:9001;
+  background:linear-gradient(135deg,rgba(18,12,36,.97),rgba(8,6,20,.97));
+  border:1px solid var(--border-hi); padding:12px 14px 10px;
+  display:none; flex-direction:column; gap:6px;
+  font-family:var(--mono); min-width:160px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 4px 32px rgba(0,0,0,.8),0 0 24px rgba(232,192,0,.08);
+  backdrop-filter:blur(12px);
+}
+#knob-popup-lbl { font-size:9px; letter-spacing:2px; color:var(--amber); text-transform:uppercase; }
+#knob-popup-range { font-size:7px; letter-spacing:1px; color:var(--t2); margin-bottom:2px; }
+#knob-popup-input { background:var(--bg-deep); border:1px solid var(--border-hi); color:var(--t4); font-family:var(--mono); font-size:15px; padding:5px 8px; width:100%; box-sizing:border-box; outline:none; text-align:center; letter-spacing:1px; }
+#knob-popup-input:focus { border-color:var(--amber); box-shadow:0 0 0 1px rgba(232,192,0,.3); }
+#knob-popup-btns { display:flex; gap:4px; margin-top:2px; }
+#knob-popup-btns button { flex:1; padding:5px 4px; font-family:var(--mono); font-size:8px; letter-spacing:1px; background:var(--bg-deep); border:1px solid var(--border); color:var(--t2); cursor:pointer; text-transform:uppercase; transition:all .1s; }
+#knob-popup-btns button:hover { border-color:var(--border-hi); color:var(--t3); }
+#knob-popup-ok { background:rgba(232,192,0,.12)!important; color:var(--amber)!important; border-color:rgba(200,160,0,.4)!important; }
+</style>
+<!-- SYNTECH-UNIFORM-START: shared BOKEH chrome — operator request 2026-10-11 -->
+<link rel="stylesheet" href="../shared/syn-chrome.css">
+<style id="syntech-uniform">
+/* PAINTING's own CSS above is already BOKEH's, rule for rule (top bar, frame, brackets, panel, sections,
+   widgets); its drop overlay is #idle, a copy of BOKEH's #drop-overlay rules. Nothing to neutralise: the
+   shared file only adds BOKEH's resets (vertical-only panel scroll, …). Only additions: the style picker, and the
+   ENGINE pill kept in BOKEH's amber (the original greyed it while PAINT is off; its text still reads OFF / PAINT). */
+#pill-engine.off { border-color:rgba(232,192,0,.2); color:rgba(232,200,100,.8); }          /* = .pill.engine */
+#pill-engine.off .dot { background:var(--amber); box-shadow:0 0 8px rgba(232,192,0,.6); }  /* = .pill.engine .dot */
+#style-picker { display:flex; flex-direction:column; gap:2px; }   /* two seg-rows of style buttons (WATERCOLOR is hidden → 2 + 3; 2px = the seg-row gap) */
+</style>
+<!-- SYNTECH-UNIFORM-END -->
+</head>
+<body translate="no" class="notranslate">
+
+<!-- TOPBAR -->
+<div id="topbar">
+  <div class="logo notranslate">PAINTING</div>
+  <div class="tb-sep"></div>
+  <div class="pill" id="pill-status"><div class="dot"></div><span class="pill-pre">INPUT</span><span id="pill-label">NONE</span></div>
+  <div class="pill engine off" id="pill-engine"><div class="dot"></div><span class="pill-pre">ENGINE</span><span id="pill-fx">OFF</span></div><!-- SYNTECH-UNIFORM: BOKEH's ENGINE pill wording (was "EFFECT"); OFF / PAINT state kept -->
+  <div id="timecode">00:00:00:00</div>
+  <div id="fps-display">FPS <b id="fps-val">0</b></div>
+</div>
+
+<div id="main">
+
+  <!-- CANVAS -->
+  <div id="canvas-area">
+    <div id="canvas-wrap">
+      <div id="frame-outline"></div>
+      <canvas id="c"></canvas>
+      <video id="vid" playsinline loop muted crossorigin="anonymous"></video>
+      <div id="res-tag">PAINTING STYLES</div>
+      <div id="idle">
+        <div class="drop-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <div class="drop-title">PAINTING</div>
+        <div class="drop-sub">IMAGE — VIDEO — WEBCAM</div>
+        <button class="drop-source-btn" id="source-center-btn">SOURCE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL -->
+  <div id="panel">
+
+    <!-- SOURCE -->
+    <div class="section" id="sec-source-wrap">
+      <div class="sec-head closed" data-sec="src">
+        <div class="sec-mark" id="src-mark"></div>
+        <span class="sec-title">Source</span>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sb-src" style="gap:8px">
+        <div class="seg-row">
+          <button class="seg-btn" id="btnImg">IMAGE</button>
+          <button class="seg-btn" id="btnUp">VIDEO</button>
+          <button class="seg-btn" id="btnCam">WEBCAM</button>
+        </div>
+        <div id="src-status"></div>
+        <div class="info-grid" style="margin-top:2px">
+          <div class="info-cell"><div class="ic-lbl">File</div><div class="ic-val dim" id="info-file">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val amber" id="info-res">--</div></div>
+        </div>
+        <div class="row"><div class="lbl">Playback</div><div class="led-btn" id="btn-play" onclick="togglePlay()"><div class="led"></div><div class="led-txt" id="play-label">PAUSED</div><div class="kbd-badge">SPC</div></div></div>
+        <div class="row"><div class="lbl">Loop</div><div class="led-btn on" id="btn-loop" onclick="toggleLoop()"><div class="led"></div><div class="led-txt" id="loop-label">LOOP ON</div><div class="kbd-badge">L</div></div></div>
+        <div class="row"><div class="lbl">Audio</div><div class="led-btn on" id="btn-audio" onclick="toggleAudio()"><div class="led"></div><div class="led-txt" id="audio-label">AUDIO ON</div><div class="kbd-badge">M</div></div></div>
+        <div class="row"><div class="lbl">Fullscreen</div><div class="led-btn" onclick="goFullscreen()"><div class="led"></div><div class="led-txt">FULLSCREEN</div><div class="kbd-badge">F</div></div></div>
+      </div>
+    </div>
+
+    <!-- STYLE -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="style">
+        <div class="sec-mark" id="style-mark"></div>
+        <div class="sec-title">Style</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-style">
+        <div class="seg-row">
+          <button class="seg-btn" id="btn-paint">PAINT</button>
+        </div>
+        <!-- SYNTECH-UNIFORM-START: the engine's own six style buttons (.sbtn, data-style — bound by the module's
+             switchStyle), moved here from the hidden #engine-unused so every painting style is reachable.
+             Same classes, order and ids; labels translated to English (were ACQUERELLO, OLIO, TEMPERA, PUNTINISMO,
+             IMPRESSIONISMO, ESPRESSIONISMO). OIL is still the style selected at load (window 'load' below). -->
+        <div id="style-picker">
+          <div class="seg-row">
+            <!-- SYNTECH-HIDE: WATERCOLOR renders almost black in the original too (smearU.uHasVideo is never set
+                 true — one line in activateVideo() would fix it; rendering code, so not touched). The button stays
+                 in the DOM (the engine binds to it) but is not offered. Remove display:none to bring it back. -->
+            <button class="seg-btn sbtn on" data-style="watercolor" style="display:none">WATERCOLOR</button>
+            <button class="seg-btn sbtn" data-style="oil" id="engine-oil">OIL</button>
+            <button class="seg-btn sbtn" data-style="tempera">TEMPERA</button>
+          </div>
+          <div class="seg-row">
+            <button class="seg-btn sbtn tight" data-style="pointillism">POINTILLISM</button>
+            <button class="seg-btn sbtn tight" data-style="impressionism">IMPRESSIONISM</button>
+            <button class="seg-btn sbtn tight" data-style="expressionism">EXPRESSIONISM</button>
+          </div>
+        </div>
+        <!-- SYNTECH-UNIFORM-END -->
+      </div>
+    </div>
+
+    <!-- PARAMETERS (le righe .ctrl compaiono in base allo stile attivo) -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="params">
+        <div class="sec-mark" id="params-mark"></div>
+        <div class="sec-title">Parameters</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-params">
+
+
+        <!-- PAINT (motore: stile "oil") -->
+        <div class="ctrl-row ctrl oil vis"><div class="ctrl-lbl">KERNEL</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sKernel" min="2" max="14" step="1" value="6"></div><div class="ctrl-val" id="vKernel">6</div></div>
+        <div class="ctrl-row ctrl oil vis"><div class="ctrl-lbl">SECTORS</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sSectors" min="4" max="12" step="1" value="8"></div><div class="ctrl-val" id="vSectors">8</div></div>
+        <div class="ctrl-row ctrl oil vis"><div class="ctrl-lbl">IMPASTO</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sImpasto" min="0" max="1" step=".01" value=".65"></div><div class="ctrl-val" id="vImpasto">.65</div></div>
+        <div class="ctrl-row ctrl oil vis"><div class="ctrl-lbl">LIGHT</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sLight" min="0" max="1" step=".01" value=".75"></div><div class="ctrl-val" id="vLight">.75</div></div>
+        <!-- SYNTECH-UNIFORM-START: the other five styles' sliders, moved verbatim from the hidden #engine-unused
+             (same ids, ranges, steps, defaults, labels). switchStyle shows only the active style's rows (.ctrl.vis). -->
+        <div class="ctrl-row ctrl watercolor"><div class="ctrl-lbl">SPREAD</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sSpread" min="1" max="12" step=".5" value="5"></div><div class="ctrl-val" id="vSpread">5</div></div>
+        <div class="ctrl-row ctrl watercolor"><div class="ctrl-lbl">BLEED</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sBleed" min="0" max="1" step=".01" value=".5"></div><div class="ctrl-val" id="vBleed">.50</div></div>
+        <div class="ctrl-row ctrl watercolor"><div class="ctrl-lbl">FLOW</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sFlow" min="0" max="1" step=".01" value=".35"></div><div class="ctrl-val" id="vFlow">.35</div></div>
+        <div class="ctrl-row ctrl watercolor"><div class="ctrl-lbl">PAPER</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sPaper" min="0" max="1" step=".01" value=".5"></div><div class="ctrl-val" id="vPaper">.50</div></div>
+        <div class="ctrl-row ctrl watercolor"><div class="ctrl-lbl">EDGE</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sWEdge" min="0" max="1" step=".01" value=".55"></div><div class="ctrl-val" id="vWEdge">.55</div></div>
+        <div class="ctrl-row ctrl tempera"><div class="ctrl-lbl">LEVELS</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sLevels" min="2" max="14" step="1" value="5"></div><div class="ctrl-val" id="vLevels">5</div></div>
+        <div class="ctrl-row ctrl tempera"><div class="ctrl-lbl">EDGE</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sTEdge" min="0" max="1" step=".01" value=".7"></div><div class="ctrl-val" id="vTEdge">.70</div></div>
+        <div class="ctrl-row ctrl tempera"><div class="ctrl-lbl">KERNEL</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sTKernel" min="1" max="10" step=".5" value="3"></div><div class="ctrl-val" id="vTKernel">3</div></div>
+        <div class="ctrl-row ctrl tempera"><div class="ctrl-lbl">HATCH</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sHatch" min="0" max="1" step=".01" value=".35"></div><div class="ctrl-val" id="vHatch">.35</div></div>
+        <div class="ctrl-row ctrl pointillism"><div class="ctrl-lbl">DOTS</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sDots" min="80" max="500" step="10" value="280"></div><div class="ctrl-val" id="vDots">280</div></div>
+        <div class="ctrl-row ctrl pointillism"><div class="ctrl-lbl">SIZE</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sDotSize" min=".5" max="7" step=".1" value="3"></div><div class="ctrl-val" id="vDotSize">3.0</div></div>
+        <div class="ctrl-row ctrl pointillism"><div class="ctrl-lbl">DEPTH</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sPDepth" min="0" max="4" step=".1" value="1.5"></div><div class="ctrl-val" id="vPDepth">1.5</div></div>
+        <div class="ctrl-row ctrl pointillism"><div class="ctrl-lbl">JITTER</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sJitter" min="0" max="1" step=".01" value=".3"></div><div class="ctrl-val" id="vJitter">.30</div></div>
+        <div class="ctrl-row ctrl impressionism"><div class="ctrl-lbl">LENGTH</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sLength" min=".5" max="5" step=".1" value="2.2"></div><div class="ctrl-val" id="vLength">2.2</div></div>
+        <div class="ctrl-row ctrl impressionism"><div class="ctrl-lbl">WIDTH</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sStrokeW" min=".5" max="6" step=".1" value="2.2"></div><div class="ctrl-val" id="vStrokeW">2.2</div></div>
+        <div class="ctrl-row ctrl impressionism"><div class="ctrl-lbl">DEPTH</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sIDepth" min="0" max="4" step=".1" value="1.8"></div><div class="ctrl-val" id="vIDepth">1.8</div></div>
+        <div class="ctrl-row ctrl impressionism"><div class="ctrl-lbl">ORIENT</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sOrient" min="0" max="1" step=".01" value=".85"></div><div class="ctrl-val" id="vOrient">.85</div></div>
+        <div class="ctrl-row ctrl expressionism"><div class="ctrl-lbl">SWIRL</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sSwirl" min="0" max="2" step=".05" value="1.1"></div><div class="ctrl-val" id="vSwirl">1.1</div></div>
+        <div class="ctrl-row ctrl expressionism"><div class="ctrl-lbl">ENERGY</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sEnergy" min=".5" max="5" step=".1" value="2.0"></div><div class="ctrl-val" id="vEnergy">2.0</div></div>
+        <div class="ctrl-row ctrl expressionism"><div class="ctrl-lbl">CONTRAST</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sContrast" min="1" max="5" step=".1" value="2.2"></div><div class="ctrl-val" id="vContrast">2.2</div></div>
+        <div class="ctrl-row ctrl expressionism"><div class="ctrl-lbl">EDEPTH</div><div class="ctrl-track"><input type="range" class="daw-slider" id="sEDepth" min="0" max="5" step=".1" value="2.5"></div><div class="ctrl-val" id="vEDepth">2.5</div></div>
+        <!-- SYNTECH-UNIFORM-END -->
+
+
+
+
+
+      </div>
+    </div>
+
+    <!-- COLOR (manopole, come Optics in bokeh) -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="color">
+        <div class="sec-mark" id="color-mark"></div>
+        <div class="sec-title">Color</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-color">
+        <div class="knob-row">
+          <div class="knob-group">
+            <div class="knob-outer"><div class="knob" data-id="sColor" data-label="SATURATION" data-min="0" data-max="1" data-val="0.65" data-dec="2"><div class="knob-dot"></div></div></div>
+            <input type="range" id="sColor" min="0" max="1" step="any" value=".65" hidden>
+            <div class="knob-lbl">SATURATION</div><div class="knob-val" id="vColor">0.65</div>
+          </div>
+          <div class="knob-group">
+            <div class="knob-outer"><div class="knob" data-id="sBloom" data-label="LIGHT" data-min="0" data-max="2" data-val="0.3" data-dec="2"><div class="knob-dot"></div></div></div>
+            <input type="range" id="sBloom" min="0" max="2" step="any" value=".3" hidden>
+            <div class="knob-lbl">LIGHT</div><div class="knob-val" id="vBloom">0.30</div>
+          </div>
+          <div class="knob-group">
+            <div class="knob-outer"><div class="knob" data-id="sGrade" data-label="TEMPERATURE" data-min="0" data-max="1" data-val="0.5" data-dec="2"><div class="knob-dot"></div></div></div>
+            <input type="range" id="sGrade" min="0" max="1" step="any" value=".5" hidden>
+            <div class="knob-lbl">TEMPERATURE</div><div class="knob-val" id="vGrade">0.50</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EXPORT -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="export">
+        <div class="sec-mark" id="export-mark"></div>
+        <div class="sec-title">Export</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-export">
+        <div class="info-grid">
+          <div class="info-cell"><div class="ic-lbl">Format</div><div class="ic-val dim" id="ex-format">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Size</div><div class="ic-val dim" id="ex-size">--</div></div>
+        </div>
+        <div class="row"><div class="lbl">Export</div><div class="led-btn dis" id="btn-export" onclick="toggleExport()"><div class="led"></div><div class="led-txt" id="export-label">EXPORT MP4</div></div></div>
+        <div id="export-bar"><div id="export-fill"></div></div>
+        <div id="export-status"></div>
+      </div>
+    </div>
+
+    <!-- SHORTCUTS -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="keys"><div class="sec-mark"></div><div class="sec-title">Shortcuts</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-body hidden" id="sec-keys">
+        <div class="sc-row"><div class="sc-key">SPC</div><div class="sc-desc">Play / Pause</div></div>
+        <div class="sc-row"><div class="sc-key">F</div><div class="sc-desc">Fullscreen</div></div>
+        <div class="sc-row"><div class="sc-key">L</div><div class="sc-desc">Loop toggle</div></div>
+        <div class="sc-row"><div class="sc-key">M</div><div class="sc-desc">Audio on / off</div></div>
+        <div class="sc-row"><div class="sc-key">P</div><div class="sc-desc">Paint on / off</div></div>
+      </div>
+    </div>
+
+    <!-- INFO -->
+    <div class="section">
+      <div class="sec-head" data-sec="info">
+        <div class="sec-mark" id="info-mark"></div>
+        <span class="sec-title">Info</span>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body" id="sb-info">
+        <div class="info-grid">
+          <div class="info-cell"><div class="ic-lbl">FPS</div><div class="ic-val amber" id="ic-fps">0</div></div>
+          <div class="info-cell"><div class="ic-lbl">Input</div><div class="ic-val dim" id="ic-source">NONE</div></div>
+          <div class="info-cell"><div class="ic-lbl">Resolution</div><div class="ic-val dim" id="ic-res">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Effect</div><div class="ic-val dim" id="ic-style">OFF</div></div>
+          <div class="ic-credit">PAINTING — by STATE</div><!-- SYNTECH-UNIFORM: BOKEH's "<NAME> — by STATE" (was "created by STATE") -->
+        </div>
+      </div>
+    </div>
+
+    <!-- SMOKE BLOBS -->
+    <div id="panel-smoke">
+      <div class="smoke-blob s1"></div>
+      <div class="smoke-blob s2"></div>
+      <div class="smoke-blob s3"></div>
+    </div>
+
+  </div><!-- /panel -->
+</div><!-- /main -->
+
+<!-- il motore scrive i suoi FPS di rendering in questi due id: li tengo nascosti, la UI mostra gli FPS reali della sorgente -->
+<span id="hFps" hidden></span><span id="sFps" hidden></span><span id="hMode" hidden></span>
+<input id="fi" type="file" accept="video/*" style="display:none">
+<input id="fi-img" type="file" accept="image/*" style="display:none">
+
+<!-- SYNTECH-UNIFORM: the original kept here, hidden, the engine's style buttons and the five other styles' sliders
+     ("Il motore usa questi id … non fanno parte dell'interfaccia"). They now live, unchanged, in the Style and
+     Parameters sections above (same ids → same engine bindings), so every painting style is reachable. -->
+<script>
+'use strict';
+
+/* =========================================
+   SECTION TOGGLE — gira per primo, così l'accordion funziona
+   anche se il motore WebGL più sotto dovesse fallire.
+   ========================================= */
+try {
+  window.getSecBody = function(secKey){
+    return document.getElementById('sec-'+secKey) || document.getElementById('sb-'+secKey);
+  };
+  window.setSectionState = function(head, body, isClosed){
+    body.classList.toggle('hidden', isClosed);
+    head.classList.toggle('closed', isClosed);
+    head.classList.toggle('collapsed', isClosed);
+    head.setAttribute('aria-expanded', String(!isClosed));
+  };
+  window.openSection = function(secKey){
+    const head = document.querySelector(`.sec-head[data-sec="${secKey}"]`);
+    const b = getSecBody(secKey);
+    if(!head || !b) return;
+    setSectionState(head, b, false);
+    b.scrollIntoView({behavior:'smooth',block:'nearest'});
+  };
+  document.querySelectorAll('.sec-head').forEach(h=>{
+    const b = getSecBody(h.dataset.sec);
+    if(!b) return;
+    h.addEventListener('click',()=>{
+      const willBeClosed = !b.classList.contains('hidden');
+      setSectionState(h, b, willBeClosed);
+      if(!willBeClosed) b.scrollIntoView({behavior:'smooth', block:'nearest'});
+    });
+  });
+  const SECTION_INITIAL_CLOSED = {
+    src: true, style: true, params: true, color: true, keys: true, export: true, info: false
+  };
+  Object.entries(SECTION_INITIAL_CLOSED).forEach(([key, closed])=>{
+    const head = document.querySelector(`.sec-head[data-sec="${key}"]`);
+    const body = getSecBody(key);
+    if(head && body) setSectionState(head, body, closed);
+  });
+} catch(e) {
+  console.error('Section accordion init failed:', e);
+}
+
+/* =========================================
+   PONTE UI → MOTORE
+   Il motore dimensiona tutto con innerWidth/innerHeight (finestra intera).
+   Qui la finestra utile è l'area canvas incorniciata, quindi gli
+   forniamo quelle misure senza modificare una riga del motore.
+   ========================================= */
+/* Effetto Paint spento = si vede la sorgente originale, quindi il motore non deve
+   sprecare GPU: finché l'effetto è spento il suo loop gira a ~5 fps invece che a 60,
+   appena lo accendi torna a piena velocità. (Il motore non viene modificato.) */
+let fxOn = false;
+const _raf = window.requestAnimationFrame.bind(window);
+window.requestAnimationFrame = cb => {
+  if(fxOn) return _raf(cb);
+  return setTimeout(()=>_raf(cb), 200);
+};
+
+const CANVAS_PAD = 24, CANVAS_ASPECT = 16/9;
+function measureCanvas(){
+  const a = document.getElementById('canvas-area');
+  const aw = Math.max(a.clientWidth  - CANVAS_PAD, 16);
+  const ah = Math.max(a.clientHeight - CANVAS_PAD, 16);
+  /* SYNTECH-UNIFORM: BOKEH's frame rule (fitCanvas: area − 24 px, 16:9, Math.round) so the frame is BOKEH's to the
+     pixel. Was: both sides floored to multiples of 8 ("buffer sempre pari, serve all'export H.264") — the export does
+     not depend on it: enterExportSize() drives the engine at exactly 1920×1080 whatever the preview size. */
+  return (aw/ah > CANVAS_ASPECT)
+    ? {w: Math.round(ah*CANVAS_ASPECT), h: ah}
+    : {w: aw, h: Math.round(aw/CANVAS_ASPECT)};
+}
+let CANVAS_SIZE = measureCanvas();   // cornice dell'anteprima
+let ENGINE_SIZE = null;              // solo durante l'export: misure date al motore per ottenere 1920×1080
+Object.defineProperty(window,'innerWidth', {configurable:true, get:()=>(ENGINE_SIZE||CANVAS_SIZE).w});
+Object.defineProperty(window,'innerHeight',{configurable:true, get:()=>(ENGINE_SIZE||CANVAS_SIZE).h});
+
+function fitCanvas(){
+  CANVAS_SIZE = measureCanvas();
+  const wrap = document.getElementById('canvas-wrap');
+  wrap.style.width  = CANVAS_SIZE.w + 'px';
+  wrap.style.height = CANVAS_SIZE.h + 'px';
+  if(window.uiReady) updateExportSize();
+  document.getElementById('res-tag').textContent = CANVAS_SIZE.w + ' × ' + CANVAS_SIZE.h + ' · PAINTING STYLES';
+}
+/* registrato prima del listener del motore → le misure sono già aggiornate quando lui ridimensiona */
+window.addEventListener('resize', fitCanvas);
+document.addEventListener('fullscreenchange', ()=>setTimeout(()=>{
+  fitCanvas(); window.dispatchEvent(new Event('resize'));
+}, 100));
+fitCanvas();
+
+/* =========================================
+   ELEMENTI & HELPERS
+   ========================================= */
+const $ = id => document.getElementById(id);
+const vidEl = $('vid');
+let lastFileName = null;
+
+function fmtTC(s){
+  return [Math.floor(s/3600),Math.floor((s%3600)/60),Math.floor(s%60),Math.floor((s%1)*30)]
+    .map(n=>String(n).padStart(2,'0')).join(':');
+}
+function stepDec(inp){
+  const st = String(inp.getAttribute('step')||'1');
+  return st.includes('.') ? st.split('.')[1].length : 0;
+}
+/* i valori degli slider mostrati con i decimali dello step (il motore arrotonda in modo diverso) */
+function fmtSlider(inp){
+  const el = $('v' + inp.id.slice(1));
+  if(el) el.textContent = parseFloat(inp.value).toFixed(stepDec(inp));
+}
+document.querySelectorAll('.ctrl-row input[type=range]').forEach(inp=>{
+  fmtSlider(inp);
+  inp.addEventListener('input', ()=>_raf(()=>fmtSlider(inp)));
+});
+
+/* =========================================
+   CONTROLLI SORGENTE
+   ========================================= */
+function togglePlay(){
+  if(exporting || (!vidEl.src && !vidEl.srcObject)) return;
+  vidEl.paused ? vidEl.play().catch(console.error) : vidEl.pause();
+}
+function toggleLoop(){
+  if(exporting) return;
+  vidEl.loop = !vidEl.loop;
+  $('btn-loop').classList.toggle('on', vidEl.loop);
+  $('loop-label').textContent = vidEl.loop ? 'LOOP ON' : 'LOOP OFF';
+}
+function goFullscreen(){
+  if(exporting) return;
+  const el = $('canvas-area');
+  if(!document.fullscreenElement)(el.requestFullscreen||el.webkitRequestFullscreen||el.mozRequestFullScreen).call(el);
+  else(document.exitFullscreen||document.webkitExitFullscreen)?.call(document);
+}
+function updatePlayUI(){
+  const p = !vidEl.paused && !vidEl.ended;
+  $('btn-play').classList.toggle('on', p);
+  $('play-label').textContent = p ? 'PLAYING' : 'PAUSED';
+}
+vidEl.addEventListener('play',  updatePlayUI);
+vidEl.addEventListener('pause', updatePlayUI);
+
+/* ---------- stato sorgente ---------- */
+let sourceMode = null;          // 'image' | 'video' | 'webcam'
+let exporting = null;           // export in corso
+let audioOn = true, audioCtx = null, audioGraph = null;
+let imgInfo = null;             // {w,h} dell'immagine caricata
+let imgStream = null, imgTimer = null, pendingStream = null;
+const imgCanvas = document.createElement('canvas');
+
+function setStatus(msg, isError){
+  const el = $('src-status');
+  el.textContent = msg || '';
+  el.classList.toggle('err', !!isError);
+}
+function stopImage(){
+  if(imgTimer){ clearInterval(imgTimer); imgTimer = null; }
+  if(imgStream){ imgStream.getTracks().forEach(t=>t.stop()); imgStream = null; }
+  pendingStream = null;
+}
+
+/* ---------- getUserMedia: stesso canale della webcam del motore ----------
+   Il motore, quando clicchi WEBCAM, chiama navigator.mediaDevices.getUserMedia()
+   e usa lo stream come video. Per l'immagine gli consegniamo uno stream
+   generato da un canvas: stessa identica strada, nessuna modifica al motore. */
+(function(){
+  let md = navigator.mediaDevices;
+  if(!md){   // contesto non sicuro (http): l'immagine deve comunque funzionare
+    md = {};
+    try{ Object.defineProperty(navigator,'mediaDevices',{value:md,configurable:true}); }catch(e){}
+  }
+  const real = md.getUserMedia ? md.getUserMedia.bind(md) : null;
+  md.getUserMedia = async function(constraints){
+    if(pendingStream){ const s = pendingStream; pendingStream = null; return s; }
+    stopImage();
+    if(exporting) cancelExport();
+    setMode('webcam');
+    setStatus('');
+    if(!real){
+      const err = new Error('la webcam richiede https:// oppure localhost');
+      err.name = 'SecurityError'; setStatus('WEBCAM — ' + err.message, true); throw err;
+    }
+    try{
+      return await real(constraints);
+    }catch(e1){
+      if(e1.name === 'OverconstrainedError'){      // risoluzione non supportata → riprova senza vincoli
+        try{ return await real({video:true}); }catch(e2){ e1 = e2; }
+      }
+      setStatus('WEBCAM — ' + e1.name + (e1.message ? ': ' + e1.message : ''), true);
+      throw e1;
+    }
+  };
+})();
+
+/* ---------- IMMAGINE ---------- */
+function loadImageFile(f){
+  if(!f || !f.type.startsWith('image/')) return;
+  const url = URL.createObjectURL(f);
+  const img = new Image();
+  img.onload = ()=>{
+    stopImage();
+    const W = 1920, H = 1080;                 // cornice 16:9, l'immagine la riempie senza deformarsi
+    imgCanvas.width = W; imgCanvas.height = H;
+    const ctx = imgCanvas.getContext('2d');
+    const draw = ()=>{
+      const sc = Math.max(W/img.naturalWidth, H/img.naturalHeight);
+      const dw = img.naturalWidth*sc, dh = img.naturalHeight*sc;
+      ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
+      ctx.drawImage(img, (W-dw)/2, (H-dh)/2, dw, dh);
+    };
+    draw();
+    imgStream = imgCanvas.captureStream(15);
+    imgTimer = setInterval(draw, 100);        // mantiene vivo lo stream
+    imgInfo = {w: img.naturalWidth, h: img.naturalHeight};
+    lastFileName = f.name;
+    pendingStream = imgStream;
+    if(exporting) cancelExport();
+    setMode('image');
+    setStatus('');
+    URL.revokeObjectURL(url);
+    $('btnCam').click();                      // il motore prende lo stream e parte
+  };
+  img.onerror = ()=>{ URL.revokeObjectURL(url); setStatus('IMAGE — file non valido', true); };
+  img.src = url;
+}
+$('btnImg').addEventListener('click', ()=>$('fi-img').click());
+$('fi-img').addEventListener('change', e=>{ loadImageFile(e.target.files[0]); e.target.value = ''; });
+
+/* ---------- VIDEO (file e drag & drop) ---------- */
+$('fi').addEventListener('change', e=>{
+  const f = e.target.files[0];
+  if(exporting && f) cancelExport();
+  if(f && f.type.startsWith('video/')){ lastFileName = f.name; stopImage(); setMode('video'); setStatus(''); }
+});
+document.addEventListener('drop', e=>{
+  if([...(e.dataTransfer?.files||[])].some(f=>f.type.startsWith('video/'))){ if(exporting) cancelExport(); setMode('video'); }
+}, true);
+document.addEventListener('drop', e=>{
+  $('idle').classList.remove('drag-over');
+  const files = [...(e.dataTransfer?.files||[])];
+  const v = files.find(f=>f.type.startsWith('video/'));
+  const im = files.find(f=>f.type.startsWith('image/'));
+  if(v){ lastFileName = v.name; stopImage(); setMode('video'); setStatus(''); }
+  else if(im){ e.preventDefault(); loadImageFile(im); }
+});
+document.addEventListener('dragover',  ()=>$('idle').classList.add('drag-over'));
+document.addEventListener('dragleave', e=>{ if(!e.relatedTarget) $('idle').classList.remove('drag-over'); });
+
+/* ---------- quando il motore riceve la sorgente ---------- */
+vidEl.addEventListener('loadeddata', ()=>{
+  const mode = sourceMode || (vidEl.srcObject ? 'webcam' : 'video');
+  const res = (mode === 'image' && imgInfo) ? imgInfo.w + '×' + imgInfo.h
+                                            : vidEl.videoWidth + '×' + vidEl.videoHeight;
+  $('btnImg').classList.toggle('on', mode === 'image');
+  $('btnUp').classList.toggle('on',  mode === 'video');
+  $('btnCam').classList.toggle('on', mode === 'webcam');
+  $('pill-status').classList.add('live');
+  $('pill-label').textContent = 'LIVE';
+  $('src-mark').classList.add('on');
+  $('info-file').textContent = mode === 'webcam' ? 'WEBCAM' : (lastFileName || mode.toUpperCase());
+  $('info-res').textContent  = res;
+  $('ic-source').textContent = mode.toUpperCase();
+  $('ic-res').textContent    = res;
+  setStatus('');
+  if(mode === 'video' && vidEl.paused && !exporting){      // autoplay con audio bloccato dal browser
+    audioOn = false; applyAudio();
+    _autoMuted = true;   /* SYNTECH-FIX: muted by the browser, not by the user → the next gesture turns AUDIO back on */
+    vidEl.play().catch(()=>{});
+    setStatus('AUDIO BLOCCATO DAL BROWSER — premi AUDIO per attivarlo', true);
+  }
+  updateExportUI();
+  updatePlayUI();
+});
+setInterval(()=>{
+  const live = (vidEl.src || vidEl.srcObject) && sourceMode !== 'image';
+  $('timecode').textContent = fmtTC(live ? vidEl.currentTime : 0);
+}, 66);
+
+/* =========================================
+   MODO SORGENTE + AUDIO
+   Per i video caricati l'audio si sente (webcam/immagine non hanno audio).
+   ========================================= */
+function setMode(m){
+  sourceMode = m;
+  applyAudio();
+  updateExportUI();
+}
+function applyAudio(){
+  const hear = audioOn && sourceMode === 'video';
+  if(audioGraph){ audioGraph.monitor.gain.value = hear ? 1 : 0; vidEl.muted = false; }
+  else vidEl.muted = !hear;
+  $('btn-audio').classList.toggle('on', audioOn);
+  $('audio-label').textContent = audioOn ? 'AUDIO ON' : 'AUDIO OFF';
+}
+function toggleAudio(){
+  audioOn = !audioOn;
+  applyAudio();
+  if(audioOn && audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  if($('src-status').classList.contains('err') && audioOn) setStatus('');
+}
+document.addEventListener('click', ()=>{ if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); });
+applyAudio();
+
+/* SYNTECH-FIX-START: a loaded video FILE must be heard. When the browser refuses audible autoplay (no user gesture
+   yet) the 'loadeddata' handler above plays it muted (AUDIO OFF) and sets _autoMuted; the next pointer / key gesture
+   turns AUDIO back on. A click on the AUDIO button or the M key already does that through toggleAudio(), so they are
+   left to it (restoring here as well would toggle it straight back off). Webcam / image: no audio, untouched. */
+let _autoMuted = false;
+function _restoreAudioOnGesture(e){
+  if(!_autoMuted) return;
+  _autoMuted = false;
+  if(sourceMode !== 'video' || audioOn) return;
+  const t = e.target;
+  if(e.type === 'keydown' && (e.key === 'm' || e.key === 'M') && !(t && t.tagName === 'INPUT')) return;
+  if(e.type === 'pointerdown' && t && t.closest && t.closest('#btn-audio')) return;
+  audioOn = true; applyAudio();
+  if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  if($('src-status').classList.contains('err')) setStatus('');
+}
+['pointerdown','keydown'].forEach(ev=>document.addEventListener(ev, _restoreAudioOnGesture, true));
+/* SYNTECH-FIX-END */
+
+/* SYNTECH-FIX-START: release the webcam when another source replaces it (as the other effects do) */
+function _stopCam(){ const s=vidEl.srcObject; if(s && s!==pendingStream && s.getTracks) s.getTracks().forEach(t=>t.stop()); }
+(function(){ const md=navigator.mediaDevices, inner=md.getUserMedia; md.getUserMedia=function(c){ _stopCam(); return inner.call(md,c); }; })();
+$('fi').addEventListener('change', e=>{ if(e.target.files[0]) _stopCam(); });
+document.addEventListener('drop', e=>{ if([...(e.dataTransfer?.files||[])].some(f=>f.type.startsWith('video/'))) _stopCam(); }, true);
+/* SYNTECH-FIX-END */
+
+/* =========================================
+   EXPORT — registra il canvas (con l'effetto) + l'audio del video
+   MP4 H.264/AAC al massimo della qualità; dove il browser non sa fare MP4 ripiega su WebM.
+   Parte dall'inizio del video, lo riproduce una volta e salva alla fine.
+   ========================================= */
+const EX_MIMES = [
+  'video/mp4;codecs="avc1.640034,mp4a.40.2"',   // H.264 High 5.2
+  'video/mp4;codecs="avc1.64002A,mp4a.40.2"',   // High 4.2
+  'video/mp4;codecs="avc1.4D402A,mp4a.40.2"',   // Main 4.2
+  'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',   // Baseline
+  'video/mp4',
+  'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'
+];
+function pickMime(){
+  if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+  return EX_MIMES.find(t=>MediaRecorder.isTypeSupported(t)) || '';
+}
+const EX_MIME = pickMime();
+const EX_IS_MP4 = EX_MIME.startsWith('video/mp4');
+function setExStatus(msg, isError){
+  const el = $('export-status');
+  el.textContent = msg || '';
+  el.classList.toggle('err', !!isError);
+}
+const EX_W = 1920, EX_H = 1080;
+function updateExportSize(){ $('ex-size').textContent = EX_W + '×' + EX_H; }
+
+/* Il motore calcola il buffer come floor(misura × pixelRatio). Per avere esattamente 1920×1080
+   gli passo misura = 1920/pixelRatio (il pixelRatio reale lo ricavo dal canvas stesso). */
+async function enterExportSize(){
+  const c = $('c');
+  const cur = ENGINE_SIZE || CANVAS_SIZE;
+  const pr = c.width / cur.w;
+  ENGINE_SIZE = {w:(EX_W + 0.01)/pr, h:(EX_H + 0.01)/pr};
+  $('canvas-wrap').classList.add('exporting');       // il canvas HD viene mostrato ridotto nella cornice
+  window.dispatchEvent(new Event('resize'));
+  await nextFrames(6);
+  if(c.width !== EX_W || c.height !== EX_H)
+    throw new Error('il canvas è ' + c.width + '×' + c.height + ' invece di ' + EX_W + '×' + EX_H);
+  $('res-tag').textContent = 'EXPORT ' + EX_W + ' × ' + EX_H;
+}
+function leaveExportSize(){
+  if(!ENGINE_SIZE) return;
+  ENGINE_SIZE = null;
+  $('canvas-wrap').classList.remove('exporting');
+  window.dispatchEvent(new Event('resize'));        // torna alla dimensione dell'anteprima (e riscrive res-tag)
+}
+function updateExportUI(){
+  const ok = sourceMode === 'video' && !!EX_MIME;
+  if(!exporting) $('btn-export').classList.toggle('dis', !ok);
+  $('export-label').textContent = exporting ? 'STOP EXPORT' : (EX_IS_MP4 ? 'EXPORT MP4' : 'EXPORT WEBM');
+}
+$('ex-format').textContent = !EX_MIME ? 'NOT SUPPORTED' : EX_MIME.includes('avc1') ? 'MP4 · H.264' : EX_IS_MP4 ? 'MP4 · AUTO' : 'WEBM · NO MP4';
+updateExportSize();
+updateExportUI();
+window.uiReady = true;
+
+function ensureAudioGraph(){
+  if(audioGraph) return audioGraph;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  audioCtx = new AC();
+  const src = audioCtx.createMediaElementSource(vidEl);
+  const monitor = audioCtx.createGain();               // ciò che senti (rispetta AUDIO on/off)
+  const dest = audioCtx.createMediaStreamDestination(); // ciò che viene registrato (sempre)
+  src.connect(monitor); monitor.connect(audioCtx.destination);
+  src.connect(dest);
+  audioGraph = {src, monitor, dest};
+  applyAudio();
+  return audioGraph;
+}
+function nearestFps(q){
+  const std = [24,25,30,48,50,60];
+  return q > 0 ? std.reduce((a,b)=>Math.abs(b-q) < Math.abs(a-q) ? b : a) : 30;
+}
+function rewind(){
+  return new Promise(res=>{
+    if(vidEl.currentTime === 0){ res(); return; }
+    const done = ()=>{ vidEl.removeEventListener('seeked', done); res(); };
+    vidEl.addEventListener('seeked', done);
+    vidEl.currentTime = 0;
+  });
+}
+const nextFrames = n => new Promise(res=>{ const f = ()=>{ if(--n <= 0) res(); else _raf(f); }; _raf(f); });
+
+function toggleExport(){ exporting ? cancelExport() : startExport(); }
+
+async function startExport(){
+  if(exporting) return;
+  if(sourceMode !== 'video' || !(vidEl.readyState >= 2) || !isFinite(vidEl.duration)){
+    setExStatus('CARICA UN VIDEO PER ESPORTARE', true); return;
+  }
+  const canvas = $('c');
+  if(!EX_MIME || !canvas.captureStream){ setExStatus('EXPORT NON SUPPORTATO DA QUESTO BROWSER', true); return; }
+  setExStatus('');
+  const ex = exporting = {chunks:[], cancelled:false, prevLoop:vidEl.loop, mime:EX_MIME, timer:null, rec:null, onEnded:null};
+  try{
+    if(!fxOn) setFx(true);                       // si esporta il risultato dell'effetto
+    await enterExportSize();                     // motore a 1920×1080
+    const graph = ensureAudioGraph();
+    await audioCtx.resume();
+    vidEl.loop = false;
+    $('btn-loop').classList.remove('on'); $('loop-label').textContent = 'LOOP OFF';
+    vidEl.pause();
+    await rewind();
+    await nextFrames(3);                          // il motore disegna il primo fotogramma
+    if(exporting !== ex) return;
+
+    const fps = nearestFps(Number($('fps-val').textContent) || 0);
+    const px = canvas.width * canvas.height;
+    const bps = Math.round(Math.min(150e6, Math.max(20e6, px * fps * 0.8)));   // ~0.8 bit/pixel/frame: praticamente trasparente
+    const vstream = canvas.captureStream(fps);
+    const stream = new MediaStream([...vstream.getVideoTracks(), ...graph.dest.stream.getAudioTracks()]);
+    const rec = ex.rec = new MediaRecorder(stream, {mimeType:EX_MIME, videoBitsPerSecond:bps, audioBitsPerSecond:320000});
+    ex.actual = rec.mimeType || EX_MIME;      // codec realmente scelto dal browser
+    rec.ondataavailable = e=>{ if(e.data && e.data.size) ex.chunks.push(e.data); };
+    rec.onerror = ()=>{ setExStatus('ERRORE DI REGISTRAZIONE', true); ex.cancelled = true; try{ rec.stop(); }catch(e){} };
+    rec.onstop = ()=>finishExport(ex);
+    ex.onEnded = ()=>setTimeout(()=>{ if(rec.state !== 'inactive') rec.stop(); }, 350);   // lascia scaricare l'ultimo fotogramma
+    vidEl.addEventListener('ended', ex.onEnded, {once:true});
+
+    rec.start(500);
+    await vidEl.play();
+    $('btn-export').classList.add('busy');
+    $('export-mark').classList.add('on');
+    updateExportUI();
+    setExStatus(canvas.width + '×' + canvas.height + ' · ' + fps + ' FPS · ' + Math.round(bps/1e6) + ' MBPS — TIENI QUESTA SCHEDA IN PRIMO PIANO');
+    ex.timer = setInterval(()=>{
+      const d = vidEl.duration || 1, pct = Math.min(100, Math.round(vidEl.currentTime/d*100));
+      $('export-fill').style.width = pct + '%';
+      $('export-label').textContent = 'STOP EXPORT · ' + pct + '%';
+    }, 200);
+  }catch(err){
+    console.error(err);
+    setExStatus('EXPORT FALLITO — ' + (err.message || err.name), true);
+    ex.cancelled = true;
+    if(ex.rec && ex.rec.state !== 'inactive'){ try{ ex.rec.stop(); }catch(e){} } else finishExport(ex);
+  }
+}
+function cancelExport(){
+  const ex = exporting; if(!ex) return;
+  ex.cancelled = true;
+  vidEl.pause();
+  if(ex.rec && ex.rec.state !== 'inactive') ex.rec.stop(); else finishExport(ex);
+}
+function finishExport(ex){
+  if(exporting !== ex) return;
+  exporting = null;
+  leaveExportSize();
+  clearInterval(ex.timer);
+  if(ex.onEnded) vidEl.removeEventListener('ended', ex.onEnded);
+  vidEl.loop = ex.prevLoop;
+  $('btn-loop').classList.toggle('on', vidEl.loop); $('loop-label').textContent = vidEl.loop ? 'LOOP ON' : 'LOOP OFF';
+  $('btn-export').classList.remove('busy');
+  $('export-mark').classList.remove('on');
+  updateExportUI();
+  if(ex.cancelled){
+    $('export-fill').style.width = '0%';
+    if(!$('export-status').classList.contains('err')) setExStatus('EXPORT ANNULLATO');
+  }else{
+    $('export-fill').style.width = '100%';
+    const blob = new Blob(ex.chunks, {type: ex.mime.split(';')[0]});
+    const ext = ex.mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+    const base = (lastFileName || 'video').replace(/\.[^.]+$/, '');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = base + '_paint.' + ext;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 120000);
+    const m = (ex.actual || '').toLowerCase();
+    const codec = /avc1|h264/.test(m) ? 'H.264' : /vp9/.test(m) ? 'VP9' : /vp8/.test(m) ? 'VP8' : /av01/.test(m) ? 'AV1' : '';
+    setExStatus('SALVATO ' + a.download + ' · ' + (blob.size/1048576).toFixed(1) + ' MB' + (codec ? ' · ' + codec : '') + (ext === 'webm' ? ' — MP4 NON SUPPORTATO DA QUESTO BROWSER' : ''));
+  }
+  if(vidEl.loop || !ex.cancelled){ vidEl.currentTime = 0; vidEl.play().catch(()=>{}); }   // riprende l'anteprima
+}
+
+/* =========================================
+   FPS REALI DELLA SORGENTE
+   Conta i fotogrammi che il video consegna davvero (video, webcam):
+   0 se non c'è nulla o è in pausa, 30 per un video a 30 fps, ecc.
+   Immagine = fotogramma fisso → 0. Finestra mobile di ~2 s.
+   ========================================= */
+const fpsHist = [];
+let rvfcCount = 0, rvfcOn = false;
+function frameCount(){
+  if(vidEl.getVideoPlaybackQuality) return vidEl.getVideoPlaybackQuality().totalVideoFrames;
+  if(!rvfcOn && vidEl.requestVideoFrameCallback){          // fallback per browser senza playback quality
+    rvfcOn = true;
+    const cb = ()=>{ rvfcCount++; vidEl.requestVideoFrameCallback(cb); };
+    vidEl.requestVideoFrameCallback(cb);
+  }
+  return rvfcCount;
+}
+function showFps(n){
+  $('fps-val').textContent = n;
+  $('ic-fps').textContent  = n;
+}
+setInterval(()=>{
+  const hasSource = (vidEl.src || vidEl.srcObject) && vidEl.readyState >= 2;
+  if(!hasSource || sourceMode === 'image' || vidEl.paused || vidEl.ended){
+    fpsHist.length = 0; showFps(0); return;
+  }
+  const now = performance.now(), n = frameCount();
+  if(fpsHist.length && n < fpsHist[fpsHist.length-1].n) fpsHist.length = 0;   // nuova sorgente: contatore azzerato
+  fpsHist.push({t:now, n});
+  while(fpsHist.length > 2 && now - fpsHist[0].t > 2000) fpsHist.shift();
+  const a = fpsHist[0], dt = (now - a.t)/1000;
+  if(dt >= 0.45) showFps(Math.round((n - a.n)/dt));
+}, 250);
+
+$('source-center-btn').addEventListener('click', ()=>{
+  openSection('src');
+  $('panel').scrollTo({top:0, behavior:'smooth'});
+});
+
+/* =========================================
+   PAINT — effetto ON/OFF (all'apertura è SPENTO)
+   OFF: si vede la sorgente originale (il <video> sopra al canvas).
+   ON : si vede il canvas del motore con l'effetto olio.
+   ========================================= */
+function setFx(on){
+  fxOn = on;
+  $('canvas-wrap').classList.toggle('fx-off', !on);
+  $('btn-paint').classList.toggle('on', on);
+  $('pill-engine').classList.toggle('off', !on);
+  $('pill-fx').textContent = on ? 'PAINT' : 'OFF';
+  const ic = $('ic-style');
+  ic.textContent = on ? 'PAINT' : 'OFF';
+  ic.classList.toggle('amber', on);
+  ic.classList.toggle('dim', !on);
+  $('style-mark').classList.toggle('on', on);
+}
+function togglePaint(){
+  if(exporting){ setExStatus('PAINT resta acceso durante l\'export'); return; }
+  setFx(!fxOn);
+}
+$('btn-paint').addEventListener('click', togglePaint);
+setFx(false);
+/* il motore parte con lo stile "watercolor": a caricamento finito gli faccio selezionare "oil"
+   con il suo stesso pulsante (nascosto), senza toccare il suo codice */
+window.addEventListener('load', ()=>{ $('engine-oil').click(); });
+/* SYNTECH-UNIFORM: style picker (Style section). Picking a style by hand also turns PAINT on — with PAINT off the
+   frame shows the plain source, so the pick would otherwise look like it did nothing. Programmatic clicks (the
+   'load' one above, the shell bridge) do not touch PAINT. */
+document.querySelectorAll('.sbtn').forEach(b=>b.addEventListener('click', e=>{ if(e.isTrusted && !fxOn && !exporting) setFx(true); }));
+
+/* =========================================
+   KNOB SYSTEM (Finish) — pilotano gli input nascosti letti dal motore
+   ========================================= */
+function setKnob(k, val, fromUser){
+  const min = parseFloat(k.dataset.min), max = parseFloat(k.dataset.max);
+  val = Math.max(min, Math.min(max, val));
+  k.dataset.val = val;
+  const pct = (val-min)/(max-min);
+  k.style.setProperty('--rot', (-135 + pct*270) + 'deg');
+  const outer = k.closest('.knob-outer');
+  if(outer) outer.style.setProperty('--fill', (pct*270) + 'deg');
+  if(fromUser){
+    const inp = $(k.dataset.id);
+    inp.value = val;
+    inp.dispatchEvent(new Event('input', {bubbles:true}));
+  }
+  const vEl = $('v' + k.dataset.id.slice(1));
+  if(vEl) vEl.textContent = val.toFixed(parseInt(k.dataset.dec||'2'));
+}
+document.querySelectorAll('.knob[data-id]').forEach(k=>{
+  k.dataset.default = k.dataset.val;
+  setKnob(k, parseFloat(k.dataset.val), false);
+});
+
+let activeKnob=null, knobStartY=0, knobStartVal=0;
+document.addEventListener('mousedown', e=>{
+  const k = e.target.closest('.knob'); if(!k) return;
+  activeKnob = k; knobStartY = e.clientY; knobStartVal = parseFloat(k.dataset.val);
+  e.preventDefault();
+});
+document.addEventListener('mousemove', e=>{
+  if(!activeKnob) return;
+  const min = parseFloat(activeKnob.dataset.min), max = parseFloat(activeKnob.dataset.max);
+  setKnob(activeKnob, knobStartVal + ((knobStartY-e.clientY)/140)*(max-min), true);
+});
+document.addEventListener('mouseup', ()=>{ activeKnob = null; });
+
+document.addEventListener('touchstart', e=>{
+  const k = e.target.closest('.knob'); if(!k) return;
+  activeKnob = k; knobStartY = e.touches[0].clientY; knobStartVal = parseFloat(k.dataset.val);
+  e.preventDefault();
+}, {passive:false});
+document.addEventListener('touchmove', e=>{
+  if(!activeKnob) return;
+  const min = parseFloat(activeKnob.dataset.min), max = parseFloat(activeKnob.dataset.max);
+  setKnob(activeKnob, knobStartVal + ((knobStartY-e.touches[0].clientY)/120)*(max-min), true);
+  e.preventDefault();
+}, {passive:false});
+document.addEventListener('touchend', ()=>{ activeKnob = null; });
+
+document.addEventListener('wheel', e=>{
+  const k = e.target.closest('.knob'); if(!k) return;
+  e.preventDefault();
+  const min = parseFloat(k.dataset.min), max = parseFloat(k.dataset.max);
+  const step = (max-min)*(e.shiftKey ? 0.001 : 0.005);
+  setKnob(k, parseFloat(k.dataset.val) - Math.sign(e.deltaY)*step, true);
+}, {passive:false});
+
+/* doppio click / doppio tap → popup con valore preciso */
+(function(){
+  const overlay = document.createElement('div');
+  overlay.id = 'knob-popup-overlay';
+  overlay.style.cssText = 'display:none;position:fixed;inset:0;z-index:9000;';
+  document.body.appendChild(overlay);
+
+  const popup = document.createElement('div');
+  popup.id = 'knob-popup';
+  popup.innerHTML = `
+    <div id="knob-popup-lbl"></div>
+    <div id="knob-popup-range"></div>
+    <input id="knob-popup-input" type="number" autocomplete="off" spellcheck="false">
+    <div id="knob-popup-btns">
+      <button id="knob-popup-reset">RESET</button>
+      <button id="knob-popup-ok">SET ↵</button>
+    </div>`;
+  document.body.appendChild(popup);
+
+  let targetKnob = null, defVal = 0, defDec = 2;
+  function openPopup(k, anchor){
+    targetKnob = k;
+    const min = parseFloat(k.dataset.min), max = parseFloat(k.dataset.max);
+    const dec = parseInt(k.dataset.dec||'2');
+    defVal = parseFloat(k.dataset.default); defDec = dec;
+    $('knob-popup-lbl').textContent = k.dataset.label || 'VALUE';
+    $('knob-popup-range').textContent = `min ${min.toFixed(dec)}   ·   max ${max.toFixed(dec)}`;
+    const inp = $('knob-popup-input');
+    inp.min = min; inp.max = max; inp.step = Math.pow(10,-dec);
+    inp.value = parseFloat(k.dataset.val).toFixed(dec);
+    const r = (anchor||k).getBoundingClientRect();
+    const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+    const pw = 170, ph = 130;
+    let left = r.left + r.width/2 - pw/2, top = r.bottom + 8;
+    if(left < 8) left = 8;
+    if(left + pw > vw - 8) left = vw - pw - 8;
+    if(top + ph > vh - 8) top = r.top - ph - 8;
+    popup.style.left = left + 'px'; popup.style.top = top + 'px';
+    overlay.style.display = 'block'; popup.style.display = 'flex';
+    inp.focus(); inp.select();
+  }
+  function closePopup(){ overlay.style.display = 'none'; popup.style.display = 'none'; targetKnob = null; }
+  function applyPopup(){
+    if(!targetKnob) return closePopup();
+    const v = parseFloat($('knob-popup-input').value);
+    if(!isNaN(v)) setKnob(targetKnob, v, true);
+    closePopup();
+  }
+  overlay.addEventListener('click', closePopup);
+  $('knob-popup-ok').addEventListener('click', applyPopup);
+  $('knob-popup-reset').addEventListener('click', ()=>{
+    if(targetKnob) $('knob-popup-input').value = defVal.toFixed(defDec);
+  });
+  $('knob-popup-input').addEventListener('keydown', e=>{
+    if(e.key === 'Enter'){ e.preventDefault(); applyPopup(); }
+    if(e.key === 'Escape') closePopup();
+  });
+  document.addEventListener('dblclick', e=>{
+    const k = e.target.closest('.knob'); if(!k) return;
+    e.preventDefault(); openPopup(k, k.closest('.knob-outer')||k);
+  });
+  let lastTap = 0;
+  document.addEventListener('touchend', e=>{
+    const k = e.target.closest('.knob'); if(!k) return;
+    const now = Date.now();
+    if(now-lastTap < 350){ openPopup(k, k.closest('.knob-outer')||k); e.preventDefault(); }
+    lastTap = now;
+  });
+})();
+
+/* =========================================
+   TASTIERA
+   ========================================= */
+document.addEventListener('keydown', e=>{
+  if(e.target.tagName === 'INPUT') return;
+  if(e.code === 'Space'){ e.preventDefault(); togglePlay(); }
+  else if(e.key === 'f' || e.key === 'F') goFullscreen();
+  else if(e.key === 'l' || e.key === 'L') toggleLoop();
+  else if(e.key === 'm' || e.key === 'M') toggleAudio();
+  else if(e.key === 'p' || e.key === 'P') togglePaint();
+});
+/* niente focus residuo sui bottoni (altrimenti SPC li riattiva) */
+document.addEventListener('click', e=>{ const b = e.target.closest('button'); if(b) b.blur(); });
+
+/* =========================================
+   SECTION TITLE + MARK GRADIENT SYNC   🔒 vedi commento nel CSS 🔒
+   .sec-title e .sec-mark condividono la stessa animazione iri-logo
+   e vengono riallineati allo stesso startTime.
+   ========================================= */
+function syncSectionTitleGradients(){
+  try{
+    const titles = document.querySelectorAll('.sec-title, .sec-mark');
+    if(!titles.length) return;
+    let refStart = null;
+    titles.forEach(el=>{
+      const anims = el.getAnimations ? el.getAnimations() : [];
+      const a = anims.find(x=>x.animationName==='iri-logo') || anims[0];
+      if(!a) return;
+      if(refStart === null) refStart = a.startTime;
+      else a.startTime = refStart;
+    });
+  }catch(e){}
+}
+_raf(syncSectionTitleGradients);
+</script>
+
+<script type="importmap">{"imports":{"three":"../vendor/three160/three.module.js","three/addons/":"../vendor/three160/addons/"}}</script>
+<!-- SYNTECH: importmap targets were https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js and
+     …/three@0.160.0/examples/jsm/ — same r160, vendored under ../vendor/three160/ (offline), as POINTCLOUD -->
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass }      from 'three/addons/postprocessing/ShaderPass.js';
+
+// ─── RENDERER ─────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas,antialias:false,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+
+const ortho = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+const persp = new THREE.PerspectiveCamera(52,innerWidth/innerHeight,.01,100);
+persp.position.set(0,0,2.3);
+const quadGeo = new THREE.PlaneGeometry(2,2);
+
+const makeRT=(w,h,depth=false)=>{
+  const rt = new THREE.WebGLRenderTarget(w||innerWidth,h||innerHeight,{
+    minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter,
+    type:THREE.HalfFloatType,format:THREE.RGBAFormat,depthBuffer:depth});
+  return rt;};
+
+// Targets
+const feedRT=[makeRT(),makeRT()];       // feedback ping-pong
+const smearRT=[makeRT(),makeRT()];      // smear/displace ping-pong
+const noiseRT=makeRT(innerWidth>>1,innerHeight>>1); // noise field (Displace TOP equivalent)
+const oilRT=makeRT();                   // kuwahara output (needs 2 passes)
+const oilRT2=makeRT();
+const geoRT=makeRT(innerWidth,innerHeight,true);    // 3D geometry
+const dispRT=makeRT();                  // final pre-composer output
+let feedCur=0, smearCur=0;
+
+const ptVS=`varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}`;
+
+// ─── COMPOSER ─────────────────────────────────────────────────────────────────
+const passThruU={tSrc:{value:null}};
+const passThruMat=new THREE.ShaderMaterial({uniforms:passThruU,vertexShader:ptVS,
+  fragmentShader:`uniform sampler2D tSrc;varying vec2 vUv;void main(){gl_FragColor=texture2D(tSrc,vUv);}`});
+const passScene=new THREE.Scene();
+passScene.add(new THREE.Mesh(quadGeo,passThruMat));
+
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(passScene,ortho));
+const bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),.3,.55,.05);
+composer.addPass(bloom);
+
+// Grade pass — mode per style
+const gradeU={tDiffuse:{value:null},uMode:{value:0},uGrade:{value:.5}};
+const gradeMat=new THREE.ShaderMaterial({uniforms:gradeU,vertexShader:ptVS,fragmentShader:`
+  precision highp float;
+  uniform sampler2D tDiffuse; uniform float uMode,uGrade;
+  varying vec2 vUv;
+  vec3 ACESFilmic(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
+  void main(){
+    vec4 c=texture2D(tDiffuse,vUv);
+    vec3 col=c.rgb;
+    if(uMode<.5){// watercolor — warm paper, slight yellow lift
+      col=mix(col,vec3(col.r*1.06,col.g*1.0,col.b*.9),uGrade*.5);
+      col+=(1.-col)*uGrade*.05;}
+    else if(uMode<1.5){// oil — golden warm, Rembrandt-like
+      col=mix(col,vec3(col.r*1.1,col.g*1.01,col.b*.82),uGrade*.55);
+      col=ACESFilmic(col*(1.+uGrade*.15));}
+    else if(uMode<2.5){// tempera — matte, flat, medieval
+      col=(col-.5)*(1.+uGrade*.12)+.5;
+      col=mix(col,vec3(col.r*1.04,col.g*1.0,col.b*.93),uGrade*.4);}
+    else if(uMode<3.5){// pointillism — bright, neo-impressionist primaries
+      vec3 hsv; float mx=max(col.r,max(col.g,col.b)),mn=min(col.r,min(col.g,col.b));
+      float s=mx<.001?0.:(mx-mn)/mx;
+      col*=1.+s*uGrade*.55;}
+    else if(uMode<4.5){// impressionism — warm, atmospheric, plein-air
+      col=mix(col,vec3(col.r*1.07,col.g*1.02,col.b*.9),uGrade*.45);
+      col+=(1.-col)*uGrade*.03;}
+    else{// expressionism — cold, high contrast, tormented
+      col=(col-.5)*(1.+uGrade*.6)+.5;
+      col=mix(col,vec3(col.r*.88,col.g*.92,col.b*1.15),uGrade*.45);}
+    float d=length(vUv-.5);
+    col*=1.-smoothstep(.35,1.2,d)*uGrade*.5;
+    gl_FragColor=vec4(max(col,0.),1.);}
+`});
+composer.addPass(new ShaderPass(gradeU.tDiffuse?{uniforms:gradeU,vertexShader:ptVS,fragmentShader:gradeMat.fragmentShader}:gradeU));
+// Actually add it properly:
+const gradePass=new ShaderPass({uniforms:gradeU,vertexShader:ptVS,fragmentShader:gradeMat.fragmentShader});
+// Remove the bad one, keep composer clean — rebuild:
+{
+  const c2=new EffectComposer(renderer);
+  c2.addPass(new RenderPass(passScene,ortho));
+  c2.addPass(bloom);
+  c2.addPass(gradePass);
+  // replace
+  Object.assign(composer,c2);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHADER LIBRARY — SHARED FUNCTIONS (as JS strings injected into each shader)
+// ═══════════════════════════════════════════════════════════════════════════════
+const SHARED=`
+precision highp float;
+float luma(vec3 c){return dot(c,vec3(.299,.587,.114));}
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float hash3(vec3 p){return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453);}
+float noise2(vec2 p){
+  vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+             mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p,int oct){float v=0.,a=.5;
+  for(int i=0;i<8;i++){if(i>=oct)break;v+=a*noise2(p);p*=2.1;a*=.5;}return v;}
+vec3 toHSV(vec3 c){
+  vec4 K=vec4(0.,-1./3.,2./3.,-1.);
+  vec4 p=mix(vec4(c.bg,K.wz),vec4(c.gb,K.xy),step(c.b,c.g));
+  vec4 q=mix(vec4(p.xyw,c.r),vec4(c.r,p.yzx),step(p.x,c.r));
+  float d=q.x-min(q.w,q.y);
+  return vec3(abs(q.z+(q.w-q.y)/(6.*d+1e-10)),d/(q.x+1e-10),q.x);}
+vec3 fromHSV(vec3 c){
+  vec4 K=vec4(1.,2./3.,1./3.,3.);
+  vec3 p=abs(fract(c.xxx+K.xyz)*6.-K.www);
+  return c.z*mix(K.xxx,clamp(p-K.xxx,0.,1.),c.y);}
+// Sobel — returns (gradX, gradY, magnitude)
+vec3 sobelGrad(sampler2D tex,vec2 uv,vec2 px){
+  float tl=luma(texture2D(tex,uv+vec2(-px.x,px.y)).rgb);
+  float tm=luma(texture2D(tex,uv+vec2(0,px.y)).rgb);
+  float tr=luma(texture2D(tex,uv+vec2(px.x,px.y)).rgb);
+  float ml=luma(texture2D(tex,uv+vec2(-px.x,0)).rgb);
+  float mr=luma(texture2D(tex,uv+vec2(px.x,0)).rgb);
+  float bl=luma(texture2D(tex,uv+vec2(-px.x,-px.y)).rgb);
+  float bm=luma(texture2D(tex,uv+vec2(0,-px.y)).rgb);
+  float br=luma(texture2D(tex,uv+vec2(px.x,-px.y)).rgb);
+  float gx=-tl-2.*ml-bl+tr+2.*mr+br;
+  float gy=-tl-2.*tm-tr+bl+2.*bm+br;
+  return vec3(gx,gy,sqrt(gx*gx+gy*gy));}
+// COLOR blend helper — mix stylized result with original video hue
+vec3 colorBlend(vec3 stylized,vec3 orig,float amt){
+  float sl=luma(stylized),ol=luma(orig);
+  vec3 recolored=orig*(sl/max(ol,.001));
+  return mix(recolored,stylized,amt);}`;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 1. NOISE FIELD GENERATOR (TD Noise TOP equivalent)
+//    Outputs a 2-channel (RG) curl-noise displacement map
+// ═══════════════════════════════════════════════════════════════════════════════
+const noiseFieldFS=`${SHARED}
+uniform float uTime,uScale,uSpeed;
+varying vec2 vUv;
+void main(){
+  float t=uTime*uSpeed;
+  float nx=fbm(vUv*uScale+vec2(t,0.),5)-.5;
+  float ny=fbm(vUv*uScale+vec2(0.,t+3.7),5)-.5;
+  // Curl from gradient of noise (divergence-free displacement like TD Noise TOP)
+  float eps=.004;
+  float curlX=fbm(vUv*uScale+vec2(0.,eps)+vec2(t,0.),5)-fbm(vUv*uScale-vec2(0.,eps)+vec2(t,0.),5);
+  float curlY=fbm(vUv*uScale+vec2(eps,0.)+vec2(0.,t+3.7),5)-fbm(vUv*uScale-vec2(eps,0.)+vec2(0.,t+3.7),5);
+  gl_FragColor=vec4(nx,ny,curlX/(2.*eps),curlY/(2.*eps));}`;
+const noiseFieldU={uTime:{value:0.},uScale:{value:3.2},uSpeed:{value:.07}};
+const noiseFieldMat=new THREE.ShaderMaterial({vertexShader:ptVS,fragmentShader:noiseFieldFS,uniforms:noiseFieldU});
+const noiseFieldScene=new THREE.Scene();
+noiseFieldScene.add(new THREE.Mesh(quadGeo,noiseFieldMat));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 2. WATERCOLOR — TD pipeline: Noise TOP → Displace TOP → Feedback TOP + Over → Level → Convolve
+//    Papari-style blur via iterative feedback instead of full Kuwahara
+// ═══════════════════════════════════════════════════════════════════════════════
+// PASS A: Smear — Feedback + Displace + Level (the core TD painterly loop)
+const smearFS=`${SHARED}
+uniform sampler2D tVideo,tFeedback,tNoise;
+uniform vec2 uRes; uniform float uTime,uFlow,uBleed,uDecay,uTrans;
+uniform bool uHasVideo; varying vec2 vUv;
+void main(){
+  if(!uHasVideo){gl_FragColor=vec4(0,0,0,1);return;}
+  // Displace TOP: use noise to warp UVs of both video and feedback
+  vec4 n=texture2D(tNoise,vUv);
+  vec2 disp=vec2(n.r,n.g)*uFlow*.018;
+  vec2 curlDisp=vec2(n.b,n.a)*uFlow*.009;
+  // Sample video at displaced UV
+  vec4 vid=texture2D(tVideo,fract(vUv+disp*.4));
+  // Sample feedback displaced by curl (smearing of previous paint)
+  vec4 feed=texture2D(tFeedback,fract(vUv+disp+curlDisp));
+  // Level: reduce feedback brightness (simulates paint drying / fading)
+  feed.rgb*=uDecay;
+  // Over blend — paint the current video on top with soft alpha
+  float alpha=.38+uBleed*.25;
+  vec4 result=mix(feed,vid,alpha);
+  result.rgb*=uTrans; gl_FragColor=result;}`;
+const smearU={tVideo:{value:null},tFeedback:{value:null},tNoise:{value:null},
+  uRes:{value:new THREE.Vector2(innerWidth,innerHeight)},
+  uTime:{value:0.},uFlow:{value:.35},uBleed:{value:.5},uDecay:{value:.93},uTrans:{value:0.},uHasVideo:{value:false}};
+const smearMat=new THREE.ShaderMaterial({vertexShader:ptVS,fragmentShader:smearFS,uniforms:smearU});
+const smearScene=new THREE.Scene(); smearScene.add(new THREE.Mesh(quadGeo,smearMat));
+
+// PASS B: Watercolor finish — Edge darkening + Paper + Wet bleed + COLOR blend
+const waterFinishFS=`${SHARED}
+uniform sampler2D tSmear,tVideo;
+uniform vec2 uRes; uniform float uTime,uPaper,uEdge,uColor,uSpread;
+varying vec2 vUv;
+// Convolve-style soft kernel (simulates TD Convolve TOP)
+vec4 softKernel(sampler2D tex,vec2 uv,float r){
+  vec4 acc=vec4(0.); float w=0.;
+  float step=r/3.;
+  for(float x=-r;x<=r;x+=step)for(float y=-r;y<=r;y+=step){
+    float d=length(vec2(x,y)); float ww=exp(-d*d*.5/(r*.4));
+    acc+=texture2D(tex,uv+vec2(x,y)/uRes)*ww; w+=ww;}
+  return acc/w;}
+void main(){
+  // Convolve: soft blur to simulate wet-spreading
+  float spreadPx=uSpread;
+  vec4 paint=softKernel(tSmear,vUv,spreadPx);
+  vec4 orig=texture2D(tVideo,vUv);
+
+  // Paper grain (FBM fiber — varies in lights, absent in darks)
+  float g1=fbm(vUv*130.+.1,4),g2=fbm(vUv*310.+3.7,4);
+  float paperGrain=mix(g1,g2,.4);
+  float lum=luma(paint.rgb);
+  float paperMask=smoothstep(.25,.9,lum); // paper shows through in lights
+  float granMask=smoothstep(.1,.6,lum)*(1.-smoothstep(.55,.9,lum)); // granulation in mid-tones
+  paint.rgb-=paperGrain*uPaper*(paperMask*.28+granMask*.18);
+  paint.rgb=max(paint.rgb,0.);
+
+  // Edge darkening (Sobel → ink pooling at brush edges)
+  vec3 sobel=sobelGrad(tVideo,vUv,1.5/uRes);
+  float edge=clamp(sobel.z*3.,0.,1.);
+  paint.rgb=mix(paint.rgb,vec3(.04,.035,.055),edge*uEdge*.7);
+
+  // Slight hue shift toward cyan (watercolor pigment characteristic)
+  vec3 hsv=toHSV(paint.rgb);
+  hsv.y*=.75+uColor*.3;
+  float wHue=mix(.07,.6,smoothstep(.2,.85,hsv.z));
+  hsv.x=mix(hsv.x,wHue,uColor*.15);
+  hsv.z=hsv.z*(.8+uColor*.15)+uColor*.07;
+  paint.rgb=fromHSV(clamp(hsv,0.,1.));
+
+  // COLOR blend
+  paint.rgb=colorBlend(paint.rgb,orig.rgb,uColor);
+  // Soft vignette (paper edge)
+  paint.rgb*=1.-smoothstep(.42,1.3,length((vUv-.5)*vec2(1.4,1.6)))*uColor*.5;
+  gl_FragColor=vec4(clamp(paint.rgb,0.,2.5),1.);}`;
+const waterFinishU={tSmear:{value:smearRT[0].texture},tVideo:{value:null},
+  uRes:{value:new THREE.Vector2(innerWidth,innerHeight)},
+  uTime:{value:0.},uPaper:{value:.5},uEdge:{value:.55},uColor:{value:.65},uSpread:{value:5.}};
+const waterFinishMat=new THREE.ShaderMaterial({vertexShader:ptVS,fragmentShader:waterFinishFS,uniforms:waterFinishU});
+const waterFinishScene=new THREE.Scene(); waterFinishScene.add(new THREE.Mesh(quadGeo,waterFinishMat));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 3. OIL — Papari Kuwahara: circular kernel, N sectors, Gaussian weighting
+//    + Structure tensor for anisotropy + Impasto normal-map lighting
+// ═══════════════════════════════════════════════════════════════════════════════
+// PASS A: Compute Structure Tensor (local orientation of image features)
+const structFS=`${SHARED}
+uniform sampler2D tVideo; uniform vec2 uRes;
+varying vec2 vUv;
+void main(){
+  vec2 px=1./uRes;
+  // Sobel gradients
+  vec3 sob=sobelGrad(tVideo,vUv,px);
+  float Ixx=sob.x*sob.x, Iyy=sob.y*sob.y, Ixy=sob.x*sob.y;
+  // Store tensor components (smoothed by 3-tap box)
+  float SXX=0.,SYY=0.,SXY=0.; float n=0.;
+  for(int i=-2;i<=2;i++)for(int j=-2;j<=2;j++){
+    vec3 s=sobelGrad(tVideo,vUv+vec2(float(i),float(j))*px*2.,px);
+    SXX+=s.x*s.x; SYY+=s.y*s.y; SXY+=s.x*s.y; n+=1.;}
+  SXX/=n; SYY/=n; SXY/=n;
+  // Eigenvalue → dominant orientation angle
+  float tmp=sqrt(max((SXX-SYY)*(SXX-SYY)+4.*SXY*SXY,.0));
+  float lambda1=(SXX+SYY+tmp)*.5, lambda2=(SXX+SYY-tmp)*.5;
+  float aniso=(lambda1+lambda2)<.0001?0.:(lambda1-lambda2)/(lambda1+lambda2);
+  float angle=.5*atan(2.*SXY,SXX-SYY); // principal direction
+  gl_FragColor=vec4(angle,aniso,sqrt(SXX+SYY),1.);}`;
+const structU={tVideo:{value:null},uRes:{value:new THREE.Vector2(innerWidth,innerHeight)}};
+const structMat=new THREE.ShaderMaterial({vertexShader:ptVS,fragmentShader:structFS,uniforms:structU});
+const structScene=new THREE.Scene(); structScene.add(new THREE.Mesh(quadGeo,structMat));
+const structRT=makeRT();
+
+// PASS B: Anisotropic Kuwahara (Papari circular, Gaussian-weighted, N sectors)
+const kuwaharaFS=`${SHARED}
+uniform sampler2D tVideo,tStruct; uniform vec2 uRes;
+uniform float uKernel,uSectors;
+varying vec2 vUv;
+// Gaussian weight
+float gauss(float d,float r){return exp(-d*d/(2.*(r*.5)*(r*.5)));}
+void main(){
+  vec2 px=1./uRes;
+  vec4 str=texture2D(tStruct,vUv);
+  float angle=str.r, aniso=str.g;
+  // Per-sector sampling with Gaussian falloff
+  int N=int(clamp(uSectors,4.,12.));
+  float bestVar=1e9;
+  vec3 bestColor=texture2D(tVideo,vUv).rgb;
+  // Anisotropy: stretch kernel along dominant direction
+  float a=max(uKernel*(1.+aniso*.8),1.);
+  float b=max(uKernel*(1.-aniso*.5),1.);
+  float TWO_PI=6.28318;
+  for(int s=0;s<12;s++){
+    if(float(s)>=uSectors) break;
+    float secAngle=angle+float(s)*TWO_PI/uSectors;
+    vec3 colorSum=vec3(0.); vec3 sq=vec3(0.); float wSum=0.;
+    float arc=TWO_PI/uSectors*.5+.05;
+    for(float r=1.;r<=uKernel;r+=.75){
+      for(float da=-arc;da<=arc;da+=arc*.4){
+        float ca=secAngle+da;
+        // Rotate and stretch kernel ellipse
+        vec2 off=vec2(cos(ca)*a,sin(ca)*b)*r/uKernel;
+        vec2 uv2=vUv+off*px*uKernel;
+        vec3 col=texture2D(tVideo,clamp(uv2,px,1.-px)).rgb;
+        float w=gauss(r,uKernel)*gauss(abs(da),arc*.5);
+        colorSum+=col*w; sq+=col*col*w; wSum+=w;}}
+    if(wSum<.001) continue;
+    vec3 mu=colorSum/wSum;
+    vec3 varV=sq/wSum-mu*mu;
+    float var=dot(max(varV,0.),vec3(.299,.587,.114));
+    if(var<bestVar){bestVar=var; bestColor=mu;}}
+  gl_FragColor=vec4(bestColor,1.);}`;
+const kuwaharaU={tVideo:{value:null},tStruct:{value:structRT.texture},
+  uRes:{value:new THREE.Vector2(innerWidth,innerHeight)},uKernel:{value:6.},uSectors:{value:8.}};
+const kuwaharaMat=new THREE.ShaderMaterial({vertexShader:ptVS,fragmentShader:kuwaharaFS,uniforms:kuwaharaU});
+const kuwaharaScene=new THREE.Scene(); kuwaharaScene.add(new THREE.Mesh(quadGeo,kuwaharaMat));
+
+// PASS C: Oil finish — Impasto lighting + color boost
+const oilFinishFS=`${SHARED}
+uniform sampler2D tKuwahara,tVideo; uniform vec2 uRes;
+uniform float uImpasto,uLight,uColor;
+varying vec2 vUv;
+void main(){
+  vec4 paint=texture2D(tKuwahara,vUv);
+  vec4 orig=texture2D(tVideo,vUv);
+  // Impasto: derive normal from luminance gradient of Kuwahara output
+  vec2 px=1./uRes;
+  float hC =luma(texture2D(tKuwahara,vUv).rgb);
+  float hR =luma(texture2D(tKuwahara,vUv+vec2(px.x,0)).rgb);
+  float hU =luma(texture2D(tKuwahara,vUv+vec2(0,px.y)).rgb);
+  vec3 norm=normalize(vec3((hC-hR)*uImpasto*22.,(hC-hU)*uImpasto*22.,1.));
+  vec3 L=normalize(vec3(-1.3,1.5,2.2));
+  float diff=max(dot(norm,L),0.);
+  vec3 R2=reflect(-L,norm);
+  float spec=pow(max(dot(R2,vec3(0,0,1)),0.),48.)*uLight;
+  // Enrich saturation (oil pigment is dense)
+  vec3 hsv=toHSV(paint.rgb);
+  hsv.y=min(hsv.y*(1.+uColor*.55),1.);
+  // Warm darks, cool lights (chiaroscuro)
+  float t=smoothstep(.2,.8,hsv.z);
+  hsv.x+=mix(.03,-.02,t)*uColor*.3;
+  vec3 col=fromHSV(hsv);
+  col=col*(diff*.55+.45)+vec3(1.,.97,.88)*spec*.7;
+  // Canvas texture (subtle weave)
+  float weave=noise2(vUv*uRes.xy*.55)*.035*uImpasto;
+  col+=weave;
+  col=colorBlend(col,orig.rgb,uColor);
+  gl_FragColor=vec4(clamp(col,0.,2.),1.);}`;
+const oilFinishU={tKuwahara:{value:oilRT.texture},tVideo:{value:null},
+  uRes:{value:new THREE.Vector2(innerWidth,innerHeight)},
+  uImpasto:{value:.65},uLight:{value:.75},uColor:{value:.65}};
+const oilFinishMat=new THREE.ShaderMaterial({vertexShader:ptVS,fragmentShader:oilFinishFS,uniforms:oilFinishU});
+const oilFinishScene=new THREE.Scene(); oilFinishScene.add(new THREE.Mesh(quadGeo,oilFinishMat));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 4. TEMPERA — Kuwahara (light) + Posterize in HSV + Hard Sobel outline + Hatch
+// ═══════════════════════════════════════════════════════════════════════════════
+const temperaFS=`${SHARED}
+uniform sampler2D tVideo; uniform vec2 uRes;
+uniform float uLevels,uEdge,uKernel,uHatch,uColor;
+varying vec2 vUv;
+vec3 kuwahara4(vec2 uv,float r){
+  vec2 px=1./uRes; vec3 bMu=texture2D(tVideo,uv).rgb; float bVar=1e9;
+  for(int q=0;q<4;q++){
+    vec2 off=vec2(q<2?-1.:0.,mod(float(q),2.)<1.?0.:-1.)*px*r;
+    vec3 s=vec3(0.),s2=vec3(0.); float n=0.;
+    for(float i=0.;i<=1.;i+=.33)for(float j=0.;j<=1.;j+=.33){
+      vec3 c=texture2D(tVideo,uv+off+vec2(i,j)*px*r).rgb;
+      s+=c; s2+=c*c; n+=1.;}
+    vec3 mu=s/n; float var=dot(max(s2/n-mu*mu,0.),vec3(.299,.587,.114));
+    if(var<bVar){bVar=var;bMu=mu;}}
+  return bMu;}
+void main(){
+  vec3 col=kuwahara4(vUv,uKernel);
+  // Posterize in HSV (flat color regions, egg tempera–style)
+  vec3 hsv=toHSV(col);
+  float L=max(uLevels,2.);
+  hsv.x=floor(hsv.x*L+.5)/L;
+  hsv.y=floor(hsv.y*(L*.6)+.5)/(L*.6);
+  hsv.z=floor(hsv.z*L+.5)/L;
+  col=fromHSV(clamp(hsv,0.,1.));
+  // Hard Sobel outline (medieval panel painting)
+  vec3 sob=sobelGrad(tVideo,vUv,1.2/uRes);
+  float edge=smoothstep(.18,1.-uEdge*.5,sob.z*3.5);
+  col=mix(col,vec3(.05,.04,.03),edge*uEdge*.85);
+  // Cross-hatch texture
+  float hatch=noise2(vUv*uRes.xy*.28)*noise2(vUv*uRes.xy*.65);
+  float lum=luma(col);
+  float hMask=smoothstep(.2,.6,lum)*(1.-smoothstep(.65,.9,lum));
+  col+=hatch*uHatch*.09*hMask; col=max(col,0.);
+  col=colorBlend(col,texture2D(tVideo,vUv).rgb,uColor);
+  gl_FragColor=vec4(clamp(col,0.,1.8),1.);}`;
+const temperaU={tVideo:{value:null},uRes:{value:new THREE.Vector2(innerWidth,innerHeight)},
+  uLevels:{value:5.},uEdge:{value:.7},uKernel:{value:3.},uHatch:{value:.35},uColor:{value:.65}};
+const temperaMat=new THREE.ShaderMaterial({vertexShader:ptVS,fragmentShader:temperaFS,uniforms:temperaU});
+const temperaScene=new THREE.Scene(); temperaScene.add(new THREE.Mesh(quadGeo,temperaMat));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 5-6-7. 3D GEOMETRY STYLES
+// ═══════════════════════════════════════════════════════════════════════════════
+const geoVS_common=`
+  uniform sampler2D tVideo;
+  uniform float uTime;
+  varying vec3 vCol;
+  varying float vAlpha;
+  float luma(vec3 c){return dot(c,vec3(.299,.587,.114));}
+  float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+  float noise2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+    return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+  vec2 grad(sampler2D t,vec2 uv,float r){
+    float l=luma(texture2D(t,uv-vec2(r,0)).rgb),ri=luma(texture2D(t,uv+vec2(r,0)).rgb);
+    float d=luma(texture2D(t,uv-vec2(0,r)).rgb),u=luma(texture2D(t,uv+vec2(0,r)).rgb);
+    return vec2(ri-l,u-d);}
+`;
+
+// ── POINTILLISM ────────────────────────────────────────────────────────────────
+const pointVS=`
+  attribute vec2 aUV; attribute float aSeed;
+  uniform float uDepth,uDotSize,uJitter,uAspect;
+  ${geoVS_common}
+  void main(){
+    vec2 uv=aUV+vec2(hash(aUV*73.+aSeed)-.5,hash(aUV*91.+aSeed+.1)-.5)*uJitter*.014;
+    uv=clamp(uv,.001,.999);
+    vec4 c=texture2D(tVideo,uv); float l=luma(c.rgb);
+    vCol=c.rgb; vAlpha=max(l,.12);
+    vec2 p=(uv-.5)*vec2(uAspect*2.,2.);
+    float z=l*uDepth;
+    gl_Position=projectionMatrix*modelViewMatrix*vec4(p,z,1.);
+    float dist=length((modelViewMatrix*vec4(p,z,1.)).xyz);
+    gl_PointSize=uDotSize*(1./dist)*170.;}`;
+const pointFS=`precision highp float;
+  varying vec3 vCol; varying float vAlpha;
+  void main(){
+    float r=length(gl_PointCoord-.5); if(r>.5)discard;
+    float soft=1.-smoothstep(.28,.5,r);
+    gl_FragColor=vec4(vCol,vAlpha*soft);}`;
+
+// ── IMPRESSIONISM (structure tensor–oriented brush strokes) ────────────────────
+const impVS=`
+  attribute vec2 aUV; attribute vec2 aCorner; attribute float aSeed;
+  uniform float uLength,uWidth,uDepth,uOrient,uAspect,uCellSize;
+  uniform sampler2D tStruct;
+  ${geoVS_common}
+  mat2 rot(float a){float s=sin(a),cc=cos(a);return mat2(cc,-s,s,cc);}
+  void main(){
+    vec2 uv=clamp(aUV,.001,.999);
+    vec4 str=texture2D(tStruct,uv); float angle=str.r, aniso=str.g;
+    vec4 c=texture2D(tVideo,uv); float l=luma(c.rgb);
+    vCol=c.rgb; vAlpha=.95;
+    // Stroke direction: perpendicular to edge gradient (paint along edges)
+    float sAngle=angle+1.5708;
+    float loose=(1.-uOrient)*hash(aUV*33.7)*3.14159;
+    sAngle+=loose;
+    // Length scales with luminance and anisotropy; width = cell size * uWidth (fills gaps)
+    float sLen=uCellSize*uLength*(1.+l*.6+aniso*.4);
+    // Half-width = cell half-size * uWidth → strokes TILE and cover canvas
+    float sWid=uCellSize*uWidth*.5*(1.+aniso*.2);
+    vec2 off=rot(sAngle)*vec2(aCorner.x*sLen,aCorner.y*sWid);
+    vec2 p=(uv-.5)*vec2(uAspect*2.,2.)+off;
+    float z=l*uDepth;
+    gl_Position=projectionMatrix*modelViewMatrix*vec4(p,z,1.);}`;
+// Fragment: brush stroke with rounded caps + edge feather
+const impFS=`precision highp float;
+  varying vec3 vCol; varying float vAlpha;
+  void main(){
+    // aCorner goes [-1..1] in both axes
+    // feather long edges (Y), hard caps (X already clipped by geometry)
+    float ey=1.-abs(gl_PointCoord.y-.5)*2.; // not used (quads), but keep alpha soft
+    gl_FragColor=vec4(vCol,vAlpha);}`;
+
+// ── EXPRESSIONISM (swirl / van Gogh energy) ────────────────────────────────────
+const exprVS=`
+  attribute vec2 aUV; attribute vec2 aCorner; attribute float aSeed;
+  uniform float uEnergy,uSwirl,uContrast,uEDepth,uAspect,uCellSize;
+  ${geoVS_common}
+  mat2 rot(float a){float s=sin(a),cc=cos(a);return mat2(cc,-s,s,cc);}
+  void main(){
+    vec2 uv=clamp(aUV,.001,.999);
+    float t=uTime*.07;
+    float cx=noise2(uv*4.+vec2(t,0.))*2.-1.;
+    float cy=noise2(uv*4.+vec2(0.,t+3.1))*2.-1.;
+    vec2 suv=fract(uv+vec2(cx,cy)*uSwirl*.018);
+    vec4 c=texture2D(tVideo,suv); float l=luma(c.rgb);
+    float lc=pow(l,1./max(uContrast,1.));
+    vec3 col=c.rgb; float lum=luma(col);
+    col=mix(vec3(lum),col,1.35+uSwirl*.25);
+    vCol=clamp(col,0.,1.4); vAlpha=.97;
+    vec2 g=grad(tVideo,suv,1./200.); float gA=atan(g.y,g.x)+1.5708;
+    float sA=gA+hash(aUV*57.3)*(.35+uSwirl*.35);
+    // Length = cell * energy factor; width = cell * uEnergy (fills canvas)
+    float eLen=uCellSize*uEnergy*(1.8+lc*.8+length(g)*2.);
+    float eWid=uCellSize*uEnergy*.6;
+    vec2 off=rot(sA)*vec2(aCorner.x*eLen,aCorner.y*eWid);
+    vec2 swOff=rot(atan(cy,cx))*vec2(cx,cy)*uSwirl*.006;
+    vec2 p=(suv-.5)*vec2(uAspect*2.,2.)+off+swOff;
+    float z=lc*uEDepth;
+    gl_Position=projectionMatrix*modelViewMatrix*vec4(p,z,1.);}`;
+const exprFS=`precision highp float;
+  varying vec3 vCol; varying float vAlpha;
+  void main(){gl_FragColor=vec4(clamp(vCol,0.,1.5),vAlpha);}`;
+
+// ─── GEOMETRY BUILDERS ────────────────────────────────────────────────────────
+function buildPointGeo(cols,rows){
+  const N=cols*rows, uv=new Float32Array(N*2), seed=new Float32Array(N);
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    const i=r*cols+c; uv[i*2]=(c+.5)/cols; uv[i*2+1]=(r+.5)/rows; seed[i]=Math.random();}
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('aUV',new THREE.BufferAttribute(uv,2));
+  g.setAttribute('aSeed',new THREE.BufferAttribute(seed,1));
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(N*3),3));
+  return g;}
+
+function buildStrokeGeo(cols,rows){
+  const N=cols*rows;
+  const uvA=new Float32Array(N*4*2),cornA=new Float32Array(N*4*2);
+  const seedA=new Float32Array(N*4),idxA=new Uint32Array(N*6);
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    const i=r*cols+c,v=i*4,u=(c+.5)/cols,vv=(r+.5)/rows,s=Math.random();
+    for(let k=0;k<4;k++){uvA[(v+k)*2]=u;uvA[(v+k)*2+1]=vv;seedA[v+k]=s;}
+    const co=[[-1,-1],[1,-1],[1,1],[-1,1]];
+    for(let k=0;k<4;k++){cornA[(v+k)*2]=co[k][0];cornA[(v+k)*2+1]=co[k][1];}
+    const b=i*6; idxA[b]=v;idxA[b+1]=v+1;idxA[b+2]=v+2;idxA[b+3]=v;idxA[b+4]=v+2;idxA[b+5]=v+3;}
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('aUV',new THREE.BufferAttribute(uvA,2));
+  g.setAttribute('aCorner',new THREE.BufferAttribute(cornA,2));
+  g.setAttribute('aSeed',new THREE.BufferAttribute(seedA,1));
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(N*4*3),3));
+  g.setIndex(new THREE.BufferAttribute(idxA,1));
+  return g;}
+
+// ─── VIDEO ────────────────────────────────────────────────────────────────────
+const vid=document.getElementById('vid');
+let videoTex=null, playing=false, transition=0., curStyle='watercolor';
+
+function activateVideo(){
+  if(videoTex) videoTex.dispose();
+  videoTex=new THREE.VideoTexture(vid);
+  videoTex.minFilter=THREE.LinearFilter;
+  videoTex.magFilter=THREE.LinearFilter;
+  videoTex.flipY=true;
+  injectVideo(videoTex);
+  playing=true;
+  document.getElementById('idle').classList.add('gone');}
+
+function injectVideo(tex){
+  smearU.tVideo.value=tex;
+  waterFinishU.tVideo.value=tex;
+  structU.tVideo.value=tex;
+  kuwaharaU.tVideo.value=tex;
+  oilFinishU.tVideo.value=tex;
+  temperaU.tVideo.value=tex;
+  baseU.tVideo.value=tex;
+  if(geoObj) geoObj.uniforms.tVideo.value=tex;}
+
+// ─── BASE UNDERPAINTING (video behind strokes — fills gaps, TD Composite Over) ──
+const baseRT=makeRT();
+const baseFS=`${SHARED}
+uniform sampler2D tVideo; uniform vec2 uRes; uniform float uBlur;
+varying vec2 vUv;
+void main(){
+  vec2 px=uBlur/uRes;
+  vec4 c=vec4(0.);
+  c+=texture2D(tVideo,vUv)*.36;
+  c+=texture2D(tVideo,vUv+vec2(px.x,0))*.12; c+=texture2D(tVideo,vUv-vec2(px.x,0))*.12;
+  c+=texture2D(tVideo,vUv+vec2(0,px.y))*.12; c+=texture2D(tVideo,vUv-vec2(0,px.y))*.12;
+  c+=texture2D(tVideo,vUv+px)*.07; c+=texture2D(tVideo,vUv-px)*.07;
+  c+=texture2D(tVideo,vUv+vec2(px.x,-px.y))*.07; c+=texture2D(tVideo,vUv-vec2(px.x,-px.y))*.07;
+  gl_FragColor=vec4(c.rgb,1.);}`;
+const baseU={tVideo:{value:null},uRes:{value:new THREE.Vector2(innerWidth,innerHeight)},uBlur:{value:2.5}};
+const baseMat=new THREE.ShaderMaterial({vertexShader:ptVS,fragmentShader:baseFS,uniforms:baseU});
+const baseScene=new THREE.Scene(); baseScene.add(new THREE.Mesh(quadGeo,baseMat));
+
+// ─── GEOMETRY OBJ (built on demand) ──────────────────────────────────────────
+let geoObj=null;
+function buildGeo(style){
+  const cols=parseInt(document.getElementById('sDots').value)||280;
+  const rows=Math.round(cols*(innerHeight/innerWidth));
+  const aspect=innerWidth/innerHeight;
+  // cellSize = clip-space width of one grid cell (ensures strokes tile w/o gaps)
+  const cellSize=(aspect*2)/cols;
+
+  if(style==='pointillism'){
+    const geo=buildPointGeo(cols,rows);
+    const mat=new THREE.ShaderMaterial({vertexShader:pointVS,fragmentShader:pointFS,
+      uniforms:{tVideo:{value:videoTex||null},uTime:{value:0.},
+        uDepth:{value:1.5},uDotSize:{value:3.},uJitter:{value:.3},uAspect:{value:aspect}},
+      transparent:true,depthWrite:false,blending:THREE.NormalBlending});
+    const s=new THREE.Scene(); s.add(new THREE.Points(geo,mat));
+    return {scene:s,uniforms:mat.uniforms,camera:persp,cellSize,hasBase:false};}
+
+  if(style==='impressionism'){
+    const geo=buildStrokeGeo(cols,rows);
+    const mat=new THREE.ShaderMaterial({vertexShader:impVS,fragmentShader:impFS,
+      uniforms:{tVideo:{value:videoTex||null},tStruct:{value:structRT.texture},uTime:{value:0.},
+        uLength:{value:2.2},   // * cellSize in VS = stroke length ~ 2.2 cells
+        uWidth:{value:1.08},   // * cellSize * 0.5 in VS = stroke half-height ~ 0.54 cells (overlap)
+        uDepth:{value:1.8},uOrient:{value:.85},uAspect:{value:aspect},uCellSize:{value:cellSize}},
+      transparent:true,depthWrite:false,blending:THREE.NormalBlending});
+    const s=new THREE.Scene(); s.add(new THREE.Mesh(geo,mat));
+    return {scene:s,uniforms:mat.uniforms,camera:persp,cellSize,hasBase:true};}
+
+  if(style==='expressionism'){
+    const geo=buildStrokeGeo(cols,rows);
+    const mat=new THREE.ShaderMaterial({vertexShader:exprVS,fragmentShader:exprFS,
+      uniforms:{tVideo:{value:videoTex||null},uTime:{value:0.},
+        uEnergy:{value:2.0},   // * cellSize in VS
+        uSwirl:{value:1.1},uContrast:{value:2.2},uEDepth:{value:2.5},uAspect:{value:aspect},uCellSize:{value:cellSize}},
+      transparent:true,depthWrite:false,blending:THREE.NormalBlending});
+    const s=new THREE.Scene(); s.add(new THREE.Mesh(geo,mat));
+    return {scene:s,uniforms:mat.uniforms,camera:persp,cellSize,hasBase:true};}
+  return null;}
+
+// ─── STYLE SWITCH ─────────────────────────────────────────────────────────────
+const gradeMode={watercolor:0,oil:1,tempera:2,pointillism:3,impressionism:4,expressionism:5};
+
+function switchStyle(name){
+  curStyle=name;
+  gradePass.uniforms.uMode.value=gradeMode[name]||0;
+  document.getElementById('hMode').textContent=name.toUpperCase();
+  document.querySelectorAll('.ctrl').forEach(el=>el.classList.toggle('vis',el.classList.contains(name)));
+  document.querySelectorAll('.sbtn').forEach(b=>b.classList.toggle('on',b.dataset.style===name));
+  if(['pointillism','impressionism','expressionism'].includes(name)){
+    if(geoObj) geoObj.scene.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); /* SYNTECH-FIX: free the previous style's stroke/dot buffers (styles are now reachable) */
+    geoObj=buildGeo(name);
+    if(videoTex && geoObj) geoObj.uniforms.tVideo.value=videoTex;}}
+
+switchStyle('watercolor');
+
+// ─── ANIMATION LOOP ───────────────────────────────────────────────────────────
+let lastT=0,fpsAcc=0,fpsN=0;
+
+function animate(ts){
+  requestAnimationFrame(animate);
+  const t=ts*.001,dt=Math.min(t-lastT,.05); lastT=t;
+  fpsAcc+=dt;fpsN++;
+  if(fpsAcc>.7){
+    const f=Math.round(fpsN/fpsAcc);
+    document.getElementById('hFps').textContent=f;
+    document.getElementById('sFps').textContent=f;
+    fpsAcc=fpsN=0;}
+  if(playing) transition=Math.min(1.,transition+dt*.4);
+  if(videoTex && vid.readyState >= vid.HAVE_CURRENT_DATA) videoTex.needsUpdate=true; /* SYNTECH-FIX: was "if(videoTex)" — no upload while a new source has no frame yet (it failed with "texImage2D: no video" and left the texture as it was), as in POINTCLOUD */
+
+  const color=parseFloat(document.getElementById('sColor').value);
+
+  // ── Noise field (always run — needed by watercolor flow) ──────────────────
+  noiseFieldU.uTime.value=t;
+  renderer.setRenderTarget(noiseRT);
+  renderer.render(noiseFieldScene,ortho);
+
+  if(curStyle==='watercolor'){
+    // A: Smear (Feedback + Displace + Level — TD pipeline)
+    smearU.tNoise.value=noiseRT.texture;
+    smearU.tFeedback.value=smearRT[1-smearCur].texture;
+    smearU.uTime.value=t; smearU.uTrans.value=transition;
+    smearU.uFlow.value=parseFloat(document.getElementById('sFlow').value);
+    smearU.uBleed.value=parseFloat(document.getElementById('sBleed').value);
+    smearU.uDecay.value=.9+parseFloat(document.getElementById('sBleed').value)*.08;
+    renderer.setRenderTarget(smearRT[smearCur]);
+    renderer.render(smearScene,ortho);
+    smearCur=1-smearCur;
+    // B: Watercolor finish
+    waterFinishU.tSmear.value=smearRT[1-smearCur].texture;
+    waterFinishU.uTime.value=t;
+    waterFinishU.uPaper.value=parseFloat(document.getElementById('sPaper').value);
+    waterFinishU.uEdge.value=parseFloat(document.getElementById('sWEdge').value);
+    waterFinishU.uColor.value=color;
+    waterFinishU.uSpread.value=parseFloat(document.getElementById('sSpread').value);
+    renderer.setRenderTarget(dispRT);
+    renderer.render(waterFinishScene,ortho);
+  }
+  else if(curStyle==='oil'){
+    // A: Structure tensor
+    renderer.setRenderTarget(structRT);
+    renderer.render(structScene,ortho);
+    // B: Kuwahara
+    kuwaharaU.tStruct.value=structRT.texture;
+    kuwaharaU.uKernel.value=parseFloat(document.getElementById('sKernel').value);
+    kuwaharaU.uSectors.value=parseFloat(document.getElementById('sSectors').value);
+    renderer.setRenderTarget(oilRT);
+    renderer.render(kuwaharaScene,ortho);
+    // C: Oil finish
+    oilFinishU.tKuwahara.value=oilRT.texture;
+    oilFinishU.uImpasto.value=parseFloat(document.getElementById('sImpasto').value);
+    oilFinishU.uLight.value=parseFloat(document.getElementById('sLight').value);
+    oilFinishU.uColor.value=color;
+    renderer.setRenderTarget(dispRT);
+    renderer.render(oilFinishScene,ortho);
+  }
+  else if(curStyle==='tempera'){
+    temperaU.uLevels.value=parseFloat(document.getElementById('sLevels').value);
+    temperaU.uEdge.value=parseFloat(document.getElementById('sTEdge').value);
+    temperaU.uKernel.value=parseFloat(document.getElementById('sTKernel').value);
+    temperaU.uHatch.value=parseFloat(document.getElementById('sHatch').value);
+    temperaU.uColor.value=color;
+    renderer.setRenderTarget(dispRT);
+    renderer.render(temperaScene,ortho);
+  }
+  else if(geoObj){
+    // Geometry styles
+    // Structure tensor (always update — impressionism needs it; cheap to run)
+    renderer.setRenderTarget(structRT);
+    renderer.render(structScene,ortho);
+    // Update geo uniforms
+    const u=geoObj.uniforms;
+    u.uTime.value=t;
+    const asp=innerWidth/innerHeight;
+    if(curStyle==='pointillism'){
+      u.uDepth.value=parseFloat(document.getElementById('sPDepth').value);
+      u.uDotSize.value=parseFloat(document.getElementById('sDotSize').value);
+      u.uJitter.value=parseFloat(document.getElementById('sJitter').value);
+      u.uAspect.value=asp;}
+    else if(curStyle==='impressionism'){
+      u.uLength.value=parseFloat(document.getElementById('sLength').value);
+      u.uWidth.value=parseFloat(document.getElementById('sStrokeW').value);
+      u.uDepth.value=parseFloat(document.getElementById('sIDepth').value);
+      u.uOrient.value=parseFloat(document.getElementById('sOrient').value);
+      u.uAspect.value=asp; u.uCellSize.value=geoObj.cellSize;}
+    else if(curStyle==='expressionism'){
+      u.uSwirl.value=parseFloat(document.getElementById('sSwirl').value);
+      u.uEnergy.value=parseFloat(document.getElementById('sEnergy').value);
+      u.uContrast.value=parseFloat(document.getElementById('sContrast').value);
+      u.uEDepth.value=parseFloat(document.getElementById('sEDepth').value);
+      u.uAspect.value=asp; u.uCellSize.value=geoObj.cellSize;}
+    // PASS 1: Base underpainting → geoRT (fills gaps, Composite Under in TD)
+    if(geoObj.hasBase && videoTex){
+      baseU.tVideo.value=videoTex;
+      renderer.setRenderTarget(geoRT);
+      renderer.setClearColor(0,1); renderer.clear();
+      renderer.render(baseScene,ortho);}
+    else{
+      renderer.setRenderTarget(geoRT);
+      renderer.setClearColor(0,1); renderer.clear();}
+    // PASS 2: Geometry strokes ON TOP (NormalBlending Over)
+    renderer.render(geoObj.scene,geoObj.camera);
+    // Copy to dispRT
+    renderer.setRenderTarget(dispRT);
+    passThruU.tSrc.value=geoRT.texture;
+    renderer.render(passScene,ortho);}
+
+  renderer.setRenderTarget(null);
+  passThruU.tSrc.value=dispRT.texture;
+  gradePass.uniforms.uGrade.value=parseFloat(document.getElementById('sGrade').value);
+  bloom.strength=parseFloat(document.getElementById('sBloom').value);
+  composer.render();}
+
+// ─── SLIDERS ─────────────────────────────────────────────────────────────────
+function bind(sid,vid2,dec){
+  const el=document.getElementById(sid),vl=document.getElementById(vid2);
+  if(!el||!vl) return;
+  el.addEventListener('input',()=>{
+    const v=parseFloat(el.value);
+    vl.textContent=dec===0?String(Math.round(v)):v.toFixed(dec);});}
+// Bind all for display only (uniforms updated in loop)
+bind('sSpread','vSpread',0);bind('sBleed','vBleed',2);bind('sFlow','vFlow',2);
+bind('sPaper','vPaper',2);bind('sWEdge','vWEdge',2);
+bind('sKernel','vKernel',0);bind('sSectors','vSectors',0);bind('sImpasto','vImpasto',2);bind('sLight','vLight',2);
+bind('sLevels','vLevels',0);bind('sTEdge','vTEdge',2);bind('sTKernel','vTKernel',1);bind('sHatch','vHatch',2);
+bind('sDots','vDots',0);bind('sDotSize','vDotSize',1);bind('sPDepth','vPDepth',1);bind('sJitter','vJitter',2);
+bind('sLength','vLength',1);bind('sStrokeW','vStrokeW',1);bind('sIDepth','vIDepth',1);bind('sOrient','vOrient',2);
+bind('sSwirl','vSwirl',2);bind('sEnergy','vEnergy',1);bind('sContrast','vContrast',1);bind('sEDepth','vEDepth',1);
+bind('sColor','vColor',2);bind('sBloom','vBloom',1);bind('sGrade','vGrade',2);
+// Rebuild geo on density change
+document.getElementById('sDots').addEventListener('change',()=>{
+  if(['pointillism','impressionism','expressionism'].includes(curStyle))switchStyle(curStyle);});
+
+// ─── STYLE BUTTONS ───────────────────────────────────────────────────────────
+document.querySelectorAll('.sbtn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    switchStyle(b.dataset.style);
+    if(videoTex) injectVideo(videoTex);});});
+
+// ─── VIDEO LOAD ───────────────────────────────────────────────────────────────
+function loadFile(f){
+  if(!f?.type.startsWith('video/'))return;
+  vid.srcObject=null; vid.src=URL.createObjectURL(f); vid.play().catch(()=>{}); /* SYNTECH-FIX: was vid.play() — a refused audible autoplay was an unhandled rejection; the UI's 'loadeddata' handler restarts it muted */
+  vid.addEventListener('loadeddata',activateVideo,{once:true});}
+document.getElementById('btnUp').addEventListener('click',()=>document.getElementById('fi').click());
+document.getElementById('fi').addEventListener('change',e=>loadFile(e.target.files[0]));
+document.getElementById('btnCam').addEventListener('click',async()=>{
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720}}});
+    vid.src=''; vid.srcObject=s; vid.play().catch(()=>{}); /* SYNTECH-FIX: was vid.play() — rejection (e.g. AbortError when a new source replaces it) was unhandled */
+    document.getElementById('btnCam').classList.add('on');
+    vid.addEventListener('loadeddata',activateVideo,{once:true});
+  }catch(e){alert('Webcam non disponibile:\n'+e.message);}});
+document.body.addEventListener('dragover',e=>e.preventDefault());
+document.body.addEventListener('drop',e=>{
+  e.preventDefault();
+  const f=[...(e.dataTransfer?.files||[])].find(f=>f.type.startsWith('video/'));
+  if(f)loadFile(f);});
+
+// ─── RESIZE ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize',()=>{
+  renderer.setSize(innerWidth,innerHeight);
+  composer.setSize(innerWidth,innerHeight);
+  bloom.setSize(innerWidth,innerHeight);
+  [feedRT[0],feedRT[1],smearRT[0],smearRT[1],oilRT,oilRT2,geoRT,dispRT,structRT,baseRT].forEach(rt=>{
+    if(rt) rt.setSize(innerWidth,innerHeight);});
+  noiseRT.setSize(innerWidth>>1,innerHeight>>1);
+  persp.aspect=innerWidth/innerHeight; persp.updateProjectionMatrix();
+  structU.uRes.value.set(innerWidth,innerHeight);
+  kuwaharaU.uRes.value.set(innerWidth,innerHeight);
+  oilFinishU.uRes.value.set(innerWidth,innerHeight);
+  temperaU.uRes.value.set(innerWidth,innerHeight);
+  waterFinishU.uRes.value.set(innerWidth,innerHeight);
+  smearU.uRes.value.set(innerWidth,innerHeight);
+  if(['pointillism','impressionism','expressionism'].includes(curStyle))switchStyle(curStyle);});
+
+animate(0);
+</script>
+
+<!-- SYNTECH-UNIFORM-START: section-mark sync (shared, same as BOKEH's syncSectionTitleGradients) + green INPUT pill -->
+<script src="../shared/syn-chrome.js"></script>
+<!-- SYNTECH-UNIFORM-END -->
+<!-- SYNTECH-BRIDGE-START (shell integration; standalone-safe) -->
+<script>
+(function(){
+  'use strict';
+  if(window.parent===window)return; /* opened standalone: stay silent */
+  var MODULE_ID='painting';
+
+  /* every range input with an id: the DAW sliders of all six styles + the three Color knobs' inputs (sColor,
+     sBloom, sGrade — the engine reads those; the knob face follows through setKnob) */
+  function slVals(){var o={};var els=document.querySelectorAll('input[type="range"]');
+    for(var i=0;i<els.length;i++){if(els[i].id)o[els[i].id]=els[i].value;}return o;}
+  /* unchanged values are skipped (a re-applied default would only move it onto the step grid) */
+  function slApply(o){if(!o)return;for(var id in o){var el=document.getElementById(id);
+    if(!el||el.type!=='range'||el.value===String(o[id]))continue;
+    var k=document.querySelector('.knob[data-id="'+id+'"]');
+    if(k&&typeof setKnob==='function'){setKnob(k,parseFloat(o[id]),true);continue;}  /* knob: face + input + 'input' event */
+    el.value=o[id];
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));}}  /* 'change' rebuilds the stroke grid on DOTS */
+  function styleGet(){var b=document.querySelector('.sbtn.on');return b?b.dataset.style:null;}
+  function collect(){return {sliders:slVals(),style:styleGet(),paint:(typeof fxOn!=='undefined')?!!fxOn:null};}
+  /* the style is re-picked only after window 'load': the original selects OIL on 'load' (engine-oil click) and
+     would otherwise override a restored style. PAINT on/off is applied with it (never during an export). */
+  function afterLoad(fn){if(document.readyState==='complete')setTimeout(fn,0);
+    else window.addEventListener('load',function(){setTimeout(fn,0);});}
+  function apply(s){if(!s)return;slApply(s.sliders);
+    afterLoad(function(){
+      if(typeof s.style==='string'){var b=document.querySelector('.sbtn[data-style="'+s.style+'"]');if(b&&!b.classList.contains('on'))b.click();}
+      if(typeof s.paint==='boolean'&&typeof setFx==='function'&&typeof exporting!=='undefined'&&!exporting&&s.paint!==fxOn)setFx(s.paint);
+    });}
+  window.addEventListener('message',function(ev){
+    var d=ev&&ev.data;
+    if(!d||typeof d!=='object'||typeof d.type!=='string')return;
+    if(d.type==='syn:get-settings'){
+      var p={};try{p=collect()||{};}catch(e){}
+      try{window.parent.postMessage({type:'syn:settings',payload:p},'*');}catch(e){}
+    }else if(d.type==='syn:apply-settings'){
+      try{apply(d.payload||{});}catch(e){}
+    }
+  });
+  function announce(){try{window.parent.postMessage({type:'syn:ready',payload:{id:MODULE_ID}},'*');}catch(e){}}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',announce);
+  else announce();
+})();
+</script>
+<!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
+<script src="../shared/syn-extras.js"></script>
+<script>
+/* the effect's state lives in the first (classic) script: sourceMode ('image' | 'video' | 'webcam' | null), vidEl,
+   togglePlay() / toggleLoop() — the Source section's own functions, so its PLAYBACK / LOOP LEDs stay in sync */
+SynExtras.attach({
+  hasSource:function(){ return !!sourceMode && !!(vidEl.src||vidEl.srcObject); },
+  video:function(){ return sourceMode==='video' ? vidEl : null; },
+  togglePlay:function(){ togglePlay(); },
+  toggleLoop:function(){ toggleLoop(); },
+  isLoop:function(){ return !!vidEl.loop; }
+});
+</script>
+<!-- SYNTECH-UNIFORM-END -->
+</body>
+</html>

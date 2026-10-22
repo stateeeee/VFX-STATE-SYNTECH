@@ -29,6 +29,29 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-22 (3) — nuovo effetto PAINTING (standalone), FATTO.**
+Dal file `paint_1.html` dell'operatore: `public/effects/painting/index.html`, ModuleId `painting`, scheda "PAINTING" nella
+colonna effetti (solo il nome, grafica dopo). Stesso schema di INVISIBLE/TIME MACHINE/QUADTREE/POINTCLOUD (94c9a26):
+grafica uniforme di Bokeh (§5.1), bridge Save/riapri, IMAGE · VIDEO · WEBCAM, timer + timeline, audio del video, offline
+(three r160 vendorizzato, font vendorizzati, nessun CDN), fuori da catene/Lab/Gemini (`isLabModule`). Il file originale è
+copiato identico: le modifiche sono solo blocchi SYNTECH delimitati; piccole correzioni al motore (niente upload texture finché il
+video non ha un frame, due `play()` con catch, `dispose()` della geometria dello stile precedente — ora che gli stili sono
+raggiungibili perdeva buffer GPU a ogni cambio — e rilascio della webcam quando la sorgente cambia, come gli altri effetti). Parità: render identico pixel per pixel all'originale (8 prove: oil, oil con
+valori custom, tempera, impressionism, pointillism; immagine e video in pausa), 0 richieste non-localhost.
+Da far provare all'operatore sull'app vera (GPU): fluidità — POINTILLISM ai default disegna ~44k punti (su swiftshader ~2 fps).
+Decisioni da confermare con lui (reversibili):
+- **Stili**: l'originale ne mostrava UNO solo ("PAINT" = olio) e teneva gli altri cinque in un `#engine-unused` nascosto
+  ("non fanno parte dell'interfaccia"). Qui sono tutti raggiungibili (sezione Style + Parameters, ogni stile mostra solo i suoi
+  slider). Per tornare all'originale: rimettere i bottoni nel div nascosto (due blocchi SYNTECH-UNIFORM).
+- **WATERCOLOR nascosto**: esce quasi nero anche nell'originale (`smearU.uHasVideo` non viene mai messo a `true`;
+  fix = una riga in `activateVideo()`: `smearU.uHasVideo.value=true;`, ma è codice di rendering → non toccato senza il via).
+  Il bottone è nel DOM con `display:none` (marcato SYNTECH-HIDE). Se l'operatore approva la riga, applicarla e togliere il `display:none`.
+- FPS conta i frame della sorgente (l'export sceglie il frame rate da lì): 0 con immagine fissa o video in pausa.
+- ENGINE pill sempre ambra come Bokeh; il drop overlay tiene l'id `#idle` (CSS identico a `#drop-overlay`).
+- Per un futuro port Lab: passaggi, post-chain e trappole di parità sono nel report dell'agente (noise field mezza risoluzione,
+  smear ping-pong, structure tensor, Kuwahara anisotropo fino a 12 settori, bloom + grade per stile, ACES 1.1; pointillism usa
+  `Math.random()`, watercolor/expressionism dipendono dal tempo, i kernel sono in pixel).
+
 **SESSIONE 2026-10-22 (2) — ritocchi al PET + dipendenze, FATTI.**
 - **PET più piccolo** (0,8 × il diametro del cerchio inscritto, era 1,12): ora anche in hover e col rimbalzo sta tutto
   dentro l'apertura, piedi compresi. **Drag & drop libero**: tenendo premuto segue il mouse ovunque nell'app (è solo una
