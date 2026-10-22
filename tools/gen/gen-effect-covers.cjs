@@ -67,7 +67,8 @@ const SHOTS = [
 ];
 
 /* Optional ids on the command line rebuild ONLY those covers (the common plate is still measured over all of
-   them, so the new ones can never change the size of the existing ones):
+   them (466×320 today), so covers rebuilt with ids match the existing ones in size only while no shot is
+   wider than bokeh's):
      node tools/gen/gen-effect-covers.cjs invisible painting */
 const ONLY = process.argv.slice(2);
 

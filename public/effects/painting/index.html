@@ -17,7 +17,8 @@
      style is rebuilt — the styles are reachable now). Every other change is a
      delimited / commented SYNTECH-UNIFORM (shared chrome, frame sizing, the
      engine's six style buttons + per-style sliders shown in the panel),
-     SYNTECH-FIX (audio, webcam release) or SYNTECH-BRIDGE (shell save / restore) edit.
+     SYNTECH-FIX (audio, webcam release, webcam mirror — the live webcam reads like a mirror, as in the
+     other effects) or SYNTECH-BRIDGE (shell save / restore) edit.
      ═══════════════════════════════════════════════════════════════════════ -->
 <style>
 @import url('../vendor/fonts/effects.css'); /* SYNTECH: vendored fonts (offline), like BOKEH — was Google Fonts CDN (JetBrains Mono 300–700 + Barlow Condensed 300–900) */
@@ -1169,6 +1170,7 @@ vidEl.addEventListener('loadeddata', ()=>{
   $('pill-status').classList.add('live');
   $('pill-label').textContent = 'LIVE';
   $('src-mark').classList.add('on');
+  vidEl.style.transform = mode === 'webcam' ? 'scaleX(-1)' : '';   /* SYNTECH-FIX: webcam = mirror, also in the PAINT-off view (it shows this <video>); set only once a stream has really arrived (a refused webcam must not mirror the file still playing); the painted view mirrors the texture, see _drawMirror */
   $('info-file').textContent = mode === 'webcam' ? 'WEBCAM' : (lastFileName || mode.toUpperCase());
   $('info-res').textContent  = res;
   $('ic-source').textContent = mode.toUpperCase();
@@ -1194,7 +1196,7 @@ setInterval(()=>{
    ========================================= */
 function setMode(m){
   sourceMode = m;
-  vidEl.style.transform = m === 'webcam' ? 'scaleX(-1)' : '';   /* SYNTECH-FIX: webcam = mirror, also in the PAINT-off view (it shows this <video>); the painted view mirrors the texture, see _drawMirror */
+  if(m !== 'webcam') vidEl.style.transform = '';   /* SYNTECH-FIX: the webcam mirror (below, 'loadeddata') is cleared as soon as another source is chosen */
   applyAudio();
   updateExportUI();
 }
@@ -2194,7 +2196,7 @@ const _camMirrored=()=>typeof sourceMode!=='undefined' && sourceMode==='webcam';
 function _drawMirror(){
   const w=vid.videoWidth, h=vid.videoHeight;
   if(!w||!h) return;
-  if(_mirCv.width!==w||_mirCv.height!==h){ _mirCv.width=w; _mirCv.height=h; }
+  if(_mirCv.width!==w||_mirCv.height!==h){ _mirCv.width=w; _mirCv.height=h; if(videoTex&&videoTex.isCanvasTexture) videoTex.dispose(); } /* a CanvasTexture keeps its first size: drop the GPU storage so it is re-made at the new one (the webcam can renegotiate its resolution) */
   _mirCtx.setTransform(-1,0,0,1,w,0);
   _mirCtx.drawImage(vid,0,0,w,h);
   _mirCtx.setTransform(1,0,0,1,0,0);

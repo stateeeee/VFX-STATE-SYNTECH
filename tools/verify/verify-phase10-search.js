@@ -11,7 +11,7 @@ const { chromium } = require('playwright');
   const type = async (v) => page.fill('[data-testid="effect-search"]', v);
 
   const all = await cards();
-  step('search input present + all 5 cards shown', (await page.$('[data-testid="effect-search"]')) && all.length === 5, `cards=${all.length}`);
+  step('search input present + all 10 cards shown', (await page.$('[data-testid="effect-search"]')) && all.length === 10, `cards=${all.length}`);
 
   await type('blob'); await page.waitForTimeout(200);
   const blob = await cards();
@@ -28,7 +28,7 @@ const { chromium } = require('playwright');
 
   await page.click('[data-testid="effect-search-clear"]'); await page.waitForTimeout(200);
   const cleared = await cards();
-  step('clear button restores all 5 cards', cleared.length === 5, `cards=${cleared.length}`);
+  step('clear button restores all 10 cards', cleared.length === 10, `cards=${cleared.length}`);
 
   step('no page errors', errs.length === 0, errs.slice(0,3).join(' | '));
   const fails = results.filter(r => !r).length;

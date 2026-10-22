@@ -45,6 +45,10 @@ lighting, frame cost and the platform traps, harness playbook, open items).
   lavorano sull'immagine già specchiata). Immagini e video file invariati. Provato con una camera finta rossa/blu:
   webcam sinistra = blu (specchiata) in entrambe le viste, immagine sinistra = rosso (invariata). Se invece la voleva
   NON specchiata: togliere le due righe `SYNTECH-FIX` (`setMode` e il ramo `_camMirrored()` in `activateVideo`).
+- Revisione Opus (dopo il primo push): FAIL su un punto reale → corretto e riverificato = PASS. (1) se la webcam cambiava risoluzione
+  la vista dipinta restava ferma (una `CanvasTexture` tiene la prima dimensione): ora `_drawMirror` la ricrea al cambio; (2) con
+  una webcam rifiutata il video in riproduzione veniva specchiato nella vista PAINT-off: lo specchio ora parte solo al
+  `loadeddata` di uno stream vero. Più: `verify-phase10-search.js` aggiornata a 10 schede (6/6).
 - `verify-phase10-covers.js` aggiornata a 10 cover + controllo ordine A→Z: 17/17 (lanciata da copia `.cjs`, vedi aperto 3).
 
 **SESSIONE 2026-10-22 (3) — nuovo effetto PAINTING (standalone), FATTO.**

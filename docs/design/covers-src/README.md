@@ -15,7 +15,6 @@ delivered in chat, not on disk), 2000×1250 each:
 | `3-blob_reveal.webp` | `blob reveal (1).html` | rotoscope SEG reveal, floating fragments |
 | `4-bokeh.webp` | `bokeh_state_v1 (3).html` | BOKEH STYLE = SWIRLY |
 | `5-anamorphic.webp` | `bokeh_state_v1 (3).html`, ANAMORPHIC section | letterbox + squeeze 2.20 |
-
 | `6-invisible.webp` | INVISIBLE app | the cloak: only a glowing outline of the star is left |
 | `7-time_machine.webp` | TIME MACHINE app | frame-buffer displacement, MOTION map |
 | `8-pointcloud.webp` | POINTCLOUD app | bloomed 3D point cloud |
