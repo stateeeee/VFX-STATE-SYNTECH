@@ -47,14 +47,18 @@ terminale. L'app da doppio clic (Electron, `docs/workflow/DESKTOP.md`) viveva so
 - Prima run CI: Windows verde, **Mac 37/38** — `LOADING` fermo a 0% con il video già a 3,8 s (il contatore era
   guidato solo da `requestAnimationFrame`, che sul runner macOS non scattava affatto: nessun vsync / finestra
   occlusa). `IntroSplash.tsx` aggiorna ora la percentuale anche su `timeupdate` del video, che non dipende dai
-  fotogrammi: lo stesso succederebbe su un Mac con la finestra coperta. Da tenere d'occhio: sul Mac l'intro è
-  finita in 13,0 s contro il limite di 14 del test (il video è partito tardi).
+  fotogrammi: lo stesso succederebbe su un Mac con la finestra coperta.
 - Da fare per l'operatore: scaricare `VFX-SYNTECH-0.10.0-Mac.zip` dalla pagina Releases, doppio clic, trascinare
   l'app in Applicazioni → **Sostituisci**. Preset e progetti restano (stessa origine `127.0.0.1:47291`). Il primo
   avvio richiede di nuovo "Apri comunque" (la firma ad-hoc cambia a ogni build).
 - Unito a `main` su richiesta dell'operatore ("uniscilo su main"), con una pull request: da ora ogni push di codice su `main`
   ricostruisce e ritesta l'app desktop e aggiorna la release della versione in `package.json`.
 - CI dopo il fix: **Mac e Windows verdi**, release **v0.10.0** pubblicata (Mac .zip 228 MB, Windows .exe 112 MB).
+- Prima run su `main` (PR #8): Mac 37/38 — "intro ends by itself" 14,1 s contro il limite di 14. Il test faceva
+  partire il cronometro prima che l'intro comparisse e contava i 4 s di avvio del bundle sul runner macOS; l'intro
+  in sé è durata 9,98 s (≈ video 9,13 + dissolvenza 0,7 + avvio). Ora `verify-desktop.cjs` cronometra dalla
+  comparsa dell'intro, come il suo timeout di 14 s, e il limite scende a 13 s: il ramo "bloccata → chiusa dal
+  timeout" (≥ 14,2 s) fallisce ancora, con margine.
 
 **SESSIONE 2026-10-22 (6) — hero: via la scritta, brain graph circolare senza buco, FATTO.**
 - Tolta la riga "AI-Powered. Node-Based. Limitless." sotto il wordmark (`App.tsx`, e la regola `.hero-strapline` di `index.css`).
