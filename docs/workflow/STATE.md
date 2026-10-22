@@ -52,8 +52,9 @@ terminale. L'app da doppio clic (Electron, `docs/workflow/DESKTOP.md`) viveva so
 - Da fare per l'operatore: scaricare `VFX-SYNTECH-0.10.0-Mac.zip` dalla pagina Releases, doppio clic, trascinare
   l'app in Applicazioni → **Sostituisci**. Preset e progetti restano (stessa origine `127.0.0.1:47291`). Il primo
   avvio richiede di nuovo "Apri comunque" (la firma ad-hoc cambia a ogni build).
-- **Aperto:** questo branch va unito a `main`, altrimenti la prossima sessione che parte da `main` perde di nuovo l'app
-  desktop.
+- Unito a `main` su richiesta dell'operatore ("uniscilo su main"), con una pull request: da ora ogni push di codice su `main`
+  ricostruisce e ritesta l'app desktop e aggiorna la release della versione in `package.json`.
+- CI dopo il fix: **Mac e Windows verdi**, release **v0.10.0** pubblicata (Mac .zip 228 MB, Windows .exe 112 MB).
 
 **SESSIONE 2026-10-22 (6) — hero: via la scritta, brain graph circolare senza buco, FATTO.**
 - Tolta la riga "AI-Powered. Node-Based. Limitless." sotto il wordmark (`App.tsx`, e la regola `.hero-strapline` di `index.css`).
