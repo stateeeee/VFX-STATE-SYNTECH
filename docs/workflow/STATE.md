@@ -29,6 +29,13 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-22 (6) — hero: via la scritta, brain graph circolare senza buco, FATTO.**
+- Tolta la riga "AI-Powered. Node-Based. Limitless." sotto il wordmark (`App.tsx`, e la regola `.hero-strapline` di `index.css`).
+- Il brain graph non lascia più il buco per il wordmark: i 10 hub stanno su un **cerchio vero** (un solo raggio
+  `ringR = min(0,33·h, spazio a destra, 0,62·cx)`), distanziati in modo uniforme sui 360° dall'alto; il grafo può passare
+  sotto "VFX Syntech" (il wordmark è `pointer-events-none`, gli hub restano cliccabili). Via la logica `isFree`/`wmRight`/`wmBottom`
+  della sessione (5). Il core resta a `CORE_X = 0.62`. Screenshot 1950×1100 / 1440×900 / 1280×720: cerchio completo, nessun buco.
+
 **SESSIONE 2026-10-22 (5) — POINTCLOUD: sezione Export; brain graph con TUTTI gli effetti, FATTO.**
 (Revisione Opus: 3 giri. Giro 1 e 2 FAIL → corretti (hub sotto il wordmark, bottone Export spento, annullo durante il setup, buffer 4K, guardia dopo `play()`);
 giro 3: restava un solo punto, `min-h-[300px]` sul contenitore del canvas (in un hero basso, 1920×600, tagliava le etichette degli hub in basso),

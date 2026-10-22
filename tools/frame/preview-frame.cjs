@@ -140,12 +140,6 @@ const HOLES = JSON.parse(fs.readFileSync(__dirname + '/holes.json', 'utf8'));
         document.querySelectorAll('div.absolute.inset-0').forEach((d) => {
           if (/bg-gradient-to-br/.test(d.className)) d.style.display = 'none';
         });
-        /* That scrim was also what made the hero's strapline legible — it is pale
-           by design. With the scrim gone it has to darken, or it disappears into
-           the ivory. */
-        document.querySelectorAll('p').forEach((el) => {
-          if (/AI-Powered/i.test(el.textContent)) { el.style.color = 'rgb(82, 82, 82)'; el.style.textShadow = 'none'; }
-        });
       }
 
       // ── the Gemini STANDBY badge goes grey, like the node panel's ────────────

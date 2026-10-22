@@ -431,12 +431,8 @@ body {
 /* The hero carries a black→transparent scrim so the wordmark reads over video.
    On the night bed it is invisible; on the day bed it IS a grey rectangle with
    hard edges, which is what made the hero read as a box instead of a surface.
-   Off by day — and then the strapline, which leaned on it, has to darken. */
+   Off by day. */
 .syn-cage.syn-day .hero-scrim { display: none; }
-.syn-cage.syn-day .hero-strapline {
-  color: rgb(82, 82, 82);
-  text-shadow: none;
-}
 
 /* The systems list will grow past five effects, and a hard clip reads as a
    straight line cutting the artwork. Fade it at BOTH ends instead, so the frame

@@ -271,43 +271,19 @@ export default function VfxCanvas({
       const au = (k: number) => shadeOf(GOLD_SHADES, k);
       /* The whole app as a brain: VFX SYNTECH in the middle, EVERY effect in `modules` on a ring around it
          (A → Z, like the effects column — a new effect added to `modules` appears here by itself). The ring is
-         an ellipse that follows the hero opening (wide, short); the more hubs, the smaller the nodes and the
+         a circle around the core; the more hubs, the smaller the nodes and the
          satellite clusters, so the whole constellation always fits inside the canvas. */
       const hubModules = [...modules].sort((a, b) => a.name.localeCompare(b.name));
       const nHubs = Math.max(1, hubModules.length);
       const fit = Math.min(1, Math.sqrt(6 / nHubs));      // 1 up to 6 hubs, ~0.77 for 10
       const baseScale = Math.min(w, h) / 600 * 1.5;       // the core and the backdrop stars keep their size
       const scale = baseScale * fit;
-      const ringRx = Math.max(60, Math.min(w - cx - Math.min(105, w * 0.1), cx * 0.62));
-      const ringRy = Math.max(50, h * 0.33);
+      /* A true circle (same radius on both axes), hubs evenly spaced all the way round from the top. It is
+         allowed to pass under the "VFX Syntech" wordmark (drawn above this canvas, pointer-events none) — no
+         gap is left for it. The radius is limited by the shorter side of the room around the core. */
+      const ringR = Math.max(50, Math.min(h * 0.33, w - cx - Math.min(105, w * 0.1), cx * 0.62));
       const HUB_HUES = ['#8b5cf6', '#7c3aed', '#a78bfa', '#6d28d9', '#c4b5fd'];
-      /* Keep the hubs out of the wordmark ("VFX Syntech" + strapline, top-left of the hero, drawn ABOVE this canvas):
-         scan the ring, drop every angle whose hub (with its label) would sit in that corner, and spread the hubs
-         evenly over the angles that remain. Uniform spacing if too few remain. */
-      // the wordmark is a fixed-size block (≈ 336 × 171 px in canvas coordinates, whatever the window): pixel floors
-      // keep short heroes from letting a hub or its label slide under the strapline
-      const wmRight = Math.max(w * 0.42 + 45, 391);
-      const wmBottom = Math.max(h * 0.56, 185);
-      const isFree = (deg: number) => {
-        const a = -Math.PI / 2 + (deg * Math.PI) / 180;       // clockwise from the top
-        const hx = cx + Math.cos(a) * ringRx, hy = cy + Math.sin(a) * ringRy;
-        return !(hx < wmRight && hy < wmBottom);
-      };
-      // walk the free arc from just after the excluded corner, so the first and last hub sit at its two ends
-      let arcStart = 0;
-      for (let deg = 0; deg < 360; deg++) {
-        if (isFree(deg) && !isFree((deg + 359) % 360)) { arcStart = deg; break; }
-      }
-      const free: number[] = [];
-      for (let k = 0; k < 360; k++) {
-        const deg = (arcStart + k) % 360;
-        if (isFree(deg)) free.push(-Math.PI / 2 + (deg * Math.PI) / 180);
-        else if (free.length) break;                          // the arc ended: the excluded corner begins
-      }
-      const angleOf = (i: number) =>
-        free.length >= nHubs
-          ? free[Math.round((i * (free.length - 1)) / Math.max(1, nHubs - 1))]
-          : -Math.PI / 2 + (i / nHubs) * Math.PI * 2;
+      const angleOf = (i: number) => -Math.PI / 2 + (i / nHubs) * Math.PI * 2;
       const hubsConfig: { glowHue: string; id: ModuleId; label: string; angle: number; color: string; glow: string }[] =
         hubModules.map((m, i) => ({
           glowHue: HUB_HUES[i % HUB_HUES.length],
@@ -339,10 +315,10 @@ export default function VfxCanvas({
 
       // Create primary hubs
       hubsConfig.forEach((hub, i) => {
-        const hx = cx + Math.cos(hub.angle) * ringRx;
-        const hy = cy + Math.sin(hub.angle) * ringRy;
+        const hx = cx + Math.cos(hub.angle) * ringR;
+        const hy = cy + Math.sin(hub.angle) * ringR;
         const hubIdx = nodes.length;
-        // satellites fan out AWAY from the core (the ellipse's real outward direction, not the parametric angle)
+        // satellites fan out AWAY from the core (the real outward direction from the core)
         const outAngle = Math.atan2(hy - cy, hx - cx);
 
         nodes.push({

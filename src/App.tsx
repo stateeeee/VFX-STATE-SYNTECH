@@ -1151,7 +1151,7 @@ export default function App() {
                         {/* legibility gradient (off by day — see .syn-cage.syn-day) */}
                         <div className="hero-scrim absolute inset-0 pointer-events-none bg-gradient-to-br from-black/70 via-black/25 to-transparent" />
 
-                        {/* wordmark + subtitle + actions */}
+                        {/* wordmark */}
                         <div className="absolute top-7 left-8 z-10 max-w-[70%] pointer-events-none">
                           {/* Brand unification: the top-bar wordmark's font, the shared
                               shimmer, and — on this large one only — the gel material with
@@ -1160,9 +1160,6 @@ export default function App() {
                               unchanged. */}
                           <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient hero-gel-text leading-[0.92] drop-shadow-2xl">VFX</h1>
                           <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient hero-gel-text leading-[0.98] drop-shadow-2xl">Syntech</h1>
-                          <p className="hero-strapline mt-3 text-[11px] md:text-[13px] tracking-[0.18em] font-medium text-neutral-200/90 drop-shadow-md">
-                            AI-Powered. Node-Based. Limitless.
-                          </p>
                         </div>
                       </>
                     )}
