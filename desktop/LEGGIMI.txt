@@ -1,0 +1,53 @@
+VFX SYNTECH — come aprire l'app
+================================
+
+Non serve installare niente, non serve internet, non serve nessun account.
+L'app si apre con un doppio clic, come qualsiasi programma.
+
+Funziona su:  Mac con macOS 10.15 Catalina o successivo (Apple Silicon e Intel)
+              PC con Windows 10 o 11 (64 bit)
+
+
+WINDOWS  (file: VFX-SYNTECH-...-Windows.exe)
+--------------------------------------------
+1. Doppio clic sul file .exe.
+2. Se compare "Windows ha protetto il PC": clic su "Ulteriori informazioni",
+   poi su "Esegui comunque". Appare solo perché l'app non è firmata con un
+   certificato commerciale.
+3. Il primo avvio può richiedere 10-20 secondi: l'app si prepara da sola.
+
+
+MAC  (file: VFX-SYNTECH-...-Mac.zip — Apple Silicon e Intel)
+------------------------------------------------------------
+1. Doppio clic sul file .zip: accanto compare l'app "VFX SYNTECH".
+2. Apri una finestra del Finder e trascina l'app su "Applicazioni" nella barra
+   laterale a sinistra. (Se la lasci sulla Scrivania o in Download funziona lo
+   stesso, ma non compare tra le Applicazioni né nel Launchpad.)
+3. Primo avvio: macOS dice che non può verificare che l'app non contenga
+   malware, perché non viene dall'App Store. Si sblocca UNA volta sola:
+   - fino a macOS 14: tasto destro (o ctrl+clic) sull'app > Apri > di nuovo
+     "Apri" nell'avviso;
+   - macOS 15 Sequoia o successivi: chiudi l'avviso, poi Impostazioni di
+     Sistema > Privacy e sicurezza > in fondo "Apri comunque" > password.
+   Se il pulsante non compare: apri il Terminale, scrivi  xattr -cr
+   seguito da uno spazio, trascina l'app nella finestra del Terminale, premi
+   Invio, poi doppio clic sull'app.
+   Dalla seconda volta si apre con un normale doppio clic.
+4. Webcam e microfono: macOS chiede il permesso la prima volta che un effetto
+   li usa.
+
+
+USO
+---
+- Dalla schermata iniziale, clic su uno dei dieci effetti nella colonna a
+  destra (Analog, Anamorphic, Blob Reveal, Blob Tracker, Bokeh, Invisible,
+  Painting, Pointcloud, Quadtree, Time Machine).
+- Dentro l'effetto: carica un video o un'immagine, oppure usa la webcam.
+- AI LAB (barra a sinistra): gli effetti in catena, con esportazione MP4.
+- HOME torna alla schermata iniziale.
+- Schermo intero: F11 su Windows, ctrl+cmd+F su Mac.
+
+Tutto funziona senza internet e senza account. Solo il pannello GEMINI 3.8
+(l'AI) chiede internet e una chiave Gemini gratuita, da incollare nel pannello:
+https://aistudio.google.com/apikey
+Per la massima fluidità serve un computer con una scheda grafica recente.

@@ -368,10 +368,19 @@ async function sweepStaleUploads(): Promise<void> {
   if (removed) console.log(`Removed ${removed} stale upload temp folder${removed === 1 ? "" : "s"} from ${dir}.`);
 }
 
+export interface ServeOptions {
+  port?: number;
+  host?: string;
+  /** Serve this built `dist/` folder instead of running Vite. The desktop shell passes its own. */
+  distPath?: string;
+}
+
 // Configure Vite middleware or static route handling depending on production state
-const startServer = async () => {
+export const startServer = async (opts: ServeOptions = {}): Promise<number> => {
+  const port = opts.port ?? PORT;
+  const host = opts.host ?? "0.0.0.0";
   await sweepStaleUploads();
-  if (process.env.NODE_ENV !== "production") {
+  if (!opts.distPath && process.env.NODE_ENV !== "production") {
     // Effect builds are self-contained static apps: serve them ahead of the
     // Vite pipeline, which blocks public assets requested as <script src>
     app.use("/effects", express.static(path.join(process.cwd(), "public/effects")));
@@ -385,18 +394,31 @@ const startServer = async () => {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = opts.distPath ?? path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server launched on port ${PORT} // Full-stack core ready.`);
-    console.log(`API hosts: ${HOST_RULE.any ? "any (ALLOWED_HOSTS=*)" : ["localhost", "IP addresses", "*.local", ...HOST_RULE.names.map((n) => (n.startsWith(".") ? `*${n}` : n))].join(", ")}`);
-    console.log(`Gemini: model=${geminiModel()}, server key: ${process.env.GEMINI_API_KEY?.trim() ? "set (used only by browsers on this machine)" : "not set (a key can be pasted in the panel)"}`);
+  return new Promise<number>((resolve, reject) => {
+    const server = app.listen(port, host, () => {
+      const bound = (server.address() as net.AddressInfo).port;
+      console.log(`Server launched on port ${bound} // Full-stack core ready.`);
+      console.log(`API hosts: ${HOST_RULE.any ? "any (ALLOWED_HOSTS=*)" : ["localhost", "IP addresses", "*.local", ...HOST_RULE.names.map((n) => (n.startsWith(".") ? `*${n}` : n))].join(", ")}`);
+      console.log(`Gemini: model=${geminiModel()}, server key: ${process.env.GEMINI_API_KEY?.trim() ? "set (used only by browsers on this machine)" : "not set (a key can be pasted in the panel)"}`);
+      resolve(bound);
+    });
+    server.once("error", reject);
   });
 };
 
-startServer();
+/* `npm run dev` and `npm start` run this file directly: listen on :3000 now.
+   The desktop shell (desktop/main.ts) imports it instead and calls startServer
+   itself, on its own port and with its own dist/ — it sets SYNTECH_DESKTOP first. */
+if (!process.env.SYNTECH_DESKTOP) {
+  startServer().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

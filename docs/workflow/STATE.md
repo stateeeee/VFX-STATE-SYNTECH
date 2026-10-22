@@ -29,6 +29,33 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-22 (7) — l'app desktop torna aggiornata (v0.10.0), FATTO.**
+L'operatore ha l'app VFX SYNTECH nella cartella Applicazioni del Mac e voleva sostituirla con quella nuova, senza
+terminale. L'app da doppio clic (Electron, `docs/workflow/DESKTOP.md`) viveva solo sul branch
+`claude/trusting-euler-kbq0vc` (release v0.9.0 del 2026-09-29), **mai unito a `main`**: restava indietro di 32 commit
+(niente gabbia nuova, pet, Gemini 3.8, i 5 effetti nuovi). Fatto:
+- Unito quel branch qui. `server.ts`: tenuta la versione di `main` (Gemini 3.8, host rule) e riapplicato a mano
+  solo ciò che serve al desktop — `startServer({port, host, distPath})` esportata, che restituisce la porta, e
+  avvio automatico su :3000 solo senza `SYNTECH_DESKTOP`. `package-lock.json` rigenerato da quello di `main` con
+  `npm install` (aggiunti solo electron 32.3.3 + electron-builder; nessun'altra versione cambiata).
+- `version` 0.9.0 → **0.10.0**: il workflow `desktop.yml` pubblica la release **v0.10.0** e lascia la v0.9.0 come
+  ripiego.
+- `verify-desktop.cjs`: il controllo "AI optimizer answers offline" era obsoleto (l'endpoint non esiste più e non ci
+  sono risposte offline per scelta) → ora `GET /api/gemini/status` deve rispondere 200 con `serverKey:false`; e
+  apre **tutti e dieci** gli effetti, non cinque. Sulla build Linux impacchettata: **38/38**.
+- `LEGGIMI.txt`, `DESKTOP.md`, `desktop/main.ts`, `06-VERIFICATION.md`: via Groq e "AI offline", dieci effetti.
+- Prima run CI: Windows verde, **Mac 37/38** — `LOADING` fermo a 0% con il video già a 3,8 s (il contatore era
+  guidato solo da `requestAnimationFrame`, che sul runner macOS non scattava affatto: nessun vsync / finestra
+  occlusa). `IntroSplash.tsx` aggiorna ora la percentuale anche su `timeupdate` del video, che non dipende dai
+  fotogrammi: lo stesso succederebbe su un Mac con la finestra coperta. Da tenere d'occhio: sul Mac l'intro è
+  finita in 13,0 s contro il limite di 14 del test (il video è partito tardi).
+- Da fare per l'operatore: scaricare `VFX-SYNTECH-0.10.0-Mac.zip` dalla pagina Releases, doppio clic, trascinare
+  l'app in Applicazioni → **Sostituisci**. Preset e progetti restano (stessa origine `127.0.0.1:47291`). Il primo
+  avvio richiede di nuovo "Apri comunque" (la firma ad-hoc cambia a ogni build).
+- Unito a `main` su richiesta dell'operatore ("uniscilo su main"), con una pull request: da ora ogni push di codice su `main`
+  ricostruisce e ritesta l'app desktop e aggiorna la release della versione in `package.json`.
+- CI dopo il fix: **Mac e Windows verdi**, release **v0.10.0** pubblicata (Mac .zip 228 MB, Windows .exe 112 MB).
+
 **SESSIONE 2026-10-22 (6) — hero: via la scritta, brain graph circolare senza buco, FATTO.**
 - Tolta la riga "AI-Powered. Node-Based. Limitless." sotto il wordmark (`App.tsx`, e la regola `.hero-strapline` di `index.css`).
 - Il brain graph non lascia più il buco per il wordmark: i 10 hub stanno su un **cerchio vero** (un solo raggio
@@ -327,6 +354,23 @@ Aperti nati da questa sessione:
   ricarica la pagina. Correzione di due righe nel `catch` di `_bodyLoad`
   (azzerare `_vrPoseNet`/`_vrPoseLM` se puntano a quel modello, idem face): da
   fare con una revisione.
+**⇒ APP DESKTOP (2026-09-28) — per la consegna della tesi a Brera.** L'operatore
+deve mandare alla segreteria, insieme alla tesi, l'app come file da doppio clic
+che i prof aprono sul loro computer. Fatto: `docs/workflow/DESKTOP.md` è la
+guida completa. **Ogni push costruisce e testa `.exe` (Windows) e `.zip` (Mac)
+su GitHub** → pagina **Releases** (link diretti, niente login) oppure Actions →
+"Desktop app" → artifact `VFX-SYNTECH-<versione>` (solo da loggati).
+Aperto:
+1. **L'operatore scarica lo zip e apre l'app sul suo Mac** (e su un PC Windows se
+   può) prima della consegna — la prova su una macchina vera che conta.
+2. Le modifiche all'app che farà dopo la tesi entrano nella build da sole: non c'è
+   una versione desktop separata da tenere allineata. Per la consegna finale,
+   alzare `version` in `package.json` (es. `1.0.0`) così i file portano quel numero.
+3. La repo è **pubblica**: chiunque vede codice e build. Se non lo vuole, la può
+   rendere privata (Settings → General → Danger Zone); il workflow continua a
+   funzionare ma consuma minuti del piano gratuito (macOS conta 10×).
+
+Sotto, tutto il resto resta com'era.
 
 **LA GABBIA È DENTRO L'APP (2026-07-31).** L'operatore ha dato il via —
 *"quando apro l'app come ho fatto prima l'estetica deve essere quella finale che
@@ -857,6 +901,171 @@ sotto SwiftShader, anche su HEAD). **Non verificato:** nessuna risposta vera di
 italiano, né che Google accetti questi schema e la webm inline, né l'upload vero
 e i suoi tempi; né Firefox/Safari (l'audio del clip usa `captureStream`, che è
 di Chromium); né la GPU vera.
+### 2026-09-29 — L'intro: il logo che diventa il pet
+
+**La richiesta.** *"Un'animazione stile loading prima che si apra l'app: in 9
+secondi il mio logo che diventa il mio pet, schermo nero — ti allego il video
+esatto."* (Nel primo messaggio, poi riformulato: *"loading 0-100%"*.)
+
+**Il video.** H.264 Main 1280×720 30 fps, 9,13 s, AAC stereo **muto** (−91 dB).
+Il logo cresce, ruota, diventa il pet (~8 s), poi a 8,5 s la camera entra
+nell'occhio e a 8,7 s è nero. Messo in `public/assets/intro/logo-to-pet.mp4`
+togliendo solo la traccia audio (rimux, niente ricodifica: framemd5 dei pacchetti
+video identico all'originale), 3,7 MB.
+
+**Come funziona.** `src/components/IntroSplash.tsx`, montato in `src/main.tsx`
+sopra `<App />`: overlay nero a schermo intero, video `object-contain`, in basso
+`LOADING nn%` in mono grigio con una barra da 1 px in `--syn-accent`, entrambi
+guidati da `currentTime/duration` — arrivano a 100% esattamente con l'animazione.
+L'app si monta **sotto** mentre il video gira; a fine video (sul nero) l'overlay
+sfuma in 0,7 s e rivela l'app già pronta: il tuffo nell'occhio "atterra" nell'app.
+Clic o tasto = salta; video in errore/bloccato = l'app si apre dopo 14 s al massimo.
+Solo nell'app desktop (user agent `Electron/`); nel browser solo con `?intro`,
+così `npm run dev` e le suite browser non aspettano 9 s a ogni ricarica.
+Il contatore è un'interpretazione di "stile loading / 0-100%": se l'operatore
+vuole il video nudo, si toglie il blocco `bottom-10` in `IntroSplash.tsx`.
+
+**Verificato:** `verify-desktop.cjs` ora controlla anche l'intro — compare
+all'avvio, il video avanza (9,13 s, nessun errore), il contatore sale e tocca
+100%, l'overlay se ne va da solo e l'app è cliccabile. Build Linux impacchettata:
+**28/28**. Screenshot a ~3 s: schermo nero, la stella che si trasforma,
+`LOADING 34%`. `npm run lint` pulito.
+CI (run 36520788078, commit 214636d): **Mac e Windows verdi** con i nuovi controlli
+sull'intro; Release `v0.9.0` ricreata — `Mac.zip` 209 MB, `Windows.exe` 91 MB.
+
+### 2026-09-29 — LEGGIMI: primo avvio su Mac, passo per passo
+
+L'operatore, sul suo M1 con macOS 12, ha incontrato i due passaggi che
+incontreranno i prof: l'avviso *"Apple non è in grado di verificare che VFX
+SYNTECH non contenga malware"* e l'app copiata sulla Scrivania che non compare tra
+le Applicazioni. `LEGGIMI.txt` ora li copre: trascinare l'app su "Applicazioni"
+nella barra laterale del Finder; tasto destro > Apri fino a macOS 14, "Apri
+comunque" da macOS 15; il fallback `xattr -cr` + trascinamento dell'app nel
+Terminale (niente percorsi da scrivere a mano).
+
+### 2026-09-28 (notte) — Gira anche sui Mac vecchi; la nuova icona
+
+**Il blocco.** Sul MacBook Pro M1 dell'operatore (macOS **12.2.1**) lo zip nuovo
+si apriva, ma l'app diceva *"richiede macOS 13.0 o versione successiva"*. Causa:
+Electron 44 (Chromium 152) richiede macOS 13. I prof avranno computer di ogni
+età, e l'operatore l'ha chiesto esplicitamente: *"deve girare su più PC possibili"*.
+
+**La scelta.** Minimi letti dagli `Info.plist` delle release Electron darwin:
+44 → 13.0, 37 → 11.0, 32 → **10.15**. Electron **32.3.3** (Chromium 128) è
+l'ultima linea che supporta Catalina (Mac dal 2012 in su); Windows resta 10/11.
+Prima di adottarla:
+- CSS compilato: solo `color-mix`, `oklch`, `@property`, `@layer` (≤ Chromium 111).
+  Nessuna API JS più recente di Chromium 128 in `src/` né negli effetti.
+- `verify-desktop.cjs` con Electron 32: **24/24**.
+- Screenshot home + 5 effetti confrontati pixel per pixel con quelli di Electron
+  44: le differenze (0,1–1,6% dei pixel) sono **tutte** nelle parti animate
+  (grafo, gradiente del brand, orologio, FPS). Layout, font e materiali identici.
+Bloccata con versione esatta in `package.json`, `mac.minimumSystemVersion:
+"10.15"` in `electron-builder.yml`, e il workflow ora **fallisce** se l'app
+impacchettata dichiara un `LSMinimumSystemVersion` diverso da 10.15. Prezzo
+accettato: Electron 32 non riceve più patch di sicurezza. L'app carica solo le
+sue pagine locali, quindi il rischio è minimo; scritto in `DESKTOP.md`.
+
+**L'icona.** L'operatore ha fornito la sua icona (tessera di vetro con la stella,
+1254² su nero), ora in `desktop/icon-source.webp`. `gen-app-icon.cjs` riscritto:
+rende trasparente solo il nero **fuori** dalla tessera (sennò nel Dock è un
+quadrato nero ad angoli vivi) e la porta sulla griglia Apple (850 px su 1024).
+Il ritaglio si ferma prima di qualunque pixel acceso: il più luminoso tagliato
+vale 7/255. Controllata a 1024, 128, 64, 32 e 16 px su fondo chiaro e scuro.
+`LEGGIMI.txt` ora dice su cosa gira.
+
+**Verificato (run 36494187080, commit bbde38e):** Mac — zip scompattato, firma
+valida, `LSMinimumSystemVersion` = **10.15** (il nuovo controllo passa), **24/24**;
+Windows **24/24**. Release `v0.9.0` ricreata da bbde38e: `Mac.zip` 205 MB (era
+252), `Windows.exe` 87 MB (era 115) — Electron 32 è più leggero.
+**Da fare dall'operatore:** riscaricare lo zip e aprirlo sul suo M1 (macOS 12.2.1).
+
+### 2026-09-28 (sera) — Mac: da .dmg a .zip; download senza login
+
+**Due intoppi dell'operatore al primo tentativo, entrambi risolti.**
+1. *"Non riesco a scaricare, è come fosse solo testo"*: gli artifact di GitHub
+   Actions si scaricano solo da loggati; senza login il nome è testo con accanto
+   lo `sha256`. Ora il workflow pubblica anche una **Release `v<versione>`** con i
+   tre file come link diretti (niente login, anche da telefono, non scadono).
+   Ricreata a ogni push, quindi è sempre l'ultima build testata.
+2. *"Divieto sul logo quando trascino in Applicazioni, e il doppio clic mi
+   rimanda sempre lì, in loop"*: il `.dmg`. Il 🚫 è il Finder su un disco in sola
+   lettura (diventa "+" solo esattamente sopra la cartella Applicazioni) e l'icona
+   sulla scrivania è il **disco montato**, non l'app: riaprirla ridà la stessa
+   finestra. Se ha confuso lui, confonderà i prof. **Il Mac ora riceve uno `.zip`**:
+   doppio clic → compare l'app → doppio clic. Il workflow scompatta lo zip con
+   `ditto` come il Finder, verifica la firma (`codesign --verify --deep --strict`)
+   e fa girare `verify-desktop.cjs` su **quell'**app (nuova variabile
+   `SYNTECH_EXE`), cioè sul file esatto che si scarica.
+`LEGGIMI.txt` e `DESKTOP.md` aggiornati.
+
+**Verificato (run 36492641683, commit 599fda6):** Mac — zip scompattato con
+`ditto`, `codesign`: *valid on disk, satisfies its Designated Requirement*, poi
+**24/24** su quell'app; Windows **24/24**. Release `v0.9.0` pubblicata con
+`VFX-SYNTECH-0.9.0-Mac.zip` (252 MB), `-Windows.exe` (115 MB), `LEGGIMI.txt`;
+scaricata da anonimo (senza login) dal sandbox: funziona.
+
+### 2026-09-28 — L'app diventa un file da doppio clic (Windows + Mac)
+
+**La richiesta.** Tesi a Brera tra un mese: l'operatore vuole consegnare alla
+segreteria, oltre alla tesi in Word, l'app stessa — un file che si apre con due
+clic sul PC dei prof, senza localhost, senza GitHub, senza terminale. E vuole
+poter continuare a modificarla dopo.
+
+**Cosa è stato fatto.** Un guscio Electron attorno all'app, non una seconda app:
+- `desktop/main.ts` avvia **lo stesso `server.ts`** dentro l'app su
+  `127.0.0.1:47291` e apre una finestra su di esso. Porta **fissa** perché
+  `localStorage` (preset, sessioni, impostazioni effetti) è per-origine; se è
+  occupata da un altro programma ripiega su una porta libera. Istanza singola,
+  link esterni nel browser vero, la finestra non naviga mai fuori dall'app.
+- `server.ts` esporta `startServer({ port, host, distPath })` e si avvia da solo
+  su :3000 solo se `SYNTECH_DESKTOP` non è impostata: `npm run dev` e
+  `npm start` invariati (verificati entrambi: 200 su `/` e sugli effetti).
+- `electron-builder.yml`: Windows `portable` x64 (un .exe, niente installazione),
+  macOS `dmg` **universal** (Apple Silicon + Intel) con **firma ad-hoc** — senza
+  firma un Mac M1+ direbbe "app danneggiata". Il pacchetto contiene solo `dist/`,
+  `dist-desktop/main.cjs` (Electron + server + express + client AI in un bundle),
+  l'icona e `package.json`: zero `node_modules`.
+- `enable-unsafe-swiftshader`: trovato in verifica — senza GPU (sandbox, ma anche
+  un PC in VM o con driver in blocklist) Chromium 152 (Electron 44) non dà più WebGL software e
+  3 effetti su 5 morivano con "no webgl". Con lo switch rendono su CPU.
+  `force_high_performance_gpu` per i portatili con due GPU.
+- Icona da `public/assets/logo.png` su piastra nera (`tools/gen/gen-app-icon.cjs`).
+- `desktop/LEGGIMI.txt` per i prof: come aprirla su Windows/Mac e superare gli
+  avvisi di SmartScreen / Gatekeeper (l'app non è firmata con certificati a pagamento).
+- `.github/workflows/desktop.yml`: a ogni push costruisce su `windows-latest` e
+  `macos-latest`, **apre la build e la testa** con `verify-desktop.cjs`, poi
+  consegna un unico artifact con `.exe` + `.dmg` + `LEGGIMI.txt`.
+- `package.json`: `name` → `vfx-syntech` (era il template `react-example`),
+  `version` 0.9.0, `productName`, script `desktop*`; `electron` +
+  `electron-builder` come devDependencies (richiesti esplicitamente dall'operatore).
+- `index.html`: il titolo era ancora "My Google AI Studio App" → "VFX SYNTECH".
+
+**Bug trovato strada facendo, corretto.** `dotenv.config()` legge solo `.env`,
+ma tutta la documentazione (e la riga di boot) dice `.env.local`: la chiave Groq
+dell'operatore in `.env.local` sarebbe stata **ignorata** — la riga di boot
+avrebbe detto `AI provider: none`. Ora legge `.env.local` poi `.env`; verificato
+con una chiave finta → `AI provider: groq`.
+
+**Verificato (sandbox, build Linux impacchettata, Playwright → Electron):**
+`verify-desktop.cjs` **24/24** — finestra su `127.0.0.1:47291` titolata VFX
+SYNTECH; effetti, three.js, font, MediaPipe (wasm come `application/wasm`) serviti
+dall'interno; ottimizzatore AI risponde offline; i **5 effetti si aprono** senza
+errori; H.264 si decodifica; `localStorage` sopravvive a chiusura + riapertura;
+un secondo avvio non apre una seconda app; porta occupata → si apre lo stesso.
+Screenshot: stessa UI della web app (gabbia, card, effetti). `.exe` Windows
+costruito anche nel sandbox (115 MB, icona e metadati verificati nelle risorse
+PE) ma non eseguibile qui; `.dmg` solo su macOS → coperti dal workflow.
+`npm run lint` pulito.
+
+**Verificato su Windows e Mac veri (GitHub Actions, run 36486625494, commit
+026ff7d):** stessa `verify-desktop.cjs` sulla build impacchettata che viene
+caricata — **Windows 24/24, macOS 24/24**. `.exe` 115 MB, `.dmg` universal 253 MB.
+Sul Mac si decodifica anche **HEVC** (i clip dell'iPhone); su Windows del runner
+no (dipende dall'estensione HEVC di Windows, come in Chrome). WebCodecs H.264 in
+encoding disponibile su entrambi (serve all'export MP4 dell'AI Lab). Gli
+screenshot dei test sono negli artifact `test-screenshots-*` della run (non
+scaricabili dal sandbox: il proxy blocca l'host dei blob di GitHub).
 
 ### 2026-07-31 — Il dev server non partiva sul Mac; l'AI diventa sostituibile
 
