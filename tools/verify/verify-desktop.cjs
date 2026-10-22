@@ -77,9 +77,13 @@ async function launch() {
   step('exactly one window', app.windows().length === 1, String(app.windows().length));
 
   // ── 1b. the intro: logo → pet on black, LOADING 0 → 100%, then the app ────
-  const t0 = Date.now();
   await page.waitForSelector('[data-testid="intro-video"]', { timeout: 15000 });
   step('intro shows on launch', true);
+  /* Timed from the intro's own mount, as is its 14 s give-up: the seconds the
+     bundle takes to boot before it (4 s on the macOS runner) are not the intro's.
+     Video 9.13 s + 0.7 s fade ≈ 10 s; the give-up path lands at ≥ 14.2 s (this
+     poll can see the intro up to 0.5 s late), so 13 s keeps a margin both ways. */
+  const t0 = Date.now();
   const sample = () => page.evaluate(() => {
     const v = document.querySelector('[data-testid="intro-video"]');
     const p = document.querySelector('[data-testid="intro-pct"]');
@@ -97,7 +101,7 @@ async function launch() {
   step('LOADING counter climbs to 100%', later && later.pct > 0 && later.pct < 100 && maxPct === 100, `mid ${later && later.pct}% · max ${maxPct}%`);
   await page.waitForSelector('[data-testid="intro"]', { state: 'detached', timeout: 20000 });
   const took = (Date.now() - t0) / 1000;
-  step('intro ends by itself and hands over to the app', took > 8 && took < 14, `${took.toFixed(1)} s`);
+  step('intro ends by itself and hands over to the app', took > 8 && took < 13, `${took.toFixed(1)} s`);
 
   await page.waitForSelector('[data-testid="effect-card-bokeh"]', { timeout: 30000 });
   step('shell rendered (effect cards present)', true);
