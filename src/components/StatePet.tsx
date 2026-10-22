@@ -1,8 +1,10 @@
 /* STATE PET — the 3D mascot that lives in the cage's bottom-right opening.
  *
  * Idle: it floats (bob + a slow sway). Hover: it spins a full turn, scales up
- * and keeps looking at the cursor; drag spins it by hand (with inertia); click
- * makes it jump and turn. Leave and it springs back to floating.
+ * and keeps looking at the cursor; click makes it jump and turn. Press and hold
+ * and it follows the mouse anywhere in the app (it is only a translate of its own
+ * small canvas); let go and it springs back to its home in the opening, keeping
+ * the speed it was thrown with. Leave it alone and it floats again.
  *
  * Cost: three.js is already in the main bundle (blob_tracker uses it); the 1.5 MB
  * mesh and the texture are fetched AFTER first paint (requestIdleCallback), the render loop idles at 30 fps and only runs at full rate while the
@@ -28,11 +30,11 @@ const SPOT = HOLES.paletteCircle;
 const CAGE_RATIO = 1.679;
 /** Figure height as a multiple of the circle's diameter, and the canvas side as a
  *  multiple of the figure height (room to float, spin and pop out of the hole). */
-const PET_PER_DIAMETER = 1.12;
+const PET_PER_DIAMETER = 0.8;
 const CANVAS_PER_PET = 1.5;
-/** The opening is S-shaped, so its inscribed circle sits a little low for a figure
- *  that is taller than it is wide: lift the pet by this fraction of its height. */
-const PET_LIFT = 0.025;
+/** Springs that bring a dragged pet home (stiffness, damping ratio < 1 = a little bounce). */
+const HOME_K = 38;
+const HOME_ZETA = 0.6;
 
 const petPx = `min(${(2 * SPOT.r * PET_PER_DIAMETER * 100).toFixed(4)}vw, ${(2 * SPOT.r * CAGE_RATIO * PET_PER_DIAMETER * 100).toFixed(4)}vh)`;
 const sidePx = `calc(${petPx} * ${CANVAS_PER_PET})`;
@@ -150,8 +152,11 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
       let hover = false, dragging = false;
       let lookYaw = 0, lookPitch = 0;
       let px = -1, py = -1;                   // pointer in canvas CSS px
-      let downX = 0, downY = 0, moved = 0;
-      let lastDragT = 0;                      // timeStamp of the last drag move
+      let moved = 0;
+      let ox = 0, oy = 0, ovx = 0, ovy = 0;   // offset from home (CSS px) and its velocity
+      let ax = 0, ay = 0;                     // offset currently WRITTEN to host.style.transform
+      let gx = 0, gy = 0;                     // where in the pet the pointer grabbed it
+      let tx = 0, ty = 0;                     // drag target offset
       let busyUntil = 0;                      // stay at full frame rate until then
       let t = 0;
 
@@ -183,10 +188,8 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
       const onMove = (e: PointerEvent) => {
         local(e);
         if (dragging) {
-          const dx = e.movementX, dy = e.movementY;
-          moved += Math.abs(dx) + Math.abs(dy);
-          yaw += dx * 0.012; yawV = dx * 0.012 * 60; lastDragT = e.timeStamp;
-          pitch = clamp(pitch + dy * 0.008, -0.6, 0.6);
+          moved += Math.abs(e.movementX) + Math.abs(e.movementY);
+          tx = e.clientX - gx; ty = e.clientY - gy;
           busyUntil = performance.now() + 1500;
           return;
         }
@@ -201,8 +204,9 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
       const onDown = (e: PointerEvent) => {
         local(e);
         if (!hit(px, py)) return;
-        dragging = true; moved = 0; downX = e.clientX; downY = e.clientY;
-        canvas.setPointerCapture(e.pointerId);
+        dragging = true; moved = 0;
+        gx = e.clientX - ox; gy = e.clientY - oy; tx = ox; ty = oy; // grab it where it is, even mid-flight home
+        canvas.setPointerCapture(e.pointerId);   // the drag keeps working outside the canvas, over the whole app
         canvas.style.cursor = 'grabbing';
         turns = Math.round(yaw / TAU);
         busyUntil = performance.now() + 1500;
@@ -211,23 +215,21 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
         if (!dragging) return;
         dragging = false;
         try { canvas.releasePointerCapture(e.pointerId); } catch { /* already released */ }
-        if (e.timeStamp - lastDragT > 80) yawV = 0; // held still before letting go: no throw
-        const click = moved < 6;
-        if (click) {                           // a tap: hop and spin (direction = side tapped)
+        if (moved < 6 && e.type === 'pointerup') { // a tap: hop and spin (direction = side tapped)
           liftV = 3.2; turns += (px < cssW / 2 ? -1 : 1) * (reduced ? 0 : 1);
-        } else {                               // a throw: settle on the nearest front-facing turn,
-          turns = Math.round((yaw + yawV * 0.25) / TAU); // keeping the spin it was thrown with
         }
-        /* the tap / throw just set `turns` on purpose: refresh hover WITHOUT running the
-           "pointer entered" logic (it would add a spin), and never leave a stale cursor */
+        /* let go: the offset spring takes it home, keeping the velocity it was thrown with.
+           Refresh hover WITHOUT running the "pointer entered" logic (it would add a spin)
+           and never leave a stale cursor. */
         local(e); hover = hit(px, py); canvas.style.cursor = hover ? 'grab' : '';
-        busyUntil = performance.now() + 2500;
+        busyUntil = performance.now() + 4000;
       };
       const onLeave = () => { px = py = -1; if (!dragging) setHover(false); };
       canvas.addEventListener('pointermove', onMove);
       canvas.addEventListener('pointerdown', onDown);
       canvas.addEventListener('pointerup', onUp);
       canvas.addEventListener('pointercancel', onUp);
+      canvas.addEventListener('lostpointercapture', onUp);
       canvas.addEventListener('pointerleave', onLeave);
 
       /* ── loop ── */
@@ -240,30 +242,58 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
       const frame = (now: number) => {
         raf = requestAnimationFrame(frame);
         if (pausedRef.current || document.hidden) { last = now; return; }
-        const busy = now < busyUntil || dragging || hover;
+        const busy = now < busyUntil || dragging || hover || ox !== 0 || oy !== 0;
         const elapsed = now - last;
         if (!busy && elapsed < 32) return;       // idle: ~30 fps
         last = now;
-        acc += Math.min(elapsed, 100) / 1000;
+        const dt = Math.min(elapsed, 100) / 1000;
+        acc += dt;
+        /* while held, the pet is exactly where the mouse put it (kept inside the window);
+           its speed is measured so it can be thrown */
+        if (dragging) {
+          const nx = tx, ny = ty;
+          const k = Math.min(1, dt / 0.05);
+          ovx += ((nx - ox) / Math.max(dt, 0.001) - ovx) * k;
+          ovy += ((ny - oy) / Math.max(dt, 0.001) - ovy) * k;
+          ox = nx; oy = ny;
+        }
         const H = 1 / 120;
         while (acc >= H) {
           acc -= H; t += H;
+          const flying = Math.abs(ovx) + Math.abs(ovy) > 40;
           const idleYaw = reduced ? 0 : Math.sin(t * 0.55) * 0.38;
           const idlePitch = reduced ? 0 : Math.sin(t * 0.42 + 1) * 0.06;
-          const tYaw = turns * TAU + (hover ? lookYaw : idleYaw);
-          const tPitch = hover ? lookPitch : idlePitch;
-          if (!dragging) {
-            spring(yaw, yawV, tYaw, 55, 2 * Math.sqrt(55) * 0.42, H); yaw = sp.x; yawV = sp.v;
-            spring(pitch, pitchV, tPitch, 60, 2 * Math.sqrt(60) * 0.8, H); pitch = sp.x; pitchV = sp.v;
+          /* travelling: it leans into the motion; otherwise it looks at the cursor or sways */
+          const tYaw = turns * TAU + (flying && !reduced ? clamp(ovx / 900, -1, 1) * 0.6 : hover ? lookYaw : idleYaw);
+          const tPitch = flying && !reduced ? clamp(ovy / 1500, -1, 1) * 0.2 : hover ? lookPitch : idlePitch;
+          spring(yaw, yawV, tYaw, 55, 2 * Math.sqrt(55) * 0.42, H); yaw = sp.x; yawV = sp.v;
+          spring(pitch, pitchV, tPitch, 60, 2 * Math.sqrt(60) * 0.8, H); pitch = sp.x; pitchV = sp.v;
+          if (!dragging) {                         // home spring
+            const zeta = reduced ? 1 : HOME_ZETA;     // reduced motion: critically damped, no bounce
+            ovx += -HOME_K * ox * H - 2 * zeta * Math.sqrt(HOME_K) * ovx * H;
+            ovy += -HOME_K * oy * H - 2 * zeta * Math.sqrt(HOME_K) * ovy * H;
+            ox += ovx * H; oy += ovy * H;
           }
           spring(grow, growV, hover || dragging ? 1.1 : 1, 70, 2 * Math.sqrt(70) * 0.5, H); grow = sp.x; growV = sp.v;
           liftV -= 14 * H; lift += liftV * H;     // gravity for the click hop
           if (lift < 0) { lift = 0; liftV = 0; }
         }
+        /* keep the pet's centre inside the window, wherever home is */
+        if (dragging || ox !== 0 || oy !== 0) {
+          const r = host.getBoundingClientRect();
+          const hx = r.left + r.width / 2 - ax, hy = r.top + r.height / 2 - ay, m = r.width * 0.2;
+          const cxo = clamp(ox, m - hx, window.innerWidth - m - hx), cyo = clamp(oy, m - hy, window.innerHeight - m - hy);
+          if (cxo !== ox) ovx = 0;
+          if (cyo !== oy) ovy = 0;
+          ox = cxo; oy = cyo;
+          if (!dragging && Math.abs(ox) + Math.abs(oy) < 0.3 && Math.abs(ovx) + Math.abs(ovy) < 8) { ox = oy = ovx = ovy = 0; }
+          host.style.transform = ox === 0 && oy === 0 ? '' : `translate3d(${ox.toFixed(2)}px,${oy.toFixed(2)}px,0)`;
+          ax = ox; ay = oy;
+        }
         const bob = reduced ? 0 : Math.sin(t * 1.4) * 0.03 + Math.sin(t * 0.7) * 0.012;
         const y = bob + lift;
         pivot.position.y = y;
-        pivot.rotation.set(pitch, yaw, reduced ? 0 : Math.sin(t * 0.9) * 0.025 - yawV * 0.002, 'YXZ');
+        pivot.rotation.set(pitch, yaw, reduced ? 0 : Math.sin(t * 0.9) * 0.025 - clamp(ovx * 0.0004, -0.3, 0.3), 'YXZ');
         pivot.scale.setScalar(Math.max(0.001, grow));
         const h = clamp(1 - y * 1.4, 0.35, 1.2);
         shadow.scale.set(0.7 * h * grow, 0.7 * h * grow, 1);
@@ -282,6 +312,7 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
         canvas.removeEventListener('pointerdown', onDown);
         canvas.removeEventListener('pointerup', onUp);
         canvas.removeEventListener('pointercancel', onUp);
+        canvas.removeEventListener('lostpointercapture', onUp);
         canvas.removeEventListener('pointerleave', onLeave);
         geo.dispose(); mat.dispose(); tex.dispose(); shadowTex.dispose(); shadowMat.dispose(); shadow.geometry.dispose();
         renderer.dispose(); renderer.forceContextLoss();
@@ -316,7 +347,7 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
         width: sidePx,
         height: sidePx,
         left: `calc(${(SPOT.cx * 100).toFixed(4)}vw - ${sidePx} / 2)`,
-        top: `calc(${(SPOT.cy * 100).toFixed(4)}vh - ${sidePx} / 2 - ${petPx} * ${PET_LIFT})`,
+        top: `calc(${(SPOT.cy * 100).toFixed(4)}vh - ${sidePx} / 2)`,
         pointerEvents: 'none', // only the canvas (once loaded) takes the pointer
         opacity: 0,
         transition: 'opacity 0.6s ease',

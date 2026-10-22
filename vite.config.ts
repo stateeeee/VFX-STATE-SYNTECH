@@ -11,6 +11,11 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    /* Pre-bundle only what the app shell imports. By default Vite also crawls every
+       .html under the project — including public/effects/*, whose `three/addons/...`
+       imports are resolved in the browser by their own importmap (vendored r160) —
+       and printed a scary "dependencies could not be resolved" error at every start. */
+    optimizeDeps: { entries: ['index.html'] },
     server: {
       /* 127.0.0.1, NOT the default "localhost".
          Vite resolves its client host at startup, and when that host is the

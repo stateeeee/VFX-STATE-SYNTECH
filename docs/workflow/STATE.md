@@ -29,6 +29,24 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-22 (2) — ritocchi al PET + dipendenze, FATTI.**
+- **PET più piccolo** (0,8 × il diametro del cerchio inscritto, era 1,12): ora anche in hover e col rimbalzo sta tutto
+  dentro l'apertura, piedi compresi. **Drag & drop libero**: tenendo premuto segue il mouse ovunque nell'app (è solo una
+  `translate` del suo piccolo canvas, con `setPointerCapture`; il centro resta dentro la finestra); al rilascio una molla
+  lo riporta a casa tenendo la velocità con cui è stato lanciato (un po' di rimbalzo). Mentre viaggia si inclina nel moto.
+  Il clic senza spostamento (< 6 px) fa ancora saltare + girare; hover = giro + sguardo. Il vecchio "drag = ruota" è sparito.
+- **npm "10 vulnerabilità"**: l'albero (~300 pacchetti: React, Vite, Express, SDK Google, tsx…) pesca avvisi man mano che
+  escono; la maggior parte è in tooling che gira solo in locale. Fatto `npm update` (solo patch/minor nei range di
+  `package.json`: @google/genai 2.10→2.30, vite 6.4.3→6.4.5, express 4.22.3, react 19.3.1, tsx, tailwind…); restano indietro
+  solo salti di versione MAGGIORE (Vite 8, React-resizable-panels 4, TypeScript 7, three 0.186…) che NON vanno fatti alla
+  cieca (`three` in particolare è fermo a r128 per i port 1:1). **Il database avvisi non è raggiungibile dal sandbox
+  (npm audit si blocca): l'esito va riguardato sul Mac** con `npm install && npm audit`; mai `npm audit fix --force`.
+- `vite.config.ts`: `optimizeDeps.entries: ['index.html']` — Vite scandiva anche `public/effects/*.html` e stampava
+  "Error: dependencies could not be resolved (three/addons/…)" a ogni avvio; innocuo (le pagine hanno la loro importmap).
+- Sul Mac dell'operatore (log 2026-10-22): `git` non è installato (xcode-select), quindi `git clone` è fallito e ha avviato la
+  vecchia cartella `VFX-STATE-SYNTECH-main 2` (ancora con DATAMOSH). Va installato git (`xcode-select --install`) o scaricato lo ZIP
+  del branch `claude/epic-franklin-nd1aut`.
+
 **SESSIONE 2026-10-22 — STATE PET nell'app, FATTO.**
 Il modello 3D `state_pet.obj` (Meshy, 62k triangoli) + la sua texture ora vivono nell'apertura vuota in basso a destra
 della gabbia (sotto la colonna effetti, a destra del pannello Gemini). Da far provare all'operatore sull'app vera (GPU):
