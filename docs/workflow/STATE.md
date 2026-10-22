@@ -29,6 +29,27 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-22 — STATE PET nell'app, FATTO.**
+Il modello 3D `state_pet.obj` (Meshy, 62k triangoli) + la sua texture ora vivono nell'apertura vuota in basso a destra
+della gabbia (sotto la colonna effetti, a destra del pannello Gemini). Da far provare all'operatore sull'app vera (GPU):
+- **A riposo fluttua**: sale e scende piano, oscilla appena e ruota di poco, con una piccola ombra sotto i piedi
+  (alone viola di notte, ombra scura di giorno). Si vede a figura intera.
+- **Mouse sopra** → fa un giro completo su se stesso, si ingrandisce un po' e poi **segue il cursore** con la testa.
+  **Trascina** → lo giri a mano (con inerzia); **clic** → salta e gira (verso = lato cliccato).
+  **Mouse fuori** → torna morbido nella posa a fluttuare.
+- Tecnica: `src/components/StatePet.tsx` (canvas three.js suo, 30 fps a riposo, pieno solo mentre lo tocchi o si assesta,
+  fermo con l'hero a schermo intero / scheda nascosta). Posizione e dimensione derivano dal cerchio inscritto misurato
+  dell'apertura (`HOLES.paletteCircle`), quindi seguono lo stiramento della gabbia come le altre sezioni. È sopra la
+  cornice (z 10), non la tocca. Caricamento dopo il primo paint (`requestIdleCallback`): l'OBJ da 5,7 MB è stato
+  convertito UNA volta in `public/assets/pet/state_pet.bin` (1,5 MB, indicizzato, niente parsing) con
+  `node tools/pet/build-pet.cjs` (sorgente in `tools/pet/state_pet.obj`); texture `public/assets/pet/state_pet.webp`.
+  Nessuna dipendenza nuova (`three` c'era già).
+- Decisioni da confermare con lui: (1) con un video caricato nell'angolo (riferimento raw) il pet **gli fluttua sopra**
+  (non lo nasconde); (2) il pet sporge di pochi px sopra la cornice quando salta; (3) `prefers-reduced-motion`: niente
+  fluttuazione né giri, solo lo sguardo che segue il cursore. Verificato (revisione Opus: PASS al secondo giro): lint, build, suite `verify-ui-cage.cjs` 18/18 (ora blocca `/assets/pet/*`: il pet sta fuori dal contratto della gabbia), playwright (idle/hover/look/leave/
+  clic/drag, notte e giorno, 1950×1100 · 1280×720 · 1000×800); su swiftshader l'app gira a ~8 fps, quindi la fluidità
+  reale resta da vedere su GPU.
+
 **SESSIONE 2026-10-21 (notte) — ritocchi chiesti dall'operatore, FATTI e su `main`.**
 - **DATAMOSH eliminato**: cartella `public/effects/datamosh/`, ModuleId, scheda, registry, nome nel node graph
   via (`ShaderPass.js` vendorizzato resta: lo importa `EffectComposer`, quindi serve a POINTCLOUD). Restano 4 effetti nuovi: INVISIBLE, TIME MACHINE,

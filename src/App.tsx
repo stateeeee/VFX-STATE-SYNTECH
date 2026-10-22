@@ -22,6 +22,7 @@ import { EFFECTS_REGISTRY, hasRealEffect } from './effects-registry';
 import VfxCanvas from './components/VfxCanvas';
 import EffectHost, { EffectHostHandle } from './components/EffectHost';
 import ChainLab from './components/ChainLab';
+import StatePet from './components/StatePet';
 import AiDirector, { CompSource, GeminiMode, GeminiStatus } from './components/AiDirector';
 import NodalComposition, { CompEffect, EFFECT_META, WireMap } from './components/NodalComposition';
 import AudioMeter from './components/AudioMeter';
@@ -843,6 +844,10 @@ export default function App() {
         data-testid="cage-frame"
         className="syn-cage-frame"
       />
+
+      {/* STATE PET: floats in the bottom-right opening, in front of the frame.
+          Loads after first paint; stops rendering while the hero is fullscreen. */}
+      <StatePet isDayMode={isDayMode} paused={isHeroFullscreen} />
 
       {/* hidden source picker (shared INPUT) */}
       <input

@@ -73,6 +73,9 @@ const shoot = async (page) => (await page.screenshot()).toString('base64');
   const errs = [];
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 953 } });
   const page = await ctx.newPage();
+  // the STATE PET floats in the corner opening (z 10, above the frame): it is not part
+  // of the cage contract, and its feet would land in the 'corner lower sweep' sample
+  await ctx.route((u) => u.pathname.startsWith('/assets/pet/'), (r) => r.abort());
   page.on('pageerror', (e) => errs.push(String(e.message || e)));
   await page.goto('http://localhost:3000', { waitUntil: 'load', timeout: 45000 });
   await page.waitForTimeout(2500);
