@@ -19,7 +19,10 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
   (Art Dir, Agent, Optimizer) — locked until a key is active (§9).
 - **Center hero**: on launch, the animated brain graph (`VfxCanvas`) — the
   app's "second brain": VFX SYNTECH core firing neural connections to every
-  effect. This space is where the video/effect appears while working.
+  effect. The graph IS the app (operator, 2026-10-22): the core sits in the middle and
+  **every** effect in `modules` (all 10, A → Z) is a hub on an ellipse around it, with
+  its own satellite cluster; nodes, clusters and labels shrink as the hub count grows
+  so the whole constellation always fits. This space is where the video/effect appears while working.
   Dragging one hub onto another links them into the chain (bright persistent
   links are drawn); the graph shows **no chain overlay/HUD** (no "CHAIN … Open
   Lab / Clear" bar — operator request 2026-10-11). Open the Lab from the left
@@ -230,7 +233,8 @@ chrome). Contract every effect follows:
   TIME MACHINE, QUADTREE, POINTCLOUD — plus PAINTING (2026-10-22: oil, [watercolor — hidden for now],
   tempera, pointillism, impressionism, expressionism) are listed in the effects column and
   open full-screen like the others. They wear the same §5.1 chrome, but have **no**
-  SynEngine node, no brain-graph hub and no node-graph entry; the shell's `isLabModule`
+  SynEngine node and no node-graph entry (but, since 2026-10-22, they ARE hubs of the brain graph —
+  dragging one onto another does not chain them — see "Center hero" above); the shell's `isLabModule`
   (= `MODULE_IDS` in `src/ai/contract.ts`) keeps them out of chains, saved
   compositions and Gemini "Open in Lab". Their Lab ports come later, with the 1:1
   parity protocol.)

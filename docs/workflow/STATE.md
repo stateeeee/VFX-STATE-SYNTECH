@@ -29,6 +29,39 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-22 (5) — POINTCLOUD: sezione Export; brain graph con TUTTI gli effetti, FATTO.**
+(Revisione Opus: 3 giri. Giro 1 e 2 FAIL → corretti (hub sotto il wordmark, bottone Export spento, annullo durante il setup, buffer 4K, guardia dopo `play()`);
+giro 3: restava un solo punto, `min-h-[300px]` sul contenitore del canvas (in un hero basso, 1920×600, tagliava le etichette degli hub in basso),
+tolto e riprovato con lo script del revisore stesso su 1920×600 / 1024×640 / 1950×1100 (etichette tutte visibili) — non c'è stato un quarto giro
+formale. A 1024×640 le etichette si sovrappongono tra loro: hero di 510×278, limite accettato.)
+- **POINTCLOUD · Export MP4 H.264 1920×1080**: nuova sezione EXPORT nel pannello, **prima di Info** (che resta l'ultima e
+  l'unica aperta all'avvio; Source · Pointcloud · Export partono chiusi). Stesso schema di PAINTING (`MediaRecorder` sul
+  canvas + audio del video, MP4/H.264 dove il browser lo sa fare, altrimenti WebM; parte dall'inizio, riproduce una volta,
+  scarica `<nome>_pointcloud.mp4`; STOP annulla). Solo con una sorgente **video** (con IMAGE/WEBCAM il bottone è spento, come in
+  PAINTING). Mentre registra, renderer + bloom + camera lavorano a esattamente 1920×1080 (pixel ratio 1, `uPixelRatio`
+  scalato così i punti hanno la stessa dimensione relativa dell'anteprima) e il canvas è mostrato rimpicciolito nella cornice;
+  alla fine tutto torna alla misura della cornice (prima si rimpicciolisce, poi si ripristina il pixel ratio: niente buffer 4K
+  temporaneo). Il bottone mostra STOP fin dall'avvio del setup e un annullo durante l'attesa dell'audio non disfa il ripristino. Cambiare sorgente / play / loop durante l'export lo annulla o è ignorato.
+  Blocchi marcati `SYNTECH-EXPORT` (CSS, sezione, modulo, guardie in `togglePlay`/`toggleLoop`/`fitRenderer`/loader).
+  Provato (Chromium headless, swiftshader): sezioni `src·pc·export` chiuse + `info` aperta; bottone spento senza video e acceso
+  col video; durante l'export canvas 1920×1080 e CSS = cornice; file scaricato con VP9 1920×1080 + audio Opus e fotogramma
+  corretto; a fine export il canvas torna alla cornice. **L'H.264 vero NON è provabile qui** (Chromium senza codec proprietari:
+  `MP4 · AUTO`, la traccia video dell'MP4 esce vuota) → da provare sul Mac con Chrome. Su swiftshader 1080p con 130k punti + bloom
+  è lentissimo: un video corto (2 s) non produce fotogrammi, uno da 8 s sì; su GPU non è un problema.
+- **Brain graph**: ora rappresenta l'app intera — VFX SYNTECH al centro e **tutti i 10 effetti** (A→Z, come la colonna) su
+  un'ellisse attorno, ognuno col suo grappolo di satelliti (`VfxCanvas.tsx`). Gli hub si costruiscono da `modules` (un nuovo
+  effetto in `modules` compare da solo). Con più hub, nodi/grappoli/etichette si rimpiccioliscono (`fit = √(6/n)`, etichette
+  fino a 0,78× nelle finestre basse) così entra tutto; il core resta della sua misura, a `CORE_X = 0.62` (a destra del
+  wordmark, come prima: l'ho spostato da 0,60). **Gli hub evitano il wordmark**: si scandisce l'ellisse, si scartano gli angoli
+  il cui hub (con etichetta) cadrebbe nell'angolo del "VFX Syntech" (`wmRight = 0.42w+45`, `wmBottom = 0.56h`) e i 10 hub si
+  distribuiscono sull'arco libero (uniforme se ne restano troppo pochi). Il blocco wordmark in `App.tsx` ora è
+  `pointer-events-none` (il revisore aveva provato che a 1440×900 l'hub QUADTREE finiva SOTTO il testo e non si apriva).
+  Click su un hub apre l'effetto (anche i 5 nuovi). Trascinare un hub su un altro **concatena solo i 5 effetti del Lab**:
+  con uno standalone (INVISIBLE, PAINTING…) il drag è ignorato (`handleChainLink` + `isLabModule`). Verificato: lint, build,
+  screenshot 1950×1100 / 1440×900 / 1280×720 / 1024×640 (tutto dentro, nessun hub o etichetta sotto il wordmark; tutti i 10 hub
+  risultano cliccabili sul canvas con `elementFromPoint` a ogni misura), click su POINTCLOUD/PAINTING apre l'iframe giusto,
+  drag standalone→Blob Tracker senza errori, `verify-graph-highlight` 7/7 (bianco riservato: core + selezionato).
+
 **SESSIONE 2026-10-22 (4) — cover dei 5 nuovi effetti, ordine A→Z, webcam di PAINTING specchiata, FATTO.**
 - **Cover**: INVISIBLE, PAINTING, POINTCLOUD, QUADTREE, TIME MACHINE hanno ora la loro cover come le prime cinque
   (stessa ricetta `tools/gen/gen-effect-covers.cjs`, stessa piastra 466×320 → colonna e etichette allineate; più le

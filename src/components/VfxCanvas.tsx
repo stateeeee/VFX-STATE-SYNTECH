@@ -42,6 +42,9 @@ interface GraphEdge {
   inactiveColor: string;
 }
 
+/** the core's horizontal position, as a fraction of the canvas: right of centre — the hero opening is wide and the wordmark occupies its left third */
+const CORE_X = 0.62;
+
 export default function VfxCanvas({
   activeModule,
   setActiveModule,
@@ -250,7 +253,7 @@ export default function VfxCanvas({
 
       // the graph sits RIGHT of centre: the hero opening is wide, and the
       // wordmark occupies its left third
-      const cx = w * 0.60;
+      const cx = w * CORE_X;
       const cy = h / 2;
 
       /* Cluster palettes. Unselected: violet only, eight shades, each node
@@ -266,15 +269,54 @@ export default function VfxCanvas({
       };
       const vio = (k: number) => shadeOf(VIOLET_SHADES, k);
       const au = (k: number) => shadeOf(GOLD_SHADES, k);
-      const scale = Math.min(w, h) / 600 * 1.5;
-      // Define our 5 main Hubs (representing active modules in the network)
-      const hubsConfig: { glowHue: string; id: ModuleId; label: string; angle: number; dist: number; color: string; glow: string }[] = [
-        { glowHue: '#8b5cf6', id: 'blob_tracker', label: 'BLOB TRACKER', angle: -Math.PI / 4 - 0.2, dist: 120 * scale, color: '#ffffff', glow: ACCENT },
-        { glowHue: '#7c3aed', id: 'analog', label: 'ANALOG', angle: Math.PI / 4 + 0.1, dist: 130 * scale, color: '#ffffff', glow: ACCENT },
-        { glowHue: '#a78bfa', id: 'blob_reveal', label: 'BLOB REVEAL', angle: Math.PI - 0.5, dist: 140 * scale, color: '#ffffff', glow: ACCENT },
-        { glowHue: '#6d28d9', id: 'bokeh', label: 'BOKEH', angle: -Math.PI / 2 - 0.3, dist: 125 * scale, color: '#ffffff', glow: ACCENT },
-        { glowHue: '#c4b5fd', id: 'anamorphic_lab', label: 'ANAMORPHIC', angle: Math.PI + 0.4, dist: 110 * scale, color: '#ffffff', glow: ACCENT },
-      ];
+      /* The whole app as a brain: VFX SYNTECH in the middle, EVERY effect in `modules` on a ring around it
+         (A → Z, like the effects column — a new effect added to `modules` appears here by itself). The ring is
+         an ellipse that follows the hero opening (wide, short); the more hubs, the smaller the nodes and the
+         satellite clusters, so the whole constellation always fits inside the canvas. */
+      const hubModules = [...modules].sort((a, b) => a.name.localeCompare(b.name));
+      const nHubs = Math.max(1, hubModules.length);
+      const fit = Math.min(1, Math.sqrt(6 / nHubs));      // 1 up to 6 hubs, ~0.77 for 10
+      const baseScale = Math.min(w, h) / 600 * 1.5;       // the core and the backdrop stars keep their size
+      const scale = baseScale * fit;
+      const ringRx = Math.max(60, Math.min(w - cx - Math.min(105, w * 0.1), cx * 0.62));
+      const ringRy = Math.max(50, h * 0.33);
+      const HUB_HUES = ['#8b5cf6', '#7c3aed', '#a78bfa', '#6d28d9', '#c4b5fd'];
+      /* Keep the hubs out of the wordmark ("VFX Syntech" + strapline, top-left of the hero, drawn ABOVE this canvas):
+         scan the ring, drop every angle whose hub (with its label) would sit in that corner, and spread the hubs
+         evenly over the angles that remain. Uniform spacing if too few remain. */
+      // the wordmark is a fixed-size block (≈ 336 × 171 px in canvas coordinates, whatever the window): pixel floors
+      // keep short heroes from letting a hub or its label slide under the strapline
+      const wmRight = Math.max(w * 0.42 + 45, 391);
+      const wmBottom = Math.max(h * 0.56, 185);
+      const isFree = (deg: number) => {
+        const a = -Math.PI / 2 + (deg * Math.PI) / 180;       // clockwise from the top
+        const hx = cx + Math.cos(a) * ringRx, hy = cy + Math.sin(a) * ringRy;
+        return !(hx < wmRight && hy < wmBottom);
+      };
+      // walk the free arc from just after the excluded corner, so the first and last hub sit at its two ends
+      let arcStart = 0;
+      for (let deg = 0; deg < 360; deg++) {
+        if (isFree(deg) && !isFree((deg + 359) % 360)) { arcStart = deg; break; }
+      }
+      const free: number[] = [];
+      for (let k = 0; k < 360; k++) {
+        const deg = (arcStart + k) % 360;
+        if (isFree(deg)) free.push(-Math.PI / 2 + (deg * Math.PI) / 180);
+        else if (free.length) break;                          // the arc ended: the excluded corner begins
+      }
+      const angleOf = (i: number) =>
+        free.length >= nHubs
+          ? free[Math.round((i * (free.length - 1)) / Math.max(1, nHubs - 1))]
+          : -Math.PI / 2 + (i / nHubs) * Math.PI * 2;
+      const hubsConfig: { glowHue: string; id: ModuleId; label: string; angle: number; color: string; glow: string }[] =
+        hubModules.map((m, i) => ({
+          glowHue: HUB_HUES[i % HUB_HUES.length],
+          id: m.id,
+          label: m.name,
+          angle: angleOf(i),
+          color: '#ffffff',
+          glow: ACCENT,
+        }));
 
       // Add central master core node representing the root index.md / Obsidian Vault main core
       const coreIdx = 0;
@@ -287,8 +329,8 @@ export default function VfxCanvas({
         vy: 0,
         targetX: cx,
         targetY: cy,
-        size: 9 * scale,
-        baseSize: 9 * scale,
+        size: 9 * baseScale,
+        baseSize: 9 * baseScale,
         color: '#ffffff',
         glow: ACCENT,
         pulseSpeed: 0.02,
@@ -297,16 +339,18 @@ export default function VfxCanvas({
 
       // Create primary hubs
       hubsConfig.forEach((hub, i) => {
-        const hx = cx + Math.cos(hub.angle) * hub.dist;
-        const hy = cy + Math.sin(hub.angle) * hub.dist;
+        const hx = cx + Math.cos(hub.angle) * ringRx;
+        const hy = cy + Math.sin(hub.angle) * ringRy;
         const hubIdx = nodes.length;
+        // satellites fan out AWAY from the core (the ellipse's real outward direction, not the parametric angle)
+        const outAngle = Math.atan2(hy - cy, hx - cx);
 
         nodes.push({
           id: hub.id,
           moduleId: hub.id,
           label: hub.label,
-          x: hx + (Math.random() - 0.5) * 50,
-          y: hy + (Math.random() - 0.5) * 50,
+          x: hx + (Math.random() - 0.5) * 50 * fit,
+          y: hy + (Math.random() - 0.5) * 50 * fit,
           vx: 0,
           vy: 0,
           targetX: hx,
@@ -328,10 +372,10 @@ export default function VfxCanvas({
         });
 
         // Generate satellite clusters branching out from this hub
-        const numSatellites = 14 + Math.floor(Math.random() * 6); // 14 to 20 subnodes per module
+        const numSatellites = Math.round((14 + Math.floor(Math.random() * 6)) * Math.min(1, 7 / nHubs)); // 14–19 with 5 hubs, ~10–13 with 10
         for (let s = 0; s < numSatellites; s++) {
-          const satAngle = hub.angle + (Math.random() - 0.5) * (Math.PI / 1.5);
-          const satDist = (40 + Math.random() * 75) * scale;
+          const satAngle = outAngle + (Math.random() - 0.5) * (Math.PI / 1.5);
+          const satDist = (36 + Math.random() * 60) * scale;
           const sx = hx + Math.cos(satAngle) * satDist;
           const sy = hy + Math.sin(satAngle) * satDist;
           const satIdx = nodes.length;
@@ -405,8 +449,8 @@ export default function VfxCanvas({
           vy: 0,
           targetX: rx,
           targetY: ry,
-          size: (1.2 + Math.random() * 1.5) * scale,
-          baseSize: (1.2 + Math.random() * 1.5) * scale,
+          size: (1.2 + Math.random() * 1.5) * baseScale,
+          baseSize: (1.2 + Math.random() * 1.5) * baseScale,
           color: ACCENT_DEEP,
           glow: ga(0.08),
           pulseSpeed: 0.01,
@@ -587,7 +631,7 @@ export default function VfxCanvas({
       // -------------------------------------------------------------
       // the graph sits RIGHT of centre: the hero opening is wide, and the
       // wordmark occupies its left third
-      const cx = w * 0.60;
+      const cx = w * CORE_X;
       const cy = h / 2;
 
       // Update positions of central nodes
@@ -698,13 +742,14 @@ export default function VfxCanvas({
       // DRAW EDGES (THE CONSTALLATION WEB FILAMENTS)
       // -------------------------------------------------------------
       ctx.lineWidth = 0.5;
+      const moduleIds = modules.map((m) => m.id);
       edges.forEach((edge) => {
         const srcNode = nodes[edge.source];
         const tgtNode = nodes[edge.target];
 
         const getHubId = (n: GraphNode): string | undefined => {
           if (n.moduleId) return n.moduleId;
-          return ['blob_tracker', 'analog', 'blob_reveal', 'bokeh', 'anamorphic_lab'].find(id => n.id.startsWith(id));
+          return moduleIds.find((id) => n.id.startsWith(id));
         };
 
         const srcHubId = getHubId(srcNode);
@@ -997,15 +1042,17 @@ export default function VfxCanvas({
             ctx.save();
             
             // Layout placement parameters
-            const labelYOffset = isCore ? -26 : 22;
-            ctx.font = isCore ? 'bold 15px var(--font-mono)' : 'bold 12px var(--font-mono)';
+            // ten hub labels share a short opening: in a small window they shrink with it (core label unchanged)
+            const lk = isCore ? 1 : Math.max(0.7, Math.min(1, h / 520));
+            const labelYOffset = isCore ? -26 : 22 * lk;
+            ctx.font = isCore ? 'bold 15px var(--font-mono)' : `bold ${(12 * lk).toFixed(1)}px var(--font-mono)`;
             ctx.fillStyle = isSelectedActive || isCore ? (isDayMode ? '#000000' : '#ffffff') : ACCENT;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
             const textWidth = ctx.measureText(node.label).width;
-            const padX = 10;
-            const padY = 6;
+            const padX = 10 * lk;
+            const padY = 6 * lk;
 
             // Draw clean background pill container
             ctx.fillStyle = isDayMode ? 'rgba(255, 255, 255, 0.92)' : 'rgba(5, 5, 5, 0.85)';
@@ -1013,9 +1060,9 @@ export default function VfxCanvas({
             ctx.lineWidth = 0.8;
             
             const rx = node.x - textWidth / 2 - padX;
-            const ry = node.y + labelYOffset - (isCore ? 7 : 6) - padY;
+            const ry = node.y + labelYOffset - (isCore ? 7 : 6 * lk) - padY;
             const rw = textWidth + padX * 2;
-            const rh = (isCore ? 15 : 12) + padY * 2;
+            const rh = (isCore ? 15 : 12 * lk) + padY * 2;
 
             ctx.beginPath();
             ctx.roundRect(rx, ry, rw, rh, 4);
@@ -1046,7 +1093,7 @@ export default function VfxCanvas({
 
   return (
     <div
-      className="relative w-full h-full min-h-[300px] overflow-hidden"
+      className="relative w-full h-full overflow-hidden"
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       onMouseDown={handleMouseDown}

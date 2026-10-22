@@ -386,7 +386,8 @@ export default function App() {
 
   // Linking two hubs on the brain graph appends them to the wired chain
   const handleChainLink = (from: ModuleId, to: ModuleId) => {
-    if (from === to) return;
+    // every effect is a hub now, but only the Lab ports (MODULE_IDS) can be chained: a standalone-only one just ignores the drag
+    if (from === to || !isLabModule(from) || !isLabModule(to)) return;
     setChainTo([...graphChain.filter((x) => x !== from && x !== to), from, to]);
   };
 
@@ -1151,7 +1152,7 @@ export default function App() {
                         <div className="hero-scrim absolute inset-0 pointer-events-none bg-gradient-to-br from-black/70 via-black/25 to-transparent" />
 
                         {/* wordmark + subtitle + actions */}
-                        <div className="absolute top-7 left-8 z-10 max-w-[70%]">
+                        <div className="absolute top-7 left-8 z-10 max-w-[70%] pointer-events-none">
                           {/* Brand unification: the top-bar wordmark's font, the shared
                               shimmer, and — on this large one only — the gel material with
                               the logo's inflated 3D (`hero-gel-text`; at 15px in the top bar

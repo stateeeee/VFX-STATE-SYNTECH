@@ -13,7 +13,8 @@
      geometry, uniforms, bloom, camera drift and slider bindings are copied
      verbatim below. Every change to that script is marked SYNTECH-UNIFORM
      (shared chrome / frame sizing / UI wiring), SYNTECH-SOURCE (IMAGE source,
-     WEBCAM toggle) or SYNTECH-FIX (audio, play() rejection, stale listeners).
+     WEBCAM toggle), SYNTECH-FIX (audio, play() rejection, stale listeners) or SYNTECH-EXPORT
+     (Export MP4 H.264 1920×1080 — section, recorder and its guards).
      The old fullscreen UI (bar, HUD, idle title) is replaced by BOKEH's chrome
      (docs/workflow/03-SPEC-SHELL.md §5.1); three is loaded from the vendored
      r160 ES module (../vendor/three160/), no CDN.
@@ -46,6 +47,16 @@
 /* the original's canvas rule was "display:block; width:100%; height:100%" on a fullscreen page;
    here the renderer sizes it to #canvas-wrap (see fitRenderer in the module) */
 #c { display:block; }
+
+/* SYNTECH-EXPORT: Export section (PAINTING's rules) — while exporting the canvas is 1920×1080 but is shown shrunk in the frame */
+#canvas-wrap.exporting #c { width:100% !important; height:100% !important; }
+#export-bar { height:3px; background:rgba(255,255,255,.08); overflow:hidden; margin-top:2px; }
+#export-fill { height:100%; width:0; background:linear-gradient(90deg,var(--amber),#ffe680); box-shadow:0 0 8px rgba(232,192,0,.5); transition:width .2s linear; }
+#export-status { font-size:7.5px; letter-spacing:1px; color:var(--t3); line-height:1.7; }
+#export-status:empty { display:none; }
+#export-status.err { color:var(--red); }
+.led-btn.dis { opacity:.45; }
+.led-btn.busy .led { animation:blink 1s infinite; }
 </style>
 <!-- SYNTECH-UNIFORM-START: shared BOKEH chrome — operator request 2026-10-11 -->
 <link rel="stylesheet" href="../shared/syn-chrome.css">
@@ -141,6 +152,24 @@
       </div>
     </div>
 
+    <!-- SYNTECH-EXPORT: EXPORT — MP4 H.264 1920×1080 (closed on load; Info stays the last section) -->
+    <div class="section">
+      <div class="sec-head closed" data-sec="export">
+        <div class="sec-mark" id="export-mark"></div>
+        <div class="sec-title">Export</div>
+        <div class="sec-chevron">▼</div>
+      </div>
+      <div class="sec-body hidden" id="sec-export">
+        <div class="info-grid">
+          <div class="info-cell"><div class="ic-lbl">Format</div><div class="ic-val dim" id="ex-format">--</div></div>
+          <div class="info-cell"><div class="ic-lbl">Size</div><div class="ic-val dim" id="ex-size">1920×1080</div></div>
+        </div>
+        <div class="row"><div class="lbl">Export</div><div class="led-btn dis" id="btn-export"><div class="led"></div><div class="led-txt" id="export-label">EXPORT MP4</div></div></div>
+        <div id="export-bar"><div id="export-fill"></div></div>
+        <div id="export-status"></div>
+      </div>
+    </div>
+
     <!-- INFO — always open on load (the original's HUD: PTS · FPS) -->
     <div class="section">
       <div class="sec-head" data-sec="info">
@@ -206,7 +235,7 @@ try {
     });
   });
   /* true = closed at load; every section closed except Info (§5.1) */
-  const SECTION_INITIAL_CLOSED = { src:true, pc:true, info:false };
+  const SECTION_INITIAL_CLOSED = { src:true, pc:true, export:true /* SYNTECH-EXPORT */, info:false };
   Object.entries(SECTION_INITIAL_CLOSED).forEach(([key, closed])=>{
     const head = document.querySelector(`.sec-head[data-sec="${key}"]`);
     const body = getSecBody(key);
@@ -264,6 +293,10 @@ const N      = GRID_W * GRID_H;
    (was innerWidth / innerHeight of the fullscreen page). */
 const wrapEl = document.getElementById('canvas-wrap');
 const W0 = Math.max(1, wrapEl.clientWidth), H0 = Math.max(1, wrapEl.clientHeight);
+/* SYNTECH-EXPORT: state shared with the Export block below (declared here so every handler can read it) */
+let exporting = null;       // the export in progress, or null
+let EX_MIME = '';           // MediaRecorder MIME picked for the export ('' = not supported)
+let lastFileName = '';
 
 // ─── RENDERER ────────────────────────────────────────────────────────────────
 const canvas   = document.getElementById('c');
@@ -549,6 +582,7 @@ function syncSourceUI() {
   $('loop-label').textContent = vid.loop ? 'LOOP ON' : 'LOOP OFF';
   $('btn-webcam').classList.toggle('on', srcMode === 'webcam');
   $('webcam-label').textContent = srcMode === 'webcam' ? 'WEBCAM ON' : 'WEBCAM OFF';
+  updateExportUI();         // SYNTECH-EXPORT
 }
 ['play', 'pause', 'ended', 'emptied'].forEach(ev => vid.addEventListener(ev, syncSourceUI));
 
@@ -565,13 +599,14 @@ function playWithAudio() {
   });
 }
 function togglePlay() {
-  if (srcMode !== 'video') return;
+  if (srcMode !== 'video' || exporting) return;   // SYNTECH-EXPORT: playback belongs to the export while it runs
   if (vid.paused || vid.ended) playWithAudio(); else vid.pause();
 }
-function toggleLoop() { vid.loop = !vid.loop; syncSourceUI(); }
+function toggleLoop() { if (exporting) return; vid.loop = !vid.loop; syncSourceUI(); }
 
 function loadImage(file) {
   if (!file || !file.type.startsWith('image/')) return;
+  if (exporting) cancelExport();        // SYNTECH-EXPORT: a new source ends a running export
   const my = ++srcReq;
   const url = URL.createObjectURL(file);
   const img = new Image();
@@ -590,6 +625,7 @@ function loadImage(file) {
 }
 
 function stopWebcam() {
+  if (exporting) cancelExport();        // SYNTECH-EXPORT
   ++srcReq;
   stopCamStream();
   vid.pause(); vid.srcObject = null;
@@ -604,6 +640,7 @@ function stopWebcam() {
 async function toggleWebcam() {
   if (srcMode === 'webcam') { stopWebcam(); return; }
   if (camBusy) return;
+  if (exporting) cancelExport();        // SYNTECH-EXPORT
   camBusy = true;
   const my = ++srcReq;
   try {
@@ -658,6 +695,181 @@ document.addEventListener('keydown', e => {
 });
 $('pill-engine-lbl').textContent = 'WEBGL';
 /* ═══ SYNTECH-SOURCE-END ═══ */
+
+/* ═══ SYNTECH-EXPORT-START: Export MP4 H.264 1920×1080 (PAINTING's recorder, on this three.js engine) ═══
+   Plays the loaded video once from the start and records the canvas (with the effect) plus the video's
+   audio with MediaRecorder; MP4/H.264 where the browser can, WebM otherwise. While it runs the renderer,
+   the bloom composer and the camera are driven at exactly 1920×1080 (pixel ratio 1) and uPixelRatio is
+   scaled so the points keep the size they have in the preview. */
+const EX_W = 1920, EX_H = 1080;
+const EX_MIMES = [
+  'video/mp4;codecs="avc1.640034,mp4a.40.2"',   // H.264 High 5.2
+  'video/mp4;codecs="avc1.64002A,mp4a.40.2"',   // High 4.2
+  'video/mp4;codecs="avc1.4D402A,mp4a.40.2"',   // Main 4.2
+  'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',   // Baseline
+  'video/mp4',
+  'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'
+];
+EX_MIME = (window.MediaRecorder && MediaRecorder.isTypeSupported && EX_MIMES.find(t => MediaRecorder.isTypeSupported(t))) || '';
+const EX_IS_MP4 = EX_MIME.startsWith('video/mp4');
+let audioCtx = null, audioGraph = null;
+const nextFrames = n => new Promise(res => { const f = () => { if (--n <= 0) res(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+function setExStatus(msg, isError) {
+  const el = $('export-status');
+  el.textContent = msg || '';
+  el.classList.toggle('err', !!isError);
+}
+function updateExportUI() {
+  const ok = srcMode === 'video' && !!EX_MIME;   // startExport checks the readiness itself (readyState dips during the post-export rewind)
+  if (!exporting) $('btn-export').classList.toggle('dis', !ok);
+  $('export-label').textContent = exporting ? 'STOP EXPORT' : (EX_IS_MP4 || !EX_MIME ? 'EXPORT MP4' : 'EXPORT WEBM');
+}
+$('ex-format').textContent = !EX_MIME ? 'NOT SUPPORTED' : EX_MIME.includes('avc1') ? 'MP4 · H.264' : EX_IS_MP4 ? 'MP4 · AUTO' : 'WEBM · NO MP4';
+['loadeddata', 'emptied'].forEach(ev => vid.addEventListener(ev, updateExportUI));
+
+function enterExportSize() {
+  const prevPR = renderer.getPixelRatio();
+  const ex = exporting;
+  ex.prevPR = prevPR;
+  renderer.setPixelRatio(1);
+  composer.setPixelRatio(1);
+  renderer.setSize(EX_W, EX_H, false);       // false: the CSS size stays the frame's (see #canvas-wrap.exporting)
+  composer.setSize(EX_W, EX_H);
+  camera.aspect = EX_W / EX_H;
+  camera.updateProjectionMatrix();
+  uniforms.uPixelRatio.value = EX_H / Math.max(1, wrapEl.clientHeight);   // same point size, relative to the frame, as the preview
+  wrapEl.classList.add('exporting');
+}
+function leaveExportSize(ex) {
+  wrapEl.classList.remove('exporting');
+  /* shrink to the frame's size at pixel ratio 1 BEFORE restoring the ratio: restoring it first would briefly
+     allocate a (1920 × ratio)-wide buffer and bloom targets */
+  const fw = Math.max(1, wrapEl.clientWidth), fh = Math.max(1, wrapEl.clientHeight);
+  renderer.setSize(fw, fh, false);
+  composer.setSize(fw, fh);
+  renderer.setPixelRatio(ex.prevPR);
+  composer.setPixelRatio(ex.prevPR);
+  uniforms.uPixelRatio.value = ex.prevPR;
+  fitRenderer();                              // exporting is already null: back to the frame's size
+}
+function ensureAudioGraph() {
+  if (audioGraph) return audioGraph;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  audioCtx = new AC();
+  const src = audioCtx.createMediaElementSource(vid);
+  const dest = audioCtx.createMediaStreamDestination();   // what gets recorded
+  src.connect(audioCtx.destination);                       // what you hear
+  src.connect(dest);
+  audioGraph = { src, dest };
+  return audioGraph;
+}
+function nearestFps(q) {
+  const std = [24, 25, 30, 48, 50, 60];
+  return q > 0 ? std.reduce((a, b) => Math.abs(b - q) < Math.abs(a - q) ? b : a) : 30;
+}
+function rewind() {
+  return new Promise(res => {
+    if (vid.currentTime === 0) { res(); return; }
+    const done = () => { vid.removeEventListener('seeked', done); res(); };
+    vid.addEventListener('seeked', done);
+    vid.currentTime = 0;
+  });
+}
+function toggleExport() { exporting ? cancelExport() : startExport(); }
+async function startExport() {
+  if (exporting) return;
+  if (srcMode !== 'video' || !(vid.readyState >= 2) || !isFinite(vid.duration)) {
+    setExStatus('CARICA UN VIDEO PER ESPORTARE', true); return;
+  }
+  if (!EX_MIME || !canvas.captureStream) { setExStatus('EXPORT NON SUPPORTATO DA QUESTO BROWSER', true); return; }
+  setExStatus('');
+  const ex = exporting = { chunks: [], cancelled: false, prevLoop: vid.loop, prevMuted: vid.muted, mime: EX_MIME, timer: null, rec: null, onEnded: null, prevPR: 1 };
+  try {
+    enterExportSize();
+    const graph = ensureAudioGraph();
+    updateExportUI();                          // the button reads STOP EXPORT from the start of the setup
+    await audioCtx.resume();
+    if (exporting !== ex) return;              // cancelled while the audio device was waking up
+    vid.muted = false;
+    vid.loop = false;
+    $('btn-loop').classList.remove('on'); $('loop-label').textContent = 'LOOP OFF';
+    vid.pause();
+    await rewind();
+    if (exporting !== ex) return;
+    await nextFrames(3);                       // the engine draws the first frame at 1920×1080
+    if (exporting !== ex) return;
+    if (canvas.width !== EX_W || canvas.height !== EX_H)
+      throw new Error('il canvas è ' + canvas.width + '×' + canvas.height + ' invece di ' + EX_W + '×' + EX_H);
+
+    const fps = nearestFps(Number($('fps-val').textContent) || 0);
+    const bps = Math.round(Math.min(150e6, Math.max(20e6, EX_W * EX_H * fps * 0.8)));   // ~0.8 bit/pixel/frame: practically transparent
+    const vstream = canvas.captureStream(fps);
+    const stream = new MediaStream([...vstream.getVideoTracks(), ...graph.dest.stream.getAudioTracks()]);
+    const rec = ex.rec = new MediaRecorder(stream, { mimeType: EX_MIME, videoBitsPerSecond: bps, audioBitsPerSecond: 320000 });
+    ex.actual = rec.mimeType || EX_MIME;       // codec the browser really picked
+    rec.ondataavailable = e => { if (e.data && e.data.size) ex.chunks.push(e.data); };
+    rec.onerror = () => { setExStatus('ERRORE DI REGISTRAZIONE', true); ex.cancelled = true; try { rec.stop(); } catch (e) {} };
+    rec.onstop = () => finishExport(ex);
+    ex.onEnded = () => setTimeout(() => { if (rec.state !== 'inactive') rec.stop(); }, 350);   // let the last frame flush
+    vid.addEventListener('ended', ex.onEnded, { once: true });
+
+    rec.start(500);
+    try { await vid.play(); } catch (e) { if (ex.cancelled || exporting !== ex) return; throw e; }   // STOP while play() is pending: not an error
+    if (exporting !== ex) return;
+    $('btn-export').classList.add('busy');
+    $('export-mark').classList.add('on');
+    updateExportUI();
+    setExStatus(EX_W + '×' + EX_H + ' · ' + fps + ' FPS · ' + Math.round(bps / 1e6) + ' MBPS — TIENI QUESTA SCHEDA IN PRIMO PIANO');
+    ex.timer = setInterval(() => {
+      const d = vid.duration || 1, pct = Math.min(100, Math.round(vid.currentTime / d * 100));
+      $('export-fill').style.width = pct + '%';
+      $('export-label').textContent = 'STOP EXPORT · ' + pct + '%';
+    }, 200);
+  } catch (err) {
+    console.error(err);
+    setExStatus('EXPORT FALLITO — ' + (err.message || err.name), true);
+    ex.cancelled = true;
+    if (ex.rec && ex.rec.state !== 'inactive') { try { ex.rec.stop(); } catch (e) {} } else finishExport(ex);
+  }
+}
+function cancelExport() {
+  const ex = exporting; if (!ex) return;
+  ex.cancelled = true;
+  vid.pause();
+  if (ex.rec && ex.rec.state !== 'inactive') ex.rec.stop(); else finishExport(ex);
+}
+function finishExport(ex) {
+  if (exporting !== ex) return;
+  exporting = null;
+  leaveExportSize(ex);
+  clearInterval(ex.timer);
+  if (ex.onEnded) vid.removeEventListener('ended', ex.onEnded);
+  vid.loop = ex.prevLoop;
+  vid.muted = ex.prevMuted;
+  $('btn-export').classList.remove('busy');
+  $('export-mark').classList.remove('on');
+  syncSourceUI();                              // also refreshes the Export button
+  if (ex.cancelled) {
+    $('export-fill').style.width = '0%';
+    if (!$('export-status').classList.contains('err')) setExStatus('EXPORT ANNULLATO');
+  } else {
+    $('export-fill').style.width = '100%';
+    const blob = new Blob(ex.chunks, { type: ex.mime.split(';')[0] });
+    const ext = ex.mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+    const base = (lastFileName || 'video').replace(/\.[^.]+$/, '');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = base + '_pointcloud.' + ext;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 120000);
+    const m = (ex.actual || '').toLowerCase();
+    const codec = /avc1|h264/.test(m) ? 'H.264' : /vp9/.test(m) ? 'VP9' : /vp8/.test(m) ? 'VP8' : /av01/.test(m) ? 'AV1' : '';
+    setExStatus('SALVATO ' + a.download + ' · ' + (blob.size / 1048576).toFixed(1) + ' MB' + (codec ? ' · ' + codec : '') + (ext === 'webm' ? ' — MP4 NON SUPPORTATO DA QUESTO BROWSER' : ''));
+  }
+  if (vid.loop || !ex.cancelled) { vid.currentTime = 0; vid.play().catch(() => {}); }   // preview resumes
+}
+$('btn-export').addEventListener('click', toggleExport);
+updateExportUI();
+/* ═══ SYNTECH-EXPORT-END ═══ */
 
 // ─── CAMERA DRIFT ────────────────────────────────────────────────────────────
 function driftCamera(t) {
@@ -719,6 +931,8 @@ bindSlider('sBloom', 'vBloom', null, 1, v => bloom.strength = v);
 // ─── LOAD VIDEO ──────────────────────────────────────────────────────────────
 function loadFile(file) {
   if (!file || !file.type.startsWith('video/')) return;
+  if (exporting) cancelExport();        // SYNTECH-EXPORT
+  lastFileName = file.name;             // SYNTECH-EXPORT: names the exported file
   const my = ++srcReq;                  // SYNTECH-FIX: a stale 'loadeddata' (older pick / webcam) must not activate this one
   stopCamStream();                      // SYNTECH-FIX: release the webcam (the original left it running)
   const old = vidURL;
@@ -760,6 +974,7 @@ document.body.addEventListener('drop', e => {
    frame, resized by fitCanvas and by the timeline appearing under the video) — was a window
    'resize' listener on innerWidth / innerHeight. Same four calls as the original. */
 function fitRenderer() {
+  if (exporting) return;    // SYNTECH-EXPORT: the engine is held at 1920×1080 until the export ends
   const w = Math.max(1, wrapEl.clientWidth), h = Math.max(1, wrapEl.clientHeight);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
