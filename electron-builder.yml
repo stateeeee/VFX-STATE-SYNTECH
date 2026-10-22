@@ -1,0 +1,73 @@
+# VFX SYNTECH — desktop packaging (electron-builder).
+#
+#   npm run desktop:dist           builds for the OS you are on
+#   .github/workflows/desktop.yml  builds Windows + macOS on GitHub's machines
+#
+# Everything the app needs at runtime is in dist/ (the built web app + all ten
+# effects, fully offline) and dist-desktop/main.cjs (Electron main + server.ts,
+# bundled with express, dotenv and the AI clients). So node_modules is left out
+# entirely: the app ships nothing it does not load.
+appId: com.state.vfxsyntech
+productName: VFX SYNTECH
+copyright: © State — VFX SYNTECH
+
+directories:
+  output: release
+  buildResources: desktop
+
+files:
+  - dist/**/*
+  - "!dist/server.cjs"
+  - "!dist/server.cjs.map"
+  - dist-desktop/**/*
+  - desktop/icon.png
+  - package.json
+  - "!node_modules/**/*"
+
+# ── Windows: one .exe, double-click, nothing to install ─────────────────────
+win:
+  target:
+    - target: portable
+      arch: [x64]
+  icon: desktop/icon.png
+portable:
+  artifactName: VFX-SYNTECH-${version}-Windows.exe
+
+# ── macOS: one .zip that runs on both Apple Silicon and Intel Macs ──────────
+# A .zip, not a .dmg: double-click it and the app itself appears next to it,
+# ready to double-click. The .dmg made people drag the app onto an Applications
+# shortcut inside a read-only disk (a 🚫 cursor until you hit the folder exactly)
+# and its disk icon on the desktop reopened that same window in a loop — the
+# operator hit exactly that on the first try (2026-09-28).
+mac:
+  target:
+    - target: zip
+      arch: [universal]
+  icon: desktop/icon.png
+  category: public.app-category.video
+  # Ad-hoc signature: no Apple Developer account needed. Without ANY signature
+  # an Apple Silicon Mac calls the app "damaged"; with this one it only asks,
+  # the first time, to confirm it in System Settings → Privacy & Security.
+  identity: "-"
+  hardenedRuntime: false
+  # Runs from macOS 10.15 Catalina (2019) up. This is set by the Electron
+  # version, not here: Electron 44 required macOS 13 and the operator's own M1
+  # on macOS 12.2.1 refused to open it. package.json pins Electron 32.3.3, the
+  # last line that supports 10.15. Do NOT upgrade Electron without reading
+  # docs/workflow/DESKTOP.md — the workflow fails the build if this drifts.
+  minimumSystemVersion: "10.15"
+  extendInfo:
+    NSCameraUsageDescription: VFX SYNTECH usa la webcam come sorgente video per gli effetti.
+    NSMicrophoneUsageDescription: VFX SYNTECH usa il microfono per rendere gli effetti reattivi all'audio.
+  artifactName: VFX-SYNTECH-${version}-Mac.zip
+
+# ── Linux: only used to test the desktop build in the cloud sandbox ─────────
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  icon: desktop/icon.png
+  category: Video
+  executableName: vfx-syntech
+appImage:
+  artifactName: VFX-SYNTECH-${version}-Linux.AppImage

@@ -25,6 +25,7 @@ done, what is next, and every decision made so far. Then follow
 | `07-SESSION-PROTOCOL.md` | How every work session must start, run, and end |
 | `08-PROMPTS.md` | The prompts the operator pastes to drive each session |
 | `09-MODEL-ROUTING.md` | **Which model does which task** (Haiku / Sonnet / Opus) + the mandatory Opus review gate |
+| `DESKTOP.md` | The double-click desktop app (Electron): how it is built, tested, delivered |
 
 ## Commands
 
@@ -33,7 +34,12 @@ npm install          # first time only
 npm run dev          # tsx server.ts → http://localhost:3000 (Express + Vite middleware)
 npm run lint         # tsc --noEmit (must stay clean)
 npm run build        # vite build + esbuild server bundle
+npm run desktop      # build + open the desktop app (Electron, unpackaged)
+npm run desktop:dist # package the desktop app for this OS into release/
 ```
+
+The desktop app (Windows .exe + macOS .zip) is built and tested on every push
+by `.github/workflows/desktop.yml` — see `docs/workflow/DESKTOP.md`.
 
 The Gemini 3.8 panel (Art Director / Agent / Optimizer) needs a Gemini key:
 paste it in the panel, or put `GEMINI_API_KEY` in `.env.local` (used only for
@@ -47,11 +53,13 @@ require it.
 server.ts                       Express: /api/gemini/* endpoints, serves /effects statically
 ai-provider.ts                  Gemini client: key resolution (header / loopback .env), errors, Files upload
 ai-roles.ts                     The three roles: prompts, per-request schemas, plan validator
+desktop/main.ts                 Electron shell: runs server.ts inside the app on 127.0.0.1:47291
 src/App.tsx                     Shell: top bar, left nav, layout, composition state, save/projects
 src/components/VfxCanvas.tsx    Animated "brain graph" hero (canvas), hub-drag chaining
 src/components/NodalComposition.tsx  Node graph panel (INPUT → effects → OUTPUT)
 src/components/ChainLab.tsx     Lab surface: SynEngine rack, audio/video signals, presets, LabHandle for Gemini
 src/components/EffectHost.tsx   Full-screen iframe host for one standalone effect
+src/components/IntroSplash.tsx  Desktop-app opening: logo → pet video + LOADING 0–100% (browser: ?intro)
 src/components/AiDirector.tsx   Gemini 3.8 panel: key form, Art Director / Agent / Optimizer, Apply/Undo
 src/ai/contract.ts              Panel ⇄ server wire format: types, safety lists, LabHandle
 src/ai/client.ts                Panel → /api/gemini/*: key header, AiError, upload cache

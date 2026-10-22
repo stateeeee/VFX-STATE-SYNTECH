@@ -10,6 +10,10 @@
   under `/api/gemini/*` (see "Gemini 3.8 layer" below). There are no offline
   AI answers: without a key the AI modes are simply locked, and nothing that
   is not AI ever needs one.
+- **Desktop**: `desktop/main.ts` (Electron) runs the same `server.ts` inside
+  the app on `127.0.0.1:47291` (fixed: localStorage is per-origin) and opens one
+  window on it. Packaged by `electron-builder.yml`, built + tested for Windows
+  and macOS by `.github/workflows/desktop.yml`. See `DESKTOP.md`.
 - **Effects**: five fully standalone single-file HTML apps in
   `public/effects/<id>/index.html`. Each has its own UI, video/webcam input,
   parameters, audio reactivity, and MediaRecorder export. They currently have

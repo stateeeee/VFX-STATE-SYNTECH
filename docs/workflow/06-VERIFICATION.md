@@ -158,3 +158,20 @@ For the effect being ported, prove equivalence between the standalone HTML
 - With no key: Gemini 3.8 panel STANDBY, rail modes locked, nothing else
   affected. After any AI change: `verify-gemini.cjs` passes (Phase 11+).
 - `npm run lint` clean; no new console errors on the dashboard.
+- Desktop build still opens and passes `tools/verify/verify-desktop.cjs` — in
+  the sandbox on the Linux build, and on every push in CI on Windows + macOS
+  (the "Desktop app" workflow must be green). See §6.
+
+## 6. Desktop app
+
+```bash
+npm run build && npm run desktop:bundle && npx electron-builder --linux dir
+NODE_PATH=/opt/node22/lib/node_modules xvfb-run -a node tools/verify/verify-desktop.cjs <scratch>
+```
+
+Drives the packaged executable (not the dev server): window + title, every
+asset served from inside the app, Gemini /status with no key, all ten effects open, H.264
+decode, localStorage across a relaunch, single instance, port-busy fallback.
+The same script runs in `.github/workflows/desktop.yml` on real Windows and
+macOS machines against the exact build it uploads — the only place the .exe
+and the Mac .zip can actually be opened. Details: `DESKTOP.md`.
