@@ -1286,7 +1286,11 @@ export default function App() {
                 <div className="syn-systems-list flex-1 overflow-y-auto p-3.5 space-y-2 custom-scrollbar">
                   {(() => {
                     const q = systemSearch.trim().toLowerCase();
-                    const shown = q ? modules.filter((m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)) : modules;
+                    /* The column lists the effects A → Z by their visible name. `modules` itself keeps its
+                       order (hubs, node graph and the "first module" fallbacks index into it), so only the
+                       cards are sorted. */
+                    const sorted = [...modules].sort((a, b) => a.name.localeCompare(b.name));
+                    const shown = q ? sorted.filter((m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)) : sorted;
                     if (!shown.length) return (
                       <div data-testid="effect-search-empty" className="text-[10px] font-mono text-neutral-500 text-center py-6">no systems match "{systemSearch}"</div>
                     );

@@ -1194,6 +1194,7 @@ setInterval(()=>{
    ========================================= */
 function setMode(m){
   sourceMode = m;
+  vidEl.style.transform = m === 'webcam' ? 'scaleX(-1)' : '';   /* SYNTECH-FIX: webcam = mirror, also in the PAINT-off view (it shows this <video>); the painted view mirrors the texture, see _drawMirror */
   applyAudio();
   updateExportUI();
 }
@@ -2185,9 +2186,24 @@ function buildStrokeGeo(cols,rows){
 const vid=document.getElementById('vid');
 let videoTex=null, playing=false, transition=0., curStyle='watercolor';
 
+/* SYNTECH-FIX-START: the WEBCAM reads like a mirror (raise your right hand → it is on the screen's right), as in every other
+   effect. Only the live webcam: the frame is flipped onto a canvas BEFORE it becomes the texture, so the strokes, the
+   hatching and the light direction of every style still run on the mirrored picture. Files and images are untouched. */
+const _mirCv=document.createElement('canvas'), _mirCtx=_mirCv.getContext('2d');
+const _camMirrored=()=>typeof sourceMode!=='undefined' && sourceMode==='webcam';
+function _drawMirror(){
+  const w=vid.videoWidth, h=vid.videoHeight;
+  if(!w||!h) return;
+  if(_mirCv.width!==w||_mirCv.height!==h){ _mirCv.width=w; _mirCv.height=h; }
+  _mirCtx.setTransform(-1,0,0,1,w,0);
+  _mirCtx.drawImage(vid,0,0,w,h);
+  _mirCtx.setTransform(1,0,0,1,0,0);
+}
+/* SYNTECH-FIX-END */
 function activateVideo(){
   if(videoTex) videoTex.dispose();
-  videoTex=new THREE.VideoTexture(vid);
+  if(_camMirrored()){ _drawMirror(); videoTex=new THREE.CanvasTexture(_mirCv); videoTex.generateMipmaps=false; } /* SYNTECH-FIX: webcam = mirrored canvas */
+  else videoTex=new THREE.VideoTexture(vid);
   videoTex.minFilter=THREE.LinearFilter;
   videoTex.magFilter=THREE.LinearFilter;
   videoTex.flipY=true;
@@ -2292,6 +2308,7 @@ function animate(ts){
     document.getElementById('sFps').textContent=f;
     fpsAcc=fpsN=0;}
   if(playing) transition=Math.min(1.,transition+dt*.4);
+  if(videoTex && videoTex.isCanvasTexture && vid.readyState >= vid.HAVE_CURRENT_DATA) _drawMirror(); /* SYNTECH-FIX: next mirrored webcam frame */
   if(videoTex && vid.readyState >= vid.HAVE_CURRENT_DATA) videoTex.needsUpdate=true; /* SYNTECH-FIX: was "if(videoTex)" — no upload while a new source has no frame yet (it failed with "texImage2D: no video" and left the texture as it was), as in POINTCLOUD */
 
   const color=parseFloat(document.getElementById('sColor').value);

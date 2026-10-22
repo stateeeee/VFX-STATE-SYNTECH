@@ -29,6 +29,24 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-22 (4) — cover dei 5 nuovi effetti, ordine A→Z, webcam di PAINTING specchiata, FATTO.**
+- **Cover**: INVISIBLE, PAINTING, POINTCLOUD, QUADTREE, TIME MACHINE hanno ora la loro cover come le prime cinque
+  (stessa ricetta `tools/gen/gen-effect-covers.cjs`, stessa piastra 466×320 → colonna e etichette allineate; più le
+  varianti "day" col nero keyato). Sorgenti: i suoi screenshot in `docs/design/covers-src/6…10-*.webp` (README aggiornato).
+  Le cover esistenti NON sono state rigenerate (il generatore e `build-day-covers.cjs` ora accettano gli id da rifare).
+  POINTCLOUD e PAINTING hanno un "pavimento del nero" (`floor: 22`) perché il bloom, tagliato dal ritaglio, lasciava un
+  rettangolo grigio sulla piastra. INVISIBLE è scura di natura (è solo il contorno). QUADTREE viene da un frame senza interfaccia.
+- **Ordine A→Z** della colonna effetti: ANALOG, ANAMORPHIC, BLOB REVEAL, BLOB TRACKER, BOKEH, INVISIBLE, PAINTING,
+  POINTCLOUD, QUADTREE, TIME MACHINE. Ordinate solo le schede (`App.tsx`): l'array `modules` resta com'è (hub, grafo e
+  fallback `modules[0]` ci indicizzano dentro). La ricerca continua a funzionare.
+- **PAINTING, webcam**: era mostrata NON specchiata (la tua destra a sinistra), diversa da tutti gli altri effetti.
+  Ora è uno specchio come in Bokeh/Analog: sia con PAINT spento (si vede il `<video>`: `scaleX(-1)` in `setMode`) sia con
+  PAINT acceso (la texture passa da un canvas specchiato PRIMA dell'effetto, quindi pennellate, tratteggio e direzione della luce
+  lavorano sull'immagine già specchiata). Immagini e video file invariati. Provato con una camera finta rossa/blu:
+  webcam sinistra = blu (specchiata) in entrambe le viste, immagine sinistra = rosso (invariata). Se invece la voleva
+  NON specchiata: togliere le due righe `SYNTECH-FIX` (`setMode` e il ramo `_camMirrored()` in `activateVideo`).
+- `verify-phase10-covers.js` aggiornata a 10 cover + controllo ordine A→Z: 17/17 (lanciata da copia `.cjs`, vedi aperto 3).
+
 **SESSIONE 2026-10-22 (3) — nuovo effetto PAINTING (standalone), FATTO.**
 Dal file `paint_1.html` dell'operatore: `public/effects/painting/index.html`, ModuleId `painting`, scheda "PAINTING" nella
 colonna effetti (solo il nome, grafica dopo). Stesso schema di INVISIBLE/TIME MACHINE/QUADTREE/POINTCLOUD (94c9a26):

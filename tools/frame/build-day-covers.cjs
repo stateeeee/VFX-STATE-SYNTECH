@@ -14,7 +14,8 @@
  * Reads   public/assets/covers/<ModuleId>.webp
  * Writes  public/assets/covers/day/<ModuleId>.webp
  *
- * Run: NODE_PATH=/opt/node22/lib/node_modules node tools/frame/build-day-covers.cjs
+ * Run: NODE_PATH=/opt/node22/lib/node_modules node tools/frame/build-day-covers.cjs [ModuleId ...]
+ * (with ids, only those covers are rebuilt; the others are left byte-for-byte as they are)
  */
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -33,7 +34,8 @@ const DST = path.join(SRC, 'day');
   await work.goto('about:blank');
   fs.mkdirSync(DST, { recursive: true });
 
-  const names = fs.readdirSync(SRC).filter((f) => /\.(webp|png|jpg)$/i.test(f));
+  const ONLY = process.argv.slice(2);
+  const names = fs.readdirSync(SRC).filter((f) => /\.(webp|png|jpg)$/i.test(f) && (!ONLY.length || ONLY.includes(f.replace(/\.[^.]+$/, ''))));
   if (!names.length) throw new Error(`no covers in ${SRC}`);
 
   for (const name of names) {

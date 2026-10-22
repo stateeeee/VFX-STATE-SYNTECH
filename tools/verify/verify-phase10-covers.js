@@ -1,6 +1,7 @@
 /*
- * Phase 10 — effect-card cover art (EffectCardArt), now that the operator's five
- * covers are shipped in public/assets/covers/.
+ * Phase 10 — effect-card cover art (EffectCardArt), now that the operator's covers
+ * (the original five + INVISIBLE, PAINTING, POINTCLOUD, QUADTREE, TIME MACHINE) are shipped
+ * in public/assets/covers/.
  *
  * The operator's direction for the art (2026-07-29): each cover is ONLY what the
  * effect's HTML renders — the logo/"star" on black, no app chrome — and the star
@@ -24,7 +25,9 @@
 const { chromium } = require('playwright');
 const path = require('path');
 
-const IDS = ['blob_tracker', 'analog', 'blob_reveal', 'bokeh', 'anamorphic_lab'];
+// The column lists the effects A → Z by visible name; this is that order, and the suite checks the DOM against it.
+const IDS = ['analog', 'anamorphic_lab', 'blob_reveal', 'blob_tracker', 'bokeh',
+  'invisible', 'painting', 'pointcloud', 'quadtree', 'time_machine'];
 const MISSING = 'bokeh';           // forced to 404 in the fallback pass
 const SHOT_DIR = process.env.SHOT_DIR || '';
 
@@ -82,9 +85,13 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
   await page.waitForTimeout(2000); // img load + fade-in
 
   const cards = await probe(page);
-  step('all five cards carry a decoded cover',
-    cards.length === 5 && cards.every((c) => c.found && c.hasImg && c.nat !== '0x0'),
+  step('all ten cards carry a decoded cover',
+    cards.length === IDS.length && cards.every((c) => c.found && c.hasImg && c.nat !== '0x0'),
     cards.map((c) => `${c.id} ${c.nat}`).join(' | '));
+  const domOrder = await page.evaluate(() => [...document.querySelectorAll('[data-testid^="effect-card-"]')]
+    .map((e) => e.getAttribute('data-testid').replace('effect-card-', '')));
+  step('the effect cards are listed in alphabetical order (A → Z)',
+    JSON.stringify(domOrder) === JSON.stringify(IDS), domOrder.join(','));
   step('covers are visible (opacity 1)', cards.every((c) => c.opacity === 1));
   step('covers are drawn with object-contain (the star is never cropped)',
     cards.every((c) => c.fit === 'contain'), cards.map((c) => c.fit).join(','));
@@ -97,7 +104,7 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
      What still has to hold — and is what the direction was actually about — is
      that the star is WHOLE, right-aligned, and the SAME size on all five cards,
      so they can be compared at a glance. */
-  step('the art is right-aligned, whole, and identical on all five cards',
+  step('the art is right-aligned, whole, and identical on all ten cards',
     cards.every((c) => c.artRightGap <= 1 && c.shownH > 0 && c.shownH <= c.innerH)
       && new Set(cards.map((c) => c.shownH)).size === 1,
     cards.map((c) => `${c.id} h=${c.shownH}/${c.innerH} gap=${c.artRightGap}`).join(' | '));
@@ -131,8 +138,8 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
 
   if (SHOT_DIR) {
     const box = await page.evaluate(() => {
-      const a = document.querySelector('[data-testid="effect-card-blob_tracker"]').getBoundingClientRect();
-      const z = document.querySelector('[data-testid="effect-card-anamorphic_lab"]').getBoundingClientRect();
+      const a = document.querySelector('[data-testid="effect-card-analog"]').getBoundingClientRect();
+      const z = document.querySelector('[data-testid="effect-card-time_machine"]').getBoundingClientRect();
       return { x: a.x - 12, y: a.y - 12, width: a.width + 24, height: z.bottom - a.y + 24 };
     });
     await page.screenshot({ path: path.join(SHOT_DIR, 'covers-cards.png'), clip: box });
@@ -166,7 +173,7 @@ const probe = (page) => page.evaluate((ids) => ids.map((id) => {
   step(`${MISSING}: missing cover falls back to the plain card`,
     (!fb.hasImg || fb.opacity === 0) && !fb.bed && fb.label.length > 0,
     `hasImg=${fb.hasImg} opacity=${fb.opacity} bed=${fb.bed} "${fb.label}"`);
-  step('the other four are unaffected', others.every((c) => c.opacity === 1),
+  step('the other nine are unaffected', others.every((c) => c.opacity === 1),
     others.map((c) => `${c.id}=${c.opacity}`).join(' '));
 
   /* The systems column was narrowed by direction, but this PanelGroup persists its

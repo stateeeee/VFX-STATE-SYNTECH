@@ -1,6 +1,8 @@
 /*
- * Builds the five effect-card covers in public/assets/covers/ from the operator's
- * own effect screenshots in docs/design/covers-src/.
+ * Builds the effect-card covers in public/assets/covers/ from the operator's
+ * own effect screenshots in docs/design/covers-src/ (the first five are the
+ * original set; INVISIBLE, TIME MACHINE, POINTCLOUD, PAINTING and QUADTREE were
+ * added later with the very same recipe — see the SHOTS table).
  *
  * The operator's direction (2026-07-29): use ONLY what the effect's HTML renders
  * — their logo/"star" on black, no app chrome — with the star CENTRED and NEVER
@@ -42,7 +44,7 @@ const OUT = path.join(ROOT, 'public/assets/covers');
 const H = 320;       // output height — 4× the card's 80px, for high-DPI screens
 const MARGIN = 0.02; // breathing room around the content, as a fraction of its long side
 
-/* Render windows in SOURCE pixels (every shot is 2000×1250). */
+/* Render windows in SOURCE pixels (every shot is 2000×1250, except the QUADTREE frame). */
 const SHOTS = [
   { id: 'blob_tracker',   f: '1-blob_tracker.webp', win: [70, 300, 1530, 1190] },
   { id: 'analog',         f: '2-analog.webp',       win: [70, 300, 1530, 1180] },
@@ -51,7 +53,23 @@ const SHOTS = [
   // NOTE: the fifth shot is the bokeh app's ANAMORPHIC section (letterbox +
   // squeeze 2.20), which is what the operator delivered as the anamorphic look.
   { id: 'anamorphic_lab', f: '5-anamorphic.webp',   win: [70, 355, 1530, 1160] },
+  // Added 2026-10-22. Same recipe: the shots are screenshots of each effect's own app (2000×1250), so the
+  // windows keep the corner brackets, the "1920 × 1080 · …" caption and the transport bar outside.
+  { id: 'invisible',      f: '6-invisible.webp',    win: [70, 280, 1530, 1060] },
+  { id: 'time_machine',   f: '7-time_machine.webp', win: [70, 300, 1530, 1040] },
+  // `floor`: these two have a soft bloom halo that the bounding-box crop would otherwise cut into a faint grey
+  // rectangle on the black plate (the original five stand on pure black). Everything at or under the floor
+  // goes to black and the rest is rescaled, so the halo fades out before the crop edge.
+  { id: 'pointcloud',     f: '8-pointcloud.webp',   win: [70, 300, 1530, 1060], floor: 22 },
+  { id: 'painting',       f: '9-painting.webp',     win: [70, 300, 1530, 1060], floor: 22 },
+  // The QUADTREE shot is a bare 1672×941 render frame (no app chrome), so its window is the whole frame.
+  { id: 'quadtree',       f: '10-quadtree.webp',    win: [0, 0, 1672, 941] },
 ];
+
+/* Optional ids on the command line rebuild ONLY those covers (the common plate is still measured over all of
+   them, so the new ones can never change the size of the existing ones):
+     node tools/gen/gen-effect-covers.cjs invisible painting */
+const ONLY = process.argv.slice(2);
 
 (async () => {
   const browser = await chromium.launch({
@@ -98,7 +116,8 @@ const SHOTS = [
 
   /* Pass 2 — compose each cover on that one plate. */
   for (const s of found) {
-    const webp = await page.evaluate(async ({ b64, win, box, W, H, MARGIN }) => {
+    if (ONLY.length && !ONLY.includes(s.id)) continue;
+    const webp = await page.evaluate(async ({ b64, win, box, W, H, MARGIN, floor }) => {
       const im = new Image(); im.src = 'data:image/webp;base64,' + b64; await im.decode();
       const [x0, y0, x1, y1] = win, w = x1 - x0, h = y1 - y0;
       const src = document.createElement('canvas'); src.width = w; src.height = h;
@@ -113,8 +132,13 @@ const SHOTS = [
       g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
       const dw = Math.round(bw * k), dh = Math.round(bh * k);
       g.drawImage(src, bx0, by0, bw, bh, Math.round((W - dw) / 2), Math.round((H - dh) / 2), dw, dh);
+      if (floor) {
+        const px = g.getImageData(0, 0, W, H), d = px.data, k2 = 255 / (255 - floor);
+        for (let i = 0; i < d.length; i += 4) for (let j = 0; j < 3; j++) d[i + j] = d[i + j] <= floor ? 0 : Math.round((d[i + j] - floor) * k2);
+        g.putImageData(px, 0, 0);
+      }
       return c.toDataURL('image/webp', 0.92);
-    }, { b64: s.b64, win: s.win, box: s.box, W, H, MARGIN });
+    }, { b64: s.b64, win: s.win, box: s.box, W, H, MARGIN, floor: s.floor || 0 });
 
     const file = path.join(OUT, `${s.id}.webp`);
     fs.writeFileSync(file, Buffer.from(webp.split(',')[1], 'base64'));
