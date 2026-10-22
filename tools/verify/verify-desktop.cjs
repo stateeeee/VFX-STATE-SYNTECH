@@ -79,6 +79,16 @@ async function launch() {
   // ── 1b. the intro: logo → pet on black, LOADING 0 → 100%, then the app ────
   await page.waitForSelector('[data-testid="intro-video"]', { timeout: 15000 });
   step('intro shows on launch', true);
+  /* Record every value the counter actually shows. Polling alone can miss the
+     100% that is on screen only during the 0.7 s fade (seen on the Windows
+     runner: each sample delayed by the app mounting underneath, max 97%). */
+  await page.evaluate(() => {
+    const p = document.querySelector('[data-testid="intro-pct"]');
+    const read = () => parseInt((p.textContent || '').replace(/\D/g, ''), 10) || 0;
+    window.__introMaxPct = read();
+    new MutationObserver(() => { window.__introMaxPct = Math.max(window.__introMaxPct, read()); })
+      .observe(p, { subtree: true, childList: true, characterData: true });
+  });
   /* Timed from the intro's own mount, as is its 14 s give-up: the seconds the
      bundle takes to boot before it (4 s on the macOS runner) are not the intro's.
      Video 9.13 s + 0.7 s fade ≈ 10 s; the give-up path lands at ≥ 14.2 s (this
@@ -98,6 +108,7 @@ async function launch() {
   await page.screenshot({ path: path.join(SCRATCH, 'desktop-intro.png') });
   let maxPct = later ? later.pct : 0;
   for (let s; (s = await sample()); await page.waitForTimeout(200)) maxPct = Math.max(maxPct, s.pct);
+  maxPct = Math.max(maxPct, await page.evaluate(() => window.__introMaxPct || 0).catch(() => 0));
   step('LOADING counter climbs to 100%', later && later.pct > 0 && later.pct < 100 && maxPct === 100, `mid ${later && later.pct}% · max ${maxPct}%`);
   await page.waitForSelector('[data-testid="intro"]', { state: 'detached', timeout: 20000 });
   const took = (Date.now() - t0) / 1000;

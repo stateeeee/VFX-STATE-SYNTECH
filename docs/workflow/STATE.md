@@ -59,6 +59,10 @@ terminale. L'app da doppio clic (Electron, `docs/workflow/DESKTOP.md`) viveva so
   in sé è durata 9,98 s (≈ video 9,13 + dissolvenza 0,7 + avvio). Ora `verify-desktop.cjs` cronometra dalla
   comparsa dell'intro, come il suo timeout di 14 s, e il limite scende a 13 s: il ramo "bloccata → chiusa dal
   timeout" (≥ 14,2 s) fallisce ancora, con margine.
+- Run su `main` dopo #9: Mac verde, **Windows 37/38** — `LOADING` max 97%: il 100% è scritto da `ended` e resta a
+  schermo solo per la dissolvenza (0,7 s); sul runner Windows i campionamenti del test, rallentati dall'app che si
+  monta sotto, lo hanno mancato (l'intro si è chiusa da sola in 9,8 s). Il test ora registra nella pagina, con un
+  `MutationObserver` sul contatore, ogni valore mostrato davvero: richiede sempre che il 100% compaia.
 
 **SESSIONE 2026-10-22 (6) — hero: via la scritta, brain graph circolare senza buco, FATTO.**
 - Tolta la riga "AI-Powered. Node-Based. Limitless." sotto il wordmark (`App.tsx`, e la regola `.hero-strapline` di `index.css`).
