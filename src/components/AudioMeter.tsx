@@ -1,47 +1,168 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-/* Stereo playback level meter for the left sidebar (Premiere-style): green at the
- * bottom, amber through the middle, red at the top when the clip is running hot.
- * TWO columns side by side — left channel and right channel — centred in the rail,
- * and the pair fills whatever height is left under the GEMINI 3.8 block, with the
- * "Audio" caption sitting UNDER the columns.
+/* Stereo playback level meter for the left sidebar, read like a DAW / Premiere
+ * meter: TWO columns (left, right), green → amber → red by zone, the CLIP light
+ * on top. It fills the small opening under the rail in the cage.
  *
- * It taps the shell's hero <video> through WebAudio. The element ships muted (so
- * it can autoplay), and a muted element feeds silence to an analyser, so we
- * unmute it and route it through a gain of 0 instead: the analyser sees the real
- * samples while playback stays as silent as before. Restored on unmount.
+ * What it measures — sample PEAK in dBFS on a −60…0 scale, per channel:
+ *   - instant attack, release 24 dB/s (the column falls back smoothly);
+ *   - peak hold: a white line that stays 1.5 s on the highest value, then falls;
+ *   - zones fixed on the scale: green up to −18 dBFS, amber to −6, red above;
+ *   - CLIP: the cap of the column lights red for 2 s when a sample reaches
+ *     full scale (|x| ≥ 0.999, i.e. ≈ 0 dBFS) — the signal is too loud.
+ *
+ * WHAT it measures is a MeterSource chosen by the shell: the Home clip, the
+ * video file inside the open effect, or the Lab's audio (clip / file / mic).
+ * See the factories below; App.tsx picks the one on screen.
  */
 
 const MIN_TRACK_PX = 48;     // never smaller than this, whatever the window height
-const DB_FLOOR = -54;        // bottom of the scale
-const DB_HOT = -6;           // above this the meter reads "hot"
-const PEAK_FALL = 0.35;      // peak-hold decay per second
-
-// one MediaElementAudioSourceNode per element, ever (a second one throws)
-const taps = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
-let sharedCtx: AudioContext | null = null;
+const DB_FLOOR = -60;        // bottom of the scale (dBFS)
+const DB_AMBER = -18;        // green below, amber from here
+const DB_RED = -6;           // red from here: the signal is running hot
+const RELEASE_DB_S = 24;     // fall rate of the column
+const HOLD_MS = 1500;        // peak-hold time before the line falls
+const HOLD_FALL_DB_S = 20;   // fall rate of the peak-hold line
+const CLIP_LINEAR = 0.999;   // a sample this high is full scale
+const CLIP_MS = 2000;        // how long the CLIP light stays on
+const CLIP_CAP_PX = 4;       // height of the CLIP light at the top of each column
 
 const dbToUnit = (db: number) => Math.max(0, Math.min(1, (db - DB_FLOOR) / (0 - DB_FLOOR)));
 
-interface AudioMeterProps {
-  isDayMode: boolean;
-  /** the shell's hero video element, when one is mounted */
-  videoRef: React.RefObject<HTMLVideoElement | null>;
-  /** changes when a different clip is loaded — re-attaches the tap */
-  sourceKey: string | null;
+/* ── sources ───────────────────────────────────────────────────────────── */
+
+/** An audio node to meter, in its own context. close() undoes what open() did. */
+export interface MeterTap {
+  ctx: AudioContext;
+  node: AudioNode;
+  close: () => void;
 }
 
-export default function AudioMeter({ isDayMode, videoRef, sourceKey }: AudioMeterProps) {
-  const [levels, setLevels] = useState<[number, number]>([0, 0]); // 0..1 of the scale, per channel
-  const [peaks, setPeaks] = useState<[number, number]>([0, 0]);   // 0..1, decaying peak hold
+/** What the meter listens to. A new key = a new source: the meter re-attaches. */
+export interface MeterSource {
+  key: string;
+  open: () => MeterTap | null;
+}
+
+let sharedCtx: AudioContext | null = null;
+function meterContext(): AudioContext {
+  sharedCtx = sharedCtx ?? new (window.AudioContext || (window as any).webkitAudioContext)();
+  if (sharedCtx.state === 'suspended') void sharedCtx.resume();
+  return sharedCtx;
+}
+
+// a stable id per element, so a re-mounted <video> with the same src is a new source
+const elIds = new WeakMap<HTMLMediaElement, number>();
+let nextElId = 1;
+function elKey(el: HTMLMediaElement): string {
+  let id = elIds.get(el);
+  if (!id) { id = nextElId++; elIds.set(el, id); }
+  return `${id}:${el.currentSrc || el.src}`;
+}
+
+// one MediaElementAudioSourceNode per element, ever (a second one throws)
+const taps = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
+
+/**
+ * The Home clip. The hero <video> ships muted (so it can autoplay), and a muted
+ * element feeds silence, so it is unmuted and taken into WebAudio, where the
+ * meter's sink has a gain of 0: the meter sees the real samples while playback
+ * stays as silent as before. Muting is restored on close.
+ */
+export function heroSource(el: HTMLVideoElement): MeterSource {
+  return {
+    key: `hero:${elKey(el)}`,
+    open: () => {
+      const ctx = meterContext();
+      let tap = taps.get(el);
+      if (!tap) { tap = ctx.createMediaElementSource(el); taps.set(el, tap); }
+      const wasMuted = el.muted;
+      el.muted = false;
+      return { ctx, node: tap, close: () => { el.muted = wasMuted; } };
+    },
+  };
+}
+
+/**
+ * A video playing somewhere we must not disturb — the file inside an open
+ * effect, which the effect may already route through its own AudioContext
+ * (so createMediaElementSource would throw there, or break the effect).
+ * captureStream() copies the element's sound without touching its playback,
+ * and still carries it when the effect's AUDIO switch has the monitor at 0.
+ * In Chromium 128 (the desktop app's Electron 32) a muted element captures
+ * as silence; every effect unmutes a loaded file.
+ */
+export function capturedSource(el: HTMLMediaElement, scope: string): MeterSource {
+  return {
+    key: `${scope}:${elKey(el)}`,
+    open: () => {
+      const capture = (el as HTMLMediaElement & { captureStream?: () => MediaStream }).captureStream;
+      if (typeof capture !== 'function') return null;
+      let ms: MediaStream;
+      try { ms = capture.call(el); } catch { return null; }
+      const ctx = meterContext();
+      const inlet = ctx.createGain();
+      const nodes: MediaStreamAudioSourceNode[] = [];
+      const plugged = new Set<string>();
+      // the audio track can arrive after the stream (metadata still loading);
+      // 'addtrack' may also report one already listed — plugging it twice would sum it (+6 dB)
+      const plug = (t: MediaStreamTrack) => {
+        if (t.kind !== 'audio') { t.stop(); return; } // only the sound is wanted
+        if (plugged.has(t.id)) return;
+        plugged.add(t.id);
+        const n = ctx.createMediaStreamSource(new MediaStream([t]));
+        n.connect(inlet);
+        nodes.push(n);
+      };
+      ms.getTracks().forEach(plug);
+      const onAdd = (e: MediaStreamTrackEvent) => plug(e.track);
+      ms.addEventListener('addtrack', onAdd);
+      return {
+        ctx,
+        node: inlet,
+        close: () => {
+          ms.removeEventListener('addtrack', onAdd);
+          nodes.forEach((n) => n.disconnect());
+          // these tracks are OUR capture: stopping them ends the tap only
+          ms.getTracks().forEach((t) => t.stop());
+          inlet.disconnect();
+        },
+      };
+    },
+  };
+}
+
+/** The Lab's audio input (clip / file / mic): its analyser, in its own context. */
+export function engineSource(tap: () => { ctx: AudioContext; node: AudioNode } | null): MeterSource | null {
+  const t = tap();
+  if (!t) return null;
+  return { key: 'lab', open: () => ({ ...t, close: () => {} }) };
+}
+
+/* ── the meter ─────────────────────────────────────────────────────────── */
+
+interface AudioMeterProps {
+  isDayMode: boolean;
+  /** what to meter; null = idle */
+  source: MeterSource | null;
+}
+
+interface Reading {
+  level: [number, number]; // 0..1 of the scale
+  hold: [number, number];  // 0..1, peak-hold line
+  clip: [boolean, boolean];
+}
+const SILENT: Reading = { level: [0, 0], hold: [0, 0], clip: [false, false] };
+
+export default function AudioMeter({ isDayMode, source }: AudioMeterProps) {
+  const [reading, setReading] = useState<Reading>(SILENT);
   const [live, setLive] = useState(false);   // a tap is attached and running
   const [trackPx, setTrackPx] = useState(MIN_TRACK_PX);
-  const rafRef = useRef<number | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
 
   /* The columns are stretched by the flex column above them, so their height is a
      layout result, not a constant: measure it and let the fill / ticks / peak use
-     real pixels as before. */
+     real pixels. */
   useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
@@ -53,22 +174,19 @@ export default function AudioMeter({ isDayMode, videoRef, sourceKey }: AudioMete
   }, []);
 
   useEffect(() => {
-    const el = videoRef.current;
-    if (!sourceKey || !el) { setLive(false); setLevels([0, 0]); setPeaks([0, 0]); return; }
+    setReading(SILENT);
+    if (!source) { setLive(false); return; }
 
-    let analysers: AnalyserNode[] = [];
+    let tap: MeterTap | null = null;
     let upmix: GainNode | null = null;
     let splitter: ChannelSplitterNode | null = null;
     let merger: ChannelMergerNode | null = null;
-    let gain: GainNode | null = null;
-    let cancelled = false;
-    const wasMuted = el.muted;
-
+    let sink: GainNode | null = null;
+    let analysers: AnalyserNode[] = [];
     try {
-      sharedCtx = sharedCtx ?? new (window.AudioContext || (window as any).webkitAudioContext)();
-      const ctx = sharedCtx;
-      let tap = taps.get(el);
-      if (!tap) { tap = ctx.createMediaElementSource(el); taps.set(el, tap); }
+      tap = source.open();
+      if (!tap) { setLive(false); return; }
+      const { ctx } = tap;
 
       /* A ChannelSplitter is `discrete`, so a MONO clip would hand the second
          column pure silence. Up-mix through a `speakers` node first: that
@@ -78,103 +196,121 @@ export default function AudioMeter({ isDayMode, videoRef, sourceKey }: AudioMete
       upmix.channelCount = 2;
       upmix.channelCountMode = 'explicit';
       upmix.channelInterpretation = 'speakers';
-
       splitter = ctx.createChannelSplitter(2);
       merger = ctx.createChannelMerger(2);
-      gain = ctx.createGain();
-      gain.gain.value = 0; // keep playback silent, as it was while muted
+      sink = ctx.createGain();
+      sink.gain.value = 0; // keeps the graph pulled; nothing reaches the speakers
 
+      // 2048 samples ≈ 43 ms at 48 kHz: longer than a frame, so no peak falls between two reads
       analysers = [0, 1].map(() => {
         const a = ctx.createAnalyser();
-        a.fftSize = 1024;
-        a.smoothingTimeConstant = 0.6;
+        a.fftSize = 2048;
         return a;
       });
-
-      tap.connect(upmix);
+      tap.node.connect(upmix);
       upmix.connect(splitter);
       analysers.forEach((a, ch) => {
         splitter!.connect(a, ch);
         a.connect(merger!, 0, ch);
       });
-      merger.connect(gain);
-      gain.connect(ctx.destination);
-      el.muted = false;    // a muted element analyses as silence
-      void ctx.resume();   // no-op when already running
+      merger.connect(sink);
+      sink.connect(ctx.destination);
+      if (ctx.state === 'suspended') void ctx.resume();
       setLive(true);
     } catch {
       // no audio track, no device, or autoplay policy — leave the meter idle
+      try {
+        if (upmix) tap?.node.disconnect(upmix);
+        analysers.forEach((a) => a.disconnect());
+        splitter?.disconnect(); merger?.disconnect(); sink?.disconnect();
+      } catch { /* not connected yet */ }
+      try { tap?.close(); } catch { /* nothing to undo */ }
       setLive(false);
       return;
     }
 
     const bufs = analysers.map((a) => new Float32Array(a.fftSize));
+    const shown: [number, number] = [DB_FLOOR, DB_FLOOR];   // column, dBFS
+    const held: [number, number] = [DB_FLOOR, DB_FLOOR];    // peak-hold line, dBFS
+    const heldAt: [number, number] = [0, 0];
+    const clipUntil: [number, number] = [0, 0];
     let last = performance.now();
-    const held: [number, number] = [0, 0];
+    let raf = 0;
+    let lastSig = '';
 
     const tick = () => {
-      if (cancelled || analysers.length === 0) return;
       const now = performance.now();
-      const dt = Math.min(0.25, (now - last) / 1000);
+      // real elapsed time, unclamped: after a long frame the column has fallen as far as it would have
+      const dt = (now - last) / 1000;
       last = now;
-
-      const next: [number, number] = [0, 0];
       analysers.forEach((a, ch) => {
         const buf = bufs[ch];
         a.getFloatTimeDomainData(buf);
-        let sum = 0;
-        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-        const rms = Math.sqrt(sum / buf.length);
-        next[ch] = rms > 0 ? dbToUnit(20 * Math.log10(rms)) : 0;
-        held[ch] = Math.max(next[ch], held[ch] - PEAK_FALL * dt);
+        let peak = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = Math.abs(buf[i]);
+          if (v > peak) peak = v;
+        }
+        const db = peak > 0 ? Math.max(DB_FLOOR, 20 * Math.log10(peak)) : DB_FLOOR;
+        shown[ch] = db >= shown[ch] ? db : Math.max(db, shown[ch] - RELEASE_DB_S * dt);
+        if (db >= held[ch]) { held[ch] = db; heldAt[ch] = now; }
+        else if (now - heldAt[ch] > HOLD_MS) held[ch] = Math.max(shown[ch], held[ch] - HOLD_FALL_DB_S * dt);
+        if (peak >= CLIP_LINEAR) clipUntil[ch] = now + CLIP_MS;
       });
-
-      setLevels(next);
-      setPeaks([held[0], held[1]]);
-      rafRef.current = requestAnimationFrame(tick);
+      const next: Reading = {
+        level: [dbToUnit(shown[0]), dbToUnit(shown[1])],
+        hold: [dbToUnit(held[0]), dbToUnit(held[1])],
+        clip: [now < clipUntil[0], now < clipUntil[1]],
+      };
+      // re-render only when something visible moved (silence or pause = no renders)
+      const sig = [...next.level, ...next.hold].map((u) => Math.round(u * 1000)).join(',') + next.clip.join(',');
+      if (sig !== lastSig) { lastSig = sig; setReading(next); }
+      raf = requestAnimationFrame(tick);
     };
-    rafRef.current = requestAnimationFrame(tick);
+    raf = requestAnimationFrame(tick);
 
     return () => {
-      cancelled = true;
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-      // leave the cached tap in place (it cannot be recreated) but drop our chain
+      cancelAnimationFrame(raf);
       try {
+        tap?.node.disconnect(upmix!);
         analysers.forEach((a) => a.disconnect());
-        upmix?.disconnect(); splitter?.disconnect(); merger?.disconnect(); gain?.disconnect();
+        upmix?.disconnect(); splitter?.disconnect(); merger?.disconnect(); sink?.disconnect();
       } catch { /* already gone */ }
-      el.muted = wasMuted;
+      try { tap?.close(); } catch { /* element or iframe already gone */ }
       setLive(false);
-      setLevels([0, 0]);
-      setPeaks([0, 0]);
+      setReading(SILENT);
     };
-  }, [sourceKey, videoRef]);
+  }, [source]);
 
-  const top = Math.max(levels[0], levels[1]);
-  const hot = top >= dbToUnit(DB_HOT);
+  const hot = Math.max(reading.level[0], reading.level[1]) >= dbToUnit(DB_RED);
+  const greenTop = dbToUnit(DB_AMBER) * 100;
+  const amberTop = dbToUnit(DB_RED) * 100;
 
   return (
     <div
       className="flex flex-col items-center gap-1.5 w-full flex-1 min-h-0"
       data-testid="audio-meter"
+      data-live={live ? 'true' : 'false'}
     >
-      {/* the pair of columns — centred in the rail, filling the space that is left */}
+      {/* the pair of columns — centred in the opening, filling the space that is left */}
       <div className="flex-1 min-h-0 flex items-stretch justify-center gap-[5px]">
         {([0, 1] as const).map((ch) => {
-          const fillPx = Math.round(levels[ch] * trackPx);
-          const peakPx = Math.round(peaks[ch] * trackPx);
+          const fillPx = Math.round(reading.level[ch] * trackPx);
+          const holdPx = Math.round(reading.hold[ch] * trackPx);
+          const clip = reading.clip[ch];
           return (
             <div
               key={ch}
               ref={ch === 0 ? trackRef : undefined}
               className={`relative w-2.5 h-full rounded-full overflow-hidden border ${
                 isDayMode ? 'border-neutral-300 bg-neutral-200' : 'border-ink-700/60 bg-white/[0.06]'
-              } ${hot ? 'shadow-[0_0_10px_rgba(239,68,68,0.45)]' : ''}`}
+              } ${hot || clip ? 'shadow-[0_0_10px_rgba(239,68,68,0.45)]' : ''}`}
               data-testid={ch === 0 ? 'audio-meter-track' : 'audio-meter-track-r'}
-              title={live ? `Playback level — ${ch === 0 ? 'left' : 'right'}` : 'Load a video to see its level'}
+              data-clip={clip ? 'true' : 'false'}
+              title={live ? `Peak level, ${ch === 0 ? 'left' : 'right'} — red at the top = clipping` : 'Load a video to see its level'}
             >
-              {/* scale ticks at roughly -6 / -12 / -24 dB */}
-              {[DB_HOT, -12, -24].map((db) => (
+              {/* scale ticks: −6 (red), −18 (amber), −30 / −42 dBFS */}
+              {[DB_RED, DB_AMBER, -30, -42].map((db) => (
                 <span
                   key={db}
                   className={`absolute left-0 right-0 h-px ${isDayMode ? 'bg-black/15' : 'bg-white/15'}`}
@@ -182,14 +318,14 @@ export default function AudioMeter({ isDayMode, videoRef, sourceKey }: AudioMete
                 />
               ))}
 
-              {/* the level: green low → amber → red top, pinned to the full track so
-                  the colours stay put as the fill moves */}
+              {/* the level: each zone keeps its place on the scale, so the colour
+                  says how loud it is — green, then amber, red near full scale */}
               <div
-                className="absolute left-0 right-0 bottom-0 transition-[height] duration-75"
+                className="absolute left-0 right-0 bottom-0"
                 data-testid={ch === 0 ? 'audio-meter-fill' : 'audio-meter-fill-r'}
                 style={{
                   height: fillPx,
-                  backgroundImage: 'linear-gradient(to top, #22c55e 0%, #22c55e 45%, #f59e0b 78%, #ef4444 100%)',
+                  backgroundImage: `linear-gradient(to top, #22c55e 0%, #22c55e ${greenTop}%, #f59e0b ${greenTop + 2}%, #f59e0b ${amberTop}%, #ef4444 ${amberTop + 2}%, #ef4444 100%)`,
                   backgroundSize: `100% ${trackPx}px`,
                   backgroundPosition: 'bottom',
                   backgroundRepeat: 'no-repeat',
@@ -197,22 +333,24 @@ export default function AudioMeter({ isDayMode, videoRef, sourceKey }: AudioMete
               />
 
               {/* peak hold */}
-              {peakPx > 1 && (
+              {holdPx > 1 && (
                 <span
                   className="absolute left-0 right-0 h-[2px] bg-white/85"
                   data-testid={ch === 0 ? 'audio-meter-peak' : 'audio-meter-peak-r'}
-                  style={{ bottom: Math.min(trackPx - 2, peakPx) }}
+                  style={{ bottom: Math.min(trackPx - 2, holdPx) }}
                 />
               )}
+
+              {/* CLIP light: the cap of the column */}
+              <span
+                className="absolute left-0 right-0 top-0"
+                data-testid={ch === 0 ? 'audio-meter-clip' : 'audio-meter-clip-r'}
+                style={{ height: CLIP_CAP_PX, background: clip ? '#ef4444' : 'transparent' }}
+              />
             </div>
           );
         })}
       </div>
-
-      {/* The dB readout and the "Audio" caption are gone: the meter now lives in
-          its own small opening in the cage, where there is room for the columns
-          and nothing else. The colour still carries the state — the columns go
-          red when the signal is hot. */}
     </div>
   );
 }

@@ -22,6 +22,12 @@
    3. FPS 0 WITHOUT A SOURCE — safety net (BOKEH shows FPS 0 with no
       source): if the effect reports no source, #fps-val / #ic-fps read 0.
 
+   4. SynExtras.media() — the video FILE the effect is playing (the same one
+      the timeline drives), or null. The app's sidebar level meter reads its
+      sound through captureStream(); nothing in the effect changes. BLOB
+      REVEAL keeps its own transport, so its adapter has no `video`: there
+      the file is the page's <video> playing a src (not a webcam stream).
+
    Standalone-safe: works the same in the app's iframe and opened directly.
    ═══════════════════════════════════════════════════════════════════════ */
 (function(){
@@ -208,5 +214,12 @@
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 
-  window.SynExtras={ attach:attach, workMs:function(){ return workMs; }, isWorking:isWorking };
+  function media(){
+    if(A&&A.video) return curVideo();
+    var vs=document.querySelectorAll('video');
+    for(var i=0;i<vs.length;i++){ var v=vs[i]; if(!v.srcObject&&(v.currentSrc||v.getAttribute('src'))) return v; }
+    return null;
+  }
+
+  window.SynExtras={ attach:attach, workMs:function(){ return workMs; }, isWorking:isWorking, media:media };
 })();

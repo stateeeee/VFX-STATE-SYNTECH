@@ -15,6 +15,8 @@ export interface EffectHostHandle {
   /** Ask the effect for its settings via the bridge and persist them.
    *  Resolves true when the effect replied and the snapshot was stored. */
   requestSave: () => Promise<boolean>;
+  /** The video file the effect is playing (SynExtras.media), for the level meter. */
+  mediaElement: () => HTMLMediaElement | null;
 }
 
 const settingsKey = (id: string) => `syntech.effectSettings.${id}`;
@@ -59,6 +61,14 @@ const EffectHost = forwardRef<EffectHostHandle, EffectHostProps>(function Effect
   }, []);
 
   useImperativeHandle(ref, () => ({
+    mediaElement: () => {
+      try {
+        const win = iframeRef.current?.contentWindow as (Window & { SynExtras?: { media?: () => HTMLMediaElement | null } }) | null;
+        return win?.SynExtras?.media?.() ?? null;
+      } catch {
+        return null; // not loaded yet, or navigated away
+      }
+    },
     requestSave: () =>
       new Promise<boolean>((resolve) => {
         const win = iframeRef.current?.contentWindow;

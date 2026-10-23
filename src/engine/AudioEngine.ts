@@ -11,13 +11,15 @@
  * The FileTransport mirrors the underlying <audio> element and is null
  * until a file is loaded — the ChainLab transport bar keys off that.
  *
- * Monitoring (analyser → speakers) is on for file and clip, OFF for the
- * mic: the mic routed to the speakers would feed back into itself. The
+ * Monitoring (analyser → speakers) is on for the file, OFF for the mic
+ * (the mic routed to the speakers would feed back into itself) and OFF for
+ * the clip, whose own unmuted element is what you hear (see startClip). The
  * link used to be made once, on the first file, and never undone — so a
  * mic started after a track went to the speakers; setMonitor() fixes it.
  *
  * getOutputStream() taps the analyser into a MediaStreamDestination (made
  * once, on first ask) so a recorder can carry whatever is being analysed.
+ * meterTap() hands the same analyser to the shell's level meter.
  */
 
 export interface FileTransport {
@@ -99,6 +101,7 @@ export class AudioEngine {
     this.clipStream = null;
     this.clipNode = null;
     this.clipEnded = null;
+    if (this.clipEl) this.clipEl.muted = true; // back to how SynEngine made it
     this.clipEl = null;
   }
 
@@ -154,11 +157,13 @@ export class AudioEngine {
   }
 
   /**
-   * Analyse the soundtrack of the Lab's source video. The element stays
-   * muted (the engine keeps it so); captureStream() still carries its
-   * audio in Chromium, and the analyser → speakers link makes it audible
-   * exactly once — no double audio. Never createMediaElementSource: that
-   * is a one-per-element lock, and the shell's AudioMeter owns the hero.
+   * Analyse the soundtrack of the Lab's source video. The element is born
+   * muted (SynEngine) and Chromium 128 — the desktop app's Electron 32 —
+   * captures a muted element as SILENCE (newer Chromium does not), so the
+   * element is unmuted for as long as the clip is the input and plays its
+   * own sound; the analyser → speakers link stays off, so it is heard
+   * exactly once. Leaving clip mode mutes it again (disconnectSources).
+   * Never createMediaElementSource: that is a one-per-element lock.
    * Throws a readable Error (and leaves the current input running) when
    * the browser cannot tap the element or the clip has no audio track.
    */
@@ -166,23 +171,30 @@ export class AudioEngine {
     const ctx = this.ensureCtx();
     const capture = (video as HTMLVideoElement & { captureStream?: () => MediaStream }).captureStream;
     if (typeof capture !== 'function') throw new Error('This browser cannot tap the clip audio');
+    const wasMuted = video.muted;
+    video.muted = false; // a muted element captures as silence in Chromium 128
     let ms: MediaStream;
     try {
       ms = capture.call(video);
     } catch {
+      video.muted = wasMuted;
       throw new Error('This browser cannot tap the clip audio');
     }
     // only the sound is wanted — drop the video track right away so the
     // browser does not keep copying frames into a stream nobody reads
     ms.getVideoTracks().forEach((t) => t.stop());
     const tracks = ms.getAudioTracks();
-    if (!tracks.length) throw new Error('This clip has no audio track');
+    if (!tracks.length) {
+      video.muted = wasMuted;
+      throw new Error('This clip has no audio track');
+    }
     this.disconnectSources();
+    video.muted = false; // disconnectSources() re-mutes the previous clip — which may be this one
     const stream = new MediaStream(tracks);
     this.clipStream = stream;
     this.clipNode = ctx.createMediaStreamSource(stream);
     this.clipNode.connect(this.analyser!);
-    this.setMonitor(true); // the muted element is heard through the analyser
+    this.setMonitor(false); // the unmuted element is heard on its own
     // when the Lab swaps its source (a new clip / photo / webcam) the old
     // element is stripped of its src: fall back to off rather than analyse
     // silence. Chromium keeps the captured track 'live' through that, so
@@ -210,6 +222,15 @@ export class AudioEngine {
       this.analyser.connect(this.outDest);
     }
     return this.outDest.stream;
+  }
+
+  /**
+   * The analyser every input feeds (clip, file, mic) and its context, for
+   * the shell's level meter: an AnalyserNode passes its input through, so
+   * the meter reads exactly what is analysed. Null before the first input.
+   */
+  meterTap(): { ctx: AudioContext; node: AudioNode } | null {
+    return this.ctx && this.analyser ? { ctx: this.ctx, node: this.analyser } : null;
   }
 
   togglePlay(): void {

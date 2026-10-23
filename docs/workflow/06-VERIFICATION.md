@@ -158,6 +158,12 @@ For the effect being ported, prove equivalence between the standalone HTML
 - With no key: Gemini 3.8 panel STANDBY, rail modes locked, nothing else
   affected. After any AI change: `verify-gemini.cjs` passes (Phase 11+).
 - `npm run lint` clean; no new console errors on the dashboard.
+- The sidebar level meter follows the sound on screen and reads it right:
+  `tools/verify/verify-audio-meter.cjs` (dev server; makes its own stereo clip
+  with ffmpeg: L −12 dBFS then clipping, R −30 dBFS — Home, inside BOKEH and
+  BLOB REVEAL, back to Home, the Lab's Clip audio). Run it on the packaged app
+  too (`SYNTECH_EXE=…`): Electron 32 captures a muted element as silence and
+  newer Chromium does not, so a browser-only run can pass while the app is mute.
 - Desktop build still opens and passes `tools/verify/verify-desktop.cjs` — in
   the sandbox on the Linux build, and on every push in CI on Windows + macOS
   (the "Desktop app" workflow must be green). See §6.

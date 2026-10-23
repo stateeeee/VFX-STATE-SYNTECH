@@ -29,6 +29,40 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-10-23 — il meter audio della sidebar è collegato davvero (v0.11.0), FATTO.**
+Operatore, sull'app desktop: *"in basso a sinistra c'è la sezione audio e non è collegata. Quando inserisco un video
+con audio si deve vedere dal verde al rosso (in alto) se il suono è troppo forte. Deve essere realistico."*
+Causa: `AudioMeter` ascoltava solo il `<video>` della Home (nodo INPUT). Un video caricato **dentro un effetto** (iframe)
+o nel **LAB** non arrivava mai al meter; e dopo aver aperto un effetto, tornando alla Home il `<video>` veniva
+ri-montato con la stessa `src` → il meter restava agganciato al vecchio elemento (morto).
+- **Sorgenti** (`AudioMeter.tsx`, `MeterSource`): `App.tsx` sceglie ciò che è a schermo e lo rilegge ogni 300 ms
+  (chiave = elemento + src: un nuovo elemento ri-aggancia):
+  - effetto aperto → `SynExtras.media()` (nuovo in `public/effects/shared/syn-extras.js`, lo stesso video della
+    timeline; nessun HTML di effetto toccato) via `EffectHost.mediaElement()` → `captureStream()` nel contesto del
+    meter. BLOB REVEAL tiene il suo transport, quindi il suo adapter non ha `video`: lì `media()` ripiega sul
+    `<video>` della pagina che riproduce una `src` (non la webcam). Verificato in Electron 32: legge il livello anche se l'effetto ha già il video in un suo
+    `MediaElementSource` e con il suo AUDIO a 0; un elemento **muto** cattura silenzio (tutti gli effetti tolgono il
+    muto a un file caricato). **Trap:** `addtrack` può riportare una traccia già presente → collegata due volte si
+    somma (+6 dB): deduplicata per id.
+  - LAB → `AudioEngine.meterTap()` (il suo analyser: clip, file o microfono — ciò che il LAB analizza e fa sentire).
+    **Bug preesistente trovato dalla revisione, solo nell'app desktop:** l'audio Clip del LAB era MUTO (anche la
+    reattività audio dalla clip). Il `<video>` del LAB nasce muto e Chromium 128 (Electron 32) cattura un elemento
+    muto come silenzio — Chromium 141 dei test no, per questo nessuna suite lo vedeva. Ora `startClip` toglie il muto
+    finché la clip è l'input: suona l'elemento, l'analyser NON va agli altoparlanti (una volta sola); uscendo dalla
+    modalità clip torna muto.
+  - Home → il `<video>` hero come prima (unmute + `MediaElementSource` + gain 0: resta muto).
+- **Misura realistica** (stile DAW/Premiere): picco di campione in dBFS su scala −60…0, attacco istantaneo, rilascio
+  24 dB/s sul tempo reale (prima il dt era limitato a 0,25 s: dopo un frame lungo la colonna restava alta), peak
+  hold 1,5 s poi cade a 20 dB/s, zone fisse sulla scala verde < −18 / ambra < −6 / rosso, **CLIP**: la cima della
+  colonna diventa rossa per 2 s quando un campione tocca il fondo scala (≥ 0,999). Tacche a −6/−18/−30/−42.
+- **Verifica:** nuovo `tools/verify/verify-audio-meter.cjs` **23/23 sia nel browser sia nell'app Electron
+  impacchettata** (`SYNTECH_EXE=…`; Chrome 128 come l'app dell'operatore): clip stereo L −12 dBFS → 0,79 della
+  colonna, R −30 → 0,50, CLIP solo a sinistra — nella Home, dentro BOKEH e BLOB REVEAL, di nuovo in Home, nel LAB.
+  `verify-desktop` 38/38. `verify-ui-cage`
+  18/18. `verify-phase3`: 13/14 — il solo BPM fallisce **anche su `main`** in questo sandbox (171/150/138 con il
+  `make-beat-wav.js` ufficiale): canary ballerino preesistente, non questa modifica.
+- `version` 0.10.0 → **0.11.0**: nuova release desktop da scaricare.
+
 **SESSIONE 2026-10-22 (7) — l'app desktop torna aggiornata (v0.10.0), FATTO.**
 L'operatore ha l'app VFX SYNTECH nella cartella Applicazioni del Mac e voleva sostituirla con quella nuova, senza
 terminale. L'app da doppio clic (Electron, `docs/workflow/DESKTOP.md`) viveva solo sul branch
