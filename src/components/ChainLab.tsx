@@ -49,6 +49,8 @@ export interface ChainLabProps {
    */
   initialSource?: { url: string; name: string; kind?: 'video' | 'image' } | null;
   onSourcePicked?: (file: File) => void;
+  /** filled with the Lab's AudioEngine, so the sidebar level meter can read it */
+  audioEngineRef?: React.MutableRefObject<AudioEngine | null>;
 }
 
 // default rack order: trackers first, lens/grade passes last
@@ -135,7 +137,7 @@ const findParam = (engine: SynEngine, key: string): { node: EngineNode; p: Param
  * use (PLAN §4.4) — the AI is one more hand on the rack, not a side door.
  */
 const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
-  { isDayMode, visible = true, chain: chainProp, onChainChange, presetRequest, initialSource, onSourcePicked },
+  { isDayMode, visible = true, chain: chainProp, onChainChange, presetRequest, initialSource, onSourcePicked, audioEngineRef },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -147,6 +149,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   const maskRef = useRef<PersonMask | null>(null);
   const busRef = useRef<ParamBus | null>(null);
   if (!audioRef.current) audioRef.current = new AudioEngine();
+  if (audioEngineRef) audioEngineRef.current = audioRef.current;
   if (!videoAnRef.current) videoAnRef.current = new VideoAnalyzer();
   if (!maskRef.current) maskRef.current = new PersonMask();
   if (!busRef.current) busRef.current = new ParamBus();
@@ -529,8 +532,9 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   };
 
   // D7: in a music video the music is IN the clip — analyse (and hear) the
-  // source video's own soundtrack. The element stays muted; AudioEngine
-  // makes it audible through its analyser, so there is no double audio.
+  // source video's own soundtrack. AudioEngine unmutes the element while
+  // the clip is the input (and keeps its analyser off the speakers), so the
+  // sound is heard once — see AudioEngine.startClip.
   const toggleClipAudio = async () => {
     const audio = audioRef.current!;
     pendingRetapRef.current = false;

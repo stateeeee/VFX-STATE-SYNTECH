@@ -25,7 +25,8 @@ import ChainLab from './components/ChainLab';
 import StatePet from './components/StatePet';
 import AiDirector, { CompSource, GeminiMode, GeminiStatus } from './components/AiDirector';
 import NodalComposition, { CompEffect, EFFECT_META, WireMap } from './components/NodalComposition';
-import AudioMeter from './components/AudioMeter';
+import AudioMeter, { capturedSource, engineSource, heroSource, type MeterSource } from './components/AudioMeter';
+import type { AudioEngine } from './engine/AudioEngine';
 import { gelMaterialTile } from './lib/gelTexture';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { HOLES, DAY_BACKDROPS, VIDEO_BOX, CAGE_BED, CAGE_SURFACE, cageBox, cagePlane } from './cage/cage';
@@ -400,6 +401,8 @@ export default function App() {
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
   // the hero clip — the sidebar level meter taps this element
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
+  // the Lab's audio engine (clip / file / mic) — the level meter reads it in the Lab
+  const labAudioRef = useRef<AudioEngine | null>(null);
 
   /* the gel material: painted once on a canvas, then tiled. One image, one blend
      layer — see the note in gelTexture.ts about why this must not be split up. */
@@ -428,6 +431,34 @@ export default function App() {
   useEffect(() => () => { if (compSource?.url) URL.revokeObjectURL(compSource.url); }, []); // eslint-disable-line
 
   const [effectTelemetry, setEffectTelemetry] = useState<EffectTelemetry | null>(null);
+
+  /* The sidebar level meter follows what is ON SCREEN: the video file inside an
+     open effect, the Lab's audio, or the Home clip. Effects load and swap their
+     media on their own (and the hero <video> is re-mounted after an effect
+     closes), so the choice is re-read a few times a second; a new key re-attaches. */
+  const [meterSource, setMeterSource] = useState<MeterSource | null>(null);
+  useEffect(() => {
+    const pick = (): MeterSource | null => {
+      if (openEffectId) {
+        const el = effectHostRef.current?.mediaElement() ?? null;
+        return el && el.readyState >= 1 ? capturedSource(el, `fx:${openEffectId}`) : null;
+      }
+      if (labVisible) {
+        const engine = labAudioRef.current;
+        return engine ? engineSource(() => engine.meterTap()) : null;
+      }
+      // a photo has no sound: the meter only taps a video
+      const el = heroVideoRef.current;
+      return el && compSource?.kind === 'video' ? heroSource(el) : null;
+    };
+    const sync = () => {
+      const next = pick();
+      setMeterSource((prev) => ((prev?.key ?? null) === (next?.key ?? null) ? prev : next));
+    };
+    sync();
+    const t = window.setInterval(sync, 300);
+    return () => window.clearInterval(t);
+  }, [openEffectId, labVisible, compSource]);
 
   // Selects the module in the dashboard and, when a real effect build is
   // registered for it, opens it full-terminal (PLAN.md decision #1)
@@ -1015,8 +1046,7 @@ export default function App() {
             divide the two is gone. (The one above GEMINI 3.8 stays: without it,
             LAB and GEMINI 3.8 end up touching.) */}
         <div className="flex flex-col" style={cageBox(HOLES.meter, 6, 6)}>
-          {/* a photo has no sound: the meter only taps a video */}
-          <AudioMeter isDayMode={isDayMode} videoRef={heroVideoRef} sourceKey={compSource?.kind === 'video' ? compSource.url : null} />
+          <AudioMeter isDayMode={isDayMode} source={meterSource} />
         </div>
 
         {/* ═══════════════ MAIN CONTENT ═══════════════ */}
@@ -1098,6 +1128,7 @@ export default function App() {
                           presetRequest={chainPresetToOpen}
                           initialSource={compSource}
                           onSourcePicked={onSourceFile}
+                          audioEngineRef={labAudioRef}
                         />
                       </div>
                     )}
