@@ -19,6 +19,7 @@ import {
   GEMINI_MODEL_DEFAULT,
   MAX_UPLOAD_BYTES,
   MODULE_IDS,
+  PARAM_KEY_PATTERN,
   type AgentPlan,
   type AgentRequest,
   type AgentResult,
@@ -68,11 +69,15 @@ import { GEMINI_FLOOR_BELOW_SCROLL } from '../cage/cage';
      AGENT         Lab only. Hears and sees the source (the uploaded clip,
                    with its song), a SOURCE/OUTPUT frame pair, 4s of OUTPUT
                    with the music when audio is on, and 3s of live signals;
-                   then sets parameters AND audio routes. Applied at once;
-                   Undo puts back only the keys the plan touched.
+                   then sets the chain's effect controls — the real panel
+                   controls of each effect iframe, its audio-reaction
+                   controls included (there are no signal routes). Applied
+                   at once; Undo puts back only the keys the plan touched.
      OPTIMIZER     Lab only. Records 4s of OUTPUT with the music, runs the
                    deterministic checks, and asks Gemini to judge the
-                   result — each issue may carry a fix (an AgentPlan).
+                   result (with the director's optional request,
+                   ai-opt-intent) — each issue may carry a fix (an
+                   AgentPlan).
 
    Audio is OFF by default in the Lab, even for a music video: the Agent
    and the Optimizer switch the clip's own soundtrack on at Run (inside the
@@ -229,7 +234,7 @@ const MODES: readonly GeminiMode[] = ['art_director', 'agent', 'optimizer'];
 const LAB_CHANGED = 'The Lab changed — run again';
 const CLIP_ON_NOTE = 'Clip audio switched on so Gemini can hear the music';
 const SILENT_CLIP_NOTE = 'This clip has no soundtrack: Gemini gets the picture only. Start Track or Mic for music.';
-const NO_TAP_NOTE = "This browser cannot play the clip's audio into the Lab (Chrome can): music routes wait for Track or Mic.";
+const NO_TAP_NOTE = "This browser cannot play the clip's audio into the Lab (Chrome can): the effects' music reactions wait for Track or Mic.";
 /** Clip audio taps the <video> through captureStream — Chromium only (Safari
  *  has none, Firefox only mozCaptureStream). Where it is missing, a failed
  *  Clip start says nothing about the clip, so it is never marked silent. */
@@ -252,7 +257,16 @@ const fmtNum = (v: number) => {
   return String(Number(v.toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2)));
 };
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-const AUDIO_SOURCES = ['bass', 'treble', 'loud', 'beat'];
+/** One parameter key ('<ModuleId>.<effect key>', contract PARAM_KEY_PATTERN),
+ *  as it opens a "key: reason" line from the server or the Lab. */
+const KEY_LINE = new RegExp(`^(${PARAM_KEY_PATTERN}):\\s+(.+)$`);
+/** Effects that move with the music: those whose panel has a reactive
+ *  section (Reactive, Audio Reactive) — read from the chain table, so it
+ *  holds for any of the ten. */
+const reactiveEffects = (chain: ChainState) =>
+  chain.order.filter((id) => chain.params.some((p) => p.key.startsWith(`${id}.`) && /reactive/i.test(p.hint)));
+/** Effects that show nothing on a still picture: they draw time itself. */
+const MOTION_EFFECTS: readonly ModuleId[] = ['time_machine'];
 /** what a recording made now carries, in the words the Lab labels it with */
 const audioWords = (mode: ChainState['audioMode']) => (mode === 'mic' ? 'with mic audio' : 'with music');
 
@@ -389,48 +403,46 @@ function autoClipAudio(lab: LabHandle): Promise<boolean> | null {
 /** The Optimizer's deterministic checks, computed before Gemini is asked:
  *  facts the Lab knows for certain, so the model judges the look and not
  *  whether a frame rate is low. `chain` is read BEFORE the recording (which
- *  itself slows the engine). One rule for audio, everywhere: a route on an
- *  audio signal while audio is off is WAITING for music, not broken — only
- *  a motion/brightness route on a provably dead signal (a still photo) is
- *  flagged. Carriers (the effects' built-in music response, which the AI may
- *  never switch off) are not counted at all. */
+ *  itself slows the engine). One rule for audio, everywhere: an effect's
+ *  music reaction while audio is off is WAITING for music, not broken — only
+ *  a motion-based effect on a provably still source (a photo) is flagged. */
 function computeChecks(chain: ChainState, signals: SignalSummary, luma: number | null, sourceLuma: number | null): CheckResult[] {
   const audioOn = chain.audioActive || signals.audio.active;
-  const routed = chain.params.filter((p) => p.route && !p.carrier);
-  const audioRoutes = routed.filter((p) => AUDIO_SOURCES.includes(p.route!.source));
-  const videoRoutes = routed.filter((p) => p.route!.source === 'motion' || p.route!.source === 'bright');
+  const reactive = reactiveEffects(chain).map(effectName);
   const still = chain.sourceKind === 'image';
+  const motionFx = chain.order.filter((id) => MOTION_EFFECTS.includes(id)).map(effectName);
   const fps = Math.round(chain.fps);
   const res = Math.round(chain.resScale * 100);
   const perfOk = chain.fps >= 30 && chain.resScale >= 1;
+  const reactWords = reactive.length ? `${plural(reactive.length, 'reactive effect')} (${reactive.join(', ')})` : 'no reactive effect in the chain';
   return [
     {
       id: 'performance',
       ok: perfOk,
-      detail: `${fps} fps at ${res}% render resolution${perfOk ? '' : chain.resScale < 1 ? ' — adaptive resolution is cutting detail' : ' — below 30 fps'}`,
+      detail: `${fps} fps${chain.resScale < 1 ? ` at ${res}% render resolution` : ''}${perfOk ? '' : chain.resScale < 1 ? ' — adaptive resolution is cutting detail' : ' — below 30 fps'}`,
     },
     {
-      id: 'audio_routes',
+      id: 'music',
       ok: true, // informational: audio off is the Lab's default, not an error
       detail: audioOn
-        ? `music on (${signals.audio.mode}), ${plural(audioRoutes.length, 'audio route')}`
-        : audioRoutes.length
-          ? `${plural(audioRoutes.length, 'audio route')} waiting for music — audio is off; they move once ${chain.sourceKind === 'video' ? 'Clip, Track' : 'Track'} or Mic is on`
-          : 'no music on, no audio routes',
+        ? `music on (${signals.audio.mode}), ${reactWords}`
+        : reactive.length
+          ? `${reactWords} waiting for music — audio is off; they move once ${chain.sourceKind === 'video' ? 'Clip, Track' : 'Track'} or Mic is on`
+          : `no music on, ${reactWords}`,
     },
     {
-      id: 'video_routes',
-      ok: !(still && videoRoutes.length),
+      id: 'still_source',
+      ok: !(still && motionFx.length),
       detail: still
-        ? videoRoutes.length
-          ? `${plural(videoRoutes.length, 'motion/brightness route')} on a still photo — that signal never changes, they stay still`
-          : 'still photo, no motion/brightness routes'
-        : `${plural(videoRoutes.length, 'motion/brightness route')} on a ${chain.sourceKind === 'none' ? 'missing' : 'moving'} source`,
+        ? motionFx.length
+          ? `${motionFx.join(', ')} on a still photo — it draws motion through time and shows almost nothing`
+          : 'still photo, no motion-based effect'
+        : `${chain.sourceKind === 'none' ? 'no' : 'a moving'} source${motionFx.length ? ` for ${motionFx.join(', ')}` : ''}`,
     },
     {
       id: 'person_mask',
       ok: chain.maskState === null || chain.maskState === 'ready',
-      detail: chain.maskState === null ? 'no node uses the person mask' : `person mask is ${chain.maskState}`,
+      detail: chain.maskState === null ? 'no person-mask state reported by the Lab' : `person mask is ${chain.maskState}`,
     },
     exposureCheck(luma, sourceLuma),
   ];
@@ -456,24 +468,41 @@ function exposureCheck(out: number | null, src: number | null): CheckResult {
 
 interface ChangeRow { key: string; label: string; from: string; to: string }
 
-/** "Analog · Tear" for 'analog.tearAmt', from the chain table it was made for */
+/** "BOKEH · Radius" for 'bokeh.knob:radius', from the chain table it was made
+ *  for; with the panel section too ("PAINTING · Oil · DEPTH") when the same
+ *  label appears twice in that effect. */
 const paramName = (key: string, desc: Map<string, ParamDesc>) => {
   const node = key.split('.')[0];
   const p = desc.get(key);
-  return p || node in EFFECT_META ? `${effectName(node)} · ${p?.label ?? key.slice(node.length + 1)}` : key;
+  if (!p && !(node in EFFECT_META)) return key;
+  const label = p?.label ?? key.slice(node.length + 1);
+  const twin = !!p && [...desc.values()].some((q) => q !== p && q.key.startsWith(`${node}.`) && q.label === p.label);
+  return `${effectName(node)} · ${twin && p.hint ? `${p.hint} · ` : ''}${label}`;
 };
 const descOf = (chain: ChainState | null) => new Map((chain?.params ?? []).map((p) => [p.key, p]));
 
-/** What a plan changes, against the chain it was made for. */
+/** A value as its control reads it: on/off, an enum's option, a number with
+ *  the digits its step needs (a 0..0.02 threshold is not '0'). */
+function fmtValue(d: ParamDesc | undefined, v: number | undefined): string {
+  if (v === undefined || !Number.isFinite(v)) return '?';
+  if (d?.type === 'boolean') return v >= 0.5 ? 'on' : 'off';
+  if (d?.type === 'enum' && d.options?.[Math.round(v)] !== undefined) return d.options[Math.round(v)];
+  if (d && d.step > 0 && d.step < 0.01) {
+    const dec = Math.min(6, (String(d.step).split('.')[1] ?? '').length || 4);
+    return String(Number(v.toFixed(dec)));
+  }
+  return fmtNum(v);
+}
+
+/** What a plan changes, against the chain it was made for. (Routes are
+ *  legacy: the server always sends none; a plan from an older server still
+ *  shows its routes.) */
 function describePlan(before: ChainState | null, plan: AgentPlan): ChangeRow[] {
   const desc = descOf(before);
-  const val = (key: string, v: number | undefined) => {
-    if (v === undefined) return '?';
-    return desc.get(key)?.type === 'boolean' ? (v >= 0.5 ? 'on' : 'off') : fmtNum(v);
-  };
   const rows: ChangeRow[] = [];
   for (const p of plan.params ?? []) {
-    rows.push({ key: p.key, label: paramName(p.key, desc), from: val(p.key, desc.get(p.key)?.value), to: val(p.key, p.value) });
+    const d = desc.get(p.key);
+    rows.push({ key: p.key, label: paramName(p.key, desc), from: fmtValue(d, d?.value), to: fmtValue(d, p.value) });
   }
   for (const r of plan.routes ?? []) {
     const cur = desc.get(r.key)?.route ?? null;
@@ -487,17 +516,17 @@ function describePlan(before: ChainState | null, plan: AgentPlan): ChangeRow[] {
   return rows;
 }
 
-/** The server's `adjusted` lines ("key: note", a route's note starting with
- *  "route depth"), put on the rows they belong to: `key` for a base, `~key`
- *  for a route — the ChangeRow keys. `prefix` picks one fix's lines
- *  ("fix 2 · "). A line no row claims comes back in `rest`. */
+/** The server's `adjusted` lines ("key: note"), put on the rows they belong
+ *  to — the ChangeRow keys (`~key` for a legacy route note, which starts
+ *  with "route depth"). `prefix` picks one fix's lines ("fix 2 · "). A line
+ *  no row claims comes back in `rest`. */
 function notesByRow(lines: string[] | undefined, prefix = ''): { byRow: Map<string, string>; rest: string[] } {
   const byRow = new Map<string, string>();
   const rest: string[] = [];
   for (const line of lines ?? []) {
     if (typeof line !== 'string' || (prefix && !line.startsWith(prefix))) continue;
     const text = line.slice(prefix.length);
-    const m = /^([A-Za-z_]\w*\.\w+):\s*(.+)$/.exec(text);
+    const m = KEY_LINE.exec(text);
     if (!m) { rest.push(text); continue; }
     const [, key, note] = m;
     const route = /^route depth\b/i.test(note);
@@ -545,11 +574,15 @@ const REFUSAL_WORDS: [RegExp, string][] = [
   [/^carrier route stays on (\w+)$/i, "the effect's own music response stays on $1"],
   [/^enum parameters are never routed$/i, 'a mode switch cannot follow a signal'],
   [/^not routable$/i, 'cannot follow a signal'],
+  [/^not a control of this chain$/i, 'not a control of this chain'],
+  [/^signal routes no longer exist.*$/i, "no signal routes in the Lab — Gemini should set the effect's own reactive controls"],
 ];
 function plainRefusal(text: string, desc: Map<string, ParamDesc>): { text: string; key: string | null } {
-  const m = /^((?:fix \d+ · )?)([A-Za-z_][\w]*\.[\w]+)(?::\s*(.*))?$/.exec(text);
-  if (!m) return { text, key: null };
-  const [, pre, key, raw = ''] = m;
+  const m = /^((?:fix \d+ · )?)(.*)$/.exec(text);
+  const k = m ? KEY_LINE.exec(m[2]) ?? new RegExp(`^(${PARAM_KEY_PATTERN})$`).exec(m[2]) : null;
+  if (!m || !k) return { text, key: null };
+  const [, pre] = m;
+  const [, key, raw = ''] = k;
   let reason = raw.trim();
   for (const [re, plain] of REFUSAL_WORDS) {
     if (re.test(reason)) { reason = reason.replace(re, plain); break; }
@@ -939,7 +972,7 @@ function KeyForm({ k, status, error, errorMessage, model, onSubmitKey }: { k: In
 /* ── "this role works in the Lab" ────────────────────────────── */
 
 function NeedsLab({ k, what, openEffectId, hasSource, onOpenLab }: { k: Ink; what: string; openEffectId: ModuleId | null; hasSource: boolean; onOpenLab: () => void }) {
-  // only the Lab-ported effects carry over as a chain (the standalone-only ones have no Lab node yet)
+  // an open effect carries over as the chain (MODULE_IDS: all ten can be Lab nodes)
   const fx = openEffectId && (MODULE_IDS as readonly string[]).includes(openEffectId) ? effectName(openEffectId) : null;
   return (
     <div className={k.card}>
@@ -1286,10 +1319,10 @@ function ContextLine({ k, ctx, verb, silent }: { k: Ink; ctx: ChainState | null;
       {!ctx.audioActive && (
         <span className={k.amber}>
           {ctx.sourceKind === 'video' && silent
-            ? 'No music on: this clip has no soundtrack — music routes wait for Track or Mic in the Lab.'
+            ? "No music on: this clip has no soundtrack — the effects' music reactions wait for Track or Mic in the Lab."
             : ctx.sourceKind === 'video'
               ? `No music on: ${verb} switches on the clip's own audio (or start Track or Mic in the Lab).`
-              : 'No music on: music routes wait for it — start Track or Mic in the Lab.'}
+              : "No music on: the effects' music reactions wait for it — start Track or Mic in the Lab."}
         </span>
       )}
     </>
@@ -1539,6 +1572,7 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
     parts.push('3s of live signals');
     parts.push('the chain');
     if (direction) parts.push('the art direction');
+    if (intent.trim()) parts.push('your request');
     const tail = videoSrc && !meta ? ` — ${framesOnlyWhy(videoSrc)}${silent ? '' : ', so not the whole song'}` : '';
     return `Sends: ${parts.join(' + ')}${tail}`;
   })();
@@ -1623,6 +1657,8 @@ interface OptimizerOut {
 }
 
 function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, onOpenLab, reportError, direction, directionFrom, onClearDirection, desk }: TabProps) {
+  // what the director wants checked or improved (optional, like the Agent's)
+  const [intent, setIntent] = useState('');
   const [out, setOut] = useState<OptimizerOut | null>(null);
   // what the Lab refused of each applied fix (applyPlan's skipped), per issue
   const [fixNotes, setFixNotes] = useState<Record<number, string[]>>({});
@@ -1715,6 +1751,7 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
       const e = newestAgent(desk.latest(), lab);
       const last = e?.run && sameOrder(e.run.order, chain.order) ? e.run : null;
       const req: OptimizerRequest = {
+        intent: intent.trim() || undefined,
         ...(direction ? { direction } : {}),
         lastAgent: last ? { intent: last.intent, plan: last.plan, at: last.at } : null,
         media,
@@ -1812,6 +1849,7 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
         'the checks',
         ...(agentRun ? ["the Agent's last plan"] : []),
         ...(direction ? ['the art direction'] : []),
+        ...(intent.trim() ? ['your request'] : []),
       ].join(' + ')}`
     : null;
 
@@ -1834,10 +1872,24 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
         <NeedsLab k={k} what="Optimizer" openEffectId={openEffectId} hasSource={hasSource} onOpenLab={onOpenLab} />
       ) : (
         <div className="flex flex-col gap-2.5">
-          {/* the action row first: in the smallest opening it must be on screen */}
-          <button type="button" data-testid="ai-opt-run" onClick={() => void run()} disabled={b.busy || !inLab || exporting} className={`${k.primary} self-start`}>
-            <Cpu className="w-3.5 h-3.5" /> Check output
-          </button>
+          {/* the action row first: in the smallest opening it must be on screen —
+              the Agent's row: an optional request, then the button */}
+          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void run(); }}>
+            <div className={k.box}>
+              <input
+                data-testid="ai-opt-intent"
+                type="text"
+                value={intent}
+                onChange={(e) => setIntent(e.target.value)}
+                placeholder="What should it check? (optional)"
+                disabled={b.busy}
+                className={k.input}
+              />
+            </div>
+            <button type="submit" data-testid="ai-opt-run" disabled={b.busy || !inLab || exporting} className={k.primary}>
+              <Cpu className="w-3.5 h-3.5" /> Check output
+            </button>
+          </form>
           {b.busy && <div ref={busyRef}><BusyLine label={b.label} elapsed={b.elapsed} /></div>}
           {exporting && <span data-testid="ai-opt-export" className={k.amber}>{EXPORT_TEXT}</span>}
           {note && <span data-testid="ai-opt-note" className={k.amber}>{note}</span>}

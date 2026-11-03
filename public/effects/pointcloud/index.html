@@ -992,6 +992,38 @@ window.PointcloudFX = {
   toggleLoop: () => toggleLoop(),
   isLoop:     () => !!vid.loop,
 };
+/* ═══ SYNTECH-LAB-START: hook for the Lab chain adapter (the SYNTECH-LAB block at the end of the page). This
+   module's source state is not reachable from a classic script, so it exposes one entry point that feeds an
+   external MediaStream through this module's own VIDEO path — activateVideo(false): uMirrorX stays off (the
+   webcam flip is never applied) — and `null` back to "no source" with stopWebcam() (= WEBCAM OFF: the cloud
+   flows back into the idle sphere). Nothing runs unless the Lab calls it. ═══ */
+let labHooked = false;
+window.__synLabPointcloud = {
+  setStream(s) {
+    if (!s) { if (srcMode === 'lab') stopWebcam(); return; }
+    if (!labHooked) {
+      labHooked = true;
+      SRC_LABEL.lab = 'LAB';                 // INPUT pill / Info › Input read "LAB"
+      vid.addEventListener('resize', () => { // the chain's upstream can change resolution mid-stream
+        if (srcMode === 'lab' && vid.videoWidth > 0) { uniforms.uAspect.value = vid.videoWidth / vid.videoHeight; sourceShown(vid.videoWidth, vid.videoHeight); }
+      });
+    }
+    if (exporting) cancelExport();
+    const my = ++srcReq;
+    stopCamStream();
+    vid.pause(); vid.removeAttribute('src');
+    if (vidURL) { URL.revokeObjectURL(vidURL); vidURL = null; }
+    vid.muted = true;                        // the Lab plays the sound once
+    vid.srcObject = s;
+    srcMode = 'lab';
+    $('info-file').textContent = 'LAB';
+    vid.addEventListener('loadeddata', () => { if (my !== srcReq) return; dropImageTex(); activateVideo(false); }, { once: true });
+    vid.play().catch(() => {});
+    syncSourceUI();
+  },
+  srcMode: () => srcMode,
+};
+/* ═══ SYNTECH-LAB-END ═══ */
 syncSourceUI();
 
 animate(0);
@@ -1017,6 +1049,7 @@ animate(0);
       el.dispatchEvent(new Event('change',{bubbles:true}));}}}
   function collect(){return {sliders:slVals()};}
   function apply(s){if(!s)return;slApply(s.sliders);}
+  window.__synBridge={collect:collect,apply:apply}; /* SYNTECH-LAB */
   window.addEventListener('message',function(ev){
     var d=ev&&ev.data;
     if(!d||typeof d!=='object'||typeof d.type!=='string')return;
@@ -1033,6 +1066,53 @@ animate(0);
 })();
 </script>
 <!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-LAB-START (Lab chain adapter; standalone-safe) -->
+<script src="../shared/syn-lab.js"></script>
+<script>
+/* POINTCLOUD as a Lab node (LAB v2 contract, ../shared/syn-lab.js). Nothing here runs until the shell calls SynLab.
+   External video = a CLONE of the shell's video track(s) (the shell's own tracks are never stopped), handed to the
+   module's SYNTECH-LAB hook (window.__synLabPointcloud): the VIDEO path's activateVideo(false), no mirror, INPUT
+   "LAB". The effect's own IMAGE / VIDEO / WEBCAM pick wins: the external source is then dropped.
+   Output: the three.js canvas has no preserveDrawingBuffer, so outputCanvas() is a 2D canvas (SynLab.kit.compositor)
+   copied right after each render (the engine's rAF callback, wrapped once the Lab first asks), only while captured /
+   read in the last 3 s. No audio reactivity in POINTCLOUD:
+   setAudioStream is a no-op. Export (MediaRecorder) stays the effect's own — not a Lab param. */
+(function(){
+  'use strict';
+  if(!window.SynLab) return;
+  var own=null, timer=0, comp=null, lastTouch=0, vidEl=document.getElementById('vid'), cEl=document.getElementById('c');
+  function hook(){ return window.__synLabPointcloud||null; }
+  function cloneVideo(s){ try{ var t=s&&s.getVideoTracks?s.getVideoTracks():[]; return t.length?new MediaStream(t.map(function(x){ return x.clone(); })):null; }catch(e){ return null; } }
+  function release(ms){ if(ms) ms.getTracks().forEach(function(t){ try{ t.stop(); }catch(e){} }); }
+  function mode(){ var h=hook(); return h?h.srcMode():'none'; }
+  function external(){ return !!own && mode()==='lab' && vidEl.srcObject===own; }
+  function check(){ if(own && (mode()!=='lab' || vidEl.srcObject!==own)){ release(own); own=null; clearInterval(timer); timer=0; } }
+  SynLab.register({
+    setVideoStream:function(s){
+      var h=hook(); if(!h) return;
+      var nv=s?cloneVideo(s):null, prev=own;
+      if(!nv){ if(own){ own=null; clearInterval(timer); timer=0; h.setStream(null); release(prev); } return; }
+      own=nv; h.setStream(own); release(prev);
+      if(!timer) timer=setInterval(check,300);
+    },
+    setAudioStream:function(){ /* POINTCLOUD has no audio reactivity */ },
+    outputCanvas:function(){
+      if(!comp){
+        comp=SynLab.kit.compositor({ layers:function(){ return [cEl]; }, size:function(){ return {w:cEl.width,h:cEl.height}; } });
+        /* copy right after the engine's own rAF callback (animate → composer.render): the only moment the
+           drawing buffer holds the frame. A read while idle keeps the last copied frame (never a cleared one). */
+        var inner=window.requestAnimationFrame;
+        window.requestAnimationFrame=function(cb){ return inner.call(window,function(t){ cb(t); if(SynLab.capturing()||performance.now()-lastTouch<3000) comp.draw(); }); };
+      }
+      lastTouch=performance.now();
+      return comp.canvas;
+    },
+    labelOf:function(el){ var r=el.closest('.ctrl-row'), l=r&&r.querySelector('.ctrl-lbl'); return l?SynLab.kit.clean(l.textContent):''; },
+    state:function(){ return {hasSource:mode()!=='none',external:external(),fps:Number(document.getElementById('fps-val').textContent)||0}; }
+  });
+})();
+</script>
+<!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

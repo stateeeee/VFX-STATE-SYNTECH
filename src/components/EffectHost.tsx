@@ -84,6 +84,16 @@ const EffectHost = forwardRef<EffectHostHandle, EffectHostProps>(function Effect
       }),
   }));
 
+  /* Day mode (operator request B1): the effect's own chrome turns white. The
+     iframe carries data-syn-theme (the effect reads it from window.frameElement
+     at boot and watches it) and also gets a `syn:theme` message on load and on
+     every change — live, without reloading the iframe. */
+  const themeMode = isDayMode ? 'day' : 'night';
+  const postTheme = () => {
+    iframeRef.current?.contentWindow?.postMessage({ type: 'syn:theme', payload: { mode: themeMode } }, '*');
+  };
+  useEffect(() => { postTheme(); }, [themeMode]);
+
   /* Nothing is added above or below the effect: each standalone HTML already
      carries its own header, status bar and controls, so the shell would only be
      stacking a second set of chrome on top of a self-sufficient UI. The iframe
@@ -95,6 +105,8 @@ const EffectHost = forwardRef<EffectHostHandle, EffectHostProps>(function Effect
         src={iframeSrc + '/index.html'}
         className="w-full h-full border-none block"
         title={module?.name || 'Effect'}
+        data-syn-theme={themeMode}
+        onLoad={postTheme}
         allow="camera; microphone; autoplay"
         allowFullScreen
       />

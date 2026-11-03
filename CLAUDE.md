@@ -3,9 +3,11 @@
 VFX SYNTECH is a browser-based, audio/video-reactive VFX web app for videomakers,
 built by a professional director ("State"). It applies curated, high-end visual
 effects to video files, images, and webcam input — faster and more intuitively
-than After Effects or TouchDesigner. React 19 + Vite + Tailwind v4 shell, five
-standalone WebGL/Canvas effect apps, and a shared WebGL2 engine (SynEngine) for
-chaining effects.
+than After Effects or TouchDesigner. React 19 + Vite + Tailwind v4 shell and ten
+standalone WebGL/Canvas effect apps. The Lab chains the REAL effects: one iframe
+per node, each fed the previous node's output stream (LAB v2, 2026-10-28). The
+older WebGL2 engine (SynEngine, 1:1 ports of five effects) stays in the repo but
+no longer runs the Lab.
 
 **Before doing ANY work, read `docs/workflow/STATE.md`** — it tracks what is
 done, what is next, and every decision made so far. Then follow
@@ -17,7 +19,7 @@ done, what is next, and every decision made so far. Then follow
 |---|---|
 | `STATE.md` | **Live progress tracker. Read first, update before every push.** |
 | `01-VISION.md` | Product vision, the 4 pillars, quality bar, target user |
-| `02-ARCHITECTURE.md` | Repo map, engine design, iframe vs SynEngine, known gaps |
+| `02-ARCHITECTURE.md` | Repo map, the LAB v2 iframe chain + SynLab contract, known gaps |
 | `03-SPEC-SHELL.md` | Exact functional spec of the app shell (Home, Save, AI Lab, node wiring) |
 | `04-SPEC-EFFECTS.md` | Per-effect inventory: tech, parameters, reactive features |
 | `05-ROADMAP.md` | Phased implementation plan with acceptance criteria per phase |
@@ -57,37 +59,43 @@ desktop/main.ts                 Electron shell: runs server.ts inside the app on
 src/App.tsx                     Shell: top bar, left nav, layout, composition state, save/projects
 src/components/VfxCanvas.tsx    Animated "brain graph" hero (canvas), hub-drag chaining
 src/components/NodalComposition.tsx  Node graph panel (INPUT → effects → OUTPUT)
-src/components/ChainLab.tsx     Lab surface: SynEngine rack, audio/video signals, presets, LabHandle for Gemini
+src/components/ChainLab.tsx     Lab surface: iframe chain of the real effects, INPUT + transport, audio, presets, Master MP4, LabHandle
 src/components/EffectHost.tsx   Full-screen iframe host for one standalone effect
 src/components/IntroSplash.tsx  Desktop-app opening: logo → pet video + LOADING 0–100% (browser: ?intro)
 src/components/AiDirector.tsx   Gemini 3.8 panel: key form, Art Director / Agent / Optimizer, Apply/Undo
 src/ai/contract.ts              Panel ⇄ server wire format: types, safety lists, LabHandle
 src/ai/client.ts                Panel → /api/gemini/*: key header, AiError, upload cache
 src/ai/capture.ts               On-demand capture: JPEG frames, output webm clip
-src/engine/SynEngine.ts         Shared WebGL2 render graph (real, working)
-src/engine/nodes.ts             ★ STUB — DummyNode factory, effects must be ported here 1:1
-src/engine/AudioEngine.ts       ★ STUB — FFT bands / beat / BPM / file transport
+src/engine/SynEngine.ts         WebGL2 render graph + src/engine/nodes/ 1:1 ports — NOT used by the Lab since LAB v2 (kept)
+src/engine/AudioEngine.ts       The Lab's audio: clip / track / mic, FFT bands / beat / BPM, meter tap, output stream
 src/engine/VideoAnalyzer.ts     ★ STUB — motion / brightness signals
 src/engine/ParamBus (params.ts) ★ partial — base + modulation routing
 src/engine/PersonMask.ts        ★ STUB — MediaPipe selfie segmentation service
 src/effects-registry.ts         ModuleId → iframe src mapping
-public/effects/<id>/index.html  The 5 standalone effect apps (SOURCE OF TRUTH for effect look)
-public/effects/shared/          syn-chrome.css/.js — Bokeh's chrome, shared by all 5 (§5.1); syn-extras.js — work timer + timeline (all 5)
+public/effects/<id>/index.html  The 10 standalone effect apps (SOURCE OF TRUTH for effect look)
+public/effects/shared/          syn-chrome.css/.js — Bokeh's chrome + day theme, shared by all 10 (§5.1); syn-extras.js — work timer + timeline;
+                                syn-lab.js — the Lab chain link (window.SynLab, §5.2)
 ```
 
 ## Hard rules
 
-1. **The five `public/effects/*/index.html` files are the ground truth** for how
+1. **The ten `public/effects/*/index.html` files are the ground truth** for how
    each effect looks and behaves. Never rewrite them. Only additive, clearly
    delimited bridge snippets are allowed (see 03-SPEC-SHELL.md §5), plus the
    delimited `SYNTECH-UNIFORM` edits (shared-chrome link, markup, ids, frame
    sizing) that put Bokeh's top bar / frame / panel on every effect (§5.1,
-   `public/effects/shared/syn-chrome.css`).
-2. **AI Lab ports must be 1:1** — every parameter, every visual detail of the
-   standalone effect, replicated in its SynEngine node and verified with the
-   parity protocol in 06-VERIFICATION.md. No "close enough" shortcuts.
+   `public/effects/shared/syn-chrome.css`), plus the delimited `SYNTECH-LAB`
+   adapter block that links the effect into the Lab chain (§5.2).
+2. **The Lab runs the real effects** (LAB v2, operator decision 2026-10-28 —
+   "option 1"): each Lab node is the standalone effect in an iframe with its
+   whole interface, fed the previous node's `canvas.captureStream()` as an
+   external source through `window.SynLab` (03-SPEC-SHELL §3, §5.2). This
+   supersedes the old rule "AI Lab ports must be 1:1 in SynEngine": nothing is
+   ported any more, so there is no parity to keep. A new effect joins the Lab by
+   getting its `SYNTECH-LAB` adapter — never a reimplementation.
 3. `ModuleId` values (`blob_tracker`, `analog`, `blob_reveal`, `bokeh`,
-   `anamorphic_lab`) are load-bearing across registry, engine, presets, and
+   `anamorphic_lab`, `invisible`, `time_machine`, `quadtree`, `pointcloud`,
+   `painting`) are load-bearing across registry, engine, presets, and
    localStorage keys. Never rename them.
 4. All UI styling reads from the design tokens in `src/index.css` (`--syn-*`).
    Violet `#8b5cf6` is the accent. No hardcoded off-palette colors.

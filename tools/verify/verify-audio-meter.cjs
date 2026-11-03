@@ -171,8 +171,8 @@ async function waitLive(page, timeout = 8000) {
   // ── 5. the Lab ────────────────────────────────────────────────────────────
   await page.click('[data-testid="nav-ailab"]');
   await page.waitForSelector('[data-testid="audio-clip"]', { timeout: 20000 });
-  await page.waitForTimeout(1500);
-  await page.click('[data-testid="audio-clip"]');
+  // LAB v2: a video INPUT turns the Clip audio on by itself (the operator hears it) — no click
+  step('Lab: Clip audio on by itself', await page.waitForSelector('[data-testid="audio-clip"].on', { timeout: 30000 }).then(() => true).catch(() => false));
   step('Lab: meter live on the Lab\'s clip audio', await waitLive(page));
   await page.waitForTimeout(1000);
   s = [];

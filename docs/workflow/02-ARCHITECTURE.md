@@ -14,28 +14,76 @@
   the app on `127.0.0.1:47291` (fixed: localStorage is per-origin) and opens one
   window on it. Packaged by `electron-builder.yml`, built + tested for Windows
   and macOS by `.github/workflows/desktop.yml`. See `DESKTOP.md`.
-- **Effects**: five fully standalone single-file HTML apps in
+- **Effects**: ten fully standalone single-file HTML apps in
   `public/effects/<id>/index.html`. Each has its own UI, video/webcam input,
-  parameters, audio reactivity, and MediaRecorder export. They currently have
-  **no communication bridge** with the shell.
-- **Engine**: `src/engine/SynEngine.ts` — one WebGL2 context; the source video
-  is uploaded once per frame and flows through enabled `EngineNode`s in series
-  via ping-pong framebuffers. Includes adaptive internal resolution (steps
-  1 → 0.75 → 0.5 when FPS < 45) and a deterministic `renderFrame(clock)` for
-  offline export. **The engine core is real and working; the nodes are not.**
+  parameters, audio reactivity. They talk to the shell through three additive,
+  delimited blocks: `SYNTECH-BRIDGE` (settings save/restore, 03 §5),
+  `SYNTECH-UNIFORM` (the shared chrome + day theme, 03 §5.1) and `SYNTECH-LAB`
+  (the Lab chain link `window.SynLab`, 03 §5.2).
+- **Engine (legacy)**: `src/engine/SynEngine.ts` + `src/engine/nodes/*` — one
+  WebGL2 context with 1:1 ports of the first five effects (Phases 4–9). Since
+  LAB v2 (2026-10-28) the Lab no longer runs it; the code stays in the repo,
+  unused, in case a future need for an offline frame-stepped render comes back.
+  `AudioEngine` and `VideoAnalyzer` ARE still used by the Lab.
 
-## Two rendering worlds (why both exist)
+## One rendering world: the real effects (LAB v2, 2026-10-28)
 
 | | Single-effect mode | Lab (chain) |
 |---|---|---|
-| Surface | `EffectHost.tsx` iframe | `ChainLab.tsx` canvas |
-| Renderer | The standalone HTML itself | SynEngine + one `EngineNode` per effect |
-| Fidelity | Ground truth | Must be **1:1 port** of the ground truth |
-| Why | The HTMLs are finished, polished apps | Two iframes cannot share a video frame; chaining requires one GL context |
+| Surface | `EffectHost.tsx`: one iframe | `ChainLab.tsx`: one iframe per wired node, stacked in the same rect |
+| Renderer | The standalone HTML itself | The same standalone HTMLs, chained |
+| Fidelity | Ground truth | Ground truth (it IS the effect, whole interface) |
 
-This split is a hard architectural fact: browser iframes cannot pipe pixels to
-each other at speed. Anything that must compose effects in series lives in
-SynEngine.
+Until 2026-10-27 the Lab was a second renderer (SynEngine) with 1:1 ports of
+five effects, on the assumption that iframes cannot pipe pixels to each other.
+They can: `canvas.captureStream()` in one same-origin iframe is a `MediaStream`
+the next iframe plays as its video source. The operator chose this ("option 1")
+so that all ten effects are in the Lab with their own complete panels.
+
+**The chain.** `INPUT → effect 1 → … → effect N → OUTPUT`:
+- INPUT is shell-owned: a `<video>` (file; its `captureStream()` video track),
+  a canvas the photo is drawn to (captured), or the webcam stream.
+- Each hop: `SynLab.captureStream()` of node i → `SynLab.setVideoStream()` of
+  node i+1 — an **external stream** source, never the webcam path (no mirror).
+- OUTPUT = node N's stream (shown clean in the OUTPUT tab, recorded by Master
+  MP4, sampled by Gemini).
+- Every node iframe stays rendered (stacked under the one being edited): a
+  `display:none` / offscreen iframe is throttled by Chromium and would stall
+  the chain.
+- Audio: `AudioEngine` (clip / track / mic) plays the sound once, feeds the
+  sidebar meter, and its output stream goes to every node's
+  `SynLab.setAudioStream()` — each effect reacts with its own analyser; no
+  effect plays it.
+- Day/night: every effect iframe carries `data-syn-theme` and gets
+  `syn:theme` messages (03 §5.1).
+
+**`window.SynLab`** (generic half `public/effects/shared/syn-lab.js`, adapter
+per effect in its `SYNTECH-LAB` block):
+
+```ts
+interface SynLabParam {
+  key: string;          // DOM id, 'knob:<data-id>', or an adapter key ([A-Za-z0-9_:-])
+  label: string; group: string;            // panel label, panel section title
+  type: 'number' | 'boolean' | 'enum';
+  min: number; max: number; step: number; value: number;  // enum = option index
+  options?: string[]; locked?: boolean;
+}
+interface SynLabApi {
+  version: 1; id: ModuleId; ready: boolean;
+  setVideoStream(s: MediaStream | null): void;  // external source, no mirror, pill "LAB"
+  setAudioStream(s: MediaStream | null): void;  // reactivity input, never to the speakers
+  outputCanvas(): HTMLCanvasElement | null;     // final picture (composited if stacked)
+  captureStream(): MediaStream | null;          // cached captureStream of outputCanvas
+  params(): SynLabParam[];                      // the look controls (no Source/Export/Info)
+  setParam(key: string, v: number): boolean;    // same events as a user gesture
+  getSettings(): unknown; applySettings(s: unknown): void;  // = SYNTECH-BRIDGE collect/apply
+  state(): { hasSource: boolean; external: boolean; fps: number };
+}
+```
+
+Gemini's `LabHandle` (src/ai/contract.ts) is built on it: parameter keys are
+`<ModuleId>.<SynLabParam.key>`; there are no ParamBus routes any more (each
+effect's audio response is tuned through its own panel controls).
 
 ## State flow (already implemented in the shell)
 
@@ -45,9 +93,10 @@ SynEngine.
   plus the picked File and its name/kind/mime/size, which the Gemini panel
   uses to decide upload vs frames).
 - `NodalComposition.tsx` renders that state as INPUT → effect nodes → OUTPUT.
-- `ChainLab.tsx` opens with the same enabled chain and the same source; its
-  rack order/bypass/params/mod-routes can be saved as presets
-  (`syntech.chainPresets`), which the Projects modal lists.
+- `ChainLab.tsx` opens with the same wired chain and the same source; a chain
+  preset (`syntech.chainPresets`, v2 = chain order + each node's
+  `SynLab.getSettings()`) is listed by the Projects modal. Old v1 presets
+  (SynEngine params) load their chain order only.
 - `VfxCanvas.tsx` (brain graph) can chain hubs by drag; that calls back into
   the same composition state.
 - Save nav button currently stores `{activeModule, isDayMode}` to
@@ -87,19 +136,12 @@ so a LAN client, or anyone through a proxy or tunnel, must paste its own.
 DNS-rebinding guard; any other name gets a 403 whose message says what to
 add. The key is never logged, never in a URL.
 
-## The engine service layer (currently stubs — the core porting prerequisite)
+## The engine service layer (history)
 
-| File | Status | Must become |
-|---|---|---|
-| `src/engine/nodes.ts` | `DummyNode` passthroughs | Real 1:1 `EngineNode` port of each effect (Phases 4–8) |
-| `src/engine/AudioEngine.ts` | inert stub | WebAudio FFT: bass/loud/treble 0..1, beat pulse, BPM estimate; mic mode + audio-file mode with transport (play/pause/seek/loop) |
-| `src/engine/VideoAnalyzer.ts` | inert stub | Per-frame motion (frame differencing) and brightness 0..1 on a small downsampled buffer |
-| `src/engine/params.ts` (ParamBus) | partial | Base values + modulation routing: `final = clamp(base + signal × amount × range)`; snapshot/serialize/restore already sketched |
-| `src/engine/PersonMask.ts` | inert stub | Shared MediaPipe SelfieSegmentation service producing a mask canvas; lazy-loaded, one instance for the whole chain |
-
-`ChainLab.tsx` already calls all of these correctly every frame
-(`engine.beforeFrame`) — implementing the services lights up the existing UI
-(signal meters, BPM readout, `~` mod-routing chips, SEG status).
+Built for the SynEngine Lab (Phases 3–9). Since LAB v2 only `AudioEngine`
+(the Lab's clip / track / mic, bands, beat, BPM, meter tap, output stream) and
+`VideoAnalyzer` (motion / brightness on the INPUT, for Gemini's signals) are in
+use; `SynEngine`, `nodes/*`, `ParamBus` and `PersonMask` are kept but unused.
 
 ## Known gaps and traps (verified by inspection)
 
@@ -126,6 +168,7 @@ add. The key is never logged, never in a URL.
 ## Naming
 
 `ModuleId` = `'blob_tracker' | 'analog' | 'blob_reveal' | 'bokeh' |
-'anamorphic_lab'` (`src/types.ts`). These ids key the registry, the node
+'anamorphic_lab' | 'invisible' | 'time_machine' | 'quadtree' | 'pointcloud' |
+'painting'` (`src/types.ts`). These ids key the registry, the node
 factory, presets, and localStorage. Display names live in
 `EFFECT_META` (NodalComposition.tsx) and `App.tsx` modules state.

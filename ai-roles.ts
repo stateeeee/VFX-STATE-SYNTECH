@@ -3,16 +3,25 @@
  *
  * For each role (Art Director, Agent, Optimizer — defined in
  * src/ai/contract.ts) this file owns four things:
- *   (a) the system prompt: what the role is, what it knows about the five
- *       effects and the engine, and the rules it must follow;
- *   (b) the response JSON schema, built PER REQUEST — the parameter-key enums
- *       come from the chain the Lab actually sent, so Gemini cannot even name a
- *       parameter that is not there;
+ *   (a) the system prompt: what the role is, what it knows about the ten
+ *       effects and the Lab, and the rules it must follow;
+ *   (b) the response JSON schema, built PER REQUEST and kept SIMPLE: Google
+ *       refuses a schema it finds too complex (big key enums, arrays with
+ *       length limits nested under other arrays, numeric bounds) with a bare
+ *       400 INVALID_ARGUMENT. The Agent's key enum comes from the chain the
+ *       Lab sent, and only while it is short (ENUM_KEY_LIMIT); the
+ *       Optimizer's fixes carry no enum and no bound at all;
  *   (c) the parts builder: every media item is preceded by its label, so
  *       Gemini always knows which picture is SOURCE and which is OUTPUT;
  *   (d) the validator: whatever Gemini answers is clamped, snapped and
- *       filtered against the same safety lists the Lab enforces, before it
- *       ever reaches the browser.
+ *       filtered against the chain table and the safety lists, before it
+ *       ever reaches the browser — whatever the schema did or did not say.
+ *
+ * LAB v2 (2026-10-28): the Lab is a chain of the REAL effect pages in
+ * iframes, each fed the previous one's output. A parameter is one control of
+ * an effect's own panel ('<ModuleId>.<SynLabParam.key>'), grouped by panel
+ * section. There are no signal routes any more: an effect moves with the
+ * music through its own analyser and its own reactive controls.
  *
  * Prompts are written in English (the model follows them best); every prose
  * field Gemini returns is asked for in ITALIAN — the operator's language.
@@ -21,11 +30,10 @@
 import { MediaResolution, type Part } from '@google/genai';
 import { GeminiFailure } from './ai-provider';
 import {
-  MODULE_IDS, MOD_SOURCE_IDS, ENUM_KEYS, CARRIER_KEYS, PROTECTED_KEYS, PARAM_FLOORS, MAX_ROUTE_AMOUNT,
-  CARRIER_AMOUNT_MIN, CARRIER_AMOUNT_MAX, INLINE_VIDEO_FPS,
+  MODULE_IDS, PARAM_FLOORS, PARAM_KEY_PATTERN, LOCKED_GROUPS, LOCKED_CONTROL_PATTERN, INLINE_VIDEO_FPS,
   type AgentPlan, type AgentResult, type ArtDirection, type ArtDirectorResult, type AudioModeT,
-  type ChainState, type CheckResult, type MediaPart, type ModSourceT, type OptimizerIssue,
-  type OptimizerResult, type ParamDesc, type RouteT, type SignalSummary, type SourceKindT, type SourceRef,
+  type ChainState, type CheckResult, type MediaPart, type OptimizerIssue,
+  type OptimizerResult, type ParamDesc, type SignalSummary, type SourceKindT, type SourceRef,
 } from './src/ai/contract';
 import type { ModuleId } from './src/types';
 
@@ -33,30 +41,22 @@ import type { ModuleId } from './src/types';
 
 /** Few, decisive changes: a plan that touches 40 sliders is not direction. */
 export const MAX_PLAN_PARAMS = 12;
-export const MAX_PLAN_ROUTES = 6;
+/** The Agent's schema names the allowed keys in an enum only up to this many
+ *  (a one-effect chain, or two small ones). Past it the key is a plain
+ *  string: the chain table lists every key, the validator drops the rest. A
+ *  three-effect iframe chain exposes 150+ controls — an enum that size is
+ *  what makes Google refuse a schema. */
+export const ENUM_KEY_LIMIT = 60;
 const MAX_PROPOSALS = 3;
 const MAX_CHAIN = 3;
 const MAX_ISSUES = 6;
 const MAX_MEDIA = 32;
+/** Bounds what a misbehaving Lab can put into one prompt. */
+const MAX_CHAIN_PARAMS = 600;
+const MAX_ENUM_OPTIONS = 64;
 
-/* The source each carrier is pre-wired to (the nodes' defaultRoute, see
-   src/engine/nodes/*.ts). Used only when the Lab reports a carrier whose route
-   is currently off: the AI may then bring back exactly this route, nothing
-   else. Keep in sync with the node tables if a carrier is ever re-wired. */
-const CARRIER_DEFAULT_SOURCE: Record<string, ModSourceT> = {
-  'analog.reactBass': 'bass',
-  'analog.reactMid': 'loud',
-  'analog.reactHigh': 'treble',
-  'blob_reveal.beatReact': 'loud',
-  'blob_tracker.connGlow': 'loud',
-  'blob_tracker.rippleForce': 'beat',
-};
-
-/* These two rebuild the frame from the RAW source (ctx.source in their render),
-   so anything rendered before them in a chain is thrown away. */
-const RAW_SOURCE_EFFECTS: readonly ModuleId[] = ['blob_tracker', 'blob_reveal'];
-
-/* ── the job a role hands to the server ───────────────────────── */
+const KEY_RE = new RegExp(`^${PARAM_KEY_PATTERN}$`);
+const LOCKED_CONTROL_RE = new RegExp(LOCKED_CONTROL_PATTERN, 'i');
 
 export interface RoleJob<R> {
   systemInstruction: string;
@@ -64,8 +64,9 @@ export interface RoleJob<R> {
   responseJsonSchema: Record<string, unknown>;
   /** The same shape with no enums, no array-length caps and no numeric
    *  bounds, for the one retry the server makes if Google refuses the strict
-   *  schema as too complex (a long chain means ~170 enum values, nested under
-   *  capped arrays). The validator still enforces every key, cap and clamp. */
+   *  schema (a 400 naming the schema, a bare 400 INVALID_ARGUMENT, or a bare
+   *  500 — see ai-provider.ts looseRetryReason). The validator still enforces
+   *  every key, cap and clamp. */
   looseSchema?: Record<string, unknown>;
   mediaResolution?: MediaResolution;
   /** Validates Gemini's parsed answer into the wire result. */
@@ -76,86 +77,101 @@ export interface RoleJob<R> {
    (a) WHAT EVERY ROLE KNOWS
    ═══════════════════════════════════════════════════════════════ */
 
-/* Written from the effects themselves (the ported node tables and their
-   aiHints, docs/workflow/04-SPEC-EFFECTS.md, 01-VISION.md) — what each one
-   LOOKS like, what it needs in frame, and how it moves with a track. The
-   audience is a director who shoots trap/drill/rap videos for a living. */
-const EFFECT_CATALOG = `THE FIVE EFFECTS (use these exact ids)
+/* Written from the effect pages themselves (public/effects/<id>/index.html:
+   their panel sections and what each draws), docs/workflow/04-SPEC-EFFECTS.md
+   and 01-VISION.md — what each one LOOKS like, what it needs in frame, and
+   whether and how it moves with a track. The audience is a director who
+   shoots trap/drill/rap videos for a living. */
+const EFFECT_CATALOG = `THE TEN EFFECTS (use these exact ids)
 
 analog — ANALOG STATE · video synthesizer
-  Look: the picture pushed through a dying CRT and a chewed VHS deck. Tube curvature, scanlines, RGB phosphor mask, bloom bleeding off highlights, corner vignette; horizontal sync TEAR, tracking-error bands, tape dropouts, a rolling bar, RGB chroma split, grain. An optional video FEEDBACK loop makes the frame smear into itself — trails that zoom, rotate, drift and hue-shift, psychedelic when pushed. An optional luminance PIXEL SORT melts bright pixels into streaks (horizontal, vertical or diagonal) before the tube.
-  Music: reacts out of the box through three built-in CARRIER channels, pre-wired at amount 1 — already the maximum, so retuning a carrier can only make it weaker: bass → H-tear (the image jolts on the kick/808), treble → chroma split + grain (hi-hats fizz the colour), loudness → feedback trail + rotation (trails thicken when the track gets dense, e.g. on the hook), and bass also pumps the feedback zoom.
-  The feedback reactions only show once the feedback loop is ON: feedbackAmt (the trail), feedbackZoom and feedbackRot are all 0 by default and the music MULTIPLIES them — at 0 nothing moves. So at default settings only tear, chroma and grain react, and gently.
-  How HARD analog moves with the music is set by two knobs, not by the carriers: modDepth (0..1, default 0.4: a full hit pushes tear and chroma to ×1.4; at 1 it doubles them and the feedback zoom; never below ${PARAM_FLOORS['analog.modDepth'] ?? 0.1}) and reactSens (0.1..2, gain on the three channels: higher = quieter passages already hit full). reactEnabled is the master gate of all three channels: LOCKED, never touched.
-  Needs: nothing — works on any footage, no person required.
-  Suits: performance to camera, night city and car b-roll, flashbacks and memory scenes, 2000s home-video nostalgia, drill/underground grit, intimate lo-fi verses. Strong on neon night footage and on close-ups (feedback trails on a turning head).
-  Watch out: heavy feedback + tear makes faces unreadable; on footage that is already chaotic it reads as noise.
+  Look: the picture pushed through a dying CRT and a chewed VHS deck. Tube curvature, scanlines, RGB phosphor mask, bloom, vignette; horizontal sync TEAR, tracking bands, dropouts, chroma split, grain (Analog Glitch, CRT Monitor). A video FEEDBACK loop (Feedback Loop) smears the frame into itself — trails that zoom, rotate and hue-shift, psychedelic when pushed. A luminance PIXEL SORT (Pixel Sort) melts bright pixels into streaks.
+  Music: its Reactive section (Engine on/off, Sensitivity, Mod Depth) drives tear and feedback zoom on the low end, the feedback trail and rotation on the mids, chroma and grain on the highs. The feedback reactions only show once the feedback amounts are above 0. Mod Depth sets how hard the music pushes (never below its floor).
+  Needs: nothing — any footage. Suits: performance to camera, night city and car b-roll, flashbacks, 2000s home-video nostalgia, drill grit, lo-fi verses.
+  Watch out: heavy feedback + tear makes faces unreadable; on chaotic footage it reads as noise.
 
-bokeh — BOKEH STATE · cinematic depth of field
-  Look: a person-segmentation mask keeps the SUBJECT razor sharp while the BACKGROUND melts into real lens bokeh — five kernels: clean disc, swirly Helios, explosive coma, anamorphic ovals with streaks, a morphable shape (cat-eye, star, square). Highlights bloom into big creamy discs, so street lights, car lights and club LEDs become the image. Then optional background-only warps (swirl, explosive push, squeeze) and background-only FX — datamosh, pixel sort, liquid wave, morph dissolve, lava melt — while the artist stays clean. Anamorphic optics on top: squeeze, oval barrel, a 2.39 crop with no black bars, lens breathing.
-  Music: nothing built in — it moves with the track only through routes the Agent wires (background radius/bloom pumping on the 808, datamosh glitch on the snare, swirl riding the energy).
-  Needs: ONE clear person in frame, mid shot or close-up. With NO person in frame the whole image counts as background: the entire frame melts into bokeh and the background warps/FX cover everything — it is NOT invisible, it is a blurred mess with no subject. It passes the frame through unchanged only until the person mask has loaded (or when the mask could not load — see "person mask" in the RENDER line). Weak on wide shots where the person is tiny.
-  Suits: the "shot on a cinema lens" upgrade for phone footage; an artist performing to camera at night with lights behind; car interiors with the city passing; clubs; isolating the artist from a busy background; a background that moshes or melts while the face stays intact.
-
-anamorphic_lab — Anamorphic · cinema lens + film grade
-  Look: a full Panavision-style rig in one pass. Anamorphic squeeze and oval barrel, letterbox to 2.39 (any ratio 1.78–2.8), horizontal streak bloom on highlights, an auto-tracked anamorphic FLARE on the brightest hotspot (gold or cold blue, length and thickness), film HALATION (red-orange glow around highlights), chromatic aberration toward the edges, exposure, warm/cool split-tone, black lift, S-curve contrast, filmic highlight rolloff, saturation, grain, elliptical vignette. Optional subject-aware background blur by focal length and f-stop, and a "ghost" double-exposure mask flip.
-  Music: nothing built in — routes make the light breathe (exposure, halation, flare, streak bloom on the bass or the beat).
-  Needs: nothing for the grade and the lens; the flare needs a real light source in frame; the background blur needs a person (only when it is switched on).
-  Suits: anything that must look expensive — luxury and flex videos, R&B and melodic trap, golden hour, night drives (headlights and street lamps feed the flare), moody interiors. Usually the LAST link of a chain: it is the lens and the grade that glue the other effects together.
-  Watch out: on dark footage exposure/contrast can crush the blacks.
+anamorphic_lab — ANAMORPHIC · cinema lens + film grade
+  Look: a Panavision-style rig: squeeze and oval barrel, letterbox to 2.39, horizontal streak bloom, an anamorphic FLARE on the brightest hotspot, film HALATION, chromatic aberration, exposure, colour temperature, split-tone, contrast, highlight rolloff, saturation, grain, vignette; optional subject-aware background blur and a "ghost" double exposure.
+  Music: no audio reaction of its own — it does not move with the track.
+  Needs: nothing for the grade; the flare needs a real light source in frame; the background blur needs a person. Suits: anything that must look expensive — luxury/flex, R&B and melodic trap, golden hour, night drives. Usually the LAST link: the lens and the grade that glue a chain together.
+  Watch out: on dark footage exposure/contrast crush the blacks. Its Compare A|B split is locked.
 
 blob_reveal — BLOB REVEAL · rotoscope engine
-  Look: the frame starts BLACK. Only the brightest regions open up as rectangular windows onto the video (lights, highlights, lit skin, reflections), and the segmented subject is cut out and composited on top with eroded, feathered edges. Graphic, minimal, high-contrast: the artist floating in the dark with boxes of light popping around them.
-  Music: reacts out of the box — the windows breathe with the loudness (built-in carrier, pre-wired at amount 0.9) and grow on full energy.
-  Needs: a person for the reveal AND bright spots for the windows. Flat, dim footage gives few windows; a bright sky turns into one big window.
-  Suits: intros, the drop into a hook, a dark verse, performance in front of lights/strobes/LED walls, club and concert footage, a stylised rotoscope section.
-  Rebuilds the frame from the RAW source: it must be the FIRST effect of a chain.
+  Look: the frame starts BLACK; only the brightest regions open as rectangular windows onto the picture, and the segmented person is cut out and composited on top with feathered edges. Graphic, minimal, high-contrast: the artist floating in the dark with boxes of light popping around them.
+  Music: its Audio Reactive section (beat detection: Sensitivity, Min Gap) makes the windows breathe and pop on the hits.
+  Needs: a person for the cutout AND bright spots for the windows. Suits: intros, the drop into a hook, a dark verse, strobes and LED walls, club footage.
 
 blob_tracker — BLOB TRACKER · surveillance / data HUD
-  Look: computer-vision overlay on the bright blobs of the frame — markers (squares, rectangles, circles or corner brackets) with ID and area labels, neon graph lines connecting nearby blobs, organic contours (edge-based or following the person), optical-flow arrows with fading trails, Matrix-style number/letter fill, FX inside the blobs or on the background (invert, thermal camera, CCTV security cam with timestamp and CAM ID, liquid row shift, datamosh blocks, RGB-split glitch), a water-ripple simulation over the whole frame, a floating 3D eight-panel "AI analysis" montage, chaos points.
-  Music: reacts out of the box — the connection lines pump their width on the bass and their glow blooms with the loudness (built-in carrier). The rest is pre-wired but only shows once that FX is switched ON: the water ripple (rippleOn, off by default) hits on every beat, datamosh (fxData) rides the hi-hats, the RGB glitch (fxGlitch) spikes on the beat, the 3D panels (panelsEnabled) swell on the bass and tumble with the video's motion. These factory routes run 0.4–0.6 deep on purpose.
-  Needs: distinct light points or strong contrast (night city, car lights, crowds, stage lights, phone screens on faces, dancers under light).
-  Suits: the language of surveillance — "they're watching", tech-noir, paranoia, heist and street concepts, video-game HUD. Strong as the main look.
-  Watch out: busy — on cluttered footage it becomes noise. The heaviest effect. Rebuilds the frame from the RAW source: it must be the FIRST effect of a chain.`;
+  Look: computer-vision overlay on the bright blobs — markers with ID/area labels, neon lines connecting nearby blobs, contours, optical-flow arrows, Matrix-style text fill, FX inside the blobs or on the background (invert, thermal, CCTV with timestamp, datamosh, RGB glitch), a water-ripple simulation, a floating 3D eight-panel "AI analysis" montage.
+  Music: its Audio Reactive section (AR on, sources, bands) pumps lines, glow, ripples and glitches on the track; Video Reactive follows motion, light, cuts.
+  Needs: distinct light points or strong contrast. Suits: surveillance, tech-noir, paranoia, heist and street concepts, video-game HUD.
+  Watch out: busy — on cluttered footage it becomes noise; the heaviest effect.
 
-/* Hard facts of the render engine every role needs, so no role proposes or
-   tunes something the engine cannot do. */
-const ENGINE_FACTS = `HOW THE LAB RENDERS
-- A chain renders in order: each effect processes the output of the one before.
-- blob_tracker and blob_reveal are the exception: they rebuild the frame from the RAW source, so whatever runs before them is thrown away. They always go FIRST, and never both in the same chain.
-- bokeh, blob_reveal (and anamorphic_lab's background blur, blob_tracker's person contour) share one person mask computed on the clean source. Effects that bend geometry before them (barrel, squeeze, feedback zoom) misalign the cutout — put the mask-based effects early.
+bokeh — BOKEH STATE · cinematic depth of field
+  Look: a person mask keeps the SUBJECT sharp while the BACKGROUND melts into lens bokeh (disc, swirly Helios, coma, anamorphic ovals, morphable shapes); highlights become big creamy discs; optional background-only warps and FX (datamosh, pixel sort, liquid, melt) while the artist stays clean; anamorphic optics.
+  Music: no audio reaction of its own.
+  Needs: ONE clear person, mid shot or close-up. With no person the whole frame counts as background and melts. Suits: the "cinema lens" upgrade for phone footage, artist at night with lights behind, car interiors, clubs.
+
+invisible — INVISIBLE STATE · person cloak
+  Look: the person becomes invisible — the background plate (learned over time, or captured) is painted over them, leaving a shimmering, refracting "predator" outline whose edge can be clean or chaotic.
+  Music: no audio reaction of its own.
+  Needs: a person and a mostly LOCKED-OFF camera (the plate is the empty background; a moving camera smears it). Suits: ghost / absence concepts, the artist vanishing on a beat cut, surreal performance.
+
+time_machine — TIME MACHINE · temporal displacement
+  Look: every pixel shows a different moment of the past — a time map (from luminance or another map mode: contrast, bias, blur, invert) decides how many frames back each region is, so moving subjects smear, stretch and echo through time (slit-scan, time ribbons); black/white offsets and a mix control the depth.
+  Music: its Reactive section (Engine, Sensitivity, Mod Depth) pushes the displacement with the track.
+  Needs: MOTION — on a still shot or photo it shows almost nothing. Suits: dance, car and crowd shots, hypnotic slow sections, the drop.
+
+quadtree — QUADTREE · recursive subdivision
+  Look: the frame is cut into a quadtree of flat-colour cells — big blocks where the image is flat, tiny cells on detail and edges (threshold, max depth, samples, acuity); optional cell borders and cell shapes; a mix with the original.
+  Music: its Reactive section (Engine, Sensitivity, Mod Depth) makes the subdivision pulse with the track.
+  Needs: nothing. Suits: digital/glitch art, graphic covers, transitions, tech concepts. Watch out: destroys faces at low depth.
+
+pointcloud — POINTCLOUD · the video as 3D points
+  Look: the frame becomes a cloud of points in 3D space, displaced in depth by brightness, with a slowly drifting camera, point size, brightness, noise and bloom.
+  Music: no audio reaction of its own.
+  Needs: contrast (bright subjects on dark backgrounds read best). Suits: dreamy, cosmic, data-visual sections, intros and outros. Watch out: the subject's features dissolve into dots.
+
+painting — PAINTING STYLES · painterly filters
+  Look: the video repainted in a style — WATERCOLOR, OIL (impasto, light), TEMPERA, POINTILLISM (dots), IMPRESSIONISM (strokes, swirl), EXPRESSIONISM (energy, contrast) — with per-style parameters and colour controls. The paint switch must be ON for any style to show.
+  Music: no audio reaction of its own.
+  Needs: nothing. Suits: art-film moments, memories, romantic or melancholic tracks, covers.`;
+
+/* Hard facts of the Lab every role needs, so no role proposes or tunes
+   something the Lab cannot do. */
+const ENGINE_FACTS = `HOW THE LAB RENDERS (an iframe chain)
+- The Lab is a chain of the effects' own pages: INPUT → effect 1 → effect 2 → … → OUTPUT. Each effect takes the previous effect's OUTPUT as its video source, exactly as if that were the clip loaded into it. Nothing reaches an effect except what the one before it shows.
+- So ORDER matters: effects that must find a person (bokeh, blob_reveal, invisible; anamorphic_lab's background blur) go BEFORE effects that destroy the person's shape (quadtree, pointcloud, painting, heavy analog feedback, time_machine smears) — after them there is no person left to find.
 - anamorphic_lab is the lens and the grade: normally last.
 - Every effect costs frame rate; three in a chain is heavy — use three only when each one earns its place.
-- Music reaches the effects only while the Lab has audio on: a Track (an audio file), the Clip (the source video's own soundtrack) or the Mic. Signals: bass (kick/808 low end), treble (hi-hats, the top of snares, sibilance), loud (overall energy, follows the song's sections), beat (an onset pulse: a short spike on each hit, near 0 in between), motion (movement in the video), bright (frame brightness).`;
+- Music reaches the effects only while the Lab has audio on: a Track (an audio file), the Clip (the source video's own soundtrack) or the Mic. Each effect hears it through its OWN analyser. Only effects with their own reactive section (analog, time_machine, quadtree: Reactive; blob_reveal, blob_tracker: Audio Reactive) move with it; the others (anamorphic_lab, bokeh, invisible, pointcloud, painting) never do — in a chain they are the look the reactive ones play over.`;
 
-const ITALIAN = `LANGUAGE: write every prose field in ITALIAN — the director is Italian. Effect ids, parameter keys and signal names stay exactly as given (they are code). Scene slang that Italians use in English (808, drop, hook, flare, glitch, b-roll) is fine inside Italian sentences.`;
+const ITALIAN = `LANGUAGE: write every prose field in ITALIAN — the director is Italian. Effect ids, parameter keys and section names stay exactly as given (they are code / panel labels). Scene slang that Italians use in English (808, drop, hook, flare, glitch, b-roll) is fine inside Italian sentences.`;
 
 const FLOOR_TEXT = Object.entries(PARAM_FLOORS).map(([k, v]) => `${k} never below ${v}`).join('; ') || 'none';
 
-/* Routing semantics, shared by the Agent and the Optimizer's fixes. The
-   formula is the ParamBus one (src/engine/params.ts, apply()). */
-const PLAN_RULES = `HOW A PLAN IS APPLIED (ParamBus)
-Every frame: final = clamp(base + signal × amount × (max − min)), with signal in 0..1.
-So a route's amount is a fraction of the parameter's FULL range: amount 0.5 on a 0..255 threshold swings it by ~127 on a full hit. On most parameters 0.05..0.25 is already a clear, musical move; go deeper only for a deliberate pump, and never above ${MAX_ROUTE_AMOUNT}. A negative amount inverts the push (the signal pulls the value down). Choose the base so that base + swing stays where the look still works — on the loudest section of the song, not just on the seconds you measured.
-Factory routes are the designed look, not mistakes: some effects ship routes up to ${MAX_ROUTE_AMOUNT} deep (blob_tracker: panelTurb ← motion 0.6, datamosh ← treble 0.5, glitchAmt ← beat 0.5, connWidth ← bass 0.45, panelScale ← bass 0.4). Never flag or cut one just for its depth; judge it by what it does on screen.
-Pick the signal by character: beat for punctual hits (glitch spikes, ripples, flashes), bass for pumping and breathing (size, radius, zoom, glow), loud for slow section-level swells (feedback, opacity, halation), treble for fizz and texture (chroma, noise, datamosh), motion to follow the video (cuts, dance), bright to follow the light.
+/* What a plan is and how it lands, shared by the Agent and the Optimizer's
+   fixes. The Lab applies each entry as if the operator moved that control
+   in the effect's own panel (SynLab.setParam). */
+const PLAN_RULES = `THE CHAIN TABLE
+It lists every control of every effect in the chain, grouped by effect and by the effect's own panel SECTION (the names on its panel). Each line: key | label | range | value | flags. Ranges: "number min..max step s"; "on/off 0|1"; "enum 0..n-1" followed by the option labels (value i selects option i).
+
+HOW A PLAN IS APPLIED
+Each entry { key, value } moves ONE control of the effect's own panel, exactly as if the director moved it by hand; the effect then behaves as it does standalone. There are NO signal routes: to change how an effect moves with the music, set the controls of its own reactive section (on/off engine, sensitivity, depth, bands…) like any other control. Choose values that still work on the loudest section of the song, not just on the seconds you measured.
 
 MUSIC WHILE AUDIO IS OFF
-Audio OFF is the Lab's normal starting state, even for a music video: the source's own song only plays once the director switches on the Clip (or loads a Track, or opens the Mic). A route on bass, treble, loud or beat while audio is off is WAITING FOR MUSIC — it comes alive the moment audio is on. That is never an error: wire the music routes the look needs, and never remove one because audio is off.
+Audio OFF is the Lab's normal starting state, even for a music video: the source's own song only plays once the director switches on the Clip (or loads a Track, or opens the Mic). An effect's reactive controls set while audio is off are WAITING FOR MUSIC — they come alive the moment audio is on. That is never an error: set them for the music the look needs.
 
 PLAN RULES (anything else is refused by the validator)
-- params: { key, value } sets a BASE value. routes: { key, source, amount } sets or replaces that parameter's route; source "off" removes it.
-- At most ${MAX_PLAN_PARAMS} params and ${MAX_PLAN_ROUTES} routes. Few, decisive changes that make a visible difference — leave the rest alone.
-- LOCKED parameters: never touch them (among them analog.reactEnabled, the gate of analog's whole music response, and bokeh.segEnabled, the person mask).
+- params: { key, value } — the key exactly as in the chain table; the value inside its range (on/off 0 or 1; an enum the option index).
+- At most ${MAX_PLAN_PARAMS} params. Few, decisive changes that make a visible difference — leave the rest alone. routes is always an empty list.
+- LOCKED controls: never touch them (A/B compare splits, presets and performance pads that rewrite other controls, anything the Lab marks LOCKED).
 - FLOORS: ${FLOOR_TEXT} — each scales an effect's whole music response; a lower value is raised to the floor.
-- CARRIER parameters: their base stays 0 and their route IS the effect's built-in response to music. You may only retune the amount (${CARRIER_AMOUNT_MIN}..${CARRIER_AMOUNT_MAX}) on the SAME source. Never set their base, never change their source, never switch them off.
-- ENUM parameters: an integer inside the range, chosen as a base value; never routed.
-- On/off switches: 0 or 1. A stage's amounts only show when its switch is on (e.g. a glitch amount does nothing while that glitch FX is off) — switch it on in the same plan.
-- Only parameters marked "routable" can carry a route.
-- No routes on a dead VIDEO signal: motion or bright whose mean and peak are ~0 in the window (motion on a locked-off camera or a still photo, bright on a black frame) does nothing. Music signals are never "dead" just because audio is off — see above.
+- An effect's reactive ENGINE switch: leave it on unless the intent asks that effect to stop moving with the music.
+- On/off switches: a section's amounts only show while its switch is on (e.g. a glitch amount does nothing while that glitch is off; painting shows nothing while its paint switch is off) — switch it on in the same plan.
 - Keep the subject readable (face, artist) unless the intent asks to destroy it.`;
 
-const ART_DIRECTOR_SYSTEM = `You are the ART DIRECTOR of VFX SYNTECH, a browser VFX studio used by a professional Italian music-video director (trap, drill, rap, R&B — the Italian urban scene and its references). You are the creative mind. You WATCH the source the director gives you — a video with its own music, a photo, or live webcam frames — and you decide which of the studio's five effects belong on it, alone or chained. Think like a music-video director pitching a look to an artist: concrete, visual, musical, never generic.
+const ART_DIRECTOR_SYSTEM = `You are the ART DIRECTOR of VFX SYNTECH, a browser VFX studio used by a professional Italian music-video director (trap, drill, rap, R&B — the Italian urban scene and its references). You are the creative mind. You WATCH the source the director gives you — a video with its own music, a photo, or live webcam frames — and you decide which of the studio's ten effects belong on it, alone or chained. Think like a music-video director pitching a look to an artist: concrete, visual, musical, never generic.
 
 READ THE SOURCE
 - subject: who or what is on screen (number of people, framing, what they do).
@@ -166,10 +182,10 @@ READ THE SOURCE
 - music: only if you can HEAR audio (a whole video with its soundtrack): energy, tempo feel (e.g. "trap half-time ~140", "drill con 808 scivolati", "R&B lento"), and up to 6 moments with timestamps "m:ss" (drop, hook, beat switch, pause, ad-lib burst). If you cannot hear audio but LIVE SIGNALS are given, fill energy and tempoFeel from them and leave moments empty. If there is neither, music = null.
 
 PROPOSE 1–3 LOOKS
-- Each is a chain of 1–3 effects in render order, and they must differ from each other (for example: one safe, one bold, one wild).
+- Each is a chain of 1–3 DIFFERENT effects in render order, and the looks must differ from each other (for example: one safe, one bold, one wild).
 - title: a short name for the look.
-- why: tie the choice to what you SAW — concrete details ("le luci della strada dietro di lui diventano dischi enormi", "il volto è sempre al centro, il mask regge"). No generic praise. If an effect needs a person or light points that the source lacks, do not propose it.
-- audioIdea: how the look should move with THIS track — which element (kick/808, hi-hats, snare, vocal, the drop) drives which visual — concrete enough for the Agent to wire it. For a photo or silent source, say what to connect once a Track or the Mic is on.
+- why: tie the choice to what you SAW — concrete details ("le luci della strada dietro di lui diventano dischi enormi", "il volto è sempre al centro, il mask regge"). No generic praise. If an effect needs a person, light points, motion or a still camera that the source lacks, do not propose it.
+- audioIdea: how the look should move with THIS track — which element (kick/808, hi-hats, snare, vocal, the drop) drives which visual, through the reactive effects of the chain — concrete enough for the Agent to set it. A chain with no reactive effect does not move with the music: then say what the music suggests for the look instead. For a photo or silent source, say what to set once a Track or the Mic is on.
 
 ${ENGINE_FACTS}
 
@@ -179,22 +195,22 @@ ${ITALIAN}
 
 Answer only with the JSON object described by the response schema.`;
 
-const AGENT_SYSTEM = `You are the AGENT of VFX SYNTECH — the operator at the desk. The director has already chosen the source and the effect chain in the Lab. Your job: set parameters and audio/video routes so that the video, the music and the effects play together like a beat under a vocal — composed with the song, never pasted on top.
+const AGENT_SYSTEM = `You are the AGENT of VFX SYNTECH — the operator at the desk. The director has already chosen the source and the effect chain in the Lab. Your job: set the effects' own panel controls so that the video, the music and the effects play together like a beat under a vocal — composed with the song, never pasted on top.
 
 WHAT YOU RECEIVE
-- Possibly the whole SOURCE video as a file, WITH its soundtrack (sampled for you at about 1 fps). That is the song the video is cut to: listen to it end to end — where the sections change, where the drop and the hook land, where the 808 comes in and where it breaks down — and watch how the camera and the subject move across the whole clip. If the file is silent (no soundtrack), never invent a song: wire the music routes the look needs for a Track or the Mic, and say so in the summary.
+- Possibly the whole SOURCE video as a file, WITH its soundtrack (sampled for you at about 1 fps). That is the song the video is cut to: listen to it end to end — where the sections change, where the drop and the hook land, where the 808 comes in and where it breaks down — and watch how the camera and the subject move across the whole clip. If the file is silent (no soundtrack), never invent a song: set the reactive controls the look needs for a Track or the Mic, and say so in the summary.
 - Possibly an OUTPUT clip: a few seconds of what the Lab renders right now, with the music when audio is on, sampled at ${INLINE_VIDEO_FPS} fps so sub-second hits are visible. Use it to see what already moves on the beat, and what does not.
 - A SOURCE / OUTPUT frame pair: what goes into the chain and what comes out, at the same instant.
 - LIVE SIGNALS measured over the last seconds (audio mode, BPM, bass/treble/loudness, beats counted, motion, brightness).
-- The chain table: every parameter with its range, step, current base, current route and flags (LOCKED, CARRIER, ENUM, routable).
-- Possibly an ART DIRECTION: the look the director chose from the Art Director — title, chain, why, audioIdea and the music read with its timestamped moments. It is your brief: turn its audioIdea into concrete routes and its "why" into concrete bases.
+- The chain table: every control of every effect, by panel section, with its range, current value and flags (LOCKED).
+- Possibly an ART DIRECTION: the look the director chose from the Art Director — title, chain, why, audioIdea and the music read with its timestamped moments. It is your brief: turn its audioIdea into the reactive effects' controls and its "why" into the look's controls.
 - Possibly the director's intent. When it is given, it wins — over the art direction too, wherever they disagree. With neither, make the look work for this footage and this music.
 
 HOW TO WORK
 - Look first: subject size and position, darkness, light sources, how much the camera moves, what the OUTPUT shows versus the SOURCE (effect too weak, too strong, subject lost, image blown or crushed).
-- Listen: with the source file, to the song itself (sections, drop, hook, where the low end hits, how dense the verse is against the hook); with the OUTPUT clip, to whether the current routes land on the hits; with only numbers, to BPM, how hard the bass peaks, how many beats land in the window, whether the track is dense (loud mean high) or sparse.
-- Tie every change to that evidence, and wire for the WHOLE song: a route tuned on a quiet verse must still look right on the drop.
-- Audio OFF (the Lab's default): still wire the music routes the look needs — they wait for music. Say in the summary that they come alive once the Clip (the video's own song), a Track or the Mic is switched on.
+- Listen: with the source file, to the song itself (sections, drop, hook, where the low end hits, how dense the verse is against the hook); with the OUTPUT clip, to whether the reactive effects land on the hits; with only numbers, to BPM, how hard the bass peaks, how many beats land in the window, whether the track is dense (loud mean high) or sparse.
+- Tie every change to that evidence, and set for the WHOLE song: a sensitivity tuned on a quiet verse must still look right on the drop.
+- Audio OFF (the Lab's default): still set the reactive controls the look needs — they wait for music. Say in the summary that they come alive once the Clip (the video's own song), a Track or the Mic is switched on.
 
 ${PLAN_RULES}
 
@@ -212,24 +228,24 @@ const OPTIMIZER_SYSTEM = `You are the OPTIMIZER of VFX SYNTECH — the Agent's c
 
 WHAT YOU RECEIVE
 - The OUTPUT clip: a few seconds of what the Lab renders, with its music when audio is on, sampled at ${INLINE_VIDEO_FPS} fps (one frame every ~${Math.round(1000 / INLINE_VIDEO_FPS)} ms — fine enough to see whether a flash lands on a kick). And SOURCE / OUTPUT frame pairs.
-- CHECKS the Lab computed itself (frame rate, resolution scale, signal liveness, the OUTPUT's exposure compared to the source…): treat them as facts. A check saying music routes are idle because audio is off is information, not a problem.
-- LIVE SIGNALS, the chain table (ranges, bases, routes, flags), the ART DIRECTION the director chose (when given: the look and the audioIdea the result must deliver), the director's intent (it wins over the art direction where they disagree), and the Agent's last plan (may be absent).
+- CHECKS the Lab computed itself (frame rate, signal liveness, the OUTPUT's exposure compared to the source…): treat them as facts. A check saying audio is off is information, not a problem.
+- LIVE SIGNALS, the chain table (every control by panel section, ranges, values, flags), the ART DIRECTION the director chose (when given: the look and the audioIdea the result must deliver), the director's request to you (when given: what to check or improve — it wins over the art direction where they disagree), and the Agent's last plan (may be absent).
 
 LOOK FOR
-1. Subject lost or unreadable: the face/artist dissolved by glitch, feedback, blur or black windows; a cutout on the wrong thing; halos.
+1. Subject lost or unreadable: the face/artist dissolved by glitch, feedback, cells, points, paint or black windows; a cutout on the wrong thing; halos.
 2. Blown or crushed image, compared to the source: highlights the chain clipped to white, blacks it crushed so detail is gone (unless clearly intended). A SOURCE that is already dark (night, club, a fade from black) or already bright is the footage, not a fault of the chain — judge what the chain did to it, never brighten a dark look the source already has.
-3. Effect invisible: OUTPUT ≈ SOURCE (a mask-based effect whose person mask has not loaded yet, thresholds that catch nothing, amounts near 0, a stage switched off). Not the same thing: bokeh with NO person in frame is very visible — the whole frame becomes blurred background with the background FX on top. Report that as "no subject for this effect" with fix null (it needs a shot with a person, or another chain), never as bokeh that is too weak.
-4. Not following the beat — only when audio is on and you hear the music in the clip: the visual hits do not land on the kicks/snares you hear, nothing moves with the music, or everything jitters constantly instead of moving musically. With audio OFF the clip is silent: judge what you see, and do not report the silence or the still music routes as a problem.
-5. Routes on dead VIDEO signals: motion on a locked-off shot or a still photo, bright on a black frame. A route on bass, treble, loud or beat while audio is OFF is NOT an issue — it is waiting for music; never remove or "fix" it for that.
+3. Effect invisible: OUTPUT ≈ SOURCE (a switch that is off — e.g. painting's paint switch, invisible's cloak —, thresholds that catch nothing, amounts near 0, a person-based effect that finds no person because an earlier effect destroyed it). Not the same thing: bokeh with NO person in frame is very visible — the whole frame becomes blurred background. Report that as "no subject for this effect" with no fix (it needs a shot with a person, or another chain).
+4. Not following the beat — only when audio is on and you hear the music in the clip: the reactive effects' hits do not land on the kicks/snares you hear, nothing moves with the music (engine off, sensitivity or depth too low), or everything jitters constantly instead of moving musically (sensitivity or depth too high). With audio OFF the clip is silent: judge what you see, and do not report the silence as a problem. Effects without a reactive section never move with the music — that is not a fault.
+5. Motion-based effects on a still source: time_machine on a locked-off shot or a photo shows almost nothing.
 6. Frame-rate problems (from the checks): propose lighter settings.
-7. Fighting effects: two effects cancelling each other, an effect placed before blob_tracker/blob_reveal (thrown away), double vignettes, grades pulling opposite ways.
-8. Off brief: with an ART DIRECTION, a result that does not deliver its look, or — with audio on — its audioIdea (e.g. the idea says the 808 drives the flare, and the flare does not move with the 808 you hear). With audio off, check only that the routes the idea needs are wired.
+7. Fighting effects: a person-based effect placed after one that destroyed the person, double vignettes, grades pulling opposite ways.
+8. Off brief: with an ART DIRECTION, a result that does not deliver its look, or — with audio on — its audioIdea. With audio off, check only that the reactive controls the idea needs are set.
 
 FOR EACH ISSUE (at most ${MAX_ISSUES}, most important first)
 - severity: "error" (broken or unusable), "warning" (clearly hurts the result), "tip" (polish).
 - finding: what is wrong, in Italian.
 - evidence: what you saw or heard, in Italian, with the clip timestamp ("0:02.5") or the frame label it comes from.
-- fix: a plan that repairs it (same rules as the Agent's plans below), or null when no parameter can fix it — e.g. it needs another source or another chain order; then say so in the finding.
+- fix: { summary, params } — a plan that repairs it (same rules as the Agent's plans below). When no control can fix it (it needs another source or another chain order), give fix.params = [] and say so in the finding.
 Do not invent issues to fill the list: a good result gets verdict "ok" with no issues or only tips.
 
 verdict: "ok" (nothing important), "improve" (works, clearly better possible), "broken" (error-level issues).
@@ -259,7 +275,6 @@ function str(v: unknown, max = 400): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 const isModuleId = (v: unknown): v is ModuleId => typeof v === 'string' && (MODULE_IDS as readonly string[]).includes(v);
-const isModSource = (v: unknown): v is ModSourceT => typeof v === 'string' && (MOD_SOURCE_IDS as readonly string[]).includes(v);
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 /* image/jpeg, video/webm, audio/wav … — parameters (";codecs=vp9") stripped. */
@@ -301,35 +316,56 @@ function readSource(v: unknown): SourceRef {
   return src;
 }
 
-/** One ParamDesc made trustworthy: range sane, flags re-derived from the
- *  contract's safety lists (OR-ed with what the Lab said, never weaker). */
+/** The effect-side half of a key ('analog.sl-modDepth' → 'sl-modDepth'). */
+const ownKey = (key: string) => key.slice(key.indexOf('.') + 1);
+
+/** Never the AI's, whatever the Lab said: a LOCKED_GROUPS section (presets,
+ *  performance pads, source/export/info) or an A/B compare / fullscreen
+ *  control (LOCKED_CONTROL_PATTERN). */
+function lockedByContract(key: string, label: string, hint: string): boolean {
+  return LOCKED_GROUPS.includes(hint.trim().toLowerCase())
+    || LOCKED_CONTROL_RE.test(ownKey(key)) || LOCKED_CONTROL_RE.test(label);
+}
+
+/** Enum option labels: strings only, trimmed, at most MAX_ENUM_OPTIONS. */
+function readOptions(v: unknown): string[] | null {
+  if (!Array.isArray(v) || !v.length) return null;
+  const out = v.slice(0, MAX_ENUM_OPTIONS).map((o) => (typeof o === 'string' || typeof o === 'number' ? str(String(o), 40) : ''));
+  return out.length ? out.map((o, i) => o || `#${i}`) : null;
+}
+
+/** One ParamDesc made trustworthy: key shape and effect id checked, range
+ *  sane, enum range taken from its options, `locked` OR-ed with the
+ *  contract's own locks (never weaker than what the Lab said). The legacy
+ *  route fields are always off: the iframe Lab has no routes. */
 function normalizeParam(raw: unknown): ParamDesc | null {
   const p = obj(raw);
   const key = typeof p.key === 'string' ? p.key.trim() : '';
-  if (!/^[a-z_]+\.[A-Za-z0-9_]+$/.test(key)) return null;
-  const type: ParamDesc['type'] = ENUM_KEYS.includes(key) ? 'enum'
-    : p.type === 'boolean' ? 'boolean'
-    : p.type === 'enum' ? 'enum'
-    : 'number';
+  if (!KEY_RE.test(key) || !isModuleId(key.slice(0, key.indexOf('.')))) return null;
+  const type: ParamDesc['type'] = p.type === 'boolean' ? 'boolean' : p.type === 'enum' ? 'enum' : 'number';
+  const options = type === 'enum' ? readOptions(p.options) : null;
   let min = fin(p.min);
   let max = fin(p.max);
   if (type === 'boolean') { min = 0; max = 1; }
+  if (options) { min = 0; max = options.length - 1; }
   if (min === null || max === null || max < min) return null; // no range → the AI cannot touch it safely
+  if (type === 'enum') { min = Math.ceil(min); max = Math.floor(max); if (max < min) return null; }
   const stepIn = fin(p.step);
-  const step = stepIn !== null && stepIn > 0 ? stepIn : type === 'number' ? 0 : 1;
-  const r = obj(p.route);
-  const route: RouteT | null = isModSource(r.source) && fin(r.amount) !== null ? { source: r.source, amount: r.amount as number } : null;
+  const step = type === 'number' ? (stepIn !== null && stepIn > 0 ? stepIn : 0) : 1;
+  const label = str(p.label, 60) || ownKey(key);
+  const hint = str(p.hint, 60);
   return {
     key,
-    label: str(p.label, 60) || key,
+    label,
     type,
     min, max, step,
     value: clamp(fin(p.value) ?? min, min, max),
-    hint: str(p.hint, 300),
-    reactive: type === 'number' && p.reactive === true,
-    route,
-    carrier: p.carrier === true || CARRIER_KEYS.includes(key),
-    locked: p.locked === true || PROTECTED_KEYS.includes(key),
+    hint,
+    reactive: false,
+    route: null,
+    carrier: false,
+    locked: p.locked === true || lockedByContract(key, label, hint),
+    ...(options ? { options } : {}),
   };
 }
 
@@ -340,7 +376,13 @@ function readChain(v: unknown): ChainState {
   if (!Array.isArray(c.params)) throw new GeminiFailure('bad_request', 'chain is missing: open the Lab and enable at least one effect.');
   const order = [...new Set(arr(c.order).filter(isModuleId))];
   if (!order.length) throw new GeminiFailure('bad_request', 'The Lab chain is empty: enable at least one effect.');
-  const params = c.params.map(normalizeParam).filter((p): p is ParamDesc => p !== null);
+  /* only the effects of this chain, first mention of a key wins */
+  const seen = new Set<string>();
+  const params = c.params.slice(0, MAX_CHAIN_PARAMS).map(normalizeParam).filter((p): p is ParamDesc => {
+    if (!p || seen.has(p.key) || !order.includes(p.key.slice(0, p.key.indexOf('.')) as ModuleId)) return false;
+    seen.add(p.key);
+    return true;
+  });
   return {
     order,
     params,
@@ -458,44 +500,60 @@ function describeSignals(raw: unknown): string {
     lines.push(`- audio: ON — ${AUDIO_MODE_LABEL[String(a.mode)] ?? String(a.mode)}; BPM ${fin(a.bpm) ?? 'unknown'}; beats counted ${n2(a.beats)}${track}`);
     lines.push(`  bass ${stat(a.bass)}; treble ${stat(a.treble)}; loud ${stat(a.loud)}`);
   } else {
-    lines.push('- audio: OFF — no Track, Clip or Mic is on in the Lab yet. Music routes wait for music: they are silent now and come alive when audio is switched on (not an error).');
+    lines.push("- audio: OFF — no Track, Clip or Mic is on in the Lab yet. The effects' music reactions wait for music: they are still now and come alive when audio is switched on (not an error).");
   }
   lines.push(`- video: motion ${stat(v.motion)}; bright ${stat(v.bright)}`);
   return lines.join('\n');
 }
 
-function describeParam(p: ParamDesc): string {
-  const range = p.type === 'boolean' ? 'on/off 0|1'
-    : p.type === 'enum' ? `enum ${p.min}..${p.max}`
-    : `number ${p.min}..${p.max}${p.step ? ` step ${p.step}` : ''}`;
-  const route = p.route ? `${p.route.source} ×${n2(p.route.amount)}` : '—';
-  const flags = p.locked ? 'LOCKED'
-    : p.carrier ? 'CARRIER'
-    : p.type === 'enum' ? 'ENUM'
-    : p.reactive ? 'routable'
-    : '';
-  const hint = p.hint ? ` — ${p.hint.length > 170 ? `${p.hint.slice(0, 169)}…` : p.hint}` : '';
-  return `${p.key} | ${p.label} | ${range} | base ${n2(p.value)} | route ${route}${flags ? ` | ${flags}` : ''}${hint}`;
+/** A number as the chain table shows it: enough digits for its step (a
+ *  0..0.02 threshold must not read as 0). */
+function num(v: number, step = 0): string {
+  if (!Number.isFinite(v)) return '?';
+  const d = step > 0 ? Math.min(6, Math.max(decimals(step), 0)) : Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 1 ? 2 : 4;
+  return String(Number(v.toFixed(d)));
 }
 
+function describeParam(p: ParamDesc): string {
+  const range = p.type === 'boolean' ? 'on/off 0|1'
+    : p.type === 'enum'
+      ? `enum ${p.min}..${p.max}${p.options ? ` (${p.options.map((o, i) => `${i} ${o}`).join(', ')})` : ''}`
+      : `number ${num(p.min)}..${num(p.max)}${p.step ? ` step ${num(p.step)}` : ''}`;
+  const value = p.type === 'boolean' ? (p.value >= 0.5 ? '1 (on)' : '0 (off)')
+    : p.type === 'enum' && p.options?.[p.value] ? `${p.value} (${p.options[p.value]})`
+    : num(p.value, p.step);
+  return `${p.key} | ${p.label} | ${range} | value ${value}${p.locked ? ' | LOCKED' : ''}`;
+}
+
+/** The chain table: per effect, per panel section (in the order the Lab
+ *  listed them — the panel's own order). */
 function describeChain(chain: ChainState): string {
+  const render = [`${n2(chain.fps)} fps`];
+  if (chain.resScale < 1) render.push(`resolution scale ${Math.round(chain.resScale * 100)}%`);
+  render.push(`source ${chain.sourceKind}`);
+  if (chain.maskState) render.push(`person mask ${chain.maskState}`);
+  render.push(`audio ${chain.audioActive ? `on — ${AUDIO_MODE_LABEL[chain.audioMode] ?? chain.audioMode}` : "OFF (the effects' music reactions are waiting for music)"}`);
   const lines = [
-    `CHAIN (render order): ${chain.order.join(' → ')}`,
-    `RENDER: ${n2(chain.fps)} fps, resolution scale ${Math.round(chain.resScale * 100)}%, source ${chain.sourceKind}, person mask ${chain.maskState ?? 'not used'}, audio ${chain.audioActive ? `on — ${AUDIO_MODE_LABEL[chain.audioMode] ?? chain.audioMode}` : 'OFF (music routes are waiting for music)'}`,
-    'PARAMETERS — key | label | range | base | route | flags — hint',
+    `CHAIN (render order): INPUT → ${chain.order.join(' → ')} → OUTPUT`,
+    `RENDER: ${render.join(', ')}`,
+    'CONTROLS — key | label | range | value | flags, grouped [effect] then — section —',
   ];
   for (const id of chain.order) {
     const own = chain.params.filter((p) => p.key.startsWith(`${id}.`));
-    if (!own.length) continue;
-    lines.push(`[${id}]`);
-    for (const p of own) lines.push(describeParam(p));
+    lines.push(`[${id}]${own.length ? '' : ' (no controls reported by the Lab)'}`);
+    const sections: string[] = [];
+    for (const p of own) if (!sections.includes(p.hint)) sections.push(p.hint);
+    for (const sec of sections) {
+      lines.push(`— ${sec || 'controls'} —`);
+      for (const p of own) if (p.hint === sec) lines.push(describeParam(p));
+    }
   }
   return lines.join('\n');
 }
 
-function describeIntent(intent: unknown, fallback: string): string {
+function describeIntent(intent: unknown, fallback: string, who = "DIRECTOR'S INTENT"): string {
   const i = str(intent, 600);
-  return i ? `DIRECTOR'S INTENT: "${i}"` : `DIRECTOR'S INTENT: none given — ${fallback}`;
+  return i ? `${who}: "${i}"` : `${who}: none given — ${fallback}`;
 }
 
 /** The art direction, as a brief. `order` is the Lab chain right now: when the
@@ -504,7 +562,7 @@ function describeIntent(intent: unknown, fallback: string): string {
 function describeDirection(d: ArtDirection | null, order: ModuleId[], hasIntent: boolean): string {
   if (!d) return 'ART DIRECTION: none chosen.';
   const lines = [
-    `ART DIRECTION chosen by the director (an Art Director proposal — the brief${hasIntent ? '; the intent above wins wherever they disagree' : ''}):`,
+    `ART DIRECTION chosen by the director (an Art Director proposal — the brief${hasIntent ? "; the director's words above win wherever they disagree" : ''}):`,
     `- look: "${d.title || 'untitled'}"${d.chain.length ? ` — chain ${d.chain.join(' → ')}` : ''}`,
   ];
   if (d.chain.length && d.chain.join(',') !== order.join(',')) {
@@ -523,14 +581,14 @@ function describeDirection(d: ArtDirection | null, order: ModuleId[], hasIntent:
    (b) SCHEMAS — built per request
    ═══════════════════════════════════════════════════════════════ */
 
-/* An enum with no values is an invalid schema; an empty key list becomes a
-   plain string with the array capped at 0 items. */
+/* An enum with no values is an invalid schema: an empty key list becomes a
+   plain string (the validator refuses whatever comes). */
 function keyProp(keys: string[], description: string) {
   return keys.length ? { type: 'string', enum: keys, description } : { type: 'string', description };
 }
 
-/* The keywords Google's "too many states" refusal names as its causes: enums,
-   array length limits (worst when nested) and numeric bounds. */
+/* The keywords Google's complexity refusals point at: enums, array length
+   limits (worst when nested) and numeric bounds. */
 const LOOSE_DROP = new Set(['enum', 'minItems', 'maxItems', 'minimum', 'maximum']);
 
 /** The same schema without any of LOOSE_DROP (see RoleJob.looseSchema). A
@@ -558,49 +616,43 @@ export function loosen(schema: unknown): unknown {
   return out;
 }
 
-/** The AgentPlan schema for THIS chain: param keys = everything not locked and
- *  not a carrier (a carrier's base is never the AI's); route keys = routable
- *  numeric non-enum params (carriers included: their amount is tunable). */
-function planSchema(chain: ChainState): Record<string, unknown> {
-  const paramKeys = chain.params.filter((p) => !p.locked && !p.carrier).map((p) => p.key);
-  const routeKeys = chain.params.filter((p) => !p.locked && p.type === 'number' && p.reactive).map((p) => p.key);
+/** The keys a plan may name: every control of the chain the AI may touch. */
+const planKeys = (chain: ChainState) => chain.params.filter((p) => !isLocked(p)).map((p) => p.key);
+
+/** One { key, value } entry. `keys` null → a plain string key. */
+function paramItem(keys: string[] | null): Record<string, unknown> {
+  const description = 'A control key exactly as in the chain table.';
+  return {
+    type: 'object',
+    properties: {
+      key: keys ? keyProp(keys, description) : { type: 'string', description },
+      value: { type: 'number', description: 'Inside the control\'s range; on/off 0 or 1; an enum the option index.' },
+    },
+    required: ['key', 'value'],
+  };
+}
+
+/** The Agent's plan for THIS chain, one level deep: the allowed keys as an
+ *  enum only up to ENUM_KEY_LIMIT, the one array cap at the top. No routes
+ *  field: the validator answers routes [] whatever comes. */
+export function planSchema(chain: ChainState): Record<string, unknown> {
+  const keys = planKeys(chain);
   return {
     type: 'object',
     properties: {
       params: {
         type: 'array',
-        maxItems: paramKeys.length ? MAX_PLAN_PARAMS : 0,
-        description: 'Base values to set.',
-        items: {
-          type: 'object',
-          properties: {
-            key: keyProp(paramKeys, 'Parameter key from the chain table.'),
-            value: { type: 'number', description: 'Inside the parameter range; on/off switches 0 or 1; enums an integer.' },
-          },
-          required: ['key', 'value'],
-        },
-      },
-      routes: {
-        type: 'array',
-        maxItems: routeKeys.length ? MAX_PLAN_ROUTES : 0,
-        description: 'Routes to set or replace; source "off" removes a route.',
-        items: {
-          type: 'object',
-          properties: {
-            key: keyProp(routeKeys, 'A routable parameter key from the chain table.'),
-            source: { type: 'string', enum: [...MOD_SOURCE_IDS, 'off'], description: 'The signal that drives the parameter; "off" removes the route.' },
-            amount: { type: 'number', minimum: -1, maximum: 1, description: `Fraction of the full range; |amount| ≤ ${MAX_ROUTE_AMOUNT}, carriers ${CARRIER_AMOUNT_MIN}..${CARRIER_AMOUNT_MAX}.` },
-          },
-          required: ['key', 'source', 'amount'],
-        },
+        maxItems: keys.length ? MAX_PLAN_PARAMS : 0,
+        description: `Controls to set, at most ${MAX_PLAN_PARAMS}.`,
+        items: paramItem(keys.length <= ENUM_KEY_LIMIT ? keys : null),
       },
       summary: { type: 'string', description: 'In Italian: what changes and why.' },
     },
-    required: ['params', 'routes', 'summary'],
+    required: ['params', 'summary'],
   };
 }
 
-function artDirectorSchema(): Record<string, unknown> {
+export function artDirectorSchema(): Record<string, unknown> {
   return {
     type: 'object',
     properties: {
@@ -657,7 +709,14 @@ function artDirectorSchema(): Record<string, unknown> {
   };
 }
 
-function optimizerSchema(chain: ChainState): Record<string, unknown> {
+/** The Optimizer's answer. Kept FLAT on purpose: the fix sits inside an
+ *  array of issues, and Google refused the old shape — the whole plan schema
+ *  (two key enums of the chain, numeric bounds, array caps) nested under
+ *  anyOf[plan, null] inside that array — with a bare 400 "Request contains
+ *  an invalid argument.". So the fix has no enum, no bound, no cap and no
+ *  anyOf: an empty params list means "no fix"; the validator enforces keys,
+ *  ranges and the 12-change cap. */
+export function optimizerSchema(): Record<string, unknown> {
   return {
     type: 'object',
     properties: {
@@ -670,7 +729,15 @@ function optimizerSchema(chain: ChainState): Record<string, unknown> {
             severity: { type: 'string', enum: ['error', 'warning', 'tip'], description: 'How much it hurts the result.' },
             finding: { type: 'string' },
             evidence: { type: 'string' },
-            fix: { anyOf: [planSchema(chain), { type: 'null' }] },
+            fix: {
+              type: 'object',
+              description: 'The controls that repair it; params [] when no control can.',
+              properties: {
+                summary: { type: 'string', description: 'In Italian: what the fix changes.' },
+                params: { type: 'array', items: paramItem(null) },
+              },
+              required: ['summary', 'params'],
+            },
           },
           required: ['severity', 'finding', 'evidence', 'fix'],
         },
@@ -705,123 +772,85 @@ function snapNumber(v: number, d: ParamDesc): number {
   return x;
 }
 
-/* A boolean from Gemini may come as true/false despite the schema. */
-function toNumber(v: unknown): number | null {
+/* A boolean from Gemini may come as true/false despite the schema; an enum
+   may come as its option label. */
+function toNumber(v: unknown, d?: ParamDesc): number | null {
   if (typeof v === 'boolean') return v ? 1 : 0;
+  if (typeof v === 'string' && d) {
+    const t = v.trim().toLowerCase();
+    if (d.type === 'boolean' && (t === 'on' || t === 'off')) return t === 'on' ? 1 : 0;
+    const i = d.options?.findIndex((o) => o.toLowerCase() === t) ?? -1;
+    if (i >= 0) return i;
+    const n = Number(t);
+    return t && Number.isFinite(n) ? n : null;
+  }
   return fin(v);
 }
 
-const isEnum = (d: ParamDesc) => d.type === 'enum' || ENUM_KEYS.includes(d.key);
-const isLocked = (d: ParamDesc) => d.locked || PROTECTED_KEYS.includes(d.key);
-const isCarrier = (d: ParamDesc) => d.carrier || CARRIER_KEYS.includes(d.key);
-const round2 = (x: number) => Math.round(x * 100) / 100;
+function isLocked(d: ParamDesc): boolean {
+  return d.locked || lockedByContract(d.key, d.label, d.hint);
+}
 
 /**
  * Makes a plan safe for THIS chain. Unknown and locked keys go; numbers are
- * clamped and snapped, booleans become 0/1, enums integers; a base under its
- * PARAM_FLOORS floor is raised to it (and a route may not pull it down);
- * carriers keep base 0, their source and their route (only the amount moves,
- * CARRIER_AMOUNT_MIN..MAX); routes on non-routable or enum params go; ordinary
- * route depth is capped at ±MAX_ROUTE_AMOUNT; duplicate keys keep the last;
- * at most 12 params and 6 routes.
+ * clamped and snapped to the control's step, booleans become 0/1, enums an
+ * option index; a value under its PARAM_FLOORS floor is raised to it;
+ * duplicate keys keep the last; at most MAX_PLAN_PARAMS. Routes no longer
+ * exist: any route Gemini still sends is refused, and the plan always
+ * carries routes [].
  * Every refusal goes to `dropped` ("key: reason"). Every change it KEPT but
- * altered — a base out of its range or under its floor, a route deeper than
- * the cap — goes to `adjusted`, one line per kept entry, also "key: reason";
- * a route's reason starts with "route depth", so the panel can put each
- * line on its row (key for a base, ~key for a route). Snapping to the
- * slider's step is not an adjustment.
+ * altered — a value out of its range or under its floor — goes to
+ * `adjusted`, one line per kept entry, also "key: reason", so the panel can
+ * put each line on its row. Snapping to the step is not an adjustment.
  * Applied to the Agent's plan AND to every Optimizer fix.
  */
 export function validatePlan(plan: unknown, chain: ChainState): AgentResult & { adjusted: string[] } {
   const dropped: string[] = [];
   /* key → reason, for the entry that is kept: a later mention of the same
      key replaces the entry, and with it its note. */
-  const paramNotes = new Map<string, string>();
-  const routeNotes = new Map<string, string>();
+  const notes = new Map<string, string>();
   const byKey = new Map<string, ParamDesc>();
   for (const raw of arr(chain?.params)) {
     const d = normalizeParam(raw);
-    if (d) byKey.set(d.key, d);
+    if (d && !byKey.has(d.key)) byKey.set(d.key, d);
   }
   const src = obj(plan);
 
   const params = new Map<string, number>();
   for (const raw of arr(src.params)) {
     const e = obj(raw);
-    const key = typeof e.key === 'string' ? e.key : '';
+    const key = typeof e.key === 'string' ? e.key.trim() : '';
     const d = byKey.get(key);
     if (!key) { dropped.push('a parameter change without a key'); continue; }
-    if (!d) { dropped.push(`${key}: not a parameter of this chain`); continue; }
+    if (!d) { dropped.push(`${key}: not a control of this chain`); continue; }
     if (isLocked(d)) { dropped.push(`${key}: protected, never changed by the AI`); continue; }
-    if (isCarrier(d)) { dropped.push(`${key}: carrier — its base stays 0, only its route amount can change`); continue; }
-    const v = toNumber(e.value);
+    const v = toNumber(e.value, d);
     if (v === null) { dropped.push(`${key}: value is not a number`); continue; }
     let value = d.type === 'boolean' ? (v >= 0.5 ? 1 : 0)
-      : isEnum(d) ? clamp(Math.round(v), Math.ceil(d.min), Math.floor(d.max))
+      : d.type === 'enum' ? clamp(Math.round(v), d.min, d.max)
       : snapNumber(v, d);
     let note: string | null = null;
-    const asked = isEnum(d) ? Math.round(v) : v;
-    if (d.type !== 'boolean' && (asked < d.min || asked > d.max) && n2(asked) !== n2(value)) {
-      note = `Gemini asked ${n2(asked)}, clamped to ${n2(value)} (its range is ${n2(d.min)}..${n2(d.max)})`;
+    const asked = d.type === 'enum' ? Math.round(v) : v;
+    if (d.type !== 'boolean' && (asked < d.min || asked > d.max) && num(asked, d.step) !== num(value, d.step)) {
+      note = `Gemini asked ${num(asked)}, clamped to ${num(value, d.step)} (its range is ${num(d.min)}..${num(d.max)})`;
     }
     const floor = PARAM_FLOORS[key];
     if (floor !== undefined && d.type === 'number' && value < floor) {
       let f = snapNumber(floor, d);
       if (f < floor && d.step > 0) f = snapNumber(f + d.step, d); // the grid point at or above the floor
       /* 0.099 snapped under the floor and raised back to 0.1 is a snap, not news */
-      if (n2(v) !== n2(f)) note = `Gemini asked ${n2(v)}, raised to its floor ${n2(f)} (it scales the effect's whole music response)`;
+      if (n2(v) !== n2(f)) note = `Gemini asked ${num(v)}, raised to its floor ${num(f, d.step)} (it scales the effect's whole music response)`;
       value = f;
     }
     params.delete(key); // last wins, in the position of the last mention
     params.set(key, value);
-    if (note) paramNotes.set(key, note);
-    else paramNotes.delete(key);
+    if (note) notes.set(key, note);
+    else notes.delete(key);
   }
 
-  const routes = new Map<string, AgentPlan['routes'][number]>();
   for (const raw of arr(src.routes)) {
-    const e = obj(raw);
-    const key = typeof e.key === 'string' ? e.key : '';
-    const d = byKey.get(key);
-    if (!key) { dropped.push('a route without a key'); continue; }
-    if (!d) { dropped.push(`${key}: not a parameter of this chain`); continue; }
-    if (isLocked(d)) { dropped.push(`${key}: protected, never routed by the AI`); continue; }
-    if (isEnum(d)) { dropped.push(`${key}: enum parameters are never routed`); continue; }
-    if (d.type !== 'number' || !d.reactive) { dropped.push(`${key}: not routable`); continue; }
-    const source = e.source;
-    if (!(isModSource(source) || source === 'off')) { dropped.push(`${key}: unknown signal "${String(source)}"`); continue; }
-
-    if (isCarrier(d)) {
-      if (source === 'off') { dropped.push(`${key}: carrier route cannot be switched off`); continue; }
-      const fixed = d.route?.source ?? CARRIER_DEFAULT_SOURCE[key];
-      if (fixed && source !== fixed) { dropped.push(`${key}: carrier route stays on ${fixed}`); continue; }
-      const a = toNumber(e.amount);
-      if (a === null) { dropped.push(`${key}: amount is not a number`); continue; }
-      const amount = round2(clamp(a, CARRIER_AMOUNT_MIN, CARRIER_AMOUNT_MAX));
-      routes.delete(key);
-      routes.set(key, { key, source, amount });
-      if ((a < CARRIER_AMOUNT_MIN || a > CARRIER_AMOUNT_MAX) && n2(a) !== n2(amount)) {
-        routeNotes.set(key, `route depth: Gemini asked ${n2(a)}, kept at ${n2(amount)} (the effect's own music response stays within ${CARRIER_AMOUNT_MIN}..${CARRIER_AMOUNT_MAX})`);
-      } else routeNotes.delete(key);
-      continue;
-    }
-
-    if (source === 'off') {
-      routes.delete(key);
-      routes.set(key, { key, source, amount: 0 });
-      routeNotes.delete(key);
-      continue;
-    }
-    const a = toNumber(e.amount);
-    if (a === null) { dropped.push(`${key}: amount is not a number`); continue; }
-    const amount = round2(clamp(a, -MAX_ROUTE_AMOUNT, MAX_ROUTE_AMOUNT));
-    if (amount === 0) { dropped.push(`${key}: amount 0 does nothing (use source "off" to remove a route)`); continue; }
-    if (amount < 0 && PARAM_FLOORS[key] !== undefined) { dropped.push(`${key}: a negative route would pull it under its floor`); continue; }
-    routes.delete(key);
-    routes.set(key, { key, source, amount });
-    if (Math.abs(a) > MAX_ROUTE_AMOUNT && n2(a) !== n2(amount)) {
-      routeNotes.set(key, `route depth: Gemini asked ${n2(a)}, capped at ${n2(amount)} (no route goes deeper than ±${MAX_ROUTE_AMOUNT})`);
-    } else routeNotes.delete(key);
+    const key = str(obj(raw).key, 120);
+    dropped.push(`${key || 'a route'}: signal routes no longer exist — set the effect's own reactive controls instead`);
   }
 
   let paramList = [...params].map(([key, value]) => ({ key, value }));
@@ -829,29 +858,19 @@ export function validatePlan(plan: unknown, chain: ChainState): AgentResult & { 
     for (const p of paramList.slice(MAX_PLAN_PARAMS)) dropped.push(`${p.key}: over the ${MAX_PLAN_PARAMS}-parameter limit`);
     paramList = paramList.slice(0, MAX_PLAN_PARAMS);
   }
-  let routeList = [...routes.values()];
-  if (routeList.length > MAX_PLAN_ROUTES) {
-    for (const r of routeList.slice(MAX_PLAN_ROUTES)) dropped.push(`${r.key}: over the ${MAX_PLAN_ROUTES}-route limit`);
-    routeList = routeList.slice(0, MAX_PLAN_ROUTES);
-  }
 
-  /* Notes only for what survived the limits, in the order of the rows. */
-  const adjusted = [
-    ...paramList.filter((p) => paramNotes.has(p.key)).map((p) => `${p.key}: ${paramNotes.get(p.key)}`),
-    ...routeList.filter((r) => routeNotes.has(r.key)).map((r) => `${r.key}: ${routeNotes.get(r.key)}`),
-  ];
+  /* Notes only for what survived the limit, in the order of the rows. */
+  const adjusted = paramList.filter((p) => notes.has(p.key)).map((p) => `${p.key}: ${notes.get(p.key)}`);
 
-  return { plan: { summary: str(src.summary, 900), params: paramList, routes: routeList }, dropped, adjusted };
+  return { plan: { summary: str(src.summary, 900), params: paramList, routes: [] }, dropped, adjusted };
 }
 
-/** A proposal's chain made renderable: valid ids only, no repeats, at most one
- *  raw-source effect and that one FIRST (anything before it would be thrown
- *  away by the engine), at most three. */
+/** A proposal's chain made renderable: valid ids only, no repeats, at most
+ *  three. In the iframe Lab every effect takes the previous one's output as
+ *  its source, so any order renders (the prompt says which orders make
+ *  sense). */
 export function normalizeProposalChain(raw: unknown): ModuleId[] {
-  const ids = [...new Set(arr(raw).filter(isModuleId))];
-  const lead = ids.find((id) => RAW_SOURCE_EFFECTS.includes(id));
-  const rest = ids.filter((id) => !RAW_SOURCE_EFFECTS.includes(id));
-  return (lead ? [lead, ...rest] : rest).slice(0, MAX_CHAIN);
+  return [...new Set(arr(raw).filter(isModuleId))].slice(0, MAX_CHAIN);
 }
 
 export function validateArtDirector(raw: unknown): ArtDirectorResult {
@@ -897,10 +916,12 @@ export function validateOptimizer(raw: unknown, chain: ChainState): OptimizerRes
     .slice(0, MAX_ISSUES)
     .map((it, i) => {
       let fix: AgentPlan | null = null;
-      if (it.fix && typeof it.fix === 'object') {
-        const v = validatePlan(it.fix, chain);
+      const f = it.fix && typeof it.fix === 'object' && !Array.isArray(it.fix) ? obj(it.fix) : null;
+      /* params [] (or a legacy null) means "no fix": nothing to refuse */
+      if (f && (arr(f.params).length || arr(f.routes).length)) {
+        const v = validatePlan(f, chain);
         for (const d of v.dropped) dropped.push(`fix ${i + 1} · ${d}`);
-        if (v.plan.params.length || v.plan.routes.length) {
+        if (v.plan.params.length) {
           fix = v.plan;
           for (const a of v.adjusted) adjusted.push(`fix ${i + 1} · ${a}`);
         } else dropped.push(`fix ${i + 1} · nothing left to apply`);
@@ -948,7 +969,7 @@ export function artDirectorJob(body: unknown): RoleJob<ArtDirectorResult> {
   const context = [
     `SOURCE: ${source.kind}${source.name ? ` "${source.name}"` : ''} — you receive ${what}.`,
     describeIntent(b.intent, 'propose the looks this footage and this music call for.'),
-    currentChain.length ? `CURRENT LAB CHAIN: ${currentChain.join(' → ')} (you may keep it, change it or replace it).` : 'CURRENT LAB CHAIN: none.',
+    currentChain.length ? `CURRENT LAB CHAIN: ${[...new Set(currentChain)].join(' → ')} (you may keep it, change it or replace it).` : 'CURRENT LAB CHAIN: none.',
     b.signals ? describeSignals(b.signals) : 'LIVE SIGNALS: not available (the Lab is not running).',
     'Read the source, then propose 1–3 looks. Prose fields in Italian.',
   ].join('\n\n');
@@ -981,7 +1002,7 @@ export function agentJob(body: unknown): RoleJob<AgentResult> {
     describeAgentMedia(source, media, chain.audioActive),
     describeSignals(b.signals),
     describeChain(chain),
-    `Write the plan: at most ${MAX_PLAN_PARAMS} params and ${MAX_PLAN_ROUTES} routes, summary in Italian.`,
+    `Write the plan: at most ${MAX_PLAN_PARAMS} params (keys exactly as in the chain table), routes none, summary in Italian.`,
   ].join('\n\n');
 
   const schema = planSchema(chain);
@@ -1027,15 +1048,11 @@ function describeLastAgent(raw: unknown): string {
   if (!raw || typeof raw !== 'object') return 'LAST AGENT RUN: none in effect (never run, undone, or made for a different chain) — judge the chain as it is now, against the intent and the art direction.';
   const l = obj(raw);
   const plan = obj(l.plan);
-  const params = arr(plan.params).map((x) => obj(x)).map((p) => `${str(p.key, 60)}=${n2(p.value)}`).join(', ') || 'none';
-  const routes = arr(plan.routes).map((x) => obj(x))
-    .map((r) => (r.source === 'off' ? `${str(r.key, 60)} route off` : `${str(r.key, 60)} ← ${str(r.source, 10)} ×${n2(r.amount)}`))
-    .join(', ') || 'none';
+  const params = arr(plan.params).slice(0, 24).map((x) => obj(x)).map((p) => `${str(p.key, 100)}=${num(fin(p.value) ?? NaN)}`).join(', ') || 'none';
   return [
     `LAST AGENT RUN (${str(l.at, 40) || 'time unknown'}) — intent: ${str(l.intent, 400) ? `"${str(l.intent, 400)}"` : 'none'}`,
     `summary: ${str(plan.summary, 600) || '—'}`,
-    `params: ${params}`,
-    `routes: ${routes}`,
+    `controls set: ${params}`,
   ].join('\n');
 }
 
@@ -1049,7 +1066,11 @@ export function optimizerJob(body: unknown): RoleJob<OptimizerResult> {
   const clip = media.find((m) => m.mimeType.startsWith('video/'));
 
   const context = [
-    describeIntent(b.intent, direction ? 'judge the result against the art direction below.' : 'judge whether the result is strong, readable and musical.'),
+    describeIntent(
+      b.intent,
+      direction ? 'judge the result against the art direction below.' : 'judge whether the result is strong, readable and musical.',
+      "DIRECTOR'S REQUEST TO YOU (what to check or improve — it wins over the art direction where they disagree)",
+    ),
     describeDirection(direction, chain.order, hasIntent),
     describeLastAgent(b.lastAgent),
     clip
@@ -1058,10 +1079,10 @@ export function optimizerJob(body: unknown): RoleJob<OptimizerResult> {
     describeChecks(b.checks),
     describeSignals(b.signals),
     describeChain(chain),
-    `Report at most ${MAX_ISSUES} issues, most important first, each with a fix or null. Prose in Italian.`,
+    `Report at most ${MAX_ISSUES} issues, most important first, each with a fix (params [] when no control can fix it). Prose in Italian.`,
   ].join('\n\n');
 
-  const schema = optimizerSchema(chain);
+  const schema = optimizerSchema();
   return {
     systemInstruction: OPTIMIZER_SYSTEM,
     parts: [...mediaParts(media), { text: context }],

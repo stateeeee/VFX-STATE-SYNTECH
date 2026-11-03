@@ -2051,6 +2051,7 @@ syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on,
   var TOGS=['btn-seg','btn-model'];
   function collect(){return {sliders:slVals(),toggles:ledGet(TOGS)};}
   function apply(s){if(!s)return;slApply(s.sliders);ledApply(s.toggles);}
+  window.__synBridge={collect:collect,apply:apply}; /* SYNTECH-LAB */
   window.addEventListener('message',function(ev){
     var d=ev&&ev.data;
     if(!d||typeof d!=='object'||typeof d.type!=='string')return;
@@ -2067,6 +2068,136 @@ syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on,
 })();
 </script>
 <!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-LAB-START (Lab chain adapter; standalone-safe) -->
+<script src="../shared/syn-lab.js"></script>
+<script>
+/* LAB v2 adapter — BLOB REVEAL. Nothing here runs until the Lab shell calls SynLab.
+   VIDEO  : the Lab stream goes on the effect's own <video id=vid> (srcObject)
+            through its own loader (armVideoLoad → startPlayback('LAB')), with a
+            source mode of its own, 'lab'. BLOB REVEAL never mirrors. Its own
+            transport bar is for video FILES only: hidden here, as for an image.
+            endSource() — run by every own source choice — stops the tracks of
+            vid.srcObject: it is wrapped so the Lab stream leaves the element
+            first and the shell's tracks are never stopped. The MOTION meter
+            and the Playback LED treat 'lab' like the live webcam.
+   AUDIO  : the effect's own analyser path (startMic: fft 2048, smoothing 0.82,
+            tickAudio → bass / loud / treble, beats, BPM), fed by the Lab stream
+            instead of the mic; the analyser is NOT connected to the speakers.
+            The Audio LED goes ACTIVE as its own button does; null gives the
+            previous state back (its own mic/video analysis is restarted if it
+            was on).
+   OUTPUT : #dc (single 2D canvas). */
+(function(){
+  'use strict';
+  var kit=SynLab.kit;
+  var cur=null;
+  function active(){ return !!cur && vid.srcObject===cur; }
+  function $(id){ return document.getElementById(id); }
+
+  var _endSource=endSource;
+  endSource=function(){ if(active()) vid.srcObject=null; return _endSource.apply(this,arguments); };
+  /* 'lab' reads as a live source in the MOTION meter (computeMotion only knows video/webcam) */
+  var _computeMotion=computeMotion;
+  computeMotion=function(){
+    if(srcMode!=='lab') return _computeMotion.apply(this,arguments);
+    srcMode='webcam'; try{ return _computeMotion.apply(this,arguments); } finally{ srcMode='lab'; }
+  };
+  /* … and in the Playback LED */
+  function labLed(){
+    if(srcMode!=='lab'||!active()) return;
+    $('btn-play').classList.toggle('on',!paused);
+    $('play-label').textContent=paused?'PAUSED':'PLAYING';
+  }
+  var _syncSourceUI=syncSourceUI;
+  syncSourceUI=function(){ var r=_syncSourceUI.apply(this,arguments); labLed(); return r; };
+  $('btn-pause').addEventListener('click',labLed);   /* after its by-reference syncSourceUI listener */
+  $('tl-loop').addEventListener('click',labLed);
+  vid.addEventListener('ended',labLed);
+
+  function attach(stream){
+    ++srcReq;                                     /* a pending image decode / webcam prompt loses */
+    endSource();                                  /* the effect's own source goes (Lab tracks kept) */
+    vid.removeAttribute('src');
+    if(vidURL){ URL.revokeObjectURL(vidURL); vidURL=null; }
+    cur=stream;
+    vid.muted=true; vid.srcObject=stream;
+    srcMode='lab';
+    var p=vid.play(); if(p&&p.catch) p.catch(function(){});
+    setInfo('LAB','--','∞');
+    armVideoLoad(function(){
+      $('info-res').textContent=vid.videoWidth+'×'+vid.videoHeight;
+      fit();
+    },function(){
+      startPlayback('LAB');                       /* INPUT pill LAB, drop overlay hidden, render loop */
+      $('transport').classList.remove('visible'); /* no timeline for a live stream (as for an image) */
+      fit();
+      syncSourceUI();
+    });
+    syncSourceUI();
+  }
+  function detach(){            /* back to "no source", as at boot */
+    endSource();
+    setInfo('--','--','—');
+    synInput('NONE',false);
+    $('drop-overlay').classList.remove('hidden');
+    dCtx.fillStyle='#000'; dCtx.fillRect(0,0,dc.width,dc.height);
+    $('timecode').textContent='00:00:00:00';
+    syncSourceUI();
+  }
+
+  /* ── audio: its own analyser, fed by the Lab ── */
+  var au={node:null,an:null,prevOn:false};
+  function ours(){ return !!au.an && analyser===au.an; }
+  function setAudio(stream){
+    if(au.node){ try{ au.node.disconnect(); }catch(e){} au.node=null; }
+    if(!stream||!stream.getAudioTracks().length){
+      if(ours()){ stopMic(); if(au.prevOn) startMic(); }
+      au.an=null; au.prevOn=false;
+      return;
+    }
+    if(!ours()){
+      au.prevOn=micEnabled;
+      if(micEnabled) stopMic();                   /* its own mic / video analysis pauses */
+      if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+      analyser=audioCtx.createAnalyser();
+      analyser.fftSize=2048; analyser.smoothingTimeConstant=0.82;
+      au.an=analyser;
+      freqBuf=new Uint8Array(analyser.frequencyBinCount);
+      waveBuf=new Uint8Array(analyser.fftSize);
+      var wc=$('waveform-canvas'); wc.width=wc.clientWidth||260; wc.height=wc.clientHeight||28;
+    }
+    if(audioCtx.state==='suspended') audioCtx.resume().catch(function(){});
+    au.node=audioCtx.createMediaStreamSource(stream);
+    au.node.connect(analyser);                    /* analyser only: never to audioCtx.destination */
+    micEnabled=true;
+    $('btn-mic').classList.add('amber-on');
+    $('btn-mic').querySelector('.led-txt').textContent='ACTIVE';
+    $('pill-beat').classList.add('beat');
+    $('pill-beat-lbl').textContent='ON';
+  }
+
+  SynLab.register({
+    setVideoStream:function(stream){
+      if(stream) attach(stream);
+      else { if(active()) detach(); cur=null; }
+    },
+    setAudioStream:setAudio,
+    outputCanvas:function(){ return dc; },
+    labelOf:function(el){ return kit.rowLabel(el,'.ctrl-lbl'); },
+    controls:function(){
+      return [
+        kit.led('btn-seg','btn-seg',{label:'Rotoscope (segmentation)'}),
+        kit.led('btn-model','btn-model',{label:'High-quality model'})
+      ].filter(Boolean);
+    },
+    state:function(){
+      var f=parseFloat(($('fps-val')||{}).textContent);
+      return {hasSource:srcMode!=='none', external:active(), fps:srcMode==='none'?0:(isFinite(f)?f:0)};
+    }
+  });
+})();
+</script>
+<!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

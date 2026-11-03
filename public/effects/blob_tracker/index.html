@@ -7534,6 +7534,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
   function apply(s){if(!s)return;slApply(s.sliders);ledApply(s.leds);
     segApply(s.segs);colApply(s.colors);txtApply(s.texts);
     if(s.xy&&typeof setPad==='function')setPad(s.xy[0],1-s.xy[1]);}
+  window.__synBridge={collect:collect,apply:apply}; /* SYNTECH-LAB */
   window.addEventListener('message',function(ev){
     var d=ev&&ev.data;
     if(!d||typeof d!=='object'||typeof d.type!=='string')return;
@@ -7550,6 +7551,190 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 </script>
 <!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-LAB-START (Lab chain adapter; standalone-safe) -->
+<script src="../shared/syn-lab.js"></script>
+<script>
+/* LAB v2 adapter — BLOB TRACKER. Nothing here runs until the Lab shell calls SynLab.
+   VIDEO  : the Lab stream goes on the effect's own <video id=vid> (srcObject)
+            through its VIDEO path (srcMode 'video', the same loadeddata start
+            of the tracker / Panels texture as loadVideo()). Every webcam
+            mirror in this file (_drawSrc, detection, overlays, body masks) is
+            gated on srcMode==='webcam', so the picture is NOT mirrored; the
+            shared timeline hides itself (srcObject). Every own source choice
+            runs stopVideo(), which clears vid.srcObject without touching the
+            Lab's tracks. INPUT pill: LAB.
+   AUDIO  : its own AudioEngine (7 bands, onsets, BPM, pitch). AR ON is switched
+            on with its own button; while the Lab feeds it, its inputs (video
+            element / mic) are detached from the analyser and the analyser is
+            detached from the speakers; the Lab stream is the only input
+            (_inputMode 'lab', both source LEDs off). null puts everything back
+            as it was. Clicking its own VIDEO / MIC source hands it back at once.
+            (While the Lab audio drives it, a video file loaded inside the effect
+            plays silent: its sound reaches the speakers only through that
+            analyser — the Lab plays the sound once.)
+   OUTPUT : the picture is a stack (#dc 2D, #panels-canvas three.js, #fx-ov-cv 2D,
+            #glC three.js ripple without preserveDrawingBuffer) → a compositor
+            canvas redrawn each frame, in z-order, from the visible layers —
+            only while its capture stream is live. Same layers as its own REC
+            (the SVG connector lines / HTML panel labels are not in it, as in REC). */
+(function(){
+  'use strict';
+  var kit=SynLab.kit;
+  var cur=null, gen=0;
+  function active(){ return !!cur && vidEl.srcObject===cur; }
+  function $(id){ return document.getElementById(id); }
+
+  function attach(stream){
+    var my=++gen;
+    stopWebcam(); stopVideo(); stopTracker();     /* as loadVideo(): its own webcam / file go */
+    cur=stream;
+    vidEl.muted=true; vidEl.srcObject=stream;
+    var p=vidEl.play(); if(p&&p.catch) p.catch(function(){});
+    srcMode='video'; activeImg=null; paused=false;
+    setSourceUI('','LAB'); showTimeline(false); updatePlayBtn();
+    updateSrcInfo('LAB','--');
+    vidEl.addEventListener('loadedmetadata',function(){ if(my===gen&&active()) updateSrcInfo(null,vidEl.videoWidth+'×'+vidEl.videoHeight); },{once:true});
+    vidEl.addEventListener('loadeddata',function(){
+      if(my!==gen||!active()) return;
+      updatePlayUI(); showPip(vidEl,'LAB');
+      if(appMode==='tracker') startTracker();
+      else{ if(!panelsScene)initPanels(); var tex=new THREE.VideoTexture(vidEl); tex.minFilter=THREE.LinearFilter; tex.magFilter=THREE.LinearFilter; applyPanelsTex(tex); startPanels(); startPanelsBg(); }
+    },{once:true});
+  }
+  function detach(){            /* = the webcam-off path: back to "no source", as at boot */
+    ++gen;
+    stopVideo(); srcMode='none'; paused=false;
+    setSourceUI('','NONE'); hidePip(); showTimeline(false);
+    if(appMode==='tracker'){ stopTracker(); dCtx.fillStyle='#000'; dCtx.fillRect(0,0,dc.width,dc.height); }
+    else applyCurrentSrcToPanels();
+    dropOv.classList.remove('hidden');
+  }
+
+  /* ── audio: its AudioEngine, fed by the Lab only ── */
+  var au={node:null,prevOn:false,prevMode:'video',destCut:false,srcOn:null};
+  var AE=AudioEngine;
+  function ours(){ return AE._inputMode==='lab'; }
+  function release(){           /* the Lab stops feeding: its own wiring comes back */
+    if(au.node){ try{ au.node.disconnect(); }catch(e){} au.node=null; }
+    if(au.destCut&&AE.analyser&&AE.ctx){ try{ AE.analyser.connect(AE.ctx.destination); }catch(e){} }
+    au.destCut=false;
+  }
+  function setAudio(stream){
+    if(au.node){ try{ au.node.disconnect(); }catch(e){} au.node=null; }
+    if(!stream||!stream.getAudioTracks().length){
+      if(!ours()) return;
+      release();
+      if(au.prevMode==='mic'&&AE._micSource) AE._micSource.connect(AE.analyser);
+      else if(AE.source) AE.source.connect(AE.analyser);
+      AE._inputMode=au.prevMode;
+      if(au.srcOn){ $('ar-src-video').classList.toggle('on',au.srcOn[0]); $('ar-src-mic').classList.toggle('on',au.srcOn[1]); }
+      if(!au.prevOn&&arOn) $('ar-on-btn').click();     /* AR back off, as it was */
+      return;
+    }
+    if(!ours()){
+      au.prevOn=arOn; au.prevMode=AE._inputMode;
+      if(!arOn) $('ar-on-btn').click();               /* its own AR ON (inits the engine) */
+      if(!AE.inited) AE.init();
+      if(!AE.analyser||!AE.ctx) return;
+      if(AE.source) try{ AE.source.disconnect(AE.analyser); }catch(e){}
+      if(AE._micSource) try{ AE._micSource.disconnect(AE.analyser); }catch(e){}
+      try{ AE.analyser.disconnect(AE.ctx.destination); au.destCut=true; }catch(e){ au.destCut=false; }
+      au.srcOn=[$('ar-src-video').classList.contains('on'),$('ar-src-mic').classList.contains('on')];
+      $('ar-src-video').classList.remove('on'); $('ar-src-mic').classList.remove('on');
+      AE._inputMode='lab';
+    }
+    if(AE.ctx.state==='suspended') AE.ctx.resume().catch(function(){});
+    au.node=AE.ctx.createMediaStreamSource(stream);
+    au.node.connect(AE.analyser);                    /* → analyser only: never to ctx.destination */
+  }
+  /* its own VIDEO / MIC audio source wins: hand the analyser back before its handler runs */
+  document.addEventListener('click',function(e){
+    if(!ours()) return;
+    var t=e.target&&e.target.closest?e.target.closest('#ar-src-video,#ar-src-mic'):null;
+    if(!t) return;
+    release(); AE._inputMode='';
+  },true);
+
+  /* ── output: compositor over the visible layers, in z-order ── */
+  /* #glC (ripple) has no preserveDrawingBuffer: its pixels are only readable inside the
+     task that drew them, and its rAF loop may run after the compositor's. So, while the
+     compositor works, the ripple's screen pass (rRenderer.render with no render target)
+     is copied right after it draws into rSnap, and the compositor uses that copy. */
+  var touchT=0, rSnap=document.createElement('canvas'), rSnapCtx=rSnap.getContext('2d'), rSnapOk=false;
+  function compActive(){ return SynLab.capturing() || performance.now()-touchT<3000; }
+  function hookRipple(){
+    if(typeof rRenderer==='undefined'||!rRenderer||rRenderer.__synLab) return;
+    var r=rRenderer, render=r.render;
+    r.__synLab=true;
+    r.render=function(){
+      var out=render.apply(this,arguments);
+      if(compActive() && r.getRenderTarget()===null){
+        try{
+          if(rSnap.width!==glC.width) rSnap.width=glC.width;
+          if(rSnap.height!==glC.height) rSnap.height=glC.height;
+          rSnapCtx.drawImage(glC,0,0); rSnapOk=true;
+        }catch(e){}
+      }
+      return out;
+    };
+  }
+  var LAYERS=[[dc,1],[panelsCv,2],[fxOvCv,3],[glC,4]];
+  var comp=kit.compositor({
+    size:function(){ return {w:dc.width,h:dc.height}; },
+    layers:function(){
+      hookRipple();
+      return LAYERS.filter(function(l){ return l[0].getClientRects().length>0; })
+        .map(function(l){ return [l[0],parseInt(l[0].style.zIndex,10)||l[1]]; })
+        .sort(function(a,b){ return a[1]-b[1]; })
+        .map(function(l){ return l[0]===glC ? (rSnapOk?rSnap:null) : l[0]; })
+        .filter(Boolean);
+    }
+  });
+
+  function led(id,label){ return kit.led(id,id,label?{label:label}:undefined); }
+  SynLab.register({
+    setVideoStream:function(stream){
+      if(stream) attach(stream);
+      else { if(active()) detach(); cur=null; }
+    },
+    setAudioStream:setAudio,
+    outputCanvas:function(){ touchT=performance.now(); return comp.touch(); },
+    labelOf:function(el){ return kit.rowLabel(el,'.ctrl-lbl'); },
+    controls:function(){
+      return [
+        kit.seg('seg:renderMode',['mode-tracker','mode-panels'].map($),{label:'Render Mode',options:['TRACKER','PANELS']}),
+        kit.seg('seg:drive',['drive-manual','drive-auto'].map($),{label:'Drive',options:['MANUAL','AUTO']}),
+        kit.number('pad:x',{label:'XY Pad X (calm ← → chaos)',el:$('xy-pad'),min:0,max:1,step:0.01,
+          get:function(){ return padX; },set:function(v){ setPad(v,1-padY); }}),
+        kit.number('pad:y',{label:'XY Pad Y (clean ↓ ↑ max)',el:$('xy-pad'),min:0,max:1,step:0.01,
+          get:function(){ return padY; },set:function(v){ setPad(padX,1-v); }}),
+        kit.seg('seg:detect',['det-luma','det-motion','det-body'].map($),{label:'Detect',options:['LUMA','MOTION','BODY']}),
+        led('ct-edge','Contour Edge'), led('ct-smart','Contour Smart'), led('ct-fill','Contour Fill'),
+        led('flow-on-btn','Flow'), led('flow-ar-btn','Flow feeds AR'),
+        led('body-face-btn','Face'), led('body-hands-btn','Hands'), led('body-pose-btn','Body'),
+        led('btn-plabels','Panel Labels'), led('btn-mirror-panels','Mirror Panels'), led('btn-mirror-bg','Mirror BG'),
+        led('fx-blob','Tracker'), led('fx-panels','Panels'), led('fx-conn','Connect Tracker'), led('btn-pconnlines','Connect Panels'),
+        led('fx-nums','Numbers'), led('fx-letters','Letters'), led('fx-tmix','Mix'),
+        led('fx-invert','Invert'), led('fx-thermal','Thermal'), led('fx-security','Security'), led('fx-liquid','Liquid'),
+        led('fx-data','Glitch 1'), led('fx-glitch','Glitch 2'), led('btn-bgfx','Video FX — BG Mode'),
+        kit.seg('seg:blobShape',['bs-square','bs-rect','bs-circle','bs-corner','bs-mix'].map($),{label:'Tracker Shape',options:['SQUARE','RECT','CIRCLE','CORNER','MIX']}),
+        /* btn-dashed is left out: it has two click listeners that toggle the same flag (a click changes nothing) */
+        kit.seg('seg:lineStyle',['ls-solid','ls-dashed','ls-dashdot','ls-arrows'].map($),{label:'Line Style',options:['SOLID','DASHED','DASH-DOT','ARROWS']}),
+        led('btn-tracker-color','Tracker Color'), led('btn-panels-color','Panels Color'), led('btn-vfx-color','VFX Color'),
+        led('ar-on-btn','Audio Reactive'), led('ar-auto-btn','Audio Auto'),
+        led('vr-on-btn','Video Reactive'), led('vr-auto-btn','Video Auto'), led('vr-flow-btn','VR Flow'), led('vr-pose-btn','VR Pose'), led('vr-face-btn','VR Face'),
+        kit.seg('seg:blobMode',['mode-freeblob','mode-fixedpts'].map($),{label:'Text Generator Mode',options:['FREE','FIXED PTS']}),
+        led('btn-ripple','Water Ripple')
+      ].filter(Boolean);
+    },
+    state:function(){
+      var f=parseFloat(($('fps-val')||{}).textContent);
+      return {hasSource:srcMode!=='none', external:active(), fps:srcMode==='none'?0:(isFinite(f)?f:0)};
+    }
+  });
+})();
+</script>
+<!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

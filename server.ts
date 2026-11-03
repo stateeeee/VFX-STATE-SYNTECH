@@ -16,7 +16,7 @@ dotenv.config({ path: [".env.local", ".env"], quiet: true });
      POST /key           validate the pasted key (one models.get)    → KeyResponse
      POST /upload        a whole source video → Gemini Files API     → UploadResponse
      POST /art-director  watch the source, propose effect chains     → ArtDirectorResult
-     POST /agent         set params + audio routes for the Lab chain → AgentResult
+     POST /agent         set the Lab chain's effect controls        → AgentResult
      POST /optimizer     judge the Lab's OUTPUT, propose fixes       → OptimizerResult
 
    Every failure is an AiErrorResponse {error, message} with a 4xx/5xx status.
@@ -36,12 +36,11 @@ import {
   geminiModel,
   GeminiFailure,
   hostnameOf,
-  isSchemaRejection,
+  looseRetryReason,
   reportFailure,
   resolveKey,
   serverKeyAvailable,
   uploadAndWait,
-  worthLooseRetry,
   type AiFailure,
 } from "./ai-provider";
 import { agentJob, artDirectorJob, optimizerJob, type RoleJob } from "./ai-roles";
@@ -295,14 +294,23 @@ function roleEndpoint<R>(build: (body: unknown) => RoleJob<R>) {
       try {
         raw = await ask(job.responseJsonSchema);
       } catch (err) {
-        /* A long chain puts ~170 parameter keys in enums nested under capped
-           arrays; if Google finds that too complex (a 400 naming the schema,
-           or sometimes a bare 500), ask once more with the loose schema — no
-           enums, caps or bounds; the validator enforces all of them anyway.
-           Anything else is a failure. */
-        if (!job.looseSchema || abort.signal.aborted || !worthLooseRetry(err)) throw err;
-        console.warn(`[gemini] strict schema ${isSchemaRejection(err) ? "refused by Google" : "failed with HTTP 500"}, retrying once with the loose schema`);
-        raw = await ask(job.looseSchema);
+        /* Google refuses a response schema it finds too complex (big key
+           enums, arrays with length limits nested under other arrays,
+           numeric bounds) with a 400 — often the bare "Request contains an
+           invalid argument." that names nothing — or sometimes a bare 500.
+           Then ask once more with the role's loose schema: no enums, caps or
+           bounds; the validator enforces all of them anyway. Anything else
+           is a failure. One log line says which branch ran. */
+        const why = job.looseSchema && !abort.signal.aborted ? looseRetryReason(err) : null;
+        if (!why) throw err;
+        console.warn(`[gemini] ${req.path}: strict schema failed (${why}), retrying once with the loose schema`);
+        try {
+          raw = await ask(job.looseSchema as Record<string, unknown>);
+        } catch (err2) {
+          console.warn(`[gemini] ${req.path}: the loose schema failed too`);
+          throw err2;
+        }
+        console.warn(`[gemini] ${req.path}: the loose schema answered`);
       }
       res.json(job.finish(raw));
     } catch (err) {

@@ -22,11 +22,14 @@
  * generateContent records every request body (and its prompt text, `rec.text`)
  * and answers with canned JSON per role (detected from the systemInstruction).
  * The Agent's and the Optimizer's answers are built from the chain table the
- * request carries: keys that exist (the validator keeps them) plus
- * deliberately invalid ones (unknown key, a carrier's base, a locked key, an
- * enum route, a base under its floor, a route over the depth cap…) that the
- * validator must drop (`dropped`) or keep changed (`adjusted`: the floor, the
- * cap — in the Agent's plan and in the Optimizer's first fix).
+ * request carries (LAB v2, the iframe chain: keys '<ModuleId>.<control key>',
+ * no signal routes): keys that exist (the validator keeps them) plus
+ * deliberately invalid ones (an unknown key, a LOCKED control, a value under
+ * its floor, an enum index out of range, a route — routes no longer exist)
+ * that the validator must drop (`dropped`) or keep changed (`adjusted`: the
+ * floor, the clamp — in the Agent's plan and in the Optimizer's first fix).
+ * The Optimizer's fixes come in its flat shape: { summary, params }, with
+ * params [] meaning "no fix".
  *
  * Use it in-process:
  *   const { startMockGemini } = require('./mock-gemini.cjs');
@@ -80,39 +83,42 @@ const SAFETY_BLOCKED_BODY = {
 };
 
 /** contract.ts PARAM_FLOORS (kept in sync by hand: the mock is plain CJS). */
-const FLOORS = { 'analog.modDepth': 0.1 };
+const FLOORS = { 'analog.sl-modDepth': 0.1, 'quadtree.sl-modDepth': 0.1, 'time_machine.sl-modDepth': 0.1 };
 
 /* ── the chain table (ai-roles.ts describeChain) ─────────────── */
 
 /**
- * Parses the PARAMETERS lines of a role's context text:
- *   key | label | number 0..1 step 0.01 | base 0.2 | route bass ×0.3 | routable — hint
- *   key | label | on/off 0|1 | base 1 | route —
- *   key | label | enum 0..3 | base 2 | route — | ENUM
+ * Parses the CONTROLS lines of a role's context text (ai-roles.ts
+ * describeParam), grouped by '[effect]' and '— section —' lines:
+ *   key | label | number 0..1 step 0.01 | value 0.2
+ *   key | label | on/off 0|1 | value 1 (on)
+ *   key | label | enum 0..3 (0 Disc, 1 Helios, 2 Coma, 3 Oval) | value 2 (Coma) | LOCKED
  */
 function parseChainTable(text) {
   const rows = [];
+  let section = '';
   for (const line of String(text || '').split('\n')) {
-    if (!/^[a-z_]+\.[A-Za-z0-9_]+ \| /.test(line)) continue;
+    const sec = line.match(/^— (.*) —$/);
+    if (sec) { section = sec[1]; continue; }
+    if (!/^[a-z_]+\.[A-Za-z0-9_:-]+ \| /.test(line)) continue;
     const f = line.split(' | ');
-    if (f.length < 5) continue;
+    if (f.length < 4) continue;
     const key = f[0];
     const range = f[2];
     let kind = 'number', min = 0, max = 1, step = 0;
     let m;
     if (/^on\/off/.test(range)) {
       kind = 'boolean';
-    } else if ((m = range.match(/^enum (-?[\d.e+-]+?)\.\.(-?[\d.e+-]+)$/))) {
+    } else if ((m = range.match(/^enum (-?\d+)\.\.(-?\d+)/))) {
       kind = 'enum'; min = Number(m[1]); max = Number(m[2]); step = 1;
     } else if ((m = range.match(/^number (-?[\d.e+-]+?)\.\.(-?[\d.e+-]+?)(?: step (\S+))?$/))) {
       min = Number(m[1]); max = Number(m[2]); step = m[3] ? Number(m[3]) : 0;
     } else {
       continue;
     }
-    const base = Number((f[3].match(/^base (\S+)/) || [])[1]);
-    // flags, when there are any, open the 6th field (a hint may follow them)
-    const flag = ((f[5] || '').match(/^(LOCKED|CARRIER|ENUM|routable)\b/) || [])[1] || '';
-    rows.push({ key, kind, min, max, step, base, flag });
+    const base = Number((f[3].match(/^value (\S+)/) || [])[1]);
+    const flag = f[4] === 'LOCKED' ? 'LOCKED' : '';
+    rows.push({ key, kind, min, max, step, base, flag, section });
   }
   return rows;
 }
@@ -124,9 +130,8 @@ function farFrom(p) {
   return Math.round(v * 1000) / 1000;
 }
 
-/** Base-tunable ordinary numbers: not locked, not a carrier, not an enum, no floor. */
-const tunable = (rows) => rows.filter((p) => p.kind === 'number' && (p.flag === '' || p.flag === 'routable') && p.max > p.min && !(p.key in FLOORS));
-const routable = (rows) => rows.filter((p) => p.kind === 'number' && p.flag === 'routable' && p.max > p.min && !(p.key in FLOORS));
+/** Tunable ordinary numbers: not locked, no floor, a real range. */
+const tunable = (rows) => rows.filter((p) => p.kind === 'number' && p.flag === '' && p.max > p.min && !(p.key in FLOORS));
 
 /* ── canned answers per role ──────────────────────────────────── */
 
@@ -158,8 +163,8 @@ function artDirectorAnswer(body) {
         : null,
     },
     proposals: [
-      { title: 'Notte analogica', chain: ['analog', 'anamorphic_lab'], why: 'MOCK-WHY-0: le luci diventano scie sul tubo.', audioIdea: 'la cassa spinge il tear' },
-      // reordered by the validator: blob_tracker must lead; 'nope' and the repeat go
+      { title: 'Notte analogica', chain: ['analog', 'bokeh'], why: 'MOCK-WHY-0: le luci diventano scie sul tubo.', audioIdea: 'la cassa spinge il tear' },
+      // order is kept (any order renders in LAB v2); 'nope' and the repeat go
       { title: 'Sorveglianza', chain: ['anamorphic_lab', 'blob_tracker', 'nope', 'anamorphic_lab'], why: 'MOCK-WHY-1', audioIdea: 'ripple sul beat' },
       // nothing valid left: the whole proposal must be dropped
       { title: 'Fantasma', chain: ['zzz'], why: 'MOCK-WHY-DROPPED', audioIdea: '-' },
@@ -171,34 +176,28 @@ function artDirectorAnswer(body) {
 function agentAnswer(body) {
   const rows = parseChainTable(contextText(body));
   const t = tunable(rows);
-  const r = routable(rows);
   const P = t[0] || null;
-  const R = r.find((x) => !P || x.key !== P.key) || r[0] || null;
-  // a third routable key, routed deeper than the cap allows (clamped, kept)
-  const R3 = r.find((x) => (!P || x.key !== P.key) && (!R || x.key !== R.key)) || null;
-  const carrier = rows.find((x) => x.flag === 'CARRIER');
+  // a second number, asked far above its range: clamped, kept (adjusted)
+  const C = t.find((x) => !P || x.key !== P.key) || null;
   const locked = rows.find((x) => x.flag === 'LOCKED');
-  const gate = rows.find((x) => x.key === 'analog.reactEnabled');       // analog's reactivity gate
-  const floor = rows.find((x) => x.key in FLOORS && x.kind === 'number'); // analog.modDepth
-  const en = rows.find((x) => x.kind === 'enum');
+  const floor = rows.find((x) => x.key in FLOORS && x.kind === 'number' && x.flag === ''); // Reactive › Mod Depth
+  const en = rows.find((x) => x.kind === 'enum' && x.flag === '');
+  const sw = rows.find((x) => x.kind === 'boolean' && x.flag === '');
   const params = [];
-  const routes = [];
   if (P) params.push({ key: P.key, value: farFrom(P) });
-  params.push({ key: 'nope.ghost', value: 1 });                    // not in the chain
-  if (carrier) params.push({ key: carrier.key, value: 0.5 });        // a carrier's base is never the AI's
-  if (locked) params.push({ key: locked.key, value: 1 });            // protected
-  if (gate && gate !== locked) params.push({ key: gate.key, value: 0 }); // protected: off would kill the carriers
-  if (floor) params.push({ key: floor.key, value: 0 });              // under its floor: raised to it
-  if (R) routes.push({ key: R.key, source: 'beat', amount: 0.2 });
-  if (R3) routes.push({ key: R3.key, source: 'treble', amount: 0.9 }); // over MAX_ROUTE_AMOUNT: clamped
-  routes.push({ key: 'nope.ghost', source: 'bass', amount: 0.1 });   // not in the chain
-  if (en) routes.push({ key: en.key, source: 'bass', amount: 0.1 }); // enums are never routed
-  if (carrier) routes.push({ key: carrier.key, source: 'off', amount: 0 }); // carriers cannot be switched off
+  if (C) params.push({ key: C.key, value: C.max + (C.max - C.min) });  // over its range: clamped to max
+  params.push({ key: 'nope.ghost', value: 1 });                       // not in the chain
+  if (locked) params.push({ key: locked.key, value: 1 });               // protected
+  if (floor) params.push({ key: floor.key, value: 0 });                 // under its floor: raised to it
+  if (en) params.push({ key: en.key, value: en.max });                  // an option index
+  if (sw) params.push({ key: sw.key, value: true });                    // a boolean as true: becomes 1
+  // routes no longer exist: any route is refused with a reason
+  const routes = P ? [{ key: P.key, source: 'beat', amount: 0.2 }] : [];
   return {
-    answer: { params, routes, summary: 'MOCK-AGENT: ho spinto un parametro e agganciato una route al beat.' },
+    answer: { params, routes, summary: 'MOCK-AGENT: ho spinto un parametro e regolato la reazione alla musica.' },
     picked: {
-      P: P && P.key, R: R && R.key, R3: R3 && R3.key, carrier: carrier && carrier.key, locked: locked && locked.key,
-      gate: gate && gate.key, floor: floor && floor.key, floorValue: floor ? FLOORS[floor.key] : null, enum: en && en.key,
+      P: P && P.key, C: C && C.key, Cmax: C && C.max, locked: locked && locked.key,
+      floor: floor && floor.key, floorValue: floor ? FLOORS[floor.key] : null, enum: en && en.key, enumMax: en && en.max, sw: sw && sw.key,
     },
   };
 }
@@ -206,28 +205,27 @@ function agentAnswer(body) {
 function optimizerAnswer(body) {
   const rows = parseChainTable(contextText(body));
   const t = tunable(rows);
-  const r = routable(rows);
   const P2 = t[1] || t[0] || null;
-  const R2 = r.find((x) => !P2 || x.key !== P2.key) || null;
-  // a second route, deeper than the cap: kept at 0.6 — the server reports it
-  // in `adjusted` ('fix 1 · key: route depth: …'), the panel on the fix's row
-  const R4 = r.find((x) => (!P2 || x.key !== P2.key) && (!R2 || x.key !== R2.key)) || null;
-  const routes = [];
-  if (R2) routes.push({ key: R2.key, source: 'bass', amount: 0.15 });
-  if (R4) routes.push({ key: R4.key, source: 'loud', amount: 0.9 });
-  const fix = { params: P2 ? [{ key: P2.key, value: farFrom(P2) }] : [], routes, summary: 'MOCK-FIX-0: meno invadente.' };
+  // a second number below its range: clamped to min — the server reports it
+  // in `adjusted` ('fix 1 · key: Gemini asked …, clamped to …'), the panel on the fix's row
+  const C2 = t.find((x) => !P2 || x.key !== P2.key) || null;
+  const params = [];
+  if (P2) params.push({ key: P2.key, value: farFrom(P2) });
+  if (C2) params.push({ key: C2.key, value: C2.min - (C2.max - C2.min) });
+  const fix = { summary: 'MOCK-FIX-0: meno invadente.', params };
   return {
     answer: {
       issues: [
         { severity: 'warning', finding: 'MOCK-ISSUE-0: l\'effetto copre il soggetto.', evidence: '0:01.0 — OUTPUT frame', fix },
         // unknown severity → 'tip'; a fix with nothing valid left → null
-        { severity: 'bogus', finding: 'MOCK-ISSUE-1: fix impossibile.', evidence: 'x', fix: { params: [{ key: 'nope.ghost', value: 0 }], routes: [], summary: '' } },
-        { severity: 'tip', finding: 'MOCK-ISSUE-2: il ritmo regge.', evidence: '0:03.0', fix: null },
+        { severity: 'bogus', finding: 'MOCK-ISSUE-1: fix impossibile.', evidence: 'x', fix: { summary: '', params: [{ key: 'nope.ghost', value: 0 }] } },
+        // params [] = no fix: null, and nothing reported as refused
+        { severity: 'tip', finding: 'MOCK-ISSUE-2: il ritmo regge.', evidence: '0:03.0', fix: { summary: '', params: [] } },
       ],
       verdict: 'improve',
       summary: 'MOCK-OPT: quasi, una correzione.',
     },
-    picked: { P2: P2 && P2.key, R2: R2 && R2.key, R4: R4 && R4.key },
+    picked: { P2: P2 && P2.key, C2: C2 && C2.key, C2min: C2 && C2.min },
   };
 }
 

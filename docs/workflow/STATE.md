@@ -29,6 +29,43 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-11-03 — LAB v2: il LAB è una catena degli EFFETTI VERI (v0.12.0), FATTO.**
+Decisione dell'operatore (2026-10-28, "opzione 1"): ogni nodo del LAB è l'effetto vero (`public/effects/<id>`) in un
+iframe, con tutta la sua interfaccia, identica ad aprirlo da solo; tutti e 10 gli effetti sono nodi. Supera la regola
+"porting 1:1 in SynEngine" (CLAUDE.md regole 1–3, 02-ARCHITECTURE, 03-SPEC §3.1/§5.2, 05-ROADMAP Fase 12). SynEngine resta
+nel repo ma il LAB non lo usa più.
+- **Lato effetti** (blocchi `SYNTECH-LAB` delimitati e additivi + una riga `window.__synBridge=…` nel bridge, nessuna riga
+  esistente toccata): `public/effects/shared/syn-lab.js` = `window.SynLab` (setVideoStream / setAudioStream come sorgente
+  esterna — NON webcam, niente specchio —, outputCanvas / captureStream, params / setParam dal pannello vero,
+  getSettings / applySettings = il formato di salvataggio standalone, state). Un adapter per ciascuno dei 10 effetti.
+- **Lato shell** (`ChainLab.tsx` riscritto, `chainLab.css`, `src/lab/{synlab,presets,record}.ts`): INPUT (video / foto /
+  webcam) → iframe 1 → … → OUTPUT via `captureStream()`; tab `INPUT · effetti · OUTPUT`; iframe impilati, mai
+  `display:none` (Chromium li congelava: 663 s per un evaluate) — anche il LAB nascosto è `invisible`. **Audio**: un video
+  accende da solo il Clip, si SENTE (fix 0.11.0 di `startClip` confermato su Electron 32) una volta sola; gli effetti lo
+  analizzano con i propri analyser via `setAudioStream`. **Timeline** play / pausa / scrub / loop. Preset v2 (le
+  impostazioni vere di ogni nodo; i v1 caricano solo l'ordine), Master export (1920 px; su Electron 32 MP4+AAC non è
+  registrabile → WebM quando c'è audio), meter della sidebar invariato (`meterTap()`), Gemini `LabHandle` sopra SynLab
+  (chiavi `<ModuleId>.<key>`, niente routes). Node graph con tutti i 10 effetti (oltre 5 nodi: due colonne).
+- **Modalità giorno negli effetti**: l'iframe porta `data-syn-theme` + messaggio `syn:theme`; `syn-chrome.css` (e
+  `syn-extras.js` per Bokeh) rende bianchi pannelli, barre e cornici dei 10 effetti; l'immagine non viene mai ricolorata.
+- **Home**: con un video o una foto caricati la scritta "VFX Syntech" sparisce (`App.tsx`, `hero-wordmark`).
+- **Gemini Optimizer "richiesta non valida"**: causa = schema rigido con 268 enum, a cui Google risponde con un 400
+  INVALID_ARGUMENT "nudo" che non faceva scattare il retry con schema largo. Ora schema piatto, retry anche sul 400 nudo,
+  enum solo fino a 60 chiavi (`ENUM_KEY_LIMIT`). Non provabile qui su Gemini vero (nessuna chiave): da confermare
+  sull'app. Nuovo campo facoltativo `ai-opt-intent` ("What should it check? (optional)").
+- **Revisione Opus**: PASS sul diff completo + PASS sul delta (corretti: undo in ordine inverso, perdita del
+  MasterRecorder se non parte, webcam nascosta → torna al file, vecchie tracce di cattura fermate).
+- **Verifica** — app Electron impacchettata (Chromium 128): `verify-desktop` 38/38, `verify-audio-meter` 24/24,
+  `verify-lab-chain` 36/37 (l'unico rosso era la misura della pausa: un fotogramma ripetuto; il test ora controlla che
+  l'orologio del video resti fermo) → vedi la riga del rerun qui sotto. Browser: `verify-audio-meter` 24/24,
+  `verify-ui-cage` 18/18 (il file punta a `chromium-1194`, che in questo sandbox non c'è: girato con il Chromium del
+  sandbox), `verify-lab-chain` 37/38, `verify-gemini` (portato al LAB a iframe) 11/11 step, 276 controlli.
+- **Aperti** (non bloccanti): (1) col LAB nascosto gli effetti continuano a renderizzare (SynLab non ha pausa; proposta
+  `SynLab.setPaused` per la prossima versione) — su macchine deboli costa fps nella Home; (2) tempi reali su GPU da
+  misurare sul Mac (qui WebGL software ≈ 1 fps); (3) la barra del LAB va a capo in finestre strette; (4) `btn-dashed` di
+  blob_tracker ha due listener (preesistente; toccare l'HTML richiede l'ok dell'operatore).
+- `version` 0.11.0 → **0.12.0**: PR su `main`, unita solo con "Desktop app" verde su Mac e Windows → release v0.12.0.
+
 **SESSIONE 2026-10-23 — il meter audio della sidebar è collegato davvero (v0.11.0), FATTO.**
 Operatore, sull'app desktop: *"in basso a sinistra c'è la sezione audio e non è collegata. Quando inserisco un video
 con audio si deve vedere dal verde al rosso (in alto) se il suono è troppo forte. Deve essere realistico."*

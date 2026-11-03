@@ -54,56 +54,97 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
 - **Home leaves the Lab too** (and any open effect, and the Gemini mode);
   opening an effect from the library also covers it. In every case the Lab is
   only **hidden, never unmounted**: once opened it stays mounted for the
-  session, so its params, routes, source, audio, open sections — and the
-  Gemini panel's handle on it — survive. While hidden its render loop is
-  paused (resumed on show; the effect clock goes on from where it was, it does
-  not restart at 0); a running Master export, or a Gemini capture that
-  was already in flight, keeps it rendering until it ends.
-- **The media follow the loop.** When the loop pauses (hidden, no export, no
-  capture holding it): the source video and a playing Track are paused and
-  come back playing on show (only what was playing — a Track the operator had
-  paused stays paused); Clip audio is the video's own sound, so it goes silent
-  and comes back with it, still CLIP. The **webcam and the mic are switched
-  off** (camera light and mic released) and stay off on show — the operator
-  presses Webcam / Mic again. A still photo needs nothing. A Gemini capture on
-  a hidden Lab plays the clip / Track for its window (the capture needs the
-  live picture and music), then they pause again; a source picked on Home
-  while the Lab is hidden loads paused.
-- The Lab looks like an **opened standalone effect** (its own dark look in
-  both themes, `src/components/chainLab.css`, tokens `--syn-fx-*`), filling
-  the hero opening exactly (fullscreen too):
-  - **Top bar** — logo `LAB`, `INPUT` pill (source name / NONE), `AUDIO` pill
-    (OFF / MIC / TRACK / CLIP), FPS and RES% (`chain-fps`, `chain-res`).
-  - **Command row** — Video / Photo (`chain-file`), Webcam, Mic
-    (`audio-toggle`), Track (`audio-file-btn` / `audio-file`), Clip
-    (`audio-clip`), Preset (popover: `preset-name`, `preset-save`,
-    `preset-load-<name>`, `preset-del-<name>`), Master MP4 (`chain-master`,
-    `chain-export-msg`).
-  - **Left: the one video** (`chain-canvas`, fit-contained, corner brackets),
-    fixed — it never scrolls. Under it a slim strip: the route
-    (SOURCE → … → OUT), the track transport when a track is loaded, the
-    audio meters + BPM when audio is on, motion/brightness, SEG status, errors.
-  - **Right: the parameter panel** (~290 px, the only part that scrolls) lists
-    **only the effects of the wired chain, in wiring order** — one section per
-    effect, **all closed** the first time the Lab opens. Clicking an effect's
-    name bar (`fx-head-<id>`) opens it; while open the bar is sticky at the top
-    of the panel, and clicking it closes the effect again. Inside, the
-    effect's controls are grouped in **sub-sections by `ParamSchema.group`**
-    (the standalone panel's section names, in the order they first appear;
-    params without a group go under "Parameters"), all closed until clicked
-    (`fx-sec-<id>-<group-slug>`). Open / closed state is kept per effect and
-    per sub-section across reorders and hide/show; an effect removed from the
-    chain forgets it (added back, it comes back closed).
-  - Controls behave as before: sliders write the ParamBus base, switches the
-    node; reactive params keep the `~` route chip (cycles
-    off → bass → loud → treble → beat → motion → bright), the AMT slider and
-    the live modulated value (`param-…`, `mod-src-…`, `mod-amt-…`,
-    `mod-val-…`).
-  - **Order and bypass live in the node graph only** (the old rack's up/down
-    and bypass buttons are gone). An empty chain shows "Add effects with
-    + Add Node in the node graph".
+  session, so its chain, every node's settings, source, audio — and the
+  Gemini panel's handle on it — survive. Hidden means laid out but invisible
+  (`invisible`, z-index −1, no pointer events), **never `display:none`**:
+  with `display:none` Chromium froze the effect iframes and a plain evaluate
+  on the page took 663 s.
+- **The media follow the visibility.** On hide the INPUT video and a playing
+  Track are parked (paused) and come back playing on show (only what was
+  playing); Clip audio is the video's own sound, so it goes silent with it.
+  The webcam and the mic are switched off on hide and stay off on show. A
+  running Master export or a Gemini capture already in flight plays the media
+  for its window. The effects' own render loops keep running underneath
+  (SynLab has no pause yet — a later `setPaused` is proposed).
+
+### 3.1 LAB v2 — a chain of the real effects (operator decision 2026-10-28)
+
+Every Lab node **is** the standalone effect page (`/effects/<id>/index.html`,
+`labFrameSrc(id)` in `src/effects-registry.ts`) in a same-origin iframe, with
+its whole interface — top bar, frame, every panel section — identical to
+opening it alone. All ten effects are available as nodes. The chain is
+INPUT → effect 1 → … → OUTPUT: each hop is the previous node's
+`SynLab.captureStream()` fed to the next node's `SynLab.setVideoStream()`
+(an external source, never treated as a webcam: no mirror). See §5.2 for the
+effect side.
+
+- **Stage** (`lab-stage`): one iframe per wired node (`lab-frame-<id>`), all
+  stacked in the same rect; the selected tab is on top and takes the pointer,
+  the others keep rendering underneath. Iframes keep a stable DOM order
+  (moving one would reload it), so re-ordering in the node graph only
+  re-plumbs the streams. A node whose SynLab link does not come up is
+  bypassed, and after 15 s the status line says "<EFFECT>: Lab link not
+  available" (`chain-link-missing`). The plumbing (`replumb`) compares stream
+  identities only and runs on every event plus a short poll.
+- **LAB strip**: tabs `INPUT · <effect 1> · … · OUTPUT` (`lab-tab-input`,
+  `lab-tab-<id>` with `data-link` = loading / ready / missing,
+  `lab-tab-output`). INPUT shows the source (`lab-layer-input`:
+  `lab-input-video` / `lab-input-photo` / `lab-input-cam`); OUTPUT shows the
+  last node's stream (`lab-layer-output`, `lab-output-video`). The commands:
+  Video / Photo (`chain-file`), Webcam (`lab-webcam`), Mic (`audio-toggle`),
+  Track (`audio-file-btn` / `audio-file`, with `audio-playpause`,
+  `audio-seek`, `audio-track-name`), Clip (`audio-clip`), Preset (popover:
+  `preset-toggle`, `preset-pop`, `preset-name`, `preset-save`,
+  `preset-load-<name>`, `preset-del-<name>`), Master MP4 (`chain-master`,
+  `chain-export-msg`). Status: `chain-fps` (OUTPUT fps), `chain-input`,
+  `chain-audio`, `chain-route`, `chain-link-<id>`, `chain-note`,
+  `chain-error`, the meters `audio-bass/loud/treble/bpm`. An empty chain shows
+  "Add effects with + Add Node in the node graph" (`chain-empty`).
+- **INPUT** is shell-owned: a video file → the video track of the element's
+  `captureStream()`; a photo → a canvas redrawn every 100 ms (long side
+  ≤ 1920); the webcam → its `getUserMedia` stream, not mirrored (stopping it
+  falls back to the loaded file). No source → `setVideoStream(null)`. When a
+  clip ends with loop off (Chromium ends the captured tracks) Play, a seek or
+  the poll re-captures it.
+- **Transport** (`lab-transport`, Blob Reveal's bar): ▶ / ▮▮ (`lab-play`),
+  time (`lab-time`), scrub (`lab-scrub`), ⟳ LOOP (`lab-loop`); shown for a
+  video INPUT. Pause also pauses a playing Track.
+- **Audio**: `AudioEngine` stays the Lab's audio owner (clip / Track / mic,
+  meter tap, BPM). A video INPUT **turns Clip on by itself** (unless Track or
+  Mic is on): the operator hears the clip at once. Clip taps the INPUT
+  `<video>` and unmutes it (Chromium 128 captures a muted element as
+  silence — the 0.11.0 `startClip` fix); the sound plays once, from the
+  element, and the effects get `AudioEngine.getOutputStream()` through every
+  node's `SynLab.setAudioStream()` (their own analysers, never to the
+  speakers). The sidebar meter reads `AudioEngine.meterTap()` as before.
+- **Saved settings**: a node coming up gets `applySettings` of its saved
+  standalone settings (`syntech.effectSettings.<id>`) unless a preset is
+  being loaded. QUADTREE / TIME MACHINE restore a standalone session video
+  ~600 ms after load: if a node reports `state().external === false` within
+  4 s of its link, it is re-fed the Lab stream once; a source the operator
+  picks inside the effect later is respected.
+- **Presets v2** (`src/lab/presets.ts`): `{ v: 2, name, chain, settings:
+  { <id>: SynLab.getSettings() }, savedAt }` — the exact standalone save
+  format per node. Old v1 presets (SynEngine params) load their chain order
+  only and say "old preset: chain loaded — effect settings not restored".
+- **Master export** (`src/lab/record.ts`): realtime — rewind, play once to
+  the end, record the OUTPUT through a fixed-size canvas plus the Lab audio
+  (a dropped Clip is re-tapped first). 1920 px wide when the chain output is
+  ≥ 1600 px, otherwise native size; the message names both. A photo or the
+  webcam records a fixed 10 s take. MP4 (H.264 + AAC) when the browser can
+  record it, otherwise WebM (Electron 32 / Chromium 128 cannot record MP4
+  with audio, so the desktop file is WebM whenever there is sound). STOP
+  cancels.
+- **Gemini `LabHandle`** on top of SynLab: keys `<ModuleId>.<SynLab key>`,
+  hint = the panel section, `locked` = adapter-locked or §9.13's lists,
+  `options` for enums; `applyPlan` applies floors, snaps to the step, records
+  the undo values, reports routes as skipped, and refuses during an export.
+  OUTPUT stills come from the OUTPUT `<video>`.
+- **Order and bypass live in the node graph only**. More than five effect
+  nodes lay out in two columns.
 - Projects → a saved chain opens the Lab and loads that preset, whether the
   Lab was never opened, is hidden, or is on screen.
+- `?labdebug` exposes `window.__synLabDebug` (tests only).
 
 ## 4. Save semantics (operator decision: settings/presets only)
 
@@ -116,9 +157,9 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
   Lab is armed, saving the chain preset flow already in ChainLab.
 - **Projects** lists saved chain presets (existing behavior; keep).
 
-## 5. Shell ⇄ effect bridge (the ONLY permitted edit to effect HTMLs)
+## 5. Shell ⇄ effect bridge (permitted edit #1 to effect HTMLs)
 
-The five standalone HTMLs are ground truth and must keep working when opened
+The ten standalone HTMLs are ground truth and must keep working when opened
 directly as plain files. To support settings save/restore, each HTML gets one
 clearly delimited, additive script block appended before `</body>`:
 
@@ -188,9 +229,57 @@ chrome). Contract every effect follows:
 - **Panel**: 296 px on the right at every size (no responsive stacking — the
   app shows effects in a ~722×396 frame); every section closed at load except
   **Info** (last, open, Bokeh's 2-column grid + "<NAME> — by STATE").
+- **Day theme** (operator request 2026-10-28): the shell's day/night toggle
+  reaches every effect iframe (the single-effect `EffectHost` and every Lab
+  node). The `<iframe>` carries `data-syn-theme="day" | "night"`, kept in sync,
+  and the shell posts `{type:'syn:theme', payload:{mode}}` on load and on
+  every change. Inside the effect, `shared/syn-chrome.js` (Bokeh, which has no
+  syn-chrome: `shared/syn-extras.js`) reads `frameElement.dataset.synTheme` at
+  boot, observes it and listens for `syn:theme`, and sets
+  `html[data-syn-theme]` plus `html[data-syn-fx=<ModuleId>]`. The day rules
+  live in `shared/syn-chrome.css` under `html[data-syn-theme="day"]` (and the
+  transport / timer rules in `syn-extras.js`): the black of the chrome — top
+  bar, panel, sections, frame surround, transport, drop overlay, buttons —
+  turns white / light with dark text, on all ten effects. The picture itself
+  is never recoloured; night is exactly the old look. An effect opened alone
+  (no frame, no message) stays night.
 - Changing the look means changing Bokeh **and** `shared/syn-chrome.css`
   together. Verified with the computed-style audit described in STATE.md
   (2026-10-11 evening).
+
+### 5.2 The Lab link — `SYNTECH-LAB` (operator decision 2026-10-28 — third permitted edit)
+
+*"Ogni nodo del LAB sia l'effetto vero … serve un ingresso 'stream esterno' negli
+effetti tramite bridge additivo e delimitato, senza farlo trattare come webcam:
+niente specchio."* Every effect HTML carries one more delimited block, right
+after `SYNTECH-BRIDGE-END`:
+
+```
+<!-- SYNTECH-LAB-START (Lab chain adapter; standalone-safe) -->
+<script src="../shared/syn-lab.js"></script>
+<script> SynLab.register({ …this effect's adapter… }) </script>
+<!-- SYNTECH-LAB-END -->
+```
+
+plus one line in its `SYNTECH-BRIDGE` block exposing the bridge's own
+`collect` / `apply` as `window.__synBridge` (so Lab presets use the exact
+standalone save format). Where an existing function had to learn about the
+external source (e.g. skip the webcam mirror), the hook is a few lines marked
+`/* SYNTECH-LAB */`. The API (`window.SynLab`, read synchronously by the shell,
+same origin) is specified in 02-ARCHITECTURE "One rendering world". Rules:
+
+- Nothing changes until the shell calls SynLab: opened alone, or as a single
+  effect in the shell, the effect behaves exactly as before.
+- `setVideoStream(stream)` = a video source that is not the webcam: no mirror,
+  the INPUT pill reads `LAB`, the effect's own timeline stays hidden (the Lab
+  has the transport). `null` = no source, as at boot. The effect never stops
+  the shell's tracks. Picking a file / webcam in the effect's own Source
+  section still works and wins.
+- `setAudioStream(stream)` = the Lab's music into the effect's own analyser,
+  reactivity on as its audio control would turn it on, never to the speakers.
+- `params()` lists the look controls of the panel (never Source / Export /
+  Info / Camera), grouped by panel section; `setParam` fires the same events a
+  user gesture does.
 
 ## 6. Node graph spec (INPUT → effects → OUTPUT)
 
@@ -200,7 +289,8 @@ chrome). Contract every effect follows:
   one on its **right (out)**. INPUT has only a **right** port. OUTPUT has only
   a **left** port.
 - **Add Node** (top-left of the panel) opens the effect list in **alphabetical
-  order**: ANALOG, ANAMORPHIC, BLOB REVEAL, BLOB TRACKER, BOKEH. Selecting
+  order** — all ten since LAB v2 (2026-10-28): ANALOG, ANAMORPHIC, BLOB REVEAL,
+  BLOB TRACKER, BOKEH, INVISIBLE, PAINTING, POINTCLOUD, QUADTREE, TIME MACHINE. Selecting
   one inserts its node between INPUT and OUTPUT.
 - **Connecting**: press on a port, **drag** a wire to another node's port,
   release on the port → connected. (Current click-to-toggle ports must be
@@ -228,16 +318,10 @@ chrome). Contract every effect follows:
 
 - No user accounts, no server-side persistence, no collaborative editing.
 - No mobile layout work (desktop browser is the target).
-- No new effects beyond the original five **in the Lab** until the roadmap says so.
-  (2026-10-21, operator decision: four more *standalone-only* effects — INVISIBLE,
-  TIME MACHINE, QUADTREE, POINTCLOUD — plus PAINTING (2026-10-22: oil, [watercolor — hidden for now],
-  tempera, pointillism, impressionism, expressionism) are listed in the effects column and
-  open full-screen like the others. They wear the same §5.1 chrome, but have **no**
-  SynEngine node and no node-graph entry (but, since 2026-10-22, they ARE hubs of the brain graph —
-  dragging one onto another does not chain them — see "Center hero" above); the shell's `isLabModule`
-  (= `MODULE_IDS` in `src/ai/contract.ts`) keeps them out of chains, saved
-  compositions and Gemini "Open in Lab". Their Lab ports come later, with the 1:1
-  parity protocol.)
+- ~~No new effects beyond the original five in the Lab~~ — superseded 2026-10-28 (LAB v2):
+  all ten effects (the five originals plus INVISIBLE, TIME MACHINE, QUADTREE, POINTCLOUD,
+  PAINTING) are Lab nodes, chainable from the node graph, the brain-graph hub drag,
+  saved compositions and Gemini "Open in Lab" (`isLabModule` = `MODULE_IDS`, all ten).
 
 ## 9. Gemini 3.8 panel (Art Director · Agent · Optimizer)
 
@@ -332,8 +416,8 @@ Google's products).
 | Role | Sends |
 |---|---|
 | Art Director | **Video ≤ 300 MB** (`MAX_UPLOAD_BYTES`) in an uploadable container: the whole file, uploaded once (`/api/gemini/upload` → Files API) and referenced by `fileUri` — Gemini sees the motion AND hears the music; reused from the upload cache (localStorage `syntech.geminiFiles`) while Google keeps it (~48h). **Larger, or MKV**: 12 sampled frames, no audio (the panel says so). **Photo**: 1 JPEG ≤ 1024 px. **Webcam** (Lab): 4 frames over ~2 s. In the Lab also 2 s of live signals and the current chain. Optional direction text (`ai-ad-intent`). |
-| Agent | The source video whole (cached upload, or uploaded now when ≤ 300 MB; above that it is not sent and the panel says the song is missing); a SOURCE/OUTPUT frame pair; a **4 s OUTPUT clip with the music** when audio is on; 3 s of live signals; the chain table (enabled effects in render order; every parameter's range, base, route and flags; fps, resolution scale, source kind, audio mode, person-mask state); the art direction (§9.7) when chosen; optional intent (`ai-agent-intent`). |
-| Optimizer | A 4 s OUTPUT clip (with the music when audio is on, silent otherwise); a SOURCE/OUTPUT frame pair; 2 s of live signals; the chain table; the Lab's deterministic checks (performance, audio routes, video routes, person mask, output exposure — the output's mean luma against the source frame's, so an already dark night or club source is the footage, not a fault: "almost black" only when the output is ≤ 0.04 AND under half the source's, "blown out" by the mirrored rule); the Agent's last plan when that run is still in effect on this Lab, for this chain order (§9.8); the art direction when chosen. |
+| Agent | The source video whole (cached upload, or uploaded now when ≤ 300 MB; above that it is not sent and the panel says the song is missing); a SOURCE/OUTPUT frame pair; a **4 s OUTPUT clip with the music** when audio is on; 3 s of live signals; the chain table (enabled effects in render order; every parameter's range, base, route and flags; fps, resolution scale, source kind, audio mode, person-mask state); the art direction (§9.7) when chosen; optional intent (`ai-agent-intent`). In the iframe Lab the chain table lists, per node, every control `SynLab.params()` reports (key `<ModuleId>.<control key>`, label, panel section, type, range / step or the enum's options, current value, locked) — no routes. |
+| Optimizer | A 4 s OUTPUT clip (with the music when audio is on, silent otherwise); a SOURCE/OUTPUT frame pair; 2 s of live signals; the chain table; the Lab's deterministic checks (performance, music — reactive effects with audio on or waiting for it, still source, person mask, output exposure — the output's mean luma against the source frame's, so an already dark night or club source is the footage, not a fault: "almost black" only when the output is ≤ 0.04 AND under half the source's, "blown out" by the mirrored rule); the Agent's last plan when that run is still in effect on this Lab, for this chain order (§9.8); the art direction when chosen; optional intent (`ai-opt-intent`, "What should it check? (optional)", next to Check output — when given it says what to look at and wins over the generic checks). |
 
 Inline clips go with `videoMetadata.fps = 12` (`INLINE_VIDEO_FPS`) so a
 flash can be checked against a kick; an uploaded source is sampled at 1 fps
@@ -346,12 +430,15 @@ the recording's own load never shows up as a performance problem.
   setting, mood, palette, motion, and music (energy, tempo feel, timestamped
   moments; null when nothing can be heard) — and 1–3 proposals, each a title,
   a chain of 1–3 effects in render order, why, and audioIdea. The server
-  makes every chain renderable: valid ids, no repeats, at most one of
-  `blob_tracker` / `blob_reveal` and that one first (both rebuild the frame
-  from the raw source). Each proposal has **Use this chain**
+  makes every chain renderable: valid ids (any of the ten), no repeats, at
+  most three. In the iframe Lab any order renders; the prompt says which
+  orders make sense (effects that must find a person before the ones that
+  destroy its shape). Each proposal has **Use this chain**
   (`ai-ad-apply-<i>`, §9.7).
-- **Agent** (`ai-agent-run` → `ai-agent-result`): a plan — summary, ≤ 12
-  parameter bases, ≤ 6 routes — already validated by the server, plus what it
+- **Agent** (`ai-agent-run` → `ai-agent-result`): a plan — summary and ≤ 12
+  control values (no routes since LAB v2: an effect moves with the music
+  through its own reactive controls, which are ordinary parameters) — already
+  validated by the server, plus what it
   refused (`dropped`) and what it kept but changed (`adjusted`: a base raised
   to its floor or clamped to its range, a route depth capped). **Applied at
   once.** The card lists every change "from → to" (`ai-agent-rows`), each
@@ -396,7 +483,7 @@ the recording's own load never shows up as a performance problem.
   each with `-clear`; the Art Director's also has an "Agent →" link,
   `ai-ad-direction-next`). Agent and Optimizer send it with every run. The
   server prompts treat it as the brief: the
-  Agent turns its audioIdea into routes and its why into bases; the Optimizer
+  Agent turns its audioIdea into the effects' reactive controls and its why into values; the Optimizer
   flags a result that does not deliver it. A typed intent still wins where
   the two disagree. If the Lab chain changed since, the idea applies to the
   effects actually there.
@@ -444,11 +531,11 @@ the recording's own load never shows up as a performance problem.
 
 ### 9.9 Audio: one rule, and auto Clip audio
 
-- Audio off is the Lab's default, even for a music video.
-- One rule everywhere (prompts, validator, Optimizer checks): a route on an
-  audio signal (bass, treble, loud, beat) while audio is off is **waiting for
-  music**, not an error. Only motion / bright routes on a provably dead
-  signal (a still photo) are flagged. Carriers are never counted.
+- A video INPUT turns Clip audio on by itself (§3.1); a photo or the webcam starts with audio off.
+- One rule everywhere (prompts, Optimizer checks): an effect's music
+  reaction while audio is off is **waiting for music**, not an error (the
+  `music` check). A still photo is flagged only for what it really cannot do
+  (the `still_source` check: motion-driven effects on a still).
 - When Agent **Run** or Optimizer **Check output** fires on a VIDEO source
   with audio off, the panel first calls `lab.startClipAudio()` — inside the
   click, before any await, so the browser lets the AudioContext start — and
@@ -460,7 +547,7 @@ the recording's own load never shows up as a performance problem.
   reads "video only — it has no soundtrack" instead of "(video + audio)", the
   Agent sends no output clip (it records one only with music on), the
   Optimizer's is "4s output clip (silent)", and the context line reads "this
-  clip has no soundtrack — music routes wait for Track or Mic".
+  clip has no soundtrack — the effects' music reactions wait for Track or Mic".
 - It is the same switch as the Lab's **Clip** button (`audio-clip`): the
   source video's own soundtrack drives the analysers. Clip is disabled for a
   photo or the webcam (Track or Mic instead).
@@ -478,12 +565,11 @@ the recording's own load never shows up as a performance problem.
 
 - The INPUT node (`source-file`) and the Lab's source button take a video or
   a still photo (`video/*,image/*`).
-- On Home the photo fills the hero (`hero-image`). In the Lab SynEngine loads
-  it as a still (flattened over black, long side ≤ 2560 px) and every effect
-  renders on it.
+- On Home the photo fills the hero (`hero-image`). In the Lab the INPUT
+  redraws it on a canvas (long side ≤ 1920) whose stream feeds the chain; every effect renders on it.
 - A photo has no sound: the sidebar meter stays idle, the INPUT node's
-  waveform is flat, Clip is disabled — music comes from Track or Mic. Master
-  MP4 export needs a video.
+  waveform is flat, Clip is disabled — music comes from Track or Mic. A Master
+  export of a photo is a fixed 10 s take.
 
 ### 9.12 Endpoints
 
@@ -493,38 +579,48 @@ the recording's own load never shows up as a performance problem.
 | `POST /api/gemini/key` | validates the header key (or the server key) with one `models.get` | `KeyResponse` (200 either way) |
 | `POST /api/gemini/upload` | raw file bytes → Files API, waits until Google has processed it | `UploadResponse` |
 | `POST /api/gemini/art-director` | watch the source, propose chains | `ArtDirectorResult` |
-| `POST /api/gemini/agent` | params + routes for the Lab chain | `AgentResult` |
+| `POST /api/gemini/agent` | values for the effects' own controls in the Lab chain | `AgentResult` |
 | `POST /api/gemini/optimizer` | judge the Lab's OUTPUT, propose fixes | `OptimizerResult` |
 
 Every failure is `{ error, message }` (`AiErrorResponse`) with a 4xx/5xx
 status; `error` is one of `no_key`, `invalid_key`, `model_unavailable`,
 `quota`, `too_large`, `no_media`, `bad_request`, `upstream`, `network`,
 `server_error`. Any other `/api` path is a 404 in the same shape (the old
-`/chat`, `/analyze-video`, `/optimize`, `/analyze` are gone). Limits: JSON
+`/chat`, `/analyze-video`, `/optimize`, `/analyze` are gone). A role whose strict response schema
+Google rejects is retried once with a loose schema (the server logs which
+branch ran): a 400 naming the schema, a **bare 400 INVALID_ARGUMENT**
+("Request contains an invalid argument." with no reason — the cause of the
+Optimizer's `bad_request` after Art Director + Agent in 0.11.0: its schema had
+268 enum values), or a bare 500. The schemas are flat, and a key list is sent
+as an enum only while it has ≤ 60 entries (`ENUM_KEY_LIMIT`). Limits: JSON
 bodies 40 MB; uploads 500 MB on the server (the panel already stops at
 300 MB and falls back to frames).
 
 ### 9.13 Safety lists (server validator AND the Lab)
 
-Defined once in `src/ai/contract.ts`; enforced by the server's validator on
-the Agent's plan and on every Optimizer fix, and again by the Lab's
-`applyPlan`. Every refusal or adjustment is reported back.
+Defined once in `src/ai/contract.ts`; enforced by the server's validator
+(`validatePlan`, ai-roles.ts) on the Agent's plan and on every Optimizer fix,
+and again by the Lab's `applyPlan`. Every refusal or adjustment is reported
+back. Since LAB v2 a key is `<ModuleId>.<SynLabParam.key>`
+(`PARAM_KEY_PATTERN`) and there are **no signal routes**: an effect reacts to
+the music through its own reactive controls, which are ordinary parameters.
 
-- **Enum** keys (`ENUM_KEYS`, e.g. `analog.sortDir`, `bokeh.bokehStyle`):
-  snapped to integers inside their range, never routed.
-- **Carrier** keys (`CARRIER_KEYS`: `analog.reactBass/Mid/High`,
-  `blob_reveal.beatReact`, `blob_tracker.connGlow`,
-  `blob_tracker.rippleForce`): their route IS the effect's music response.
-  Base stays 0; only the route amount may change, within 0.05..1
-  (`CARRIER_AMOUNT_MIN/MAX`), on the same source; never switched off.
-- **Protected** keys (`PROTECTED_KEYS`): never touched —
-  `anamorphic_lab.compare`, `anamorphic_lab.lutMix`, `blob_reveal.segN`,
-  `bokeh.segEnabled`, `analog.reactEnabled`.
-- **Floors** (`PARAM_FLOORS`): `analog.modDepth` never below 0.1 (it scales
-  analog's whole music response); a lower base is raised to the floor, and
-  the validator refuses a negative route on it.
-- **Route cap**: ordinary route amounts within ±0.6 (`MAX_ROUTE_AMOUNT` — the
-  deepest factory route, so a default can always be restored); only
-  parameters marked reactive can be routed.
-- **Plan size**: at most 12 parameter changes and 6 routes; unknown keys are
-  dropped, numbers clamped and snapped to their step, switches 0/1.
+- **Unknown** keys (not a control of this chain) are dropped.
+- **Locked** controls are never touched: anything the effect's adapter marks
+  `locked` (e.g. a webcam mirror), any control in a `LOCKED_GROUPS` section
+  (Source, Preset, Performance Pad, Export, Record, Shortcuts, Info — the
+  sections whose controls drive other controls, which a per-key Undo could
+  not put back), and any key or label matching `LOCKED_CONTROL_PATTERN`
+  (an A/B compare split, fullscreen).
+- **Values**: numbers clamped to their range and snapped to their step,
+  booleans 0/1, enums the option index (an option label from Gemini is
+  mapped to its index).
+- **Floors** (`PARAM_FLOORS`): `analog` / `quadtree` / `time_machine`
+  Reactive › Mod Depth (`sl-modDepth`) never below 0.1 (it scales the
+  effect's whole music response); a lower value is raised to the floor.
+- **Plan size**: at most 12 parameter changes; a route Gemini still sends is
+  refused ("signal routes no longer exist"), and the plan carries
+  `routes: []`.
+- The old SynEngine lists (`ENUM_KEYS`, `CARRIER_KEYS`, `PROTECTED_KEYS`,
+  `MAX_ROUTE_AMOUNT`, `CARRIER_AMOUNT_*`) stay exported as `@deprecated`
+  only so legacy code compiles; nothing reads them.

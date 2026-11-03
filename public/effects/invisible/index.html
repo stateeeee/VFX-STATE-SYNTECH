@@ -518,6 +518,7 @@ allocPlate();
     var x=parseFloat(p.x),y=parseFloat(p.y);if(isFinite(x)&&isFinite(y))setPad(x,1-y);}
   function collect(){return {sliders:slVals(),toggles:ledGet(TOGS),xy:xyGet()};}
   function apply(s){if(!s)return;slApply(s.sliders);ledApply(s.toggles);xyApply(s.xy);}
+  window.__synBridge={collect:collect,apply:apply}; /* SYNTECH-LAB */
   window.addEventListener('message',function(ev){
     var d=ev&&ev.data;
     if(!d||typeof d!=='object'||typeof d.type!=='string')return;
@@ -534,6 +535,83 @@ allocPlate();
 })();
 </script>
 <!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-LAB-START (Lab chain adapter; standalone-safe) -->
+<script src="../shared/syn-lab.js"></script>
+<script>
+/* INVISIBLE as a Lab node (LAB v2 contract, ../shared/syn-lab.js). Nothing here runs until the shell calls SynLab.
+   External video = a CLONE of the shell's video track(s) (the shell's own tracks are never stopped) on #vid, through
+   the effect's own source machinery: the steps of loadVideo / loadWebcam, then onSrc() — plate reset, segmentation +
+   hands on vid, INPUT pill "LAB", drop overlay hidden. srcMode 'lab' takes the non-image (video) path everywhere;
+   `mirror` stays false (the webcam's shader flip uMir is off). The effect's own IMAGE / VIDEO / WEBCAM pick wins: the
+   external source is then dropped. No audio reactivity in INVISIBLE: setAudioStream is a no-op. */
+(function(){
+  'use strict';
+  if(!window.SynLab) return;
+  var K=SynLab.kit, own=null, wasOn=false, timer=0, lastW=0, lastH=0, hooked=false;
+  function byId(id){ return document.getElementById(id); }
+  function cloneVideo(s){ try{ var t=s&&s.getVideoTracks?s.getVideoTracks():[]; return t.length?new MediaStream(t.map(function(x){ return x.clone(); })):null; }catch(e){ return null; } }
+  function release(ms){ if(ms) ms.getTracks().forEach(function(t){ try{ t.stop(); }catch(e){} }); }
+  function external(){ return !!own && vid.srcObject===own && srcMode==='lab'; }
+  /* the effect's own source pick took over (loadVideo nulls srcObject, loadImage / loadWebcam switch srcMode) */
+  function check(){
+    if(!own) return;
+    if(vid.srcObject!==own || srcMode==='video' || srcMode==='image' || srcMode==='webcam'){
+      if(vid.srcObject===own){ vid.onloadeddata=null; vid.srcObject=null; }
+      release(own); own=null; clearInterval(timer); timer=0;
+    }
+  }
+  function toNone(){
+    /* = boot / WEBCAM OFF: no source, NONE, drop overlay back, empty frame */
+    vid.onloadeddata=null; vid.pause(); vid.srcObject=null; vid.removeAttribute('src');
+    srcMode='none'; hf=false;
+    byId('pl').textContent='NONE'; byId('iS').textContent='NONE'; byId('pin').className='pill';
+    ['bi','bv','bw'].forEach(function(b){ byId(b).classList.remove('on'); });
+    byId('drop-overlay').classList.remove('hidden'); upPlay();
+    try{ gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); }catch(e){}
+  }
+  function setVideoStream(s){
+    var nv=s?cloneVideo(s):null, prev=own;
+    if(!nv){ if(own){ own=null; clearInterval(timer); timer=0; toNone(); release(prev); } return; }
+    if(!hooked){ hooked=true;
+      /* the chain's upstream may change resolution mid-stream: re-size like a new source (plate re-learnt) */
+      vid.addEventListener('resize',function(){ if(external()&&vid.videoWidth&&(vid.videoWidth!==lastW||vid.videoHeight!==lastH)){ lastW=vid.videoWidth; lastH=vid.videoHeight; hf=false; resizeTo(lastW,lastH); } });
+    }
+    wasOn=wasOn||(external()&&fxOn);
+    /* loadVideo / loadWebcam: release the webcam, then the new source on #vid (muted: the Lab plays the sound once) */
+    stopCam(); vid.pause(); vid.removeAttribute('src'); srcMode='none';
+    own=nv; vid.srcObject=own; vid.muted=true; vid.loop=loop; mirror=false; paused=false; img=null;
+    vid.onloadeddata=function(){
+      if(vid.srcObject!==own) return;
+      var keep=wasOn; wasOn=false;
+      srcMode='lab'; lastW=vid.videoWidth; lastH=vid.videoHeight;
+      onSrc('LAB','LAB',lastW,lastH);
+      /* a chain re-wire is not a new shot: INVISIBLE stays ON if it was ON (onSrc switches it off for a new source) */
+      if(keep){ fxOn=true; o0=o1=1; tS=-1e9; byId('bfx').classList.add('on'); byId('fxl').textContent='INVISIBLE ON'; }
+      vid.play().catch(function(){});
+    };
+    vid.play().catch(function(){});
+    release(prev);
+    if(!timer) timer=setInterval(check,300);
+  }
+  var SL={gho:'Ghost Opacity',fea:'Mask Feather',grow:'Mask Grow/Shrink',hair:'Hair Cover',ew:'Edge Width',dist:'Edge Distortion',ad:'Plate Adapt',echo:'Echo Trail',dt:'BG Sensitivity'};
+  SynLab.register({
+    setVideoStream:setVideoStream,
+    setAudioStream:function(){ /* INVISIBLE has no audio reactivity */ },
+    outputCanvas:function(){ return cv; },  /* WebGL2, preserveDrawingBuffer:true: the whole picture */
+    labelOf:function(el){ var k=/^sl-(\w+)$/.exec(el.id||''); return k&&SL[k[1]]; },
+    controls:function(){ return [
+      K.led('bfx','bfx',{label:'Invisible',group:'Invisible'}),
+      K.led('bges','bges',{label:'Pinch Gesture',group:'Invisible'}),
+      K.number('xy:y',{label:'Invisible Amount (XY Y)',group:'XY Pad',el:byId('xy'),min:0,max:1,step:0.01,
+        get:function(){ return padY; },set:function(v){ setPad(padX,1-v); }}),
+      K.number('xy:x',{label:'Chaos (XY X)',group:'XY Pad',el:byId('xy'),min:0,max:1,step:0.01,
+        get:function(){ return padX; },set:function(v){ setPad(v,1-padY); }})
+    ].filter(Boolean); },
+    state:function(){ return {hasSource:srcMode!=='none',external:external(),fps:Number(byId('fps-val').textContent)||0}; }
+  });
+})();
+</script>
+<!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

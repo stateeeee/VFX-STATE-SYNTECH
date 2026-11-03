@@ -2588,6 +2588,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
   function collect(){return {sliders:slVals(),knobs:knobGet(),leds:ledGet(LEDS),seg:segGet(),xy:xyGet()};}
   function apply(s){if(!s)return;slApply(s.sliders);knobApply(s.knobs);
     ledApply(s.leds);segApply(s.seg);xyApply(s.xy);}
+  window.__synBridge={collect:collect,apply:apply}; /* SYNTECH-LAB */
   window.addEventListener('message',function(ev){
     var d=ev&&ev.data;
     if(!d||typeof d!=='object'||typeof d.type!=='string')return;
@@ -2604,6 +2605,118 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 </script>
 <!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-LAB-START (Lab chain adapter; standalone-safe) -->
+<script src="../shared/syn-lab.js"></script>
+<script>
+/* QUADTREE as a Lab node (LAB v2 contract, ../shared/syn-lab.js). Nothing here runs until the shell calls SynLab.
+   External video = a CLONE of the shell's video track(s) (the shell's own tracks are never stopped) on the effect's
+   own <video>, with the steps of loadVideoFile / loadWebcam (other sources released, drop overlay hidden, Source
+   buttons off, clearFeedback()) and STATE.srcMode 'lab': currentFrameSource() then returns the
+   <video> itself — the webcam's 2D flip (srcMode 'webcam') never applies. The effect's own 'loadedmetadata'
+   handler lights the INPUT pill and plays it; ours (registered after) writes "LAB". Info › Input reads LAB.
+   The effect's own IMAGE / VIDEO / WEBCAM / CAM pick wins: the external source is then dropped.
+   Audio: the effect's Reactive engine (BASS / MID / HIGH → threshold / depth / border … modulation) is a
+   PSEUDO-AUTO generator; with the Lab's audio it is driven by that sound instead: an AnalyserNode on the
+   stream (never connected to the speakers), same bands, same attack/release smoothing, same Sensitivity /
+   Mod Depth, Engine LED switched on as its own G key does. null = back to the pseudo generator and the LED
+   as it was. Export (REC) stays the effect's own — not a Lab param. */
+(function(){
+  'use strict';
+  if(!window.SynLab) return;
+  var K=SynLab.kit, own=null, timer=0, hooked=false;
+  function byId(id){ return document.getElementById(id); }
+  function cloneVideo(s){ try{ var t=s&&s.getVideoTracks?s.getVideoTracks():[]; return t.length?new MediaStream(t.map(function(x){ return x.clone(); })):null; }catch(e){ return null; } }
+  function release(ms){ if(ms) ms.getTracks().forEach(function(t){ try{ t.stop(); }catch(e){} }); }
+  function external(){ return !!own && STATE.srcMode==='lab' && video.srcObject===own; }
+  function check(){ if(own && (STATE.srcMode!=='lab' || video.srcObject!==own)){ release(own); own=null; clearInterval(timer); timer=0; } }
+  function toNone(){
+    /* = WEBCAM OFF, with the boot wording of the pill */
+    video.pause(); video.srcObject=null; video.removeAttribute('src'); video.load();
+    STATE.hasVideo=false; STATE.srcMode='none';
+    setPillLive(false); byId('pill-label').textContent='NONE';
+    byId('drop-overlay').style.display='flex';
+    setSourceUI('','--'); byId('info-res').textContent='--';
+    updatePlayUI();
+  }
+  function setVideoStream(s){
+    var nv=s?cloneVideo(s):null, prev=own;
+    if(!nv){ if(own){ own=null; clearInterval(timer); timer=0; toNone(); release(prev); } return; }
+    if(!hooked){ hooked=true;
+      video.addEventListener('loadedmetadata',function(){ if(external()) byId('pill-label').textContent='LAB'; });
+      video.addEventListener('resize',function(){ if(external()&&video.videoWidth) byId('info-res').textContent=video.videoWidth+'x'+video.videoHeight; });
+    }
+    stopWebcamStream(); stopCameraStream(); activeImage=null;
+    if(currentURL){ URL.revokeObjectURL(currentURL); currentURL=null; }
+    video.pause(); video.removeAttribute('src');
+    own=nv; video.srcObject=own; video.muted=true;     /* muted: the Lab plays the sound once */
+    STATE.hasVideo=true; STATE.srcMode='lab';
+    byId('drop-overlay').style.display='none';
+    setSourceUI('','LAB');
+    byId('bb-warn').textContent='';
+    clearFeedback();
+    release(prev);
+    if(!timer) timer=setInterval(check,300);
+  }
+
+  /* ── Lab audio → REACT (bass / mid / high) ── */
+  var AU={ctx:null,an:null,buf:null,src:null,on:false,ledByUs:false,orig:null};
+  var BANDS=[['bass',20,250,0.06],['mid',250,2000,0.1],['high',2000,10000,0.2]];  /* lk = the pseudo engine's per-band rate */
+  function labReact(){
+    AU.an.getByteFrequencyData(AU.buf);
+    var hz=AU.ctx.sampleRate/AU.an.fftSize, n=AU.buf.length;
+    BANDS.forEach(function(d){
+      var a=Math.max(1,Math.floor(d[1]/hz)), z=Math.min(n-1,Math.ceil(d[2]/hz)), sum=0, c=0;
+      for(var i=a;i<=z;i++){ sum+=AU.buf[i]; c++; }
+      var e=c?sum/c/255:0;
+      var raw=Math.min(1,e*1.6*P.reactSens), tgt=Math.min(1,Math.max(0,raw-0.15)/0.85);
+      var b=REACT._b[d[0]], kk=tgt>b.s?d[3]*3:d[3]*0.8;
+      b.s+=(tgt-b.s)*Math.min(1,kk);
+      REACT[d[0]]=Math.max(0,Math.min(1,b.s));
+    });
+    var lbl=byId('react-label'); if(lbl&&lbl.textContent!=='LAB AUDIO') lbl.textContent='LAB AUDIO';
+  }
+  function setAudioStream(s){
+    var has=!!(s&&s.getAudioTracks&&s.getAudioTracks().length);
+    if(AU.src){ try{ AU.src.disconnect(); }catch(e){} AU.src=null; }
+    if(!has){
+      if(AU.on){ AU.on=false;
+        if(AU.ledByUs && P.reactEnabled) toggleReactive();   /* the LED back as it was */
+        else byId('react-label').textContent=P.reactEnabled?'PSEUDO-AUTO':'DISABLED';
+        AU.ledByUs=false;
+      }
+      return;
+    }
+    if(!AU.ctx){
+      var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+      AU.ctx=new AC(); AU.an=AU.ctx.createAnalyser(); AU.an.fftSize=1024; AU.an.smoothingTimeConstant=0.5;
+      AU.buf=new Uint8Array(AU.an.frequencyBinCount);
+      document.addEventListener('pointerdown',function(){ if(AU.on&&AU.ctx.state==='suspended') AU.ctx.resume(); },true);
+      /* the render loop calls the global updateReactive(dt): with Lab audio the bands come from the sound */
+      AU.orig=window.updateReactive;
+      window.updateReactive=function(dt){ if(AU.on&&AU.src&&P.reactEnabled) labReact(); else AU.orig(dt); };
+    }
+    try{ AU.src=AU.ctx.createMediaStreamSource(s); AU.src.connect(AU.an); }catch(e){ AU.src=null; return; }  /* analyser only: never to the speakers */
+    if(AU.ctx.state==='suspended') AU.ctx.resume().catch(function(){});
+    if(!AU.on){ AU.on=true; AU.ledByUs=false; if(!P.reactEnabled){ toggleReactive(); AU.ledByUs=true; } }
+  }
+
+  function led(key,id,label){ return K.led(key,id,{label:label}); }
+  SynLab.register({
+    setVideoStream:setVideoStream,
+    setAudioStream:setAudioStream,
+    outputCanvas:function(){ return canvas; },   /* #glcanvas, WebGL2 with preserveDrawingBuffer:true: the whole picture */
+    labelOf:function(el){ var r=el.closest('.ctrl-row'), l=r&&r.querySelector('.ctrl-lbl'); return l?K.clean(l.textContent):''; },
+    controls:function(){ return K.knobs(setKnob).concat([
+      K.seg('borderMode','#border-mode-sel .seg-btn',{label:'Border Color'}),
+      K.seg('metric','#metric-sel .seg-btn',{label:'Detail Metric'}),
+      led('btn-square','btn-square','Square Cells'),
+      led('btn-react','btn-react','Reactive Engine')
+    ]).filter(Boolean); },
+    state:function(){ return {hasSource:!!STATE.hasVideo,external:external(),fps:Number(byId('fps-val').textContent)||0}; }
+  });
+})();
+</script>
+<!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>
