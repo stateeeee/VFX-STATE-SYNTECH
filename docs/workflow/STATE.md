@@ -57,7 +57,7 @@ nel repo ma il LAB non lo usa più.
   MasterRecorder se non parte, webcam nascosta → torna al file, vecchie tracce di cattura fermate).
 - **Verifica** — app Electron impacchettata (Chromium 128): `verify-desktop` 38/38, `verify-audio-meter` 24/24,
   `verify-lab-chain` 36/37 (l'unico rosso era la misura della pausa: un fotogramma ripetuto; il test ora controlla che
-  l'orologio del video resti fermo) → vedi la riga del rerun qui sotto. Browser: `verify-audio-meter` 24/24,
+  l'orologio del video resti fermo). **Rerun sull'app ricostruita con le correzioni del delta: `verify-lab-chain` 37/37.** Browser: `verify-audio-meter` 24/24,
   `verify-ui-cage` 18/18 (il file punta a `chromium-1194`, che in questo sandbox non c'è: girato con il Chromium del
   sandbox), `verify-lab-chain` 37/38, `verify-gemini` (portato al LAB a iframe) 11/11 step, 276 controlli.
 - **Aperti** (non bloccanti): (1) col LAB nascosto gli effetti continuano a renderizzare (SynLab non ha pausa; proposta
