@@ -314,9 +314,9 @@ export function classifyError(err: unknown): AiFailure {
   return failure('server_error', `Unexpected server error: ${scrub(msg)}`);
 }
 
-/** True when Google refused the response SCHEMA itself (too many enum states,
- *  an unsupported keyword) rather than the media or the key — the one case
- *  worth a single retry with a looser schema. */
+/** True when Google refused the response SCHEMA itself and SAID so (too
+ *  many enum states, an unsupported keyword) rather than the media or the
+ *  key. */
 export function isSchemaRejection(err: unknown): boolean {
   if (!(err instanceof ApiError) || err.status !== 400) return false;
   const g = readGoogleError(err);
@@ -324,12 +324,39 @@ export function isSchemaRejection(err: unknown): boolean {
   return /schema|too many states|constraint|enum/i.test(g.message);
 }
 
-/** When a role that HAS a loose schema should spend its one retry on it: a
- *  schema rejection (400), or a bare 500 INTERNAL — Google has been seen to
- *  answer an over-complex schema that way, and the same strict schema would
- *  fail again. Not 502/503/504: those are outages, not the schema. */
+/* What a 400 about the request's OTHER parts names: the key, an uploaded
+   file, the media, its size or type, the token budget. Such a 400 is not the
+   schema's, and the same request with a looser schema would fail again. */
+const NOT_THE_SCHEMA = /api[_ ]?key|\bfile|\buri\b|mime|media|video|image|audio|inline|payload|too large|exceeds|size|token|base64|content type|fps|safety|location|region|model/i;
+
+/** A bare 400 INVALID_ARGUMENT — "Request contains an invalid argument." —
+ *  that names nothing else. Google documents exactly this answer for a
+ *  response schema it finds too complex (large enums, nested arrays with
+ *  length limits, numeric bounds): the message does not say "schema". */
+export function isBareInvalidArgument(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 400) return false;
+  const g = readGoogleError(err);
+  if (g.reasons.length) return false; // API_KEY_INVALID & co. name their reason
+  if (g.status && g.status !== 'INVALID_ARGUMENT') return false;
+  if (NOT_THE_SCHEMA.test(g.message)) return false;
+  return /invalid argument/i.test(g.message) || g.message.trim() === '';
+}
+
+/** Why a role that HAS a loose schema should spend its one retry on it —
+ *  null when it should not. A schema rejection (a 400 naming the schema), a
+ *  bare 400 INVALID_ARGUMENT (see isBareInvalidArgument), or a bare 500
+ *  INTERNAL (Google has been seen to answer an over-complex schema that way).
+ *  Not 502/503/504: those are outages, not the schema. The reason is what
+ *  server.ts logs. */
+export function looseRetryReason(err: unknown): string | null {
+  if (isSchemaRejection(err)) return 'a 400 naming the schema';
+  if (isBareInvalidArgument(err)) return 'a bare 400 INVALID_ARGUMENT';
+  if (err instanceof ApiError && err.status === 500) return 'HTTP 500';
+  return null;
+}
+
 export function worthLooseRetry(err: unknown): boolean {
-  return isSchemaRejection(err) || (err instanceof ApiError && err.status === 500);
+  return looseRetryReason(err) !== null;
 }
 
 /** Classify AND log, once. Every failing /api/gemini call goes through here,

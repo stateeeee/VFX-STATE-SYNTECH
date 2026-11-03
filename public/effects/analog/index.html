@@ -2702,6 +2702,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
   function collect(){return {sliders:slVals(),knobs:knobGet(),leds:ledGet(LEDS),dir:dirGet(),xy:xyGet()};}
   function apply(s){if(!s)return;slApply(s.sliders);knobApply(s.knobs);
     ledApply(s.leds);dirApply(s.dir);xyApply(s.xy);}
+  window.__synBridge={collect:collect,apply:apply}; /* SYNTECH-LAB */
   window.addEventListener('message',function(ev){
     var d=ev&&ev.data;
     if(!d||typeof d!=='object'||typeof d.type!=='string')return;
@@ -2718,6 +2719,141 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 </script>
 <!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-LAB-START (Lab chain adapter; standalone-safe) -->
+<script src="../shared/syn-lab.js"></script>
+<script>
+/* LAB v2 adapter — ANALOG. Nothing here runs until the Lab shell calls SynLab.
+   VIDEO  : the Lab stream goes on the effect's own <video> (srcObject) with a
+            source mode of its own, 'lab': currentFrameSource() flips only
+            'webcam', so the picture is NOT mirrored. Every own source choice
+            (file / image / webcam) already clears video.srcObject, so the
+            operator's pick replaces the Lab stream with nothing extra; the
+            Lab's tracks are never stopped here.
+   AUDIO  : the effect's Reactive engine is a pseudo-random generator (no audio
+            input). With Lab audio, REACT bass / mid / high follow the real
+            signal instead (same mapping as the AI Lab port, nodes/analog.ts:
+            bass 20-250 Hz, loudness 20 Hz-12 kHz, treble 4-12 kHz, ×Sensitivity),
+            through an AnalyserNode that is never connected to the speakers.
+            The Reactive LED is switched on (as its own button does) and reads
+            LAB AUDIO; null gives the pseudo generator and the LED state back.
+   OUTPUT : #glcanvas (single WebGL canvas, preserveDrawingBuffer:true). */
+(function(){
+  'use strict';
+  var kit=SynLab.kit;
+  var cur=null;                                   /* the Lab's MediaStream (never stopped here) */
+  function active(){ return !!cur && video.srcObject===cur; }
+  function $(id){ return document.getElementById(id); }
+
+  /* after the effect's own loadedmetadata (which writes LIVE INPUT): the pill reads LAB */
+  video.addEventListener('loadedmetadata',function(){ if(active()) $('pill-label').textContent='LAB'; });
+
+  function attach(stream){
+    /* = loadWebcam()'s success path, minus the mirror (mode 'lab', not 'webcam') */
+    stopWebcamStream(); stopCameraStream(); stopVideoPlayback(); activeImage=null;
+    cur=stream;
+    video.srcObject=stream; video.muted=true;
+    STATE.hasVideo=true; STATE.srcMode='lab';
+    $('drop-overlay').style.display='none';
+    setSourceUI('','LAB');
+    $('bb-warn').textContent='';
+    clearFeedback();
+    var p=video.play(); if(p&&p.catch) p.catch(function(){});
+  }
+  function detach(){
+    /* = the webcam-off path: back to "no source", as at boot */
+    try{ video.pause(); }catch(e){}
+    video.srcObject=null;
+    STATE.hasVideo=false; STATE.srcMode='none';
+    setPillLive(false); $('pill-label').textContent='NONE';
+    $('drop-overlay').style.display='flex';
+    setSourceUI('','--');
+    $('info-res').textContent='--';
+    clearFeedback();
+    updatePlayUI();
+  }
+
+  /* ── audio: real bands instead of the pseudo generator ── */
+  var au={ctx:null,an:null,node:null,freq:null,bass:0,loud:0,treble:0,turnedOn:false};
+  function audioOn(){ return !!au.node; }
+  function reactLabel(){
+    var l=$('react-label'); if(!l) return;
+    if(audioOn()&&P.reactEnabled) l.textContent='LAB AUDIO';
+    else l.textContent=P.reactEnabled?'PSEUDO-AUTO':'DISABLED';
+  }
+  var _toggleReactive=toggleReactive;
+  toggleReactive=function(){ var r=_toggleReactive.apply(this,arguments); reactLabel(); return r; };
+  var _updateReactive=updateReactive;
+  updateReactive=function(dt){
+    if(!audioOn()) return _updateReactive.apply(this,arguments);
+    if(!P.reactEnabled){REACT.bass=REACT.mid=REACT.high=0;return;}
+    if(au.ctx.state==='suspended') au.ctx.resume().catch(function(){});
+    au.an.getByteFrequencyData(au.freq);
+    var hz=au.ctx.sampleRate/au.an.fftSize, f=au.freq;
+    function avg(lo,hi){ var a=Math.max(0,Math.floor(lo/hz)), b=Math.min(f.length-1,Math.ceil(hi/hz)), s=0; for(var i=a;i<=b;i++) s+=f[i]; return s/((b-a+1)*255); }
+    function sm(c,t){ return c+(t-c)*(t>c?0.4:0.12); }
+    au.bass=sm(au.bass,Math.min(1,avg(20,250)*1.25));
+    au.loud=sm(au.loud,Math.min(1,avg(20,12000)*1.6));
+    au.treble=sm(au.treble,Math.min(1,avg(4000,12000)*2.2));
+    REACT.bass=Math.min(1,au.bass*P.reactSens);
+    REACT.mid=Math.min(1,au.loud*P.reactSens);
+    REACT.high=Math.min(1,au.treble*P.reactSens);
+  };
+  function setAudio(stream){
+    if(au.node){ try{ au.node.disconnect(); }catch(e){} au.node=null; }
+    if(!stream||!stream.getAudioTracks().length){
+      if(au.turnedOn&&P.reactEnabled) toggleReactive();   /* the LED goes back off, as it was */
+      au.turnedOn=false; au.bass=au.loud=au.treble=0;
+      reactLabel();
+      return;
+    }
+    if(!au.ctx){
+      au.ctx=new (window.AudioContext||window.webkitAudioContext)();
+      au.an=au.ctx.createAnalyser(); au.an.fftSize=2048; au.an.smoothingTimeConstant=0.5;
+      au.freq=new Uint8Array(au.an.frequencyBinCount);
+    }
+    if(au.ctx.state==='suspended') au.ctx.resume().catch(function(){});
+    au.node=au.ctx.createMediaStreamSource(stream);
+    au.node.connect(au.an);                      /* analyser only: never to ctx.destination */
+    if(!P.reactEnabled){ toggleReactive(); au.turnedOn=true; }
+    reactLabel();
+  }
+
+  SynLab.register({
+    setVideoStream:function(stream){
+      if(stream) attach(stream);
+      else { if(active()) detach(); cur=null; }
+    },
+    setAudioStream:setAudio,
+    outputCanvas:function(){ return canvas; },
+    labelOf:function(el){ return kit.rowLabel(el,'.ctrl-lbl'); },
+    /* the bridge's apply also glides the Performance Pad to the saved xy, and the pad
+       re-drives its two knobs (H-TEAR / AMOUNT by default) away from the saved values:
+       settle the pad at once, then the saved knob values win — the snapshot comes back as it was */
+    applySettings:function(s,bridgeApply){
+      bridgeApply(s);
+      if(!s||!s.knobs) return;
+      if(PAD.animating){ PAD.x=PAD.targetX; PAD.y=PAD.targetY; PAD.animating=false; updatePadCursor(); }
+      Object.keys(s.knobs).forEach(function(id){
+        var k=document.querySelector('.knob[data-id="'+id+'"]'), v=parseFloat(s.knobs[id]);
+        if(k&&isFinite(v)) setKnob(k,v);
+      });
+    },
+    controls:function(){
+      return kit.knobs(function(k,v){ setKnob(k,v); }).concat([
+        kit.led('btn-mirror','btn-mirror',{label:'Mirror'}),
+        kit.led('btn-sort','btn-sort',{label:'Pixel Sort'}),
+        kit.seg('seg:sortDir','#sort-dir-sel .seg-btn',{label:'Sort Direction'}),
+        kit.led('btn-react','btn-react',{label:'Reactive'})
+      ]);
+    },
+    state:function(){
+      var f=parseFloat(($('fps-val')||{}).textContent);
+      return {hasSource:!!STATE.hasVideo, external:active(), fps:isFinite(f)?f:0};
+    }
+  });
+})();
+</script>
+<!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

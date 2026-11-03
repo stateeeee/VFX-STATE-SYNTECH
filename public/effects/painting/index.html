@@ -2515,6 +2515,7 @@ animate(0);
       if(typeof s.style==='string'){var b=document.querySelector('.sbtn[data-style="'+s.style+'"]');if(b&&!b.classList.contains('on'))b.click();}
       if(typeof s.paint==='boolean'&&typeof setFx==='function'&&typeof exporting!=='undefined'&&!exporting&&s.paint!==fxOn)setFx(s.paint);
     });}
+  window.__synBridge={collect:collect,apply:apply}; /* SYNTECH-LAB */
   window.addEventListener('message',function(ev){
     var d=ev&&ev.data;
     if(!d||typeof d!=='object'||typeof d.type!=='string')return;
@@ -2531,6 +2532,104 @@ animate(0);
 })();
 </script>
 <!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-LAB-START (Lab chain adapter; standalone-safe) -->
+<script src="../shared/syn-lab.js"></script>
+<script>
+/* PAINTING as a Lab node (LAB v2 contract, ../shared/syn-lab.js). Nothing here runs until the shell calls SynLab.
+   External video = a CLONE of the shell's video track(s) (the effect's _stopCam may stop what is in #vid: never the
+   shell's tracks), delivered through the channel the IMAGE source already uses: `pendingStream` + the engine's own
+   WEBCAM button → getUserMedia() hands it the stream → activateVideo() builds a VideoTexture. sourceMode is 'lab', not
+   'webcam', so neither the texture mirror (_drawMirror) nor the CSS scaleX(-1) on #vid applies. INPUT pill "LAB".
+   The effect's own IMAGE / VIDEO / WEBCAM pick (setMode) wins: the external source is then dropped.
+   Output: with PAINT off the frame shows the <video> itself, with PAINT on the engine's canvas (no
+   preserveDrawingBuffer) — so a 2D compositor, redrawn only while captured / read: right after the engine's own rAF
+   callback when PAINT is on, every frame from #vid (stretched, as object-fit:fill) when it is off.
+   No audio reactivity in PAINTING (its audio is the file's playback / export): setAudioStream is a no-op.
+   Export (MediaRecorder) is the effect's own: not a Lab param — the Lab has its Master export. */
+(function(){
+  'use strict';
+  if(!window.SynLab) return;
+  var K=SynLab.kit, own=null, timer=0, hooked=false, comp=null, lastTouch=0, looping=false;
+  var cEl=document.getElementById('c');
+  function byId(id){ return document.getElementById(id); }
+  function cloneVideo(s){ try{ var t=s&&s.getVideoTracks?s.getVideoTracks():[]; return t.length?new MediaStream(t.map(function(x){ return x.clone(); })):null; }catch(e){ return null; } }
+  function release(ms){ if(ms) ms.getTracks().forEach(function(t){ try{ t.stop(); }catch(e){} }); }
+  function external(){ return !!own && sourceMode==='lab' && vidEl.srcObject===own; }
+  function check(){
+    if(own && sourceMode!=='lab'){ release(own); own=null; clearInterval(timer); timer=0; }   /* the effect's own pick */
+  }
+  function toNone(){
+    /* back to boot: no source, pill NONE, drop overlay, empty readouts */
+    vidEl.pause(); vidEl.srcObject=null; vidEl.removeAttribute('src'); vidEl.load();
+    setMode(null); setStatus('');
+    byId('pill-status').classList.remove('live'); byId('pill-label').textContent='NONE'; byId('src-mark').classList.remove('on');
+    ['btnImg','btnUp','btnCam'].forEach(function(b){ byId(b).classList.remove('on'); });
+    byId('info-file').textContent='--'; byId('info-res').textContent='--';
+    byId('ic-source').textContent='NONE'; byId('ic-res').textContent='--';
+    byId('idle').classList.remove('gone');
+    updatePlayUI();
+  }
+  function setVideoStream(s){
+    var nv=s?cloneVideo(s):null, prev=own;
+    if(!nv){ if(own){ own=null; clearInterval(timer); timer=0; toNone(); release(prev); } return; }
+    if(!hooked){ hooked=true;
+      /* runs after the UI's own 'loadeddata' handler (registered first): it wrote LIVE / the mode */
+      vidEl.addEventListener('loadeddata',function(){ if(external()){ byId('pill-label').textContent='LAB'; byId('info-file').textContent='LAB'; } });
+      vidEl.addEventListener('resize',function(){ if(external()&&vidEl.videoWidth){ var r=vidEl.videoWidth+'×'+vidEl.videoHeight; byId('info-res').textContent=r; byId('ic-res').textContent=r; } });
+    }
+    if(exporting) cancelExport();
+    stopImage();
+    own=nv;
+    setMode('lab'); setStatus('');
+    pendingStream=own;
+    byId('btnCam').click();               /* the engine's WEBCAM path takes `pendingStream` */
+    if(pendingStream===own) pendingStream=null;   /* engine not running (no WebGL): nothing took it */
+    release(prev);
+    if(!timer) timer=setInterval(check,300);
+  }
+  /* ── output: one canvas whatever PAINT shows ── */
+  function live(){ return SynLab.capturing() || performance.now()-lastTouch<3000; }
+  function hasPic(){ return !!sourceMode && !!(vidEl.src||vidEl.srcObject) && vidEl.readyState>=2; }
+  function loop(){ if(!live()){ looping=false; return; } if(!fxOn) comp.draw(); _raf(loop); }
+  function outputCanvas(){
+    if(!comp){
+      comp=K.compositor({ size:function(){ return {w:cEl.width,h:cEl.height}; },
+                          layers:function(){ return hasPic() ? [fxOn?cEl:vidEl] : []; } });
+      var inner=window.requestAnimationFrame;   /* the page's PAINT-off throttle; the engine re-queues through it */
+      window.requestAnimationFrame=function(cb){ return inner(function(t){ cb(t); if(fxOn&&live()) comp.draw(); }); };
+    }
+    lastTouch=performance.now();
+    if(!looping){ looping=true; if(!fxOn) comp.draw(); _raf(loop); }   /* PAINT on: the next engine frame draws it (a read now would see a cleared buffer) */
+    return comp.canvas;
+  }
+  var STYLES=['oil','tempera','pointillism','impressionism','expressionism'];  /* WATERCOLOR is hidden (SYNTECH-HIDE) */
+  function styleOf(el){ var r=el.closest('.ctrl-row'); if(!r) return ''; for(var i=0;i<STYLES.length;i++) if(r.classList.contains(STYLES[i])) return STYLES[i]; return r.classList.contains('watercolor')?'watercolor':''; }
+  SynLab.register({
+    setVideoStream:setVideoStream,
+    setAudioStream:function(){ /* PAINTING has no audio reactivity */ },
+    outputCanvas:outputCanvas,
+    /* the Color knobs' hidden inputs are offered as knob:<id>; WATERCOLOR's sliders belong to a hidden style */
+    excludeKey:function(key,el){ return !!el && el.tagName==='INPUT' && (!!el.closest('.knob-group') || styleOf(el)==='watercolor'); },
+    labelOf:function(el){
+      var r=el.closest('.ctrl-row'), l=r&&r.querySelector('.ctrl-lbl'); if(!l) return '';
+      var st=styleOf(el); return K.clean(l.textContent)+(st?' ('+st.toUpperCase()+')':'');
+    },
+    controls:function(){
+      var btns=STYLES.map(function(s){ return document.querySelector('.sbtn[data-style="'+s+'"]'); });
+      return [
+        K.led('paint','btn-paint',{label:'Paint',group:'Style'}),
+        K.seg('style',btns,{label:'Painting Style',group:'Style',
+          set:function(v){ var i=Math.round(Number(v)), b=btns[i]; if(!b) return false;
+            if(!b.classList.contains('on')) b.click();
+            if(!fxOn && !exporting) setFx(true);   /* a hand-picked style also turns PAINT on (see the Style picker) */
+            return true; }})
+      ].concat(K.knobs(function(k,v){ setKnob(k,v,true); })).filter(Boolean);
+    },
+    state:function(){ return {hasSource:!!sourceMode&&!!(vidEl.src||vidEl.srcObject),external:external(),fps:Number(byId('fps-val').textContent)||0}; }
+  });
+})();
+</script>
+<!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

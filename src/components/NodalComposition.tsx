@@ -36,20 +36,26 @@ export const EFFECT_META: Record<ModuleId, EffectMeta> = {
   anamorphic_lab: { name: 'ANAMORPHIC', short: 'Lens flare stretch', color: '#5bb0c4' },
   analog: { name: 'ANALOG', short: 'CRT / sync jitter', color: '#6ea8e0' },
   bokeh: { name: 'BOKEH', short: 'Depth-of-field disks', color: '#9b6fd0' },
-  // standalone-only effects: not in RACK_ORDER / MENU_ORDER, so they never appear in the node graph yet
-  invisible: { name: 'INVISIBLE', short: 'Person cloak', color: '#8b5cf6' },
-  time_machine: { name: 'TIME MACHINE', short: 'Temporal displacement', color: '#8b5cf6' },
-  quadtree: { name: 'QUADTREE', short: 'Recursive subdivision', color: '#8b5cf6' },
-  pointcloud: { name: 'POINTCLOUD', short: 'Video point cloud', color: '#8b5cf6' },
-  painting: { name: 'PAINTING', short: 'Painting styles', color: '#8b5cf6' },
+  // LAB v2 (2026-10-28): every effect is a Lab node (the real effect in an iframe), so these five chain too
+  invisible: { name: 'INVISIBLE', short: 'Person cloak', color: '#8e9ab0' },
+  time_machine: { name: 'TIME MACHINE', short: 'Temporal displacement', color: '#d6b84e' },
+  quadtree: { name: 'QUADTREE', short: 'Recursive subdivision', color: '#9bc45a' },
+  pointcloud: { name: 'POINTCLOUD', short: 'Video point cloud', color: '#e0716b' },
+  painting: { name: 'PAINTING', short: 'Painting styles', color: '#4cbfb0' },
 };
 
 const INPUT_COLOR = '#57bf8a';
 const OUTPUT_COLOR = '#8b5cf6';
 // keep a stable rack order so nodes don't reshuffle when rewired
-const RACK_ORDER: ModuleId[] = ['blob_tracker', 'blob_reveal', 'anamorphic_lab', 'analog', 'bokeh'];
+const RACK_ORDER: ModuleId[] = [
+  'blob_tracker', 'blob_reveal', 'anamorphic_lab', 'analog', 'bokeh',
+  'invisible', 'time_machine', 'quadtree', 'pointcloud', 'painting',
+];
 // Add Node menu is strictly alphabetical by display name (decision #6)
-const MENU_ORDER: ModuleId[] = ['analog', 'anamorphic_lab', 'blob_reveal', 'blob_tracker', 'bokeh'];
+const MENU_ORDER: ModuleId[] = [
+  'analog', 'anamorphic_lab', 'blob_reveal', 'blob_tracker', 'bokeh',
+  'invisible', 'painting', 'pointcloud', 'quadtree', 'time_machine',
+];
 
 interface PortSpec {
   key: string; // `${side}:${node}`
@@ -86,7 +92,7 @@ interface NodalCompositionProps {
   onAddEffect: (id: ModuleId) => void;
   /** remove an effect node from the graph entirely */
   onRemoveEffect: (id: ModuleId) => void;
-  /** double-click a node body → jump into the Lab (the real engine) */
+  /** double-click a node body → jump into the Lab (the real effects, chained) */
   onOpenLab: () => void;
   /** click the INPUT node → pick the source video */
   onPickSource: () => void;
@@ -183,27 +189,37 @@ export default function NodalComposition({
   const FX_W = 150;
   const FX_H = 50;
   const FX_GAP = 16;
-  const rows = Math.max(1, ordered.length);
+  // up to 5 effects stack in one column; more (all ten can be in the graph) go in two
+  // columns so the nodes keep a readable size when the viewBox scales to the panel
+  const cols = ordered.length > 5 ? 2 : 1;
+  const rows = Math.max(1, Math.ceil(ordered.length / cols));
   const stackH = rows * FX_H + (rows - 1) * FX_GAP;
   const H = Math.max(size.h, stackH + PAD * 2 + 8);
-  const W = Math.max(size.w, 560);
+  const W = Math.max(size.w, cols === 2 ? 680 : 560);
   const midY = H / 2;
 
   const inX = PAD;
   const inY = midY - IN_H / 2;
   const outX = W - PAD - OUT_W;
   const outY = midY - OUT_H / 2;
-  const fxX = (W - FX_W) / 2;
+  const COL_GAP = 22;
   const stackTop = midY - stackH / 2;
 
-  const fxRow = (i: number) => stackTop + i * (FX_H + FX_GAP);
+  /** top-left of effect node i (column-major: the first `rows` fill the left column) */
+  const fxPos = (i: number) => {
+    const col = cols === 2 ? Math.floor(i / rows) : 0;
+    const row = cols === 2 ? i % rows : i;
+    const x = cols === 2 ? W / 2 + (col === 0 ? -(FX_W + COL_GAP / 2) : COL_GAP / 2) : (W - FX_W) / 2;
+    return { x, y: stackTop + row * (FX_H + FX_GAP) };
+  };
 
   /* ── ports ── */
   const ports: PortSpec[] = [
     { key: 'out:IN', node: 'IN', side: 'out', x: inX + IN_W, y: midY, color: INPUT_COLOR },
     { key: 'in:OUT', node: 'OUT', side: 'in', x: outX, y: midY, color: OUTPUT_COLOR },
     ...ordered.flatMap((id, i): PortSpec[] => {
-      const cy = fxRow(i) + FX_H / 2;
+      const { x: fxX, y: fy } = fxPos(i);
+      const cy = fy + FX_H / 2;
       const color = EFFECT_META[id].color;
       return [
         { key: `in:${id}`, node: id, side: 'in', x: fxX, y: cy, color },
@@ -479,7 +495,7 @@ export default function NodalComposition({
           {ordered.map((id, i) => {
             const meta = EFFECT_META[id];
             const on = enabledOf(id);
-            const y = fxRow(i);
+            const { x: fxX, y } = fxPos(i);
             const sel = selected === id;
             return (
               <g key={`node-${id}`} data-testid={`nodal-node-${id}`} data-selected={sel ? 'true' : 'false'} opacity={on ? 1 : 0.5}>

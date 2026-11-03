@@ -1,4 +1,57 @@
 /* ═══════════════════════════════════════════════════════════════════════
+   SYNTECH-UNIFORM — DAY MODE bridge (operator request B1, 2026-10-28).
+   The shell's sun/moon toggle puts data-syn-theme="day"|"night" on the effect's
+   <iframe> and posts {type:'syn:theme', payload:{mode}} to it. This mirrors that
+   on <html data-syn-theme> (+ data-syn-fx = the effect id, so day CSS can be
+   scoped per effect): read from window.frameElement at boot, followed through a
+   MutationObserver on the attribute and through the message. Standalone (no
+   frameElement) → night, exactly the original look. The same snippet sits in
+   syn-chrome.js AND syn-extras.js (BOKEH loads only the latter); it runs once.
+   Every day rule lives in ../shared/syn-chrome.css under html[data-syn-theme="day"];
+   a page that does not link that sheet (BOKEH) gets it injected while day is on.
+   ═══════════════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+  if(window.SynTheme) return;
+  var root=document.documentElement;
+  var src=''; try{ src=(document.currentScript&&document.currentScript.src)||''; }catch(e){}
+  var fx=/\/effects\/([^\/]+)\//.exec(location.pathname);
+  if(fx) root.setAttribute('data-syn-fx', fx[1]);
+  function frameEl(){ try{ return window.frameElement||null; }catch(e){ return null; } }
+  function norm(v){ return v==='day'?'day':'night'; }
+  /* pages that do not link syn-chrome.css themselves (BOKEH): load it only for day,
+     remove it for night, so BOKEH's night look stays byte-for-byte what it was */
+  function sheet(mode){
+    try{
+      if(document.querySelector('link[rel="stylesheet"][href*="syn-chrome.css"]:not(#syn-theme-css)')) return;
+      var l=document.getElementById('syn-theme-css');
+      if(mode==='day' && !l && src){
+        l=document.createElement('link'); l.id='syn-theme-css'; l.rel='stylesheet';
+        l.href=src.replace(/[^\/]*$/,'syn-chrome.css').split('?')[0];
+        (document.head||root).appendChild(l);
+      }else if(mode!=='day' && l){ l.parentNode.removeChild(l); }
+    }catch(e){}
+  }
+  function apply(v){
+    var mode=norm(v);
+    if(root.getAttribute('data-syn-theme')!==mode) root.setAttribute('data-syn-theme', mode);
+    sheet(mode);
+  }
+  var fe=frameEl();
+  apply(fe?fe.getAttribute('data-syn-theme'):'night');
+  if(fe){
+    try{ new MutationObserver(function(){ apply(fe.getAttribute('data-syn-theme')); }).observe(fe,{attributes:true,attributeFilter:['data-syn-theme']}); }catch(e){}
+  }
+  window.addEventListener('message', function(ev){
+    var d=ev.data;
+    if(!d||typeof d!=='object'||d.type!=='syn:theme'||!d.payload) return;
+    if(fe && ev.source!==window.parent) return;
+    apply(d.payload.mode);
+  });
+  window.SynTheme={ mode:function(){ return root.getAttribute('data-syn-theme')||'night'; }, set:apply };
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════
    SYNTECH-UNIFORM — work timer + timeline, shared by all five effects
    (BOKEH included). Operator request 2026-10-11 (second round):
 
@@ -55,7 +108,22 @@
     '#syn-transport .syn-tl-head{position:absolute;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff,#e8c000);left:0%;transform:translateX(-50%);top:50%;margin-top:-6px;pointer-events:none;box-shadow:0 0 8px rgba(232,192,0,.8),inset 0 1px 0 rgba(255,255,255,.5)}' +
     '#syn-transport .syn-tl-loop{height:24px;padding:0 8px;background:linear-gradient(180deg,#181618 0%,#0a080a 100%);border:1px solid rgba(255,255,255,.09);color:#7a5518;font-family:var(--mono,"JetBrains Mono",monospace);font-size:8px;letter-spacing:1px;cursor:pointer;transition:all .12s;border-radius:1px;margin:0}' +
     '#syn-transport .syn-tl-loop:hover{border-color:rgba(255,255,255,.18);color:#c89030}' +
-    '#syn-transport .syn-tl-loop.on{border-color:rgba(0,224,192,.4);color:#00e0c0}';
+    '#syn-transport .syn-tl-loop.on{border-color:rgba(0,224,192,.4);color:#00e0c0}' +
+    /* DAY MODE (html[data-syn-theme="day"], see the bridge at the top of this file): the same bar, white */
+    'html[data-syn-theme="day"] #syn-timer{color:#44403c}' +
+    'html[data-syn-theme="day"] #syn-transport{background:#ffffff;border-top:1px solid rgba(0,0,0,.09)}' +
+    'html[data-syn-theme="day"] #syn-transport .syn-tl-pause{background:linear-gradient(180deg,#ffffff 0%,#f7f5f0 55%,#ece9e1 100%);border:1px solid #d8d4ca;border-bottom-color:#c9c4b8;color:#44403c;box-shadow:0 1px 2px rgba(60,50,30,.14),inset 0 1px 0 #fff}' +
+    'html[data-syn-theme="day"] #syn-transport .syn-tl-pause:hover{border-color:#8b5cf6;color:#6d28d9}' +
+    'html[data-syn-theme="day"] #syn-transport .syn-tl-pause.paused{border-color:rgba(124,58,237,.55);color:#5b21b6;background:linear-gradient(180deg,#faf7ff 0%,#ede9fe 100%)}' +
+    'html[data-syn-theme="day"] #syn-transport .syn-tl-cur{color:#44403c}' +
+    'html[data-syn-theme="day"] #syn-transport .syn-tl-dur{color:#6b655d}' +
+    'html[data-syn-theme="day"] #syn-transport .syn-tl-track{background:#d8d4ca;box-shadow:inset 0 1px 1px rgba(0,0,0,.12)}' +
+    'html[data-syn-theme="day"] #syn-transport .syn-tl-track:hover{background:#cdc8bc}' +
+    'html[data-syn-theme="day"] #syn-transport .syn-tl-fill{background:linear-gradient(90deg,#c4b5fd,#7c3aed);box-shadow:none}' +
+    'html[data-syn-theme="day"] #syn-transport .syn-tl-head{background:radial-gradient(circle at 35% 30%,#fff,#a78bfa);box-shadow:0 0 0 1px rgba(109,40,217,.55),0 1px 4px rgba(60,50,30,.3)}' +
+    'html[data-syn-theme="day"] #syn-transport .syn-tl-loop{background:linear-gradient(180deg,#ffffff 0%,#f1eee7 100%);border:1px solid #d8d4ca;color:#6b655d}' +
+    'html[data-syn-theme="day"] #syn-transport .syn-tl-loop:hover{border-color:#8b5cf6;color:#1c1917}' +
+    'html[data-syn-theme="day"] #syn-transport .syn-tl-loop.on{border-color:rgba(124,58,237,.55);color:#5b21b6;background:#f5f3ff}';
 
   function addStyle(){
     if(document.getElementById('syn-extras-style')) return;

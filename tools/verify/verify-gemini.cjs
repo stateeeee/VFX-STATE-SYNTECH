@@ -16,9 +16,10 @@
  *      validator filters the proposals; "Use this chain" opens the Lab,
  *      becomes the ART DIRECTION, marks its card 'In use' and lands the panel
  *      on the Agent tab (Direction line; the Art Director's 'Agent →' link);
- *      the Optimizer on the photo (audio off): carriers are not audio routes,
- *      audio_routes is no FAIL, exposure is judged against the source, the
- *      direction reaches the prompt, the silent clip is sampled at 12 fps
+ *      the Optimizer on the photo (audio off): the music check is 'waiting for
+ *      music' (no FAIL), exposure is judged against the source, the direction
+ *      and the typed request (ai-opt-intent) reach the prompt, the silent clip
+ *      is sampled at 12 fps
  *   5  video on Home → Art Director: the photo's read is flagged as another
  *      source's (its buttons off); uploaded once (Files API) and referenced
  *      by fileUri + videoMetadata; a second run reuses the upload
@@ -26,15 +27,15 @@
  *      switches the Clip audio on itself and says so; Google gets the cached
  *      upload (fileUri, no new upload) + SOURCE/OUTPUT jpegs + a 4s OUTPUT clip
  *      with the music at 12 fps + the art direction; the plan lands on the
- *      ParamBus (protected/invalid keys in `dropped`; the floor raise and the
- *      depth cap in `adjusted`, shown on their applied rows, never under
- *      'Not applied'); Undo reverts only the plan's keys (an edit made after
+ *      SynLab controls (protected/invalid keys and the route in `dropped`; the
+ *      floor raise and the range clamp in `adjusted`, shown on their applied
+ *      rows, never under 'Not applied'); Undo reverts only the plan's keys (an edit made after
  *      the run stays) and the Optimizer says the run was undone; a second
  *      run is kept
  *   7  Optimizer: output webm (music, 12 fps) + jpegs + the chain + checks +
  *      the Agent's plan + the art direction; numbered issue cards with their
- *      own refusals; each fix lists its rows before Apply (with its capped
- *      route's note); ONE undo stack shared with the Agent, last in first
+ *      own refusals; each fix lists its rows before Apply (with its clamped
+ *      row's note); ONE undo stack shared with the Agent, last in first
  *      out: the Agent's Undo waits ("Undo the Optimizer's fixes first") until
  *      the fix is undone, then restores the values from before its run; after
  *      the Lab is closed and reopened both results say 'Earlier run — on a
@@ -50,11 +51,20 @@
  *      other name out with a message naming ALLOWED_HOSTS), old endpoints
  *  11  the key never reaches a log, a URL, or Google from the browser
  *
+ * LAB v2 (2026-10-28): the Lab is a chain of the real effect iframes (window.SynLab):
+ * no ParamBus, no signal routes. Keys are '<ModuleId>.<control key>' and the suite
+ * reads / edits them through window.__SYN.lab.chainState() and the node's own
+ * frame.contentWindow.SynLab. Steps 4, 6 and 7 wire the cheap chain analog → bokeh
+ * (SwiftShader runs the Lab at ~1 fps): the mock's plans are built from the
+ * chain table the request carries, a route in a plan is reported dropped
+ * ('signal routes no longer exist'), and the floor raise (analog.sl-modDepth)
+ * and the range clamp go in `adjusted`.
+ *
  * Needs: the suite's port FREE — PORT from the environment, default 3000 (the
  *        suite starts its own server there and stops it at the end), ffmpeg,
  *        Playwright resolvable via NODE_PATH like the other suites.
  *        No real key, no network: everything Gemini answers comes from the mock.
- * Run:   node tools/verify/verify-gemini.cjs        (~3.5 min under SwiftShader)
+ * Run:   node tools/verify/verify-gemini.cjs        (~3.5 min on a GPU, 15-25 min under SwiftShader: the Lab's iframes render at ~1 fps)
  *        PORT=3100 node tools/verify/verify-gemini.cjs   (next to a dev server)
  * Exit:  0 all PASS, 1 any FAIL.
  */
@@ -75,11 +85,9 @@ const APP = `http://127.0.0.1:${PORT}`;
 const GOOD = 'MOCKKEY';
 const BAD = 'BADKEY';
 const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const ROLE_TIMEOUT = 90_000;
-const CLIP_ON_NOTE = 'Clip audio switched on so Gemini can hear the music';
+const ROLE_TIMEOUT = 240_000; // software GL runs the Lab at ~1 fps: a role call records 4s of it
 const SILENT_NOTE = 'This clip has no soundtrack: Gemini gets the picture only. Start Track or Mic for music.';
 const STALE_LAB = 'Earlier run — on a Lab that has closed';
-const AUDIO_SOURCES = ['bass', 'treble', 'loud', 'beat'];
 /** contract.ts INLINE_VIDEO_FPS: the sampling rate asked for every inline clip */
 const INLINE_FPS = 12;
 const T0 = Date.now();
@@ -125,7 +133,6 @@ async function step(n, fn) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const short = (v, n = 160) => { const s = typeof v === 'string' ? v : JSON.stringify(v); return s && s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 const near = (a, b, tol = 1e-6) => typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) <= tol;
-const sameMod = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 function portOpen(port) {
   return new Promise((resolve) => {
@@ -288,7 +295,18 @@ const railBoxes = (page) => page.evaluate(() => ['nav-ailab', 'nav-gemini-art_di
   return r ? [r.x, r.y, r.width, r.height].map((v) => Math.round(v * 10) / 10) : null;
 }));
 const storedKey = (page) => page.evaluate(() => localStorage.getItem('syntech.geminiKey'));
-const busState = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__SYN.bus.state)));
+/** every control of the chain, as the Lab reports it: key → { value, min, max, step, type } */
+const labState = (page) => page.evaluate(() => {
+  const o = {};
+  for (const p of window.__SYN.lab.chainState().params) o[p.key] = { value: p.value, min: p.min, max: p.max, step: p.step, type: p.type, locked: p.locked };
+  return o;
+});
+/** moves a control by hand, through the node's own SynLab (what the effect's panel does) */
+const setLabParam = (page, key, v) => page.evaluate(([k, val]) => {
+  const dot = k.indexOf('.');
+  const f = document.querySelector(`[data-testid="lab-frame-${k.slice(0, dot)}"]`);
+  return !!(f && f.contentWindow && f.contentWindow.SynLab && f.contentWindow.SynLab.setParam(k.slice(dot + 1), val));
+}, [key, v]);
 
 /** the Gemini panel's whole visible text */
 const panelAll = (page) => page.evaluate(() => {
@@ -300,7 +318,7 @@ const audioState = (page) => page.evaluate(() => ({ mode: window.__SYN.audio.mod
 const gone = (page, tid) => page.evaluate((s) => !document.querySelector(s), sel(tid));
 const disabled = (page, tid) => page.evaluate((s) => { const el = document.querySelector(s); return el ? el.disabled : null; }, sel(tid));
 /** the panel's mode title (h2): 'Agent', 'Optimizer', 'Art Director' */
-const onTab = (page, title, timeout = 5000) => page.waitForFunction(
+const onTab = (page, title, timeout = 10_000) => page.waitForFunction(
   (t) => [...document.querySelectorAll('h2')].some((h) => h.textContent.trim() === t), title, { timeout },
 ).then(() => true).catch(() => false);
 
@@ -328,18 +346,8 @@ const notAppliedBlocks = (page, tid) => page.evaluate((s) => [...(document.query
   .map((x) => ({ text: x.parentElement.textContent, inIssue: !!x.closest('[data-testid^="ai-opt-issue-"]') })), sel(tid));
 /** the panel's number format (AiDirector fmtNum) */
 const fmtNum = (v) => { const a = Math.abs(v); return String(Number(v.toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2))); };
-/** keys whose base or route differ between two bus snapshots */
-const busDiff = (a, b, keys = Object.keys(a)) => keys.filter((k) => !a[k] || !b[k] || !near(a[k].base, b[k].base, 1e-9) || !sameMod(a[k].mod, b[k].mod));
-
-/** moves a rack slider the way a hand does: React sees an input event */
-const setRange = (page, tid, value) => page.evaluate(([s, v]) => {
-  const el = document.querySelector(s);
-  if (!el) return null;
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, String(v));
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
-  return el.value;
-}, [sel(tid), value]);
+/** keys whose value differs between two labState snapshots (a step is half a unit of the control's grid) */
+const labDiff = (a, b, keys = Object.keys(a)) => keys.filter((k) => !a[k] || !b[k] || !near(a[k].value, b[k].value, Math.max(1e-6, (a[k].step || 0) / 2)));
 
 /** a plain GET with a chosen Host header (fetch will not let a caller set Host) */
 function rawGet(pathname, host) {
@@ -364,7 +372,7 @@ async function submitKey(page, key) {
 async function openRole(page, mode, runTid) {
   if (await page.locator(sel(runTid)).isVisible().catch(() => false)) return true;
   await domClick(page, `nav-gemini-${mode}`);
-  return visible(page, runTid, 10_000);
+  return visible(page, runTid, 30_000);
 }
 
 /** the Gemini panel's visible text (busy line, inline error) — for failure details */
@@ -393,18 +401,23 @@ async function roleCall(page, endpoint, tid, timeout = ROLE_TIMEOUT) {
   return { status: r.status(), json, sec: ((Date.now() - t) / 1000).toFixed(1) };
 }
 
-/** opens the Lab (nav-ailab) and waits for a fresh engine + handle */
+/** waits until every iframe node of the Lab reports its SynLab link 'ready' */
+const waitLinks = (page, ms = 150_000) => page.waitForFunction(
+  () => { const t = [...document.querySelectorAll('[data-testid^="lab-tab-"]')].filter((e) => !/lab-tab-(input|output)$/.test(e.getAttribute('data-testid'))); return t.length > 0 && t.every((e) => e.getAttribute('data-link') === 'ready'); },
+  null, { timeout: ms },
+).then(() => true).catch(() => false);
+
+/** opens the Lab (nav-ailab / 'Use this chain'): it stays mounted when hidden, so this waits for it to be shown with its handle */
 async function openLabVia(page, how) {
-  await page.evaluate(() => { window.__SYN = undefined; });
   await how();
   return page.waitForFunction(
-    () => !!(window.__SYN && window.__SYN.lab && window.__SYN.bus && document.querySelector('[data-testid="chain-canvas"]')),
-    null, { timeout: 20_000 },
+    () => { const l = document.querySelector('[data-testid="chain-lab"]'); return !!(window.__SYN && window.__SYN.lab && window.__SYN.audio && l && l.getClientRects().length > 0 && getComputedStyle(l).visibility !== 'hidden'); },
+    null, { timeout: 30_000 },
   ).then(() => true).catch(() => false);
 }
 
 const labOrder = (page) => page.evaluate(() => window.__SYN.lab.chainState().order.join('>'));
-async function waitOrder(page, want, ms = 8000) {
+async function waitOrder(page, want, ms = 20000) {
   const end = Date.now() + ms;
   let got = '';
   while (Date.now() < end) {
@@ -431,10 +444,10 @@ async function cleanup() {
 
 const watchdog = setTimeout(async () => {
   if (finished) return;
-  console.log(`\nFAIL  watchdog: the suite ran past 9 minutes (stuck in step ${current})`);
+  console.log(`\nFAIL  watchdog: the suite ran past 30 minutes (stuck in step ${current})`);
   await cleanup();
   process.exit(1);
-}, 9 * 60_000);
+}, 30 * 60_000);
 
 process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
 
@@ -632,7 +645,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     // the validator: 4 mock proposals → 3 (the all-invalid one dropped), ids cleaned, raw-source effect first
     const props = (r.json && r.json.proposals) || [];
     const chains = props.map((p) => p.chain.join('>'));
-    check(' validator kept 3 proposals with valid chains', props.length === 3 && chains[0] === 'analog>anamorphic_lab' && chains[1] === 'blob_tracker>anamorphic_lab' && chains[2] === 'bokeh', JSON.stringify(chains));
+    check(' validator kept 3 proposals with valid chains (order kept, repeats and unknown ids gone)', props.length === 3 && chains[0] === 'analog>bokeh' && chains[1] === 'anamorphic_lab>blob_tracker' && chains[2] === 'bokeh', JSON.stringify(chains));
     const ui = await page.evaluate(() => ({
       apply: document.querySelectorAll('[data-testid^="ai-ad-apply-"]').length,
       text: document.querySelector('[data-testid="ai-ad-result"]')?.textContent || '',
@@ -643,9 +656,10 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const opened = await openLabVia(page, () => domClick(page, 'ai-ad-apply-0'));
     check(" 'Use this chain' opens the Lab", opened);
     if (opened) {
-      const order = await waitOrder(page, 'analog>anamorphic_lab');
-      check(' Lab chain = analog → anamorphic_lab', order === 'analog>anamorphic_lab', order);
-      const ready = await page.evaluate(() => window.__SYN.lab.whenReady(20_000));
+      const order = await waitOrder(page, 'analog>bokeh');
+      check(' Lab chain = analog → bokeh', order === 'analog>bokeh', order);
+      check(' every node of the chain has its SynLab link (lab-tab-* data-link ready)', await waitLinks(page));
+      const ready = await page.evaluate(() => window.__SYN.lab.whenReady(60_000));
       const kind = await page.evaluate(() => window.__SYN.lab.sourceKind());
       check(' the Lab renders the photo', ready === true && kind === 'image', `ready=${ready} kind=${kind}`);
     }
@@ -653,7 +667,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
 
     // the handoff: creative mind → operator. The panel lands on the Agent with
     // the direction on top; the chosen card reads 'In use'
-    check(" 'Use this chain' lands the panel on the Agent tab (title + Run)", (await onTab(page, 'Agent')) && await visible(page, 'ai-agent-run', 5000));
+    check(" 'Use this chain' lands the panel on the Agent tab (title + Run)", (await onTab(page, 'Agent', 30_000)) && await visible(page, 'ai-agent-run', 30_000));
     await sleep(1300); // the tab polls the Lab once a second
     const adir = await text(page, 'ai-agent-direction');
     check(" …with the line 'Direction: Notte analogica' on top", adir === 'Direction: Notte analogica' && !(await gone(page, 'ai-agent-direction-clear')), adir);
@@ -664,7 +678,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(" the Art Director shows 'Direction: Notte analogica' with an 'Agent →' link", ddir === 'Direction: Notte analogica' && (await text(page, 'ai-ad-direction-next')) === 'Agent →', ddir);
     check(" …its read of this photo is current (no stale line, its buttons on)", (await gone(page, 'ai-ad-stale')) && (await disabled(page, 'ai-ad-apply-1')) === false);
     await domClick(page, 'ai-ad-direction-next');
-    check(" 'Agent →' opens the Agent tab", (await onTab(page, 'Agent')) && await visible(page, 'ai-agent-run', 5000));
+    check(" 'Agent →' opens the Agent tab", (await onTab(page, 'Agent', 20_000)) && await visible(page, 'ai-agent-run', 20_000));
 
     // ── the Optimizer on the photo, audio OFF (the Lab's default) ──
     check(' audio is off in the Lab', !(await audioState(page)).active, JSON.stringify(await audioState(page)));
@@ -673,34 +687,19 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const dir = await text(page, 'ai-opt-direction');
     check(" 'Use this chain' became the direction: 'Direction: Notte analogica' + a clear ×", dir === 'Direction: Notte analogica' && !(await gone(page, 'ai-opt-direction-clear')), dir);
     const pt = await panelAll(page);
-    check(' a photo with audio off: music routes wait for Track or Mic (no Clip offered)', /No music on: music routes wait for it — start Track or Mic in the Lab\./.test(pt), short(pt.replace(/\s+/g, ' '), 200));
+    check(" a photo with audio off: the effects' music reactions wait for Track or Mic (no Clip offered)", /No music on: the effects' music reactions wait for it — start Track or Mic in the Lab\./.test(pt), short(pt.replace(/\s+/g, ' '), 200));
     const al = await text(page, 'ai-opt-agent-line');
     check(" no Agent run on this Lab: 'No Agent run yet: judges the Lab as it is'", al === 'No Agent run yet: judges the Lab as it is', al);
     const os = await sendsLine(page);
     check(" Sends: '4s output clip (silent) + 1 frame pair + 2s of live signals + the chain + the checks + the art direction'",
       os === 'Sends: 4s output clip (silent) + 1 frame pair + 2s of live signals + the chain + the checks + the art direction', os);
-    // the operator wires one ordinary music route by hand (the rack's ~ button:
-    // off → bass): with audio off it is waiting for music, not an error
-    // LAB-REDESIGN: controls live in closed sections now — open the effect and its sub-sections first
-    await page.evaluate(() => { const h = document.querySelector('[data-testid="fx-head-anamorphic_lab"]'); if (h && h.getAttribute('aria-expanded') === 'false') h.click(); });
-    await sleep(300);
-    await page.evaluate(() => { document.querySelectorAll('[data-testid^="fx-sec-anamorphic_lab-"][aria-expanded="false"]').forEach((h) => h.click()); });
-    await sleep(300);
-    const wired = await page.evaluate(() => {
-      for (const el of document.querySelectorAll('[data-testid^="mod-src-anamorphic_lab-"]')) {
-        const key = `anamorphic_lab.${el.getAttribute('data-testid').slice('mod-src-anamorphic_lab-'.length)}`;
-        const st = window.__SYN.bus.state[key];
-        if (!st || st.mod) continue;
-        el.click();
-        return key;
-      }
-      return null;
-    });
-    await sleep(200);
-    const wiredMod = wired ? (await busState(page))[wired].mod : null;
-    check(' a hand-wired music route on an ordinary param (the rack ~ button)', !!wiredMod && AUDIO_SOURCES.includes(wiredMod.source), `${wired}: ${short(wiredMod)}`);
     const og0 = mock.generate.length;
-    const ro = await roleCall(page, '/api/gemini/optimizer', 'ai-opt-run', 120_000);
+    // the optional request field: typed text travels as `intent` and reaches the prompt
+    const ASK = 'MOCK-ASK: keep the lights readable';
+    check(' the Optimizer has an optional request field (ai-opt-intent)', await visible(page, 'ai-opt-intent', 30_000));
+    await page.locator(sel('ai-opt-intent')).fill(ASK);
+    check(" typing a request adds 'your request' to Sends", /\+ your request$/.test(await sendsLine(page)), await sendsLine(page));
+    const ro = await roleCall(page, '/api/gemini/optimizer', 'ai-opt-run', 240_000);
     check(' Optimizer answered 200', ro.status === 200, `${ro.status} in ${ro.sec}s ${short(ro.json, 90)}`);
     check(' a photo has no clip audio: no note, audio still off', (await gone(page, 'ai-opt-note')) && !(await audioState(page)).active);
     const orecs = mock.generate.slice(og0);
@@ -713,26 +712,24 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' the JPEGs carry no videoMetadata', om.media.filter((x) => x.mime === 'image/jpeg').every((x) => !x.meta));
 
     const ob = lastBody('/api/gemini/optimizer') || {};
-    const params = (ob.chain && ob.chain.params) || [];
-    const carriersRouted = params.filter((p) => p.carrier && p.route && AUDIO_SOURCES.includes(p.route.source));
-    const musicRoutes = params.filter((p) => !p.carrier && p.route && AUDIO_SOURCES.includes(p.route.source));
-    const ar = ((ob.checks) || []).find((c) => c.id === 'audio_routes');
-    check(' the chain has carriers routed on music (analog reactBass/Mid/High)', carriersRouted.length >= 1, carriersRouted.map((p) => p.key).join(','));
-    const wantDetail = musicRoutes.length
-      ? new RegExp(`^${musicRoutes.length} audio routes? waiting for music — audio is off`)
-      : /^no music on, no audio routes$/;
-    check(" audio_routes is ok (no FAIL): the hand-wired route is 'waiting for music', the carriers are not counted",
-      !!ar && ar.ok === true && musicRoutes.length >= 1 && musicRoutes.some((p) => p.key === wired) && wantDetail.test(ar.detail),
-      `${short(ar)} — non-carrier music routes: ${musicRoutes.map((p) => p.key).join(',')}`);
-    check(" the prompt says '[ok] audio_routes'", /^- \[ok\] audio_routes: /m.test(orec.text));
+    const checksSent = ob.checks || [];
+    const mu = checksSent.find((c) => c.id === 'music');
+    check(" the music check is ok and says the reactive effect is 'waiting for music — audio is off' (no FAIL)",
+      !!mu && mu.ok === true && /waiting for music — audio is off/.test(mu.detail), short(mu));
+    check(' the checks are performance / music / still_source / person_mask / output_exposure, no audio_routes',
+      ['performance', 'music', 'still_source', 'person_mask', 'output_exposure'].every((id) => checksSent.some((c) => c.id === id)) && !checksSent.some((c) => c.id === 'audio_routes'), checksSent.map((c) => c.id).join(','));
+    check(" the prompt says '[ok] music'", /^- \[ok\] music: /m.test(orec.text));
+    check(' the typed request reached the browser body as `intent` and the Optimizer prompt', ob.intent === ASK && orec.body && orec.text.includes(ASK) && /DIRECTOR'S REQUEST TO YOU/.test(orec.text),
+      short({ intent: ob.intent, inPrompt: orec.text.includes(ASK) }));
+    await page.locator(sel('ai-opt-intent')).fill(''); // the later Sends checks assume no request
     // exposure is the chain's doing, judged against the source frame's own luma
     const ex = ((ob.checks) || []).find((c) => c.id === 'output_exposure');
     const exm = ex && /^output mean luma ([\d.]+) vs source ([\d.]+)( — (almost black|blown out|like the source))?$/.exec(ex.detail);
     check(" output_exposure compares the output with the source ('output mean luma X vs source Y'); FAIL only for 'almost black' / 'blown out'",
       !!exm && ex.ok === !/almost black|blown out/.test(ex.detail), short(ex));
-    check(' the prompt says audio is OFF and its music routes are waiting', /audio OFF \(music routes are waiting for music\)/.test(orec.text) && /- audio: OFF — /.test(orec.text));
+    check(" the prompt says audio is OFF and the music reactions wait (not an error)", /- audio: OFF — .*wait for music/.test(orec.text));
     check(' the art direction reached the Optimizer prompt (title, chain, why)', /ART DIRECTION chosen by the director/.test(orec.text)
-      && orec.text.includes('- look: "Notte analogica" — chain analog → anamorphic_lab') && /- why: MOCK-WHY-0/.test(orec.text) && !/- music read:/.test(orec.text),
+      && orec.text.includes('- look: "Notte analogica" — chain analog → bokeh') && /- why: MOCK-WHY-0/.test(orec.text) && !/- music read:/.test(orec.text),
       short((orec.text.match(/ART DIRECTION[^\n]*(\n- [^\n]*)*/) || [''])[0], 260));
     check(' …and the browser sent it as direction (music null: a photo)', !!ob.direction && ob.direction.title === 'Notte analogica' && ob.direction.music === null && ob.chain.audioMode === 'off', short(ob.direction));
     check(" no Agent run yet: lastAgent null, 'LAST AGENT RUN: none'", ob.lastAgent === null && /LAST AGENT RUN: none/.test(orec.text));
@@ -741,10 +738,10 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
   /* ── 5 ── */
   await step(5, async () => {
     // back to Home with the Lab closed (nav-ailab toggles), then the video as the INPUT source
-    if (await page.locator(sel('chain-canvas')).isVisible().catch(() => false)) await domClick(page, 'nav-ailab');
-    check(' Lab closed, Home on screen', await page.waitForSelector(sel('chain-canvas'), { state: 'hidden', timeout: 10_000 }).then(() => true).catch(() => false));
+    if (await page.locator(sel('chain-lab')).isVisible().catch(() => false)) await domClick(page, 'nav-ailab');
+    check(' Lab closed, Home on screen', await page.waitForSelector(sel('chain-lab'), { state: 'hidden', timeout: 10_000 }).then(() => true).catch(() => false));
     await page.locator(sel('source-file')).setInputFiles(fx.video);
-    check(' video shown on Home (hero-video)', await visible(page, 'hero-video', 10_000));
+    check(' video shown on Home (hero-video)', await visible(page, 'hero-video', 40_000));
     check(' Art Director tab on screen', await openRole(page, 'art_director', 'ai-ad-run'));
     const sends = await page.evaluate(() => (document.body.innerText.match(/Sends: [^\n]+/) || [''])[0]);
     check(" the panel says 'clip … (video + audio)'", /clip .*video \+ audio/.test(sends), sends);
@@ -768,7 +765,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const u0 = mock.uploads.length;
     const s0 = mock.uploadStarts.length;
     const p0 = pageReqs.filter((x) => x.url.endsWith('/api/gemini/upload')).length;
-    const r1 = await roleCall(page, '/api/gemini/art-director', 'ai-ad-run', 90_000);
+    const r1 = await roleCall(page, '/api/gemini/art-director', 'ai-ad-run', 240_000);
     check(' first run: server answered 200', r1.status === 200, `${r1.status} in ${r1.sec}s ${short(r1.json, 90)}`);
     const ups = mock.uploads.slice(u0);
     check(' Google got ONE upload of the whole file (video/webm, every byte)', ups.length === 1 && ups[0].mimeType === 'video/webm' && ups[0].bytes === videoBytes,
@@ -801,9 +798,9 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
 
   /* ── 6 ── */
   await step(6, async () => {
-    if (await page.locator(sel('chain-canvas')).isVisible().catch(() => false)) { // still open after a failed step 5: close it first (nav-ailab toggles)
+    if (await page.locator(sel('chain-lab')).isVisible().catch(() => false)) { // still open after a failed step 5: close it first (nav-ailab toggles)
       await domClick(page, 'nav-ailab');
-      await page.waitForSelector(sel('chain-canvas'), { state: 'hidden', timeout: 10_000 }).catch(() => {});
+      await page.waitForSelector(sel('chain-lab'), { state: 'hidden', timeout: 10_000 }).catch(() => {});
     }
     // "Use this chain" on the VIDEO result: wires it, opens the Lab, and keeps
     // the proposal (now with the music read) as the art direction
@@ -811,16 +808,21 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const opened = await openLabVia(page, () => domClick(page, 'ai-ad-apply-0'));
     check(" 'Use this chain' (video result) opens the Lab", opened);
     if (!opened) return;
-    const ready = await page.evaluate(() => window.__SYN.lab.whenReady(20_000));
+    check(' every node of the chain has its SynLab link', await waitLinks(page));
+    const ready = await page.evaluate(() => window.__SYN.lab.whenReady(60_000));
     const kind = await page.evaluate(() => window.__SYN.lab.sourceKind());
     check(' Lab source is the video', ready === true && kind === 'video', `ready=${ready} kind=${kind}`);
-    const order = await waitOrder(page, 'analog>anamorphic_lab');
-    check(' Lab chain = analog → anamorphic_lab', order === 'analog>anamorphic_lab', order);
+    const order = await waitOrder(page, 'analog>bokeh');
+    check(' Lab chain = analog → bokeh', order === 'analog>bokeh', order);
+    // LAB v2: a video INPUT switches the Clip audio on by itself
+    await page.waitForFunction(() => !!window.__SYN.audio.active, null, { timeout: 30_000 }).catch(() => {});
     const a0 = await audioState(page);
-    check(' audio is OFF in the Lab, even for a music video (the default)', !a0.active && a0.mode === 'off', JSON.stringify(a0));
+    check(' a video INPUT turns the Clip audio on by itself (AudioEngine mode clip)', a0.active && a0.mode === 'clip', JSON.stringify(a0));
+    check(" the Clip button shows it (class 'on')", await page.evaluate(() => /(^|\s)on(\s|$)/.test(document.querySelector('[data-testid="audio-clip"]')?.className || '')),
+      await page.evaluate(() => document.querySelector('[data-testid="audio-clip"]')?.className || ''));
     check(' Clip audio button present (not pressed by the suite)', await visible(page, 'audio-clip', 10_000));
 
-    check(" the panel landed on the Agent tab by itself (no rail click)", (await onTab(page, 'Agent')) && await page.locator(sel('ai-agent-run')).isVisible().catch(() => false));
+    check(" the panel landed on the Agent tab by itself (no rail click)", (await onTab(page, 'Agent', 30_000)) && await page.locator(sel('ai-agent-run')).isVisible().catch(() => false));
     const marks = await proposalMarks(page);
     check(" the video's first proposal now reads 'In use' (violet border), the others not", marksOk(marks), JSON.stringify(marks));
     check(' Agent tab on screen (Lab)', await openRole(page, 'agent', 'ai-agent-run'));
@@ -828,12 +830,12 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const dir = await text(page, 'ai-agent-direction');
     check(" one line 'Direction: Notte analogica' with a clear ×", dir === 'Direction: Notte analogica' && !(await gone(page, 'ai-agent-direction-clear')), dir);
     const pt = await panelAll(page);
-    check(" the panel says Run switches on the clip's own audio", /No music on: Run switches on the clip's own audio/.test(pt), short(pt.replace(/\s+/g, ' '), 200));
+    check(" the panel says 'music on', with no 'No music on' warning", /music on/.test(pt) && !/No music on/.test(pt), short(pt.replace(/\s+/g, ' '), 200));
     const sends = await sendsLine(page);
-    check(" Sends: the uploaded clip + frame pair + 4s output clip + signals + chain + the art direction",
-      /^Sends: the uploaded clip \(video \+ audio, already on Google\) \+ 1 frame pair \(source \+ output\) \+ 4s output clip with the clip's music, if it has any \+ 3s of live signals \+ the chain \+ the art direction$/.test(sends), sends);
+    check(" Sends: the uploaded clip + frame pair + 4s output clip with music + signals + chain + the art direction",
+      /^Sends: the uploaded clip \(video \+ audio, already on Google\) \+ 1 frame pair \(source \+ output\) \+ 4s output clip with music \+ 3s of live signals \+ the chain \+ the art direction$/.test(sends), sends);
 
-    const before = await busState(page);
+    const before = await labState(page);
     const g0 = mock.generate.length;
     const u0 = mock.uploads.length;
     const s0 = mock.uploadStarts.length;
@@ -842,13 +844,10 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' server answered 200', r.status === 200, `${r.status} in ${r.sec}s ${short(r.json, 90)}`);
     check(' result card shown', await visible(page, 'ai-agent-result', 10_000));
 
-    // the Run switched the clip's own soundtrack on, inside the click
+    // the music was already on (the INPUT did it): the Run has nothing to switch on and says nothing
     const a1 = await audioState(page);
-    check(" Run switched the Clip audio on by itself (AudioEngine mode 'clip')", a1.active && a1.mode === 'clip', JSON.stringify(a1));
-    const note = await text(page, 'ai-agent-note');
-    check(` …and said so in one line: '${CLIP_ON_NOTE}'`, note === CLIP_ON_NOTE, note);
-    check(' the Clip button now shows it on (amber)', await page.evaluate(() => /\bborder-amber-400\b/.test(document.querySelector('[data-testid="audio-clip"]')?.className || '')),
-      await page.evaluate(() => document.querySelector('[data-testid="audio-clip"]')?.className || ''));
+    check(" the Clip audio is on and stays on (AudioEngine mode 'clip')", a1.active && a1.mode === 'clip', JSON.stringify(a1));
+    check(' …no Clip-on note (nothing was switched on by the Run)', await gone(page, 'ai-agent-note'), await text(page, 'ai-agent-note').catch(() => ''));
 
     const recs = mock.generate.slice(g0);
     check(' Google got exactly one generateContent, role Agent', recs.length === 1 && recs[0].role === 'agent', recs.map((x) => x.role).join(','));
@@ -871,14 +870,14 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(` the OUTPUT clip is sampled at ${INLINE_FPS} fps (videoMetadata + label)`, !!clip && !!clip.meta && clip.meta.fps === INLINE_FPS && / \(video sampled at 12 fps\)$/.test(clip.label), clip ? `${clip.label} ${short(clip.meta)}` : 'none');
     check(' the clip is a real WebM with the music (an Opus track)', !!clip && clip.buf.length > 8 * 1024 && clip.buf.readUInt32BE(0) === 0x1a45dfa3 && clip.buf.includes(Buffer.from('A_OPUS')), clip ? `${(clip.buf.length / 1024).toFixed(1)}KB` : 'none');
     check(' the context tells it the whole source + soundtrack is attached', /the WHOLE source video[^\n]* attached above WITH its soundtrack/.test(m.text));
-    check(' the chain table was sent', /CHAIN \(render order\): analog → anamorphic_lab/.test(m.text) && /PARAMETERS — key \| label \| range \| base \| route \| flags/.test(m.text) && /\[anamorphic_lab\]/.test(m.text));
+    check(' the chain table was sent', /CHAIN \(render order\): INPUT → analog → bokeh → OUTPUT/.test(m.text) && /CONTROLS — key \| label \| range \| value \| flags/.test(m.text) && /\[bokeh\]/.test(m.text));
     const audioLine = (m.text.match(/- audio: [^\n]+/) || [''])[0];
     check(' live signals with audio ON (the Clip)', /- audio: ON — Clip/.test(m.text) && /audio on — Clip/.test(m.text), short(audioLine, 200));
     check(' live video signals sent', /- video: motion mean [\d.]+ \/ peak [\d.]+; bright mean/.test(m.text));
     // the art direction, as the brief
     const dirBlock = (m.text.match(/ART DIRECTION[^\n]*(\n- [^\n]*)*/) || [''])[0];
     check(' the art direction reached the Agent prompt (look, chain, why, audioIdea, music read)', /^ART DIRECTION chosen by the director/.test(dirBlock)
-      && dirBlock.includes('- look: "Notte analogica" — chain analog → anamorphic_lab') && dirBlock.includes('- why: MOCK-WHY-0')
+      && dirBlock.includes('- look: "Notte analogica" — chain analog → bokeh') && dirBlock.includes('- why: MOCK-WHY-0')
       && dirBlock.includes('- audioIdea: la cassa spinge il tear') && dirBlock.includes('- music read: energy alta, cassa dritta (mock); tempo 120 BPM four-on-the-floor; moments: 0:02 cassa piena'),
       short(dirBlock, 300));
     const ab = lastBody('/api/gemini/agent') || {};
@@ -887,100 +886,83 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
       short({ direction: ab.direction && ab.direction.title, fileUri: ab.source && ab.source.fileUri, audioMode: ab.chain && ab.chain.audioMode }));
 
     const sch = rec.body.generationConfig && rec.body.generationConfig.responseJsonSchema;
-    const pEnum = (sch && sch.properties.params.items.properties.key.enum) || [];
+    const keyProp = (sch && sch.properties.params.items.properties.key) || {};
+    const pEnum = keyProp.enum || [];
     agentPicked = rec.picked || {};
-    const { P, R, R3, floor, gate } = agentPicked;
-    check(' per-chain schema: tunable keys allowed, locked + carrier keys not', pEnum.includes(P) && (!agentPicked.locked || !pEnum.includes(agentPicked.locked)) && (!agentPicked.carrier || !pEnum.includes(agentPicked.carrier)),
-      `enum=${pEnum.length} P=${P} locked=${agentPicked.locked} carrier=${agentPicked.carrier}`);
+    const { P, C, floor, locked } = agentPicked;
+    // two iframe effects expose well over ENUM_KEY_LIMIT (60) controls: the key is a plain string and the table lists the keys
+    check(' per-chain schema: past ENUM_KEY_LIMIT the key is a plain string (no enum), the chain table lists the keys',
+      keyProp.type === 'string' && (pEnum.length ? pEnum.includes(P) && (!locked || !pEnum.includes(locked)) : true) && m.text.includes(`${P} | `) && (!locked || m.text.includes(`${locked} | `)), `enum=${pEnum.length} P=${P} locked=${locked}`);
+    check(` the chain has the floored control (${floor}) in its table`, !!floor && m.text.includes(`${floor} | `), String(floor));
 
     // what the validator kept, raised, clamped and dropped
     const plan = (r.json && r.json.plan) || { params: [], routes: [] };
     const dropped = (r.json && r.json.dropped) || [];
     const pv = plan.params.find((x) => x.key === P);
-    const rv = plan.routes.find((x) => x.key === R);
-    const r3 = plan.routes.find((x) => x.key === R3);
+    const cv = plan.params.find((x) => x.key === C);
     const fv = plan.params.find((x) => x.key === floor);
-    check(' plan kept the valid param + route', !!pv && !!rv && rv.source === 'beat' && near(rv.amount, 0.2), short(plan));
-    check(' a route over the cap is clamped to 0.6 (MAX_ROUTE_AMOUNT)', !R3 || (!!r3 && r3.source === 'treble' && near(r3.amount, 0.6)), `${R3}: ${short(r3)}`);
+    const tol = (k) => Math.max(1e-6, ((before[k] && before[k].step) || 0) / 2);
+    check(' plan kept the valid param and carries no route (routes: [])', !!pv && Array.isArray(plan.routes) && plan.routes.length === 0, short(plan));
+    check(' a value over its range is clamped to the control max', !C || (!!cv && near(cv.value, agentPicked.Cmax, 1e-6)), `${C}: ${short(cv)} max ${agentPicked.Cmax}`);
     check(` a base under its floor is raised: ${floor} 0 → ${agentPicked.floorValue}`, !floor || (!!fv && near(fv.value, agentPicked.floorValue, 1e-9)), short(fv));
-    const keptKeys = [...plan.params, ...plan.routes].map((x) => x.key);
-    check(' plan carries no invalid key', !keptKeys.includes('nope.ghost') && !plan.params.some((x) => [agentPicked.carrier, agentPicked.locked, gate].includes(x.key)), JSON.stringify(keptKeys));
+    const keptKeys = plan.params.map((x) => x.key);
+    check(' plan carries no invalid key', !keptKeys.includes('nope.ghost') && !(locked && keptKeys.includes(locked)), JSON.stringify(keptKeys));
     const want = [
-      'nope.ghost: not a parameter of this chain',
-      agentPicked.carrier && `${agentPicked.carrier}: carrier`,
-      agentPicked.locked && `${agentPicked.locked}: protected`,
-      gate && `${gate}: protected`,
-      agentPicked.enum && `${agentPicked.enum}: enum parameters are never routed`,
-      agentPicked.carrier && `${agentPicked.carrier}: carrier route cannot be switched off`,
+      'nope.ghost: not a control of this chain',
+      locked && `${locked}: protected`,
+      `${P}: signal routes no longer exist`,
     ].filter(Boolean);
-    check(' validator dropped every bad entry, with a reason (analog.reactEnabled protected)', !!gate && want.every((w) => dropped.some((d) => d.startsWith(w))),
+    check(' validator dropped every bad entry, with a reason (ghost key, protected control, the route)', want.every((w) => dropped.some((d) => d.startsWith(w))),
       `missing: ${short(want.filter((w) => !dropped.some((d) => d.startsWith(w))))} | ${short(dropped, 300)}`);
     // kept but changed: `adjusted`, never `dropped` (it WAS applied)
     const adjusted = (r.json && r.json.adjusted) || [];
-    const wantAdj = [
-      floor && `${floor}: Gemini asked 0, raised to its floor ${agentPicked.floorValue}`,
-      R3 && `${R3}: route depth: Gemini asked 0.9, capped at 0.6`,
-    ].filter(Boolean);
-    check(' adjusted: the floor raise and the depth cap, one line each', wantAdj.length === 2 && wantAdj.every((w) => adjusted.some((a) => a.startsWith(w))) && adjusted.length === wantAdj.length,
-      `missing: ${short(wantAdj.filter((w) => !adjusted.some((a) => a.startsWith(w))))} | ${short(adjusted, 300)}`);
-    check(' …and neither of them in dropped', !dropped.some((d) => (floor && d.startsWith(`${floor}:`)) || (R3 && d.startsWith(`${R3}:`)) || /raised to|capped at/.test(d)), short(dropped, 300));
+    const floorAdj = floor && adjusted.find((a) => a.startsWith(`${floor}: Gemini asked 0, raised to its floor ${agentPicked.floorValue}`));
+    const clampAdj = C && adjusted.find((a) => a.startsWith(`${C}: Gemini asked `) && /clamped to/.test(a));
+    check(' adjusted: the floor raise and the range clamp, one line each', !!floorAdj && !!clampAdj && adjusted.length === 2, short(adjusted, 300));
+    check(' …and neither of them in dropped', !dropped.some((d) => (floor && d.startsWith(`${floor}:`)) || (C && d.startsWith(`${C}:`)) || /raised to|clamped to/.test(d)), short(dropped, 300));
 
-    // applied to the ParamBus
-    await sleep(300);
-    const after = await busState(page);
-    check(` ${P} base changed on the bus to the plan's value`, !!pv && after[P] && near(after[P].base, pv.value, 1e-6) && !near(before[P] && before[P].base, pv.value, 1e-9),
-      `${before[P] && before[P].base} → ${after[P] && after[P].base} (plan ${pv && pv.value})`);
-    check(` ${R} now routed beat × 0.2`, after[R] && sameMod(after[R].mod, { source: 'beat', amount: 0.2 }), short(after[R] && after[R].mod));
-    check(` ${R3} now routed treble × 0.6`, !R3 || (after[R3] && sameMod(after[R3].mod, { source: 'treble', amount: 0.6 })), short(R3 && after[R3] && after[R3].mod));
-    check(` ${floor} at its floor on the bus`, !floor || (after[floor] && near(after[floor].base, agentPicked.floorValue, 1e-9) && !near(before[floor].base, agentPicked.floorValue, 1e-9)),
-      floor ? `${before[floor] && before[floor].base} → ${after[floor] && after[floor].base}` : '');
+    // applied to the SynLab controls of the iframes
+    await sleep(500);
+    const after = await labState(page);
+    check(` ${P} changed in its effect to the plan's value`, !!pv && !!after[P] && near(after[P].value, pv.value, tol(P)) && !near(before[P] && before[P].value, pv.value, 1e-9),
+      `${before[P] && before[P].value} → ${after[P] && after[P].value} (plan ${pv && pv.value})`);
+    check(` ${C} sits at its max`, !C || (!!after[C] && near(after[C].value, cv.value, tol(C))), `${after[C] && after[C].value} (plan ${cv && cv.value})`);
+    check(` ${floor} at its floor`, !floor || (!!after[floor] && near(after[floor].value, agentPicked.floorValue, tol(floor))), floor ? `${before[floor] && before[floor].value} → ${after[floor] && after[floor].value}` : '');
     const ui = await text(page, 'ai-agent-result');
-    const n = plan.params.length + plan.routes.length;
-    check(" the card lists what was not applied ('Not applied:', the ghost key)", /Not applied:/.test(ui) && ui.includes('nope.ghost: not a parameter of this chain') && !/muted:/.test(ui), short(ui, 240));
+    const n = plan.params.length;
+    check(" the card lists what was not applied ('Not applied:': ghost key, the route)", /Not applied:/.test(ui) && ui.includes('nope.ghost: not a control of this chain') && ui.includes('no signal routes in the Lab') && !/muted:/.test(ui), short(ui, 240));
     check(` the card says 'Applied ${n} changes' and shows the summary`, new RegExp(`Applied ${n} changes`).test(ui) && /MOCK-AGENT/.test(ui), short(ui, 120));
     // the adjustments sit on the rows that were applied, never under 'Not applied'
     const rows = await changeRows(page, 'ai-agent-rows');
-    const fRow = rows.find((x) => x.key === floor && !x.route);
-    const cRow = rows.find((x) => x.key === R3 && x.route);
-    check(` the applied row of ${floor} carries its note: '→ ${agentPicked.floorValue} · Gemini asked 0, raised to its floor ${agentPicked.floorValue} …'`,
+    const fRow = rows.find((x) => x.key === floor);
+    const cRow = rows.find((x) => x.key === C);
+    check(` the applied row of ${floor} carries its note: '→ ${agentPicked.floorValue} · Gemini asked 0, raised to its floor …'`,
       !!fRow && fRow.text.includes(`→ ${agentPicked.floorValue}`) && fRow.note.startsWith(`· Gemini asked 0, raised to its floor ${agentPicked.floorValue}`), short(fRow));
-    check(` the route row of ${R3} carries the cap: '→ treble 0.6 · Gemini asked 0.9, capped at 0.6 …'`,
-      !!cRow && cRow.text.includes('→ treble 0.6') && cRow.note.startsWith('· Gemini asked 0.9, capped at 0.6'), short(cRow));
-    check(` one row per kept change (${n}), no other note`, rows.length === n && rows.filter((x) => x.note).length === 2, `${rows.length} rows, ${rows.filter((x) => x.note).length} notes`);
+    check(` the row of ${C} carries the clamp: '· Gemini asked … clamped to …'`, !!cRow && /^· Gemini asked .*clamped to/.test(cRow.note), short(cRow));
+    check(` one row per kept change (${n}), no route row, two notes`, rows.length === n && !rows.some((x) => x.route) && rows.filter((x) => x.note).length === 2, `${rows.length} rows, ${rows.filter((x) => x.note).length} notes`);
     const na = await notAppliedBlocks(page, 'ai-agent-result');
-    check(" 'Not applied' lists no floor raise and no cap", na.length === 1 && !/raised to|capped at|its floor/.test(na[0].text), short(na, 300));
+    check(" 'Not applied' lists no floor raise and no clamp", na.length === 1 && !/raised to|clamped to|its floor/.test(na[0].text), short(na, 300));
 
     // ── Undo reverts the plan's keys only: an edit made after the run stays ──
     const planKeys = new Set(keptKeys);
-    const manual = await page.evaluate((keys) => {
-      const skip = new Set(keys);
-      for (const el of document.querySelectorAll('input[type="range"][data-testid^="param-"]')) {
-        const s = el.getAttribute('data-testid').slice('param-'.length);
-        const i = s.lastIndexOf('-');
-        const key = `${s.slice(0, i)}.${s.slice(i + 1)}`;
-        const st = window.__SYN.bus.state[key];
-        if (skip.has(key) || !st || st.mod || Number(el.max) <= Number(el.min)) continue;
-        return { tid: el.getAttribute('data-testid'), key, min: Number(el.min), max: Number(el.max), base: st.base };
-      }
-      return null;
-    }, [...planKeys]);
-    check(' found a rack slider the plan did not touch', !!manual, short(manual));
+    const manual = Object.entries(after).map(([key, v]) => ({ key, ...v })).find((v) => !planKeys.has(v.key) && v.type === 'number' && !v.locked && v.max > v.min);
+    check(' found a control the plan did not touch', !!manual, short(manual));
     let manualValue = null;
     if (manual) {
-      const target = manual.base < (manual.min + manual.max) / 2 ? manual.min + 0.7 * (manual.max - manual.min) : manual.min + 0.3 * (manual.max - manual.min);
-      await setRange(page, manual.tid, target);
-      await sleep(200);
-      manualValue = (await busState(page))[manual.key].base;
-      check(` the operator moves ${manual.key} by hand after the run`, !near(manualValue, manual.base, 1e-9), `${manual.base} → ${manualValue}`);
+      const target = manual.value < (manual.min + manual.max) / 2 ? manual.min + 0.7 * (manual.max - manual.min) : manual.min + 0.3 * (manual.max - manual.min);
+      await setLabParam(page, manual.key, target);
+      await sleep(300);
+      manualValue = (await labState(page))[manual.key].value;
+      check(` the operator moves ${manual.key} by hand after the run`, !near(manualValue, manual.value, 1e-9), `${manual.value} → ${manualValue}`);
     }
     const order0 = await labOrder(page);
     await domClick(page, 'ai-agent-undo');
-    await sleep(400);
-    const undone = await busState(page);
-    const notBack = [...planKeys].filter((k) => !undone[k] || !before[k] || !near(undone[k].base, before[k].base, 1e-9) || !sameMod(undone[k].mod, before[k].mod));
+    await sleep(600);
+    const undone = await labState(page);
+    const notBack = labDiff(before, undone, [...planKeys]);
     check(` Undo: every plan key back to its value before the run (${planKeys.size} keys)`, notBack.length === 0,
       notBack.length ? notBack.map((k) => `${k}: ${short(undone[k])} vs ${short(before[k])}`).join('; ') : [...planKeys].join(','));
-    check(' Undo: the hand edit made after the run is kept (per-key revert)', !!manual && near(undone[manual.key].base, manualValue, 1e-9), manual ? `${manual.key} ${undone[manual.key].base} vs ${manualValue}` : '');
+    check(' Undo: the hand edit made after the run is kept (per-key revert)', !!manual && near(undone[manual.key].value, manualValue, tol(manual.key)), manual ? `${manual.key} ${undone[manual.key].value} vs ${manualValue}` : '');
     check(' Undo: chain order untouched', (await labOrder(page)) === order0);
     check(" Undo: the card says 'Undone', its Undo is off", /Undone/.test(await text(page, 'ai-agent-result')) && await page.evaluate(() => document.querySelector('[data-testid="ai-agent-undo"]').disabled));
     check(' the music stays on after Undo', (await audioState(page)).active);
@@ -993,7 +975,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
 
     // ── run again (music already on): this plan stays for the Optimizer ──
     check(' Agent tab on screen', await openRole(page, 'agent', 'ai-agent-run'));
-    beforeRun2 = await busState(page);
+    beforeRun2 = await labState(page);
     const g1 = mock.generate.length;
     const r2 = await roleCall(page, '/api/gemini/agent', 'ai-agent-run');
     check(' second run: 200, applied again', r2.status === 200 && new RegExp(`Applied ${n} changes`).test(await text(page, 'ai-agent-result')), `${r2.status} in ${r2.sec}s`);
@@ -1034,10 +1016,10 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
       JSON.stringify(m.media.map((x) => x.label)));
     check(' the prompt says the clip is sampled at 12 fps, with the music', /OUTPUT CLIP: "OUTPUT clip 4s with music", sampled at 12 fps, with the music/.test(m.text));
     const checkIds = (m.text.match(/^- \[(ok|FAIL)\] ([a-z_]+):/gm) || []).map((l) => l.replace(/^- \[(ok|FAIL)\] /, '').replace(/:$/, ''));
-    check(' the Lab checks were sent', /CHECKS \(computed by the Lab — facts\):/.test(m.text) && ['performance', 'audio_routes', 'video_routes', 'person_mask', 'output_exposure'].every((id) => checkIds.includes(id)), JSON.stringify(checkIds));
-    check(" audio_routes with music on: '[ok] audio_routes: music on (clip), …'", /^- \[ok\] audio_routes: music on \(clip\), \d+ audio routes?$/m.test(m.text), short((m.text.match(/^- \[[a-zA-Z]+\] audio_routes:[^\n]*/m) || [''])[0]));
+    check(' the Lab checks were sent', /CHECKS \(computed by the Lab — facts\):/.test(m.text) && ['performance', 'music', 'still_source', 'person_mask', 'output_exposure'].every((id) => checkIds.includes(id)), JSON.stringify(checkIds));
+    check(" music with music on: '[ok] music: music on (clip), …'", /^- \[ok\] music: music on \(clip\), /m.test(m.text), short((m.text.match(/^- \[[a-zA-Z]+\] music:[^\n]*/m) || [''])[0]));
     const P = agentPicked && agentPicked.P;
-    check(" the Agent's last plan was sent", /LAST AGENT RUN \(/.test(m.text) && !!P && m.text.includes(`params: ${P}=`) && /MOCK-AGENT/.test(m.text), short((m.text.match(/LAST AGENT RUN[^\n]*\n[^\n]*\n[^\n]*/) || [''])[0], 200));
+    check(" the Agent's last plan was sent", /LAST AGENT RUN \(/.test(m.text) && !!P && m.text.includes(`controls set: ${P}=`) && /MOCK-AGENT/.test(m.text), short((m.text.match(/LAST AGENT RUN[^\n]*\n[^\n]*\n[^\n]*/) || [''])[0], 200));
     check(' the art direction reached the Optimizer prompt (with the music read)', /ART DIRECTION chosen by the director/.test(m.text) && m.text.includes('- look: "Notte analogica"') && /- music read: energy alta, cassa dritta \(mock\)/.test(m.text));
     check(' live signals with audio ON', /- audio: ON — Clip/.test(m.text));
     const ob = lastBody('/api/gemini/optimizer') || {};
@@ -1049,10 +1031,10 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' validator: 3 issues, unknown severity → tip, empty fix → null', res.issues.length === 3 && res.issues[1].severity === 'tip' && res.issues[1].fix === null && !!res.issues[0].fix && res.verdict === 'improve',
       short(res.issues.map((i) => `${i.severity}:${i.fix ? 'fix' : 'null'}`)));
     check(' validator: the dead fix is reported', res.dropped.some((d) => d.startsWith('fix 2 · nope.ghost')) && res.dropped.some((d) => d === 'fix 2 · nothing left to apply'), short(res.dropped, 200));
-    const R4 = (rec && rec.picked && rec.picked.R4) || null;
+    const C2 = (rec && rec.picked && rec.picked.C2) || null;
     const oadj = res.adjusted || [];
-    check(" validator: fix 1's capped route is in adjusted ('fix 1 · <key>: route depth: Gemini asked 0.9, capped at 0.6 …'), not in dropped",
-      !!R4 && oadj.length === 1 && oadj[0].startsWith(`fix 1 · ${R4}: route depth: Gemini asked 0.9, capped at 0.6`) && !res.dropped.some((d) => /capped at|raised to/.test(d)),
+    check(" validator: fix 1's clamped control is in adjusted ('fix 1 · <key>: Gemini asked …, clamped to …'), not in dropped",
+      !!C2 && oadj.length === 1 && oadj[0].startsWith(`fix 1 · ${C2}: Gemini asked `) && /clamped to/.test(oadj[0]) && !res.dropped.some((d) => /clamped to|raised to/.test(d)),
       `${short(oadj, 200)} | ${short(res.dropped, 200)}`);
     const ui = await page.evaluate(() => ({
       text: document.querySelector('[data-testid="ai-opt-result"]')?.textContent || '',
@@ -1066,34 +1048,31 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const na2 = await text(page, 'ai-opt-not-applied-1');
     const naOpt = await notAppliedBlocks(page, 'ai-opt-result');
     check(" issue 2's refusals inside its own card (the ghost key, 'nothing left to apply'), no 'fix 2 ·' prefix",
-      na2.includes('nope.ghost: not a parameter of this chain') && na2.includes('nothing left to apply') && !/fix \d+ · /.test(na2), na2);
+      na2.includes('nope.ghost: not a control of this chain') && na2.includes('nothing left to apply') && !/fix \d+ · /.test(na2), na2);
     check(" no 'Not applied' list outside the issue cards", naOpt.length === 1 && naOpt.every((b) => b.inIssue), short(naOpt));
 
     // ── what a fix changes, listed BEFORE it is applied ──
     const fix = res.issues[0] && res.issues[0].fix;
     const P2 = fix && fix.params[0] && fix.params[0].key;
-    const R2 = fix && fix.routes[0] && fix.routes[0].key;
     const issue0 = await text(page, 'ai-opt-issue-0');
     const fr = await changeRows(page, 'ai-opt-fix-rows-0');
-    const nFix = fix ? fix.params.length + fix.routes.length : 0;
-    const pRow = fr.find((x) => x.key === P2 && !x.route);
-    const r2Row = fr.find((x) => x.key === R2 && x.route);
-    const r4Row = fr.find((x) => x.key === R4 && x.route);
-    check(" before Apply the fix lists what it would change ('Would change:', one row per change)", /Would change:/.test(issue0) && !/Changed:/.test(issue0) && nFix === 3 && fr.length === nFix,
+    const nFix = fix ? fix.params.length : 0;
+    const pRow = fr.find((x) => x.key === P2);
+    const c2Row = fr.find((x) => x.key === C2);
+    check(" before Apply the fix lists what it would change ('Would change:', one row per change, no route)", /Would change:/.test(issue0) && !/Changed:/.test(issue0) && nFix === 2 && fr.length === nFix && !fr.some((x) => x.route),
       `${fr.length} rows of ${nFix} | ${short(fr.map((x) => x.text), 300)}`);
-    check(` …${P2}: '→ ${fix && fix.params[0] ? fmtNum(fix.params[0].value) : '?'}'; ${R2} ~: '→ bass 0.15'`,
-      !!pRow && pRow.text.includes(`→ ${fmtNum(fix.params[0].value)}`) && !!r2Row && r2Row.text.includes('→ bass 0.15'), short([pRow, r2Row]));
-    check(` …${R4} ~: '→ loud 0.6' with its note on the row ('Gemini asked 0.9, capped at 0.6'), not under 'Not applied'`,
-      !!r4Row && r4Row.text.includes('→ loud 0.6') && r4Row.note.startsWith('· Gemini asked 0.9, capped at 0.6') && (await gone(page, 'ai-opt-not-applied-0')), short(r4Row));
+    check(` …${P2}: '→ ${fix && fix.params[0] ? fmtNum(fix.params[0].value) : '?'}'`, !!pRow && pRow.text.includes(`→ ${fmtNum(fix.params[0].value)}`), short(pRow));
+    check(` …${C2}: '→ ${fix && fix.params[1] ? fmtNum(fix.params[1].value) : '?'}' with its note on the row ('Gemini asked …, clamped to …'), not under 'Not applied'`,
+      !!c2Row && c2Row.text.includes(`→ ${fmtNum(fix.params[1].value)}`) && /^· Gemini asked .*clamped to/.test(c2Row.note) && (await gone(page, 'ai-opt-not-applied-0')), short(c2Row));
 
-    const before = await busState(page);
+    const before = await labState(page);
+    const tol2 = (k) => Math.max(1e-6, ((before[k] && before[k].step) || 0) / 2);
     await domClick(page, 'ai-opt-fix-0');
-    await sleep(400);
-    const after = await busState(page);
-    check(` Apply fix: ${P2} base changed on the bus`, !!P2 && after[P2] && near(after[P2].base, fix.params[0].value, 1e-6) && !near(before[P2] && before[P2].base, fix.params[0].value, 1e-9),
-      `${before[P2] && before[P2].base} → ${after[P2] && after[P2].base} (fix ${fix && fix.params[0] && fix.params[0].value})`);
-    check(` Apply fix: ${R2} routed bass × 0.15`, !R2 || (after[R2] && sameMod(after[R2].mod, { source: 'bass', amount: 0.15 })), short(after[R2] && after[R2].mod));
-    check(` Apply fix: ${R4} routed loud × 0.6 (the capped depth)`, !!R4 && after[R4] && sameMod(after[R4].mod, { source: 'loud', amount: 0.6 }), short(after[R4] && after[R4].mod));
+    await sleep(600);
+    const after = await labState(page);
+    check(` Apply fix: ${P2} changed in its effect`, !!P2 && !!after[P2] && near(after[P2].value, fix.params[0].value, tol2(P2)) && !near(before[P2] && before[P2].value, fix.params[0].value, 1e-9),
+      `${before[P2] && before[P2].value} → ${after[P2] && after[P2].value} (fix ${fix && fix.params[0] && fix.params[0].value})`);
+    check(` Apply fix: ${C2} at the clamped value`, !!C2 && !!after[C2] && near(after[C2].value, fix.params[1].value, tol2(C2)), `${after[C2] && after[C2].value} (fix ${fix && fix.params[1] && fix.params[1].value})`);
     const fixBtn = await text(page, 'ai-opt-fix-0');
     const fixUndo = await text(page, 'ai-opt-fix-undo-0');
     check(" the button says 'Applied', the rows 'Changed:', a small Undo next to it", /Applied/.test(fixBtn) && /Changed:/.test(await text(page, 'ai-opt-issue-0'))
@@ -1106,25 +1085,24 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(" the Agent's Undo waits for the fix on top of it: off, 'Undo the Optimizer's fixes first'", blocked === "Undo the Optimizer's fixes first" && (await disabled(page, 'ai-agent-undo')) === true, blocked);
     await domClick(page, 'ai-agent-undo');
     await sleep(300);
-    const still = busDiff(after, await busState(page));
+    const still = labDiff(after, await labState(page));
     check(' …a click on it changes nothing on the bus', still.length === 0, still.join(','));
     check(' Optimizer tab on screen', await openRole(page, 'optimizer', 'ai-opt-run'));
     await domClick(page, 'ai-opt-fix-undo-0');
-    await sleep(400);
-    const d1 = busDiff(before, await busState(page));
+    await sleep(600);
+    const d1 = labDiff(before, await labState(page));
     check(" the fix's own Undo puts every key back to before the fix", d1.length === 0, d1.join(','));
     check(" …and the fix offers 'Apply fix' again ('Would change:', no small Undo)", (await text(page, 'ai-opt-fix-0')) === 'Apply fix' && (await gone(page, 'ai-opt-fix-undo-0')) && /Would change:/.test(await text(page, 'ai-opt-issue-0')));
     await domClick(page, 'ai-opt-fix-all');
     await sleep(400);
-    const again = busDiff(after, await busState(page));
+    const again = labDiff(after, await labState(page));
     check(" 'Apply all' applies it again (the same values as 'Apply fix')", again.length === 0 && /Applied/.test(await text(page, 'ai-opt-fix-0')), again.join(','));
     await domClick(page, 'ai-opt-undo');
     await sleep(400);
-    const undone = await busState(page);
-    check(` Undo: ${P2} restored`, !!P2 && undone[P2] && before[P2] && near(undone[P2].base, before[P2].base, 1e-9), `${undone[P2] && undone[P2].base} vs ${before[P2] && before[P2].base}`);
-    check(` Undo: ${R2} and ${R4} routes restored`, (!R2 || (undone[R2] && before[R2] && sameMod(undone[R2].mod, before[R2].mod))) && !!R4 && undone[R4] && before[R4] && sameMod(undone[R4].mod, before[R4].mod));
-    const others = busDiff(before, undone);
-    check(' Undo touched nothing else on the bus', others.length === 0, others.join(','));
+    const undone = await labState(page);
+    check(` Undo: ${P2} and ${C2} restored`, !!P2 && !!C2 && labDiff(before, undone, [P2, C2]).length === 0, `${undone[P2] && undone[P2].value} vs ${before[P2] && before[P2].value}; ${undone[C2] && undone[C2].value} vs ${before[C2] && before[C2].value}`);
+    const others = labDiff(before, undone);
+    check(' Undo touched nothing else in the chain', others.length === 0, others.join(','));
 
     check(' Agent tab on screen', await openRole(page, 'agent', 'ai-agent-run'));
     await sleep(300);
@@ -1132,9 +1110,9 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(" with the fix undone, the Agent's Undo is on again ('Undo')", free === 'Undo' && (await disabled(page, 'ai-agent-undo')) === false, free);
     await domClick(page, 'ai-agent-undo');
     await sleep(400);
-    const back = await busState(page);
-    const d2 = beforeRun2 ? busDiff(beforeRun2, back) : ['(no snapshot from step 6)'];
-    check(' Agent Undo: the whole bus is back to its values before the run (no undone value came back)', d2.length === 0,
+    const back = await labState(page);
+    const d2 = beforeRun2 ? labDiff(beforeRun2, back) : ['(no snapshot from step 6)'];
+    check(' Agent Undo: the whole chain is back to its values before the run (no undone value came back)', d2.length === 0,
       d2.map((k) => `${k}: ${short(back[k])} vs ${short(beforeRun2 && beforeRun2[k])}`).join('; '));
     check(" the card says 'Undone', nothing left to undo (Undo off)", /Undone/.test(await text(page, 'ai-agent-result')) && (await disabled(page, 'ai-agent-undo')) === true);
     check(' Optimizer tab on screen', await openRole(page, 'optimizer', 'ai-opt-run'));
@@ -1147,7 +1125,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     //    SAME Lab — both results stay live, nothing turns stale ──
     const handle0 = await page.evaluate(() => { window.__labBefore = window.__SYN.lab; return true; });
     await domClick(page, 'nav-ailab');
-    const closed = await page.waitForSelector(sel('chain-canvas'), { state: 'hidden', timeout: 10_000 }).then(() => true).catch(() => false);
+    const closed = await page.waitForSelector(sel('chain-lab'), { state: 'hidden', timeout: 10_000 }).then(() => true).catch(() => false);
     const reopened = closed && await openLabVia(page, () => domClick(page, 'nav-ailab'));
     check(' the Lab hid and showed again (the same Lab handle)', reopened && handle0 && await page.evaluate(() => window.__SYN.lab === window.__labBefore));
     if (!reopened) return;
@@ -1162,9 +1140,9 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
   /* ── 8 ── */
   await step(8, async () => {
     // a clip with no audio track on the INPUT node, then the Lab on it
-    if (await page.locator(sel('chain-canvas')).isVisible().catch(() => false)) {
+    if (await page.locator(sel('chain-lab')).isVisible().catch(() => false)) {
       await domClick(page, 'nav-ailab');
-      await page.waitForSelector(sel('chain-canvas'), { state: 'hidden', timeout: 10_000 }).catch(() => {});
+      await page.waitForSelector(sel('chain-lab'), { state: 'hidden', timeout: 10_000 }).catch(() => {});
     }
     const prev = await page.evaluate(() => document.querySelector('[data-testid="hero-video"]')?.src || '');
     await page.locator(sel('source-file')).setInputFiles(fx.silent);
@@ -1174,7 +1152,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const opened = await openLabVia(page, () => domClick(page, 'nav-ailab'));
     check(' the Lab opens on it', opened);
     if (!opened) return;
-    const ready = await page.evaluate(() => window.__SYN.lab.whenReady(20_000));
+    const ready = await page.evaluate(() => window.__SYN.lab.whenReady(60_000));
     const kind = await page.evaluate(() => window.__SYN.lab.sourceKind());
     const a0 = await audioState(page);
     check(' Lab source is the video, audio off', ready === true && kind === 'video' && !a0.active, `ready=${ready} kind=${kind} ${JSON.stringify(a0)}`);
@@ -1211,8 +1189,8 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(" Sends now: 'the uploaded clip (video only — it has no soundtrack, already on Google)', no output clip promised",
       s1 === 'Sends: the uploaded clip (video only — it has no soundtrack, already on Google) + 1 frame pair (source + output) + 3s of live signals + the chain + the art direction', s1);
     const pt1 = await panelAll(page);
-    check(" the context line: 'No music on: this clip has no soundtrack — music routes wait for Track or Mic in the Lab.'",
-      /No music on: this clip has no soundtrack — music routes wait for Track or Mic in the Lab\./.test(pt1) && !/Run switches on the clip's own audio/.test(pt1), short(pt1.replace(/\s+/g, ' '), 200));
+    check(" the context line: 'No music on: this clip has no soundtrack — the effects' music reactions wait for Track or Mic in the Lab.'",
+      /No music on: this clip has no soundtrack — the effects' music reactions wait for Track or Mic in the Lab\./.test(pt1) && !/Run switches on the clip's own audio/.test(pt1), short(pt1.replace(/\s+/g, ' '), 200));
     check(' Optimizer tab on screen', await openRole(page, 'optimizer', 'ai-opt-run'));
     await sleep(1300);
     const os = await sendsLine(page);

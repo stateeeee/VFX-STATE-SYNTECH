@@ -22,6 +22,7 @@ import { EFFECTS_REGISTRY, hasRealEffect } from './effects-registry';
 import VfxCanvas from './components/VfxCanvas';
 import EffectHost, { EffectHostHandle } from './components/EffectHost';
 import ChainLab from './components/ChainLab';
+import { presetChain, readPresets } from './lab/presets';
 import StatePet from './components/StatePet';
 import AiDirector, { CompSource, GeminiMode, GeminiStatus } from './components/AiDirector';
 import NodalComposition, { CompEffect, EFFECT_META, WireMap } from './components/NodalComposition';
@@ -49,8 +50,8 @@ const readAppTimerMs = (): number => {
 };
 
 // ── serial wiring helpers (03-SPEC-SHELL §6: chain order = wiring order) ──
-/** Only the five SynEngine-ported effects can sit in a chain / the Lab; the standalone-only ones (invisible,
- *  time_machine, quadtree, pointcloud, painting) open as an iframe and have no NODE_FACTORY entry yet. */
+/** Every effect can sit in a chain / the Lab (LAB v2, 2026-10-28: each Lab node is the real effect in an
+ *  iframe, chained through window.SynLab) — MODULE_IDS lists all ten. */
 const isLabModule = (id: unknown): id is ModuleId => typeof id === 'string' && (MODULE_IDS as readonly string[]).includes(id);
 
 const wiresFromChain = (list: ModuleId[]): WireMap => {
@@ -275,22 +276,17 @@ export default function App() {
       flashSaved();
     } catch { /* private mode */ }
   };
-  const savedChains = (): Array<{ name: string; savedAt: number; enabled: string[] }> => {
-    try {
-      const raw = JSON.parse(localStorage.getItem('syntech.chainPresets') ?? '[]');
-      return Array.isArray(raw) ? raw : [];
-    } catch {
-      return [];
-    }
-  };
+  /** the Lab's saved chains (src/lab/presets.ts): v2 { chain, settings } and old v1 { order, enabled } alike */
+  const savedChains = (): Array<{ name: string; savedAt: number; count: number }> =>
+    readPresets().map((p) => ({ name: p.name, savedAt: Number(p.savedAt) || 0, count: presetChain(p).length }));
 
   // Real effect currently open full-terminal (null = dashboard/home view)
   const [openEffectId, setOpenEffectId] = useState<ModuleId | null>(null);
-  // Lab (native SynEngine): effects composed in series. `chainOpen` = the Lab
+  // Lab (LAB v2): the real effects chained in iframes. `chainOpen` = the Lab
   // is the surface the operator chose (nav-ailab lit). Once opened, the Lab
   // stays MOUNTED for the rest of the session and is only hidden (Home, an
-  // opened effect, the Lab toggle): its params, routes, source and audio
-  // survive, and its render loop pauses while hidden (ChainLab `visible`).
+  // opened effect, the Lab toggle): its nodes (iframes, panels), source and
+  // audio survive, and its INPUT is parked while hidden (ChainLab `visible`).
   const [chainOpen, setChainOpen] = useState(false);
   const [labMounted, setLabMounted] = useState(false);
   if (chainOpen && !labMounted) setLabMounted(true);
@@ -387,7 +383,7 @@ export default function App() {
 
   // Linking two hubs on the brain graph appends them to the wired chain
   const handleChainLink = (from: ModuleId, to: ModuleId) => {
-    // every effect is a hub now, but only the Lab ports (MODULE_IDS) can be chained: a standalone-only one just ignores the drag
+    // every hub is an effect and every effect can be chained (MODULE_IDS = all ten, LAB v2)
     if (from === to || !isLabModule(from) || !isLabModule(to)) return;
     setChainTo([...graphChain.filter((x) => x !== from && x !== to), from, to]);
   };
@@ -1076,13 +1072,13 @@ export default function App() {
                   <ul className="space-y-2 mt-4 max-h-[60vh] overflow-y-auto pr-2">
                     {savedChains().map((c) => (
                       <li
-                        key={c.savedAt}
+                        key={`${c.name}|${c.savedAt}`}
                         className={`flex items-center justify-between p-3 rounded border cursor-pointer group ${isDayMode ? 'border-neutral-200 hover:border-violet-500 hover:bg-violet-500/5' : 'border-ink-700 hover:border-violet-500/50 hover:bg-violet-500/10'}`}
                         onClick={() => { setChainPresetToOpen((prev) => ({ name: c.name, seq: (prev?.seq ?? 0) + 1 })); openLab(); setProjectsOpen(false); }}
                       >
                         <div className="flex flex-col">
                           <span className="font-bold text-sm tracking-wide">{c.name}</span>
-                          <span className="font-mono text-[9px] text-neutral-500">{new Date(c.savedAt).toLocaleString()} • {c.enabled.length} modules</span>
+                          <span className="font-mono text-[9px] text-neutral-500">{new Date(c.savedAt).toLocaleString()} • {c.count} modules</span>
                         </div>
                         <div className={`p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${isDayMode ? 'bg-neutral-200 text-neutral-700' : 'bg-ink-800 text-white'}`}>
                           <Play className="w-3 h-3" />
@@ -1114,11 +1110,18 @@ export default function App() {
                   >
                     {/* the Lab, once opened, stays mounted for the session and is only
                         hidden (Home, an open effect, the Lab toggle) so its composition
-                        (nodes, wiring, params, routes) survives navigation; hidden, its
-                        render loop is paused. It fills the opening exactly (h-full), in
-                        fullscreen too. */}
+                        (nodes, wiring, every effect's panel) survives navigation; hidden, its
+                        INPUT is parked so the chain idles. It fills the opening exactly
+                        (h-full), in fullscreen too. */}
                     {labMounted && (
-                      <div className={labVisible ? 'w-full h-full min-h-0' : 'hidden'}>
+                      /* hidden = kept laid out at full size but invisible and inert (NOT display:none):
+                         the Lab's effect iframes would otherwise be resized to 0×0, and with heavy effects
+                         (MediaPipe, three.js) that re-layout froze the whole renderer for minutes */
+                      <div
+                        className={labVisible ? 'w-full h-full min-h-0' : 'absolute inset-0 invisible pointer-events-none'}
+                        style={labVisible ? undefined : { zIndex: -1 }}
+                        aria-hidden={labVisible ? undefined : true}
+                      >
                         <ChainLab
                           ref={labRef}
                           isDayMode={isDayMode}
@@ -1182,8 +1185,10 @@ export default function App() {
                         {/* legibility gradient (off by day — see .syn-cage.syn-day) */}
                         <div className="hero-scrim absolute inset-0 pointer-events-none bg-gradient-to-br from-black/70 via-black/25 to-transparent" />
 
-                        {/* wordmark */}
-                        <div className="absolute top-7 left-8 z-10 max-w-[70%] pointer-events-none">
+                        {/* wordmark — only over the brain graph: with a video or a photo in
+                            INPUT the hero shows that source, and the big "VFX Syntech" goes */}
+                        {!compSource && (
+                        <div className="absolute top-7 left-8 z-10 max-w-[70%] pointer-events-none" data-testid="hero-wordmark">
                           {/* Brand unification: the top-bar wordmark's font, the shared
                               shimmer, and — on this large one only — the gel material with
                               the logo's inflated 3D (`hero-gel-text`; at 15px in the top bar
@@ -1192,6 +1197,7 @@ export default function App() {
                           <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient hero-gel-text leading-[0.92] drop-shadow-2xl">VFX</h1>
                           <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight hero-gradient hero-gel-text leading-[0.98] drop-shadow-2xl">Syntech</h1>
                         </div>
+                        )}
                       </>
                     )}
 

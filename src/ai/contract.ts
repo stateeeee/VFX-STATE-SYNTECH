@@ -9,8 +9,9 @@
  *   ART DIRECTOR — the creative mind. Watches the source (video with its
  *                  music, photo, or webcam) and proposes which effects fit.
  *   AGENT        — the operator. Source and effect are already chosen; it sets
- *                  the parameters and the audio routing so video, music and
- *                  effect play together, and applies them.
+ *                  the effects' own panel controls (including their audio-
+ *                  reaction controls) so video, music and effect play
+ *                  together, and applies them.
  *   OPTIMIZER    — the Agent's controller. Looks at the RESULT (a short output
  *                  clip with its music, plus frames) and reports errors and
  *                  improvements, each with a fix that can be applied.
@@ -35,51 +36,84 @@ export const GEMINI_FILES_STORAGE = 'syntech.geminiFiles';
  *  hears the music). Above it, the Art Director falls back to sampled frames. */
 export const MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
 
-export const MODULE_IDS: readonly ModuleId[] = ['blob_tracker', 'analog', 'blob_reveal', 'bokeh', 'anamorphic_lab'];
+/** Every effect can sit in a Lab chain (2026-10-28, operator decision "option 1": each Lab node IS the
+ *  standalone effect in an iframe, fed by the previous node's output stream). */
+export const MODULE_IDS: readonly ModuleId[] = [
+  'blob_tracker', 'analog', 'blob_reveal', 'bokeh', 'anamorphic_lab',
+  'invisible', 'time_machine', 'quadtree', 'pointcloud', 'painting',
+];
 
-/** Mirrors ParamBus MOD_SOURCES (src/engine/params.ts:14) — keep in sync. */
+/* ── LAB v2: the iframe chain (2026-10-28) ───────────────────
+   Every Lab node IS the standalone effect in an iframe (window.SynLab). A
+   parameter key is `<ModuleId>.<SynLabParam.key>`, where the effect-side key
+   is a control's DOM id, `knob:<data-id>` or an adapter key — charset
+   [A-Za-z0-9_:-]. Values: numbers in [min,max] on the step grid, booleans
+   0/1, enums the option index 0..n-1. There is no ParamBus any more: no
+   signal routes. Each effect reacts to the Lab's music through its OWN
+   analyser and its own reactive controls, which are ordinary parameters. */
+
+/** One parameter key, `<ModuleId>.<effect key>` — source for a RegExp (no
+ *  anchors), so the server and the panel parse keys the same way. */
+export const PARAM_KEY_PATTERN = '[a-z_]+\\.[A-Za-z0-9_:-]{1,80}';
+
+/** Panel sections (SynLabParam.group, sent as ParamDesc.hint) the AI never
+ *  touches, compared case-insensitively. The Lab does not list Source /
+ *  Export / Info controls at all; these are defence in depth, plus the
+ *  sections whose controls write OTHER controls (a preset, a performance
+ *  pad's XY and preset pads): a per-key Undo could not put those back. */
+export const LOCKED_GROUPS: readonly string[] = [
+  'source', 'preset', 'performance pad', 'export', 'export / rec', 'record', 'shortcuts', 'info',
+];
+
+/** A control whose key or label matches this is never the AI's: an A/B
+ *  compare split (anamorphic_lab's "Compare A|B"), fullscreen. Source for a
+ *  RegExp, flag 'i'. Not "mirror": blob_tracker's MIRROR PANELS / MIRROR BG
+ *  and analog's feedback Mirror are looks — a webcam mirror is locked by the
+ *  Lab's adapter (`locked: true`). */
+export const LOCKED_CONTROL_PATTERN = '\\bcompare\\b|\\ba\\s*[|/]\\s*b\\b|fullscreen';
+
+/** Lowest value the AI may set on a control that scales an effect's whole
+ *  music response — at 0 the effect still "reacts" but moves nothing. Keys
+ *  are the iframe Lab's (`<ModuleId>.<DOM id>`; Reactive › Mod Depth). */
+export const PARAM_FLOORS: Readonly<Record<string, number>> = {
+  'analog.sl-modDepth': 0.1,
+  'quadtree.sl-modDepth': 0.1,
+  'time_machine.sl-modDepth': 0.1,
+};
+
+/* ── LEGACY (SynEngine Lab, before 2026-10-28) ──────────────────
+   Kept exported, unchanged, only so code written for the old Lab still
+   compiles. The server no longer reads them and the iframe Lab must not
+   use them: their keys are SynEngine param names that no longer exist. */
+
+/** @deprecated SynEngine ParamBus MOD_SOURCES. The iframe Lab has no routes. */
 export type ModSourceT = 'bass' | 'treble' | 'loud' | 'beat' | 'motion' | 'bright';
+/** @deprecated see ModSourceT. */
 export const MOD_SOURCE_IDS: readonly ModSourceT[] = ['bass', 'treble', 'loud', 'beat', 'motion', 'bright'];
-
-/* ── parameter safety lists (enforced by the server validator AND the Lab) ── */
-
-/** Integer-coded categorical params: snapped to integers, never routed. */
+/** @deprecated SynEngine enum params. Enums are now `ParamDesc.type === 'enum'`. */
 export const ENUM_KEYS: readonly string[] = [
   'analog.sortDir',
   'blob_tracker.blobShape', 'blob_tracker.connStyle', 'blob_tracker.textMode', 'blob_tracker.ctMode',
   'blob_tracker.trackerColorIdx', 'blob_tracker.connColorIdx', 'blob_tracker.vfxColorIdx',
   'bokeh.bokehStyle', 'bokeh.distortMode', 'bokeh.bgfxStyle', 'bokeh.psAngle',
 ];
-
-/** Base-0 params whose built-in route IS the effect's audio response. The AI
- *  may tune the route's amount (0.05..1) but never its base, its source, or
- *  switch the route off — that would kill the effect's reaction to music. */
+/** @deprecated SynEngine carrier routes. There are no routes any more. */
 export const CARRIER_KEYS: readonly string[] = [
   'analog.reactBass', 'analog.reactMid', 'analog.reactHigh',
   'blob_reveal.beatReact',
   'blob_tracker.connGlow', 'blob_tracker.rippleForce',
 ];
-
-/** Params the AI must never touch: A/B split, a no-op LUT, a perf knob,
- *  bokeh's person mask (off = the whole node becomes a pass-through), and
- *  analog's reactivity gate (off zeroes all three carriers, analog.ts:372-376). */
+/** @deprecated SynEngine protected params. The iframe Lab marks a control
+ *  `locked` itself; the server adds LOCKED_GROUPS / LOCKED_CONTROL_PATTERN. */
 export const PROTECTED_KEYS: readonly string[] = [
   'anamorphic_lab.compare', 'anamorphic_lab.lutMix', 'blob_reveal.segN', 'bokeh.segEnabled',
   'analog.reactEnabled',
 ];
-
-/** Lowest base the AI may set on a param that scales an effect's whole music
- *  response — at 0 the carriers still run but move nothing. */
-export const PARAM_FLOORS: Readonly<Record<string, number>> = {
-  'analog.modDepth': 0.1,
-};
-
-/** Route depth is amount × the param's FULL range (params.ts:58-59), so the
- *  AI is capped here on ordinary params. 0.6 is the deepest factory route
- *  (blob_tracker.panelTurb), so the AI can always restore a default. */
+/** @deprecated SynEngine route depth cap. */
 export const MAX_ROUTE_AMOUNT = 0.6;
-/** The band a carrier's amount may be retuned within (same source only). */
+/** @deprecated SynEngine carrier amount band. */
 export const CARRIER_AMOUNT_MIN = 0.05;
+/** @deprecated SynEngine carrier amount band. */
 export const CARRIER_AMOUNT_MAX = 1;
 
 /** Sampling rate asked of Gemini for short INLINE clips (the Optimizer's and
@@ -158,19 +192,24 @@ export interface SignalSummary {
 
 /* ── the Lab chain as the AI sees it ────────────────────────── */
 
+/** @deprecated SynEngine route. The iframe Lab sends `route: null` always. */
 export interface RouteT { source: ModSourceT; amount: number }
 
+/** One control of an effect in the Lab chain, as the AI sees it (built by
+ *  the Lab from SynLab.params()). */
 export interface ParamDesc {
-  key: string;               // 'nodeId.param'
-  label: string;
+  key: string;               // '<ModuleId>.<SynLabParam.key>' (PARAM_KEY_PATTERN)
+  label: string;             // the visible label in the effect's panel
   type: 'number' | 'boolean' | 'enum';
-  min: number; max: number; step: number;
-  value: number;             // current BASE (booleans 0/1)
-  hint: string;
-  reactive: boolean;         // may carry a route
-  route: RouteT | null;      // current route
-  carrier: boolean;          // in CARRIER_KEYS
-  locked: boolean;           // in PROTECTED_KEYS
+  min: number; max: number; step: number;   // booleans 0/1/1; enums 0..n-1/1
+  value: number;             // current value (booleans 0/1; enums = option index)
+  hint: string;              // the panel section it lives in (SynLabParam.group)
+  reactive: boolean;         // legacy: always false in the iframe Lab
+  route: RouteT | null;      // legacy: always null in the iframe Lab
+  carrier: boolean;          // legacy: always false in the iframe Lab
+  locked: boolean;           // never touched by the AI (declared by the Lab's adapter)
+  /** enum option labels in index order (value i means options[i]) */
+  options?: string[];
 }
 
 export type AudioModeT = 'off' | 'mic' | 'file' | 'clip';
@@ -228,6 +267,8 @@ export interface ArtDirectorResult {
 export interface AgentPlan {
   summary: string;
   params: { key: string; value: number }[];
+  /** Legacy (SynEngine signal routes): kept in the wire format, always []
+   *  from the server — the iframe Lab has no routes. */
   routes: { key: string; source: ModSourceT | 'off'; amount: number }[];
 }
 
@@ -323,9 +364,9 @@ export interface LabHandle {
 /** The previous state of each key a plan touched (see LabHandle.applyPlan). */
 export interface PlanUndo {
   entries: {
-    key: string;                       // 'nodeId.param'
-    base?: number;                     // previous ParamBus base (numbers, enums)
+    key: string;                       // '<ModuleId>.<effect key>'
+    base?: number;                     // previous value (numbers, enums)
     bool?: number;                     // previous switch value (booleans)
-    route?: RouteT | null;             // previous route, when the plan set one
+    route?: RouteT | null;             // legacy (SynEngine routes): unused by the iframe Lab
   }[];
 }

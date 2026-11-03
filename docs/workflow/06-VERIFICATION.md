@@ -42,9 +42,12 @@ Useful checks (the shell already ships `data-testid`s — keep them working):
 - `effect-card-<id>` — right sidebar cards
 - `nodal-add`, `nodal-add-<id>`, `nodal-input`, `nodal-output`,
   `nodal-node-<id>`, `port-*`, `nodal-svg` — node graph
-- `chain-canvas`, `chain-fps`, `chain-res`, `toggle-<id>`,
-  `param-<node>-<key>`, `mod-src-*`, `mod-amt-*`, `audio-*` (incl.
-  `audio-clip`, the source video's own soundtrack), `signal-*` — Lab
+- `chain-lab`, `lab-stage`, `lab-tab-input` / `lab-tab-<id>` (`data-link`
+  loading / ready / missing) / `lab-tab-output`, `lab-frame-<id>`,
+  `lab-output-video`, `lab-transport`, `lab-play`, `lab-scrub`, `lab-loop`,
+  `lab-time`, `lab-webcam`, `chain-fps`, `chain-link-<id>`, `audio-*` (incl.
+  `audio-clip`, the source video's own soundtrack) — Lab (LAB v2, 03-SPEC
+  §3.1; `?labdebug` exposes `window.__synLabDebug`)
 - `source-file`, `chain-file`, `hero-video`, `hero-image` (a still photo on
   Home) — source loading
 - Gemini 3.8 panel: `ai-status` (STANDBY / ACTIVE pill), `ai-key-input`,
@@ -56,7 +59,7 @@ Useful checks (the shell already ships `data-testid`s — keep them working):
   `ai-agent-error`, `ai-agent-direction(-clear)` (the text span),
   `ai-agent-result`, `ai-agent-stale`, `ai-agent-rows` (applied rows; an
   adjusted note is `[data-adjusted]` on its row), `ai-agent-undo`; Optimizer
-  `ai-opt-run`, `ai-opt-note`, `ai-opt-export`, `ai-opt-error`,
+  `ai-opt-intent`, `ai-opt-run`, `ai-opt-note`, `ai-opt-export`, `ai-opt-error`,
   `ai-opt-direction(-clear)`, `ai-opt-agent-line`, `ai-opt-result`,
   `ai-opt-stale`, `ai-opt-issue-<i>`, `ai-opt-fix-rows-<i>`,
   `ai-opt-fix-<i>`, `ai-opt-fix-undo-<i>`, `ai-opt-not-applied-<i>`,
@@ -67,14 +70,26 @@ Feed deterministic media in headless runs: launch Chromium with
 webcam/mic flows, and set file inputs directly with `setInputFiles` (generate
 a short test MP4 with ffmpeg into the scratchpad if none exists).
 
-Pixel-level assertion for engine work: read the `chain-canvas` pixels
-(`preserveDrawingBuffer` is enabled) and assert non-black variance / expected
-statistics rather than exact pixels.
+Pixel-level assertion for the Lab: draw `lab-output-video` (or a node's
+`SynLab.outputCanvas()`) into a 2D canvas and assert non-black variance /
+expected statistics rather than exact pixels.
+
+### LAB v2 chain suite
+
+```bash
+BASE=http://localhost:3000 NODE_PATH=/opt/node22/lib/node_modules node tools/verify/verify-lab-chain.cjs [scratch]
+SYNTECH_EXE=release/linux-unpacked/vfx-syntech NODE_PATH=/opt/node22/lib/node_modules \
+  xvfb-run -a node tools/verify/verify-lab-chain.cjs [scratch]   # the packaged app (Chromium 128)
+```
+
+Full panels in every node, every hop flowing, no mirror, Clip audio on by
+itself and heard, transport, presets v2, LabHandle apply/revert, Master
+export, day theme, hidden-Lab parking. `LAB_CHAIN=a,b,c` picks the chain.
 
 ### Gemini 3.8 suite (no real key, no network)
 
 ```bash
-node tools/verify/verify-gemini.cjs                # ~3.5 min under SwiftShader; exit 0 = all PASS
+node tools/verify/verify-gemini.cjs                # 15–25 min under SwiftShader (iframe Lab); exit 0 = all PASS
 PORT=3100 node tools/verify/verify-gemini.cjs      # its own server next to a dev server
 ```
 

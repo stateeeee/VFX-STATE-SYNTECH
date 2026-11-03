@@ -86,7 +86,7 @@ Prerequisite for every port phase.
 onto any dummy-node param visibly modulates its readout; SEG reaches READY on
 demand.
 
-## Phases 4–8 — 1:1 effect ports into SynEngine (one phase each)
+## Phases 4–8 — 1:1 effect ports into SynEngine (one phase each) — DONE, then superseded for the Lab by Phase 12 (LAB v2)
 
 Order (locked, easiest → hardest): **4 = analog, 5 = bokeh,
 6 = anamorphic_lab, 7 = blob_reveal, 8 = blob_tracker.**
@@ -188,10 +188,36 @@ STATE.md:
 - [ ] A long chain (4–5 effects) gets an answer (strict schema, or the one
       loose-schema retry), and a free-tier quota hit reads as a quota message.
 
+## Phase 12 — LAB v2: the Lab is a chain of the real effects (2026-10-28)
+
+Operator decision "option 1": supersedes Phases 4–9 for the Lab. The SynEngine
+ports stay in the repo, unused; the Lab chains the ten standalone effects in
+iframes (02-ARCHITECTURE "One rendering world", 03-SPEC-SHELL §3 + §5.2).
+
+- [ ] `SYNTECH-LAB` adapter in all ten effects (`window.SynLab`, generic half
+      `public/effects/shared/syn-lab.js`): external video stream (no mirror,
+      pill "LAB"), external audio for reactivity (never to the speakers),
+      output canvas + captureStream, params / setParam, settings.
+- [ ] Node graph + Add Node: all ten effects.
+- [ ] The Lab: one iframe per node with its whole panel, tabs INPUT · effects ·
+      OUTPUT, chain plumbing, INPUT video / photo / webcam, transport
+      (play / pause / scrub / loop), Clip audio audible on load, Track, Mic.
+- [ ] Sidebar meter on the Lab's audio; presets v2; Master MP4 (realtime
+      MediaRecorder of the chain output + audio); Gemini LabHandle on SynLab.
+- [ ] Day theme reaches every effect (shell → `data-syn-theme` + `syn:theme`).
+
+**Accept when**: a 3-effect chain with one of the five new effects runs with
+every hop delivering frames, the output is not mirrored, the clip is heard and
+the meter moves, the transport freezes / resumes / scrubs the whole chain, a
+preset round-trips, Master MP4 downloads a playable file with sound, and the
+Agent / Optimizer read and set real effect controls — in the browser AND in
+the packaged desktop app (Chromium 128): `tools/verify/verify-lab-chain.cjs`,
+plus `verify-desktop`, `verify-audio-meter`, `verify-ui-cage` green.
+
 ---
 
 ## Later (do not start unless the operator asks)
 
-Webcam as INPUT node in the Lab is already supported by SynEngine — surface it
-in the node UI. New effects beyond the five (target ~20).
+New effects beyond the ten (target ~20) — each joins the Lab with its own
+`SYNTECH-LAB` adapter.
 Payments/licensing. Deploy pipeline hardening (AI Studio / Cloud Run).

@@ -4,8 +4,8 @@
    with corner brackets on the left, the black glossy panel on the right
    with the metallic .sec-head bars and the iridescent .sec-title.
    Everything is scoped under .syn-fxlab; every colour is a --syn-fx-* token
-   declared on that root (CLAUDE.md rule 4). The effects are dark in both
-   themes, so the Lab is too.
+   declared on that root (CLAUDE.md rule 4). Night is the effects' dark
+   look; day follows syn-chrome's day theme (the variant further down).
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* the effects' fonts, vendored and offline (public/effects/vendor/fonts):
@@ -38,6 +38,14 @@
   --syn-fx-amber: #e8c000;
   --syn-fx-amber-lo: #8a6400;
   --syn-fx-amber-deep: #9a5800;
+  /* BLOB REVEAL's transport (shared/syn-extras.js #syn-transport) */
+  --syn-fx-amber-deep-2: #5a3800;
+  --syn-fx-tl-hi: #1a181c;
+  --syn-fx-tl-lo: #0c0a0e;
+  --syn-fx-tl-paused-hi: #221e0c;
+  --syn-fx-tl-paused-lo: #141005;
+  --syn-fx-tl-loop-hi: #181618;
+  --syn-fx-tl-loop-lo: #0a080a;
   --syn-fx-green: #20e060;
   --syn-fx-red: #f03020;
   --syn-fx-cyan: #00e0c0;
@@ -101,32 +109,52 @@
   100% { opacity: 0; transform: translateX(200%) rotate(-15deg); }
 }
 
-/* ═══ TOPBAR (#topbar) ═══════════════════════════════════════════════════ */
-.syn-fxlab .fxl-topbar {
-  height: 40px;
+/* ═══ THE LAB STRIP — logo · tabs · commands · pills, one slim bar ══════ */
+/* the effects' #topbar look (metal bar, scanlines, iridescent bottom line); it wraps on narrow openings */
+.syn-fxlab .fxl-labbar {
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  position: relative;
-  overflow: hidden;
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 5px 12px;
+  position: relative; z-index: 6;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--syn-fx-gloss) 3%, transparent) 0%, color-mix(in srgb, var(--syn-fx-gloss) 1%, transparent) 10%, transparent 40%, color-mix(in srgb, var(--syn-fx-shade) 25%, transparent) 100%),
     linear-gradient(180deg, var(--syn-fx-bar-hi) 0%, var(--syn-fx-bar-lo) 100%);
   border-bottom: 1px solid color-mix(in srgb, var(--syn-fx-gloss) 6%, transparent);
 }
-.syn-fxlab .fxl-topbar::before {
+.syn-fxlab .fxl-labbar::before {
   content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
   background: repeating-linear-gradient(0deg, transparent, transparent 3px, color-mix(in srgb, var(--syn-fx-shade) 8%, transparent) 3px, color-mix(in srgb, var(--syn-fx-shade) 8%, transparent) 4px);
 }
-.syn-fxlab .fxl-topbar::after {
+.syn-fxlab .fxl-labbar::after {
   content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px; pointer-events: none;
   background: linear-gradient(90deg, var(--syn-fx-iri-1), var(--syn-fx-iri-2), var(--syn-fx-iri-3), var(--syn-fx-iri-4), var(--syn-fx-iri-5), var(--syn-fx-iri-1));
   background-size: 300% 100%;
   animation: fxl-topline 6s linear infinite;
 }
-.syn-fxlab .fxl-topbar > * { position: relative; z-index: 1; }
+.syn-fxlab .fxl-labbar > * { position: relative; z-index: 1; }
+
+/* the tabs: INPUT › effect 1 › … › OUTPUT */
+.syn-fxlab .fxl-tabs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; min-width: 0; }
+.syn-fxlab .fxl-tab {
+  height: 22px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px 0 4px;
+  background: transparent; border: 1px solid transparent; border-radius: 1px;
+  color: var(--syn-fx-t2); font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase; white-space: nowrap;
+  cursor: pointer; transition: color .12s, border-color .12s, background .12s;
+}
+.syn-fxlab .fxl-tab:first-child { padding-left: 8px; }
+.syn-fxlab .fxl-tab:hover { color: var(--syn-fx-t4); }
+.syn-fxlab .fxl-tab.on {
+  color: var(--syn-fx-t4);
+  border-color: color-mix(in srgb, var(--syn-fx-amber) 42%, transparent);
+  background: linear-gradient(180deg, var(--syn-fx-metal-1) 0%, var(--syn-fx-metal-4) 100%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--syn-fx-gloss) 12%, transparent);
+}
+.syn-fxlab .fxl-tab-sep { color: var(--syn-fx-t1); margin-right: 2px; }
+.syn-fxlab .fxl-tab-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+.syn-fxlab .fxl-tab-state { font-size: 8px; color: var(--syn-fx-amber); }
+.syn-fxlab .fxl-tab-state.missing { color: var(--syn-fx-red); }
+.syn-fxlab .fxl-pills { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-shrink: 0; }
 
 .syn-fxlab .fxl-logo {
   font-family: var(--syn-fx-cond); font-weight: 900; font-size: 16px; letter-spacing: 6px;
@@ -165,21 +193,14 @@
 .syn-fxlab .fxl-pill-pre { font-size: 6px; letter-spacing: 1px; color: var(--syn-fx-t2); }
 
 .syn-fxlab .fxl-fps {
-  margin-left: auto; display: flex; gap: 12px; flex-shrink: 0;
+  display: flex; gap: 12px; flex-shrink: 0;
   font-size: 9px; letter-spacing: 2px; color: var(--syn-fx-t2); white-space: nowrap;
 }
 .syn-fxlab .fxl-fps b { color: var(--syn-fx-cyan); font-weight: 500; text-shadow: 0 0 10px color-mix(in srgb, var(--syn-fx-cyan) 60%, transparent); }
 .syn-fxlab .fxl-fps b.low { color: var(--syn-fx-amber); text-shadow: 0 0 10px color-mix(in srgb, var(--syn-fx-amber) 60%, transparent); }
 
-/* ═══ COMMAND ROW (the shared commands, in the effects' button style) ═══ */
-.syn-fxlab .fxl-cmds {
-  flex-shrink: 0;
-  display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
-  padding: 5px 10px;
-  position: relative; z-index: 6;
-  background: linear-gradient(180deg, var(--syn-fx-bar-lo) 0%, var(--syn-fx-deep) 100%);
-  border-bottom: 1px solid color-mix(in srgb, var(--syn-fx-gloss) 5%, transparent);
-}
+/* ═══ COMMANDS (the shared commands, in the effects' button style) ═════ */
+.syn-fxlab .fxl-cmds { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
 .syn-fxlab .fxl-cmds .fxl-gap { width: 6px; flex-shrink: 0; }
 
 /* .led-btn, compact */
@@ -263,51 +284,44 @@
 .syn-fxlab .fxl-pop-item .fxl-btn { height: 18px; padding: 0 6px; font-size: 7px; }
 .syn-fxlab .fxl-pop-note { font-size: 7.5px; line-height: 1.5; letter-spacing: .5px; color: var(--syn-fx-t2); }
 
-/* ═══ MAIN: stage (fixed) | panel (the only thing that scrolls) ═══════ */
-/* its own stacking context (z 1): the stage's brackets / overlay (z 25–30)
-   stay under the command row (z 6) and its preset popover */
-.syn-fxlab .fxl-main { flex: 1; min-height: 0; display: flex; overflow: hidden; position: relative; z-index: 1; }
-.syn-fxlab .fxl-stage-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 
-/* #canvas-area */
+/* ═══ STAGE: INPUT, every node's iframe and OUTPUT, all in the same rect ═══
+   The selected tab's layer is on top and takes the pointer; the others stay
+   laid out and rendering underneath (never display:none / visibility:hidden /
+   off screen — the chain must keep flowing through every hop). */
 .syn-fxlab .fxl-stage {
   flex: 1; min-height: 0; position: relative; overflow: hidden;
   background: var(--syn-fx-stage);
 }
-.syn-fxlab .fxl-viewport {
-  position: absolute; inset: 14px;
-  display: flex; align-items: center; justify-content: center;
+.syn-fxlab .fxl-layers { position: absolute; inset: 0; }
+.syn-fxlab .fxl-layer {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  z-index: 1; pointer-events: none;
+  background: var(--syn-fx-stage);
 }
-.syn-fxlab .fxl-viewport canvas {
-  display: block; width: 100%; height: 100%;
-  object-fit: contain;
+.syn-fxlab .fxl-layer.top { z-index: 3; pointer-events: auto; }
+.syn-fxlab .fxl-frame { border: 0; display: block; }
+.syn-fxlab .fxl-media { display: flex; align-items: center; justify-content: center; }
+.syn-fxlab .fxl-media > video, .syn-fxlab .fxl-media > canvas {
+  position: absolute; inset: 14px; width: calc(100% - 28px); height: calc(100% - 28px);
+  object-fit: contain; display: block;
 }
-/* webcam: shown like a mirror (your right hand on the right), as in every standalone effect.
-   Display only — the render, Gemini captures and exports keep the camera's true orientation. */
-.syn-fxlab .fxl-viewport canvas.fxl-mirror { transform: scaleX(-1); }
-/* #canvas-wrap::after — the inner vignette */
-.syn-fxlab .fxl-vignette {
-  position: absolute; inset: 0; pointer-events: none; z-index: 5;
-  box-shadow: inset 0 0 80px color-mix(in srgb, var(--syn-fx-shade) 70%, transparent), inset 0 0 160px color-mix(in srgb, var(--syn-fx-shade) 30%, transparent);
+/* the INPUT layer holds three elements (file / photo / webcam): only the live one shows */
+.syn-fxlab .fxl-media > .fxl-gone { display: none; }
+.syn-fxlab .fxl-empty-out {
+  position: relative; font-size: 8.5px; letter-spacing: 3px; color: var(--syn-fx-t2);
 }
-/* #canvas-wrap::before — the amber corner brackets */
-.syn-fxlab .fxl-brackets {
-  position: absolute; inset: 8px; pointer-events: none; z-index: 30;
-  --b: var(--syn-fx-amber);
-  background:
-    linear-gradient(var(--b), var(--b)) top left / 28px 1px no-repeat,
-    linear-gradient(var(--b), var(--b)) top left / 1px 28px no-repeat,
-    linear-gradient(var(--b), var(--b)) top right / 28px 1px no-repeat,
-    linear-gradient(var(--b), var(--b)) top right / 1px 28px no-repeat,
-    linear-gradient(var(--b), var(--b)) bottom left / 28px 1px no-repeat,
-    linear-gradient(var(--b), var(--b)) bottom left / 1px 28px no-repeat,
-    linear-gradient(var(--b), var(--b)) bottom right / 28px 1px no-repeat,
-    linear-gradient(var(--b), var(--b)) bottom right / 1px 28px no-repeat;
-  animation: fxl-bracket 6s linear infinite;
+.syn-fxlab .fxl-hint {
+  position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 4;
+  max-width: 80%; padding: 8px 12px; text-align: center; pointer-events: none;
+  border: 1px dashed var(--syn-fx-border-hi);
+  background: color-mix(in srgb, var(--syn-fx-shade) 60%, transparent);
+  font-size: 8.5px; line-height: 1.6; letter-spacing: 1.5px; color: var(--syn-fx-t3); text-transform: uppercase;
 }
-/* #drop-overlay — NO SIGNAL */
+.syn-fxlab .fxl-hint b { color: var(--syn-fx-amber); font-weight: 500; }
+/* #drop-overlay — NO SIGNAL (the INPUT layer with no source) */
 .syn-fxlab .fxl-nosignal {
-  position: absolute; inset: 0; z-index: 25;
+  position: absolute; inset: 0; z-index: 2;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
   background: radial-gradient(ellipse at 50% 40%, var(--syn-fx-metal-4) 0%, var(--syn-fx-deep) 100%);
   border: 1px solid color-mix(in srgb, var(--syn-fx-gloss) 7%, transparent);
@@ -327,7 +341,68 @@
 .syn-fxlab .fxl-nosignal-sub { font-size: 8.5px; letter-spacing: 3px; color: var(--syn-fx-t2); text-align: center; padding: 0 12px; }
 .syn-fxlab .fxl-nosignal .fxl-btn { height: 30px; padding: 0 26px; letter-spacing: 3px; margin-top: 6px; }
 
-/* bottom strip (the effects' status line): route, track transport, signals */
+/* ═══ TRANSPORT — BLOB REVEAL's bar (shared/syn-extras.js #syn-transport) ═══ */
+.syn-fxlab .fxl-transport {
+  height: 36px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px; padding: 0 10px 0 40px; /* clear of the opening's rounded corner */
+  background: var(--syn-fx-deep);
+  border-top: 1px solid color-mix(in srgb, var(--syn-fx-gloss) 5%, transparent);
+  font-family: var(--syn-fx-mono);
+}
+.syn-fxlab .fxl-tl-pause {
+  height: 24px; padding: 0 12px; margin: 0; border-radius: 0;
+  display: flex; align-items: center; gap: 5px; white-space: nowrap; cursor: pointer;
+  background: linear-gradient(180deg, var(--syn-fx-tl-hi) 0%, var(--syn-fx-metal-4) 35%, var(--syn-fx-panel-2) 70%, var(--syn-fx-tl-lo) 100%);
+  border: 1px solid color-mix(in srgb, var(--syn-fx-gloss) 10%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--syn-fx-shade) 65%, transparent);
+  color: var(--syn-fx-t3); font-family: var(--syn-fx-mono); font-size: 9px; letter-spacing: 2px;
+  box-shadow: inset 0 2px 8px color-mix(in srgb, var(--syn-fx-gloss) 13%, transparent), inset 0 -2px 6px color-mix(in srgb, var(--syn-fx-shade) 60%, transparent);
+  transition: all .12s;
+}
+.syn-fxlab .fxl-tl-pause:hover { border-color: var(--syn-fx-cyan); color: var(--syn-fx-cyan); }
+.syn-fxlab .fxl-tl-pause.paused {
+  border-color: var(--syn-fx-amber); color: var(--syn-fx-amber);
+  background: linear-gradient(180deg, var(--syn-fx-tl-paused-hi) 0%, var(--syn-fx-tl-paused-lo) 100%);
+}
+.syn-fxlab .fxl-tl-cur, .syn-fxlab .fxl-tl-dur {
+  font-size: 9px; font-variant-numeric: tabular-nums; white-space: nowrap; width: 38px; letter-spacing: 0;
+}
+.syn-fxlab .fxl-tl-cur { color: var(--syn-fx-t3); }
+.syn-fxlab .fxl-tl-dur { color: var(--syn-fx-t2); text-align: right; }
+/* the track: a range input drawn as the 4-px bar with the amber→violet fill and the glowing head */
+.syn-fxlab .fxl-tl-track {
+  flex: 1; min-width: 0; height: 12px; margin: 0; cursor: pointer;
+  -webkit-appearance: none; appearance: none; background: transparent;
+}
+.syn-fxlab .fxl-tl-track::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px;
+  background:
+    linear-gradient(90deg, var(--syn-fx-amber-deep-2), var(--syn-fx-amber), var(--syn-fx-iri-3)) 0 0 / var(--p, 0%) 100% no-repeat,
+    color-mix(in srgb, var(--syn-fx-gloss) 8%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--syn-fx-shade) 40%, transparent);
+}
+.syn-fxlab .fxl-tl-track:hover::-webkit-slider-runnable-track {
+  background:
+    linear-gradient(90deg, var(--syn-fx-amber-deep-2), var(--syn-fx-amber), var(--syn-fx-iri-3)) 0 0 / var(--p, 0%) 100% no-repeat,
+    color-mix(in srgb, var(--syn-fx-gloss) 12%, transparent);
+}
+.syn-fxlab .fxl-tl-track::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; border: 0;
+  background: radial-gradient(circle at 35% 30%, var(--syn-fx-gloss), var(--syn-fx-amber));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--syn-fx-amber) 80%, transparent), inset 0 1px 0 color-mix(in srgb, var(--syn-fx-gloss) 50%, transparent);
+}
+.syn-fxlab .fxl-tl-loop {
+  height: 24px; padding: 0 8px; margin: 0; border-radius: 1px; cursor: pointer;
+  background: linear-gradient(180deg, var(--syn-fx-tl-loop-hi) 0%, var(--syn-fx-tl-loop-lo) 100%);
+  border: 1px solid color-mix(in srgb, var(--syn-fx-gloss) 9%, transparent);
+  color: var(--syn-fx-t2); font-family: var(--syn-fx-mono); font-size: 8px; letter-spacing: 1px;
+  transition: all .12s;
+}
+.syn-fxlab .fxl-tl-loop:hover { border-color: color-mix(in srgb, var(--syn-fx-gloss) 18%, transparent); color: var(--syn-fx-t3); }
+.syn-fxlab .fxl-tl-loop.on { border-color: color-mix(in srgb, var(--syn-fx-cyan) 40%, transparent); color: var(--syn-fx-cyan); }
+
+/* ═══ STATUS LINE: route + link states, track, signals, errors ═════════ */
 .syn-fxlab .fxl-strip {
   flex-shrink: 0; min-height: 24px;
   display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px;
@@ -338,6 +413,9 @@
 }
 .syn-fxlab .fxl-route { min-width: 0; flex: 1 1 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .syn-fxlab .fxl-route b { color: var(--syn-fx-t3); font-weight: 500; }
+.syn-fxlab .fxl-route b.ready { color: var(--syn-fx-t4); }
+.syn-fxlab .fxl-route b.loading { color: var(--syn-fx-t2); }
+.syn-fxlab .fxl-route b.missing { color: var(--syn-fx-red); text-decoration: line-through; }
 .syn-fxlab .fxl-group { display: flex; align-items: center; gap: 6px; }
 .syn-fxlab .fxl-icon-btn {
   width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
@@ -348,235 +426,137 @@
 .syn-fxlab .fxl-icon-btn.on { color: var(--syn-fx-amber); border-color: color-mix(in srgb, var(--syn-fx-amber) 45%, transparent); }
 .syn-fxlab .fxl-icon-btn svg { width: 10px; height: 10px; }
 .syn-fxlab .fxl-track-name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; color: var(--syn-fx-t3); letter-spacing: .5px; }
+.syn-fxlab .fxl-mini { width: 70px; height: 10px; accent-color: var(--syn-fx-cyan); }
 .syn-fxlab .fxl-meter { display: flex; align-items: center; gap: 3px; }
 .syn-fxlab .fxl-meter-bar { width: 26px; height: 3px; background: color-mix(in srgb, var(--syn-fx-gloss) 8%, transparent); overflow: hidden; }
 .syn-fxlab .fxl-meter-bar > i { display: block; height: 100%; background: var(--syn-fx-amber); transition: width .1s; }
-.syn-fxlab .fxl-meter.video .fxl-meter-bar > i { background: var(--syn-fx-cyan); }
 .syn-fxlab .fxl-meter b { color: var(--syn-fx-t4); font-weight: 400; min-width: 14px; text-align: right; }
+.syn-fxlab .fxl-bpm { color: var(--syn-fx-t4); font-weight: 400; }
 .syn-fxlab .fxl-beat { width: 6px; height: 6px; border-radius: 50%; background: var(--syn-fx-amber); box-shadow: 0 0 6px var(--syn-fx-amber); }
-.syn-fxlab .fxl-seg-ready { color: var(--syn-fx-cyan); }
-.syn-fxlab .fxl-seg-loading { color: var(--syn-fx-amber); }
-.syn-fxlab .fxl-seg-error { color: var(--syn-fx-red); }
 .syn-fxlab .fxl-err { color: var(--syn-fx-red); text-transform: none; letter-spacing: .5px; }
+.syn-fxlab .fxl-note { color: var(--syn-fx-t3); text-transform: none; letter-spacing: .5px; }
 
-/* ═══ PANEL (#panel — black glossy fluid with bubbles) ═══════════════════ */
-.syn-fxlab .fxl-panel {
-  width: var(--syn-fx-panel-w); max-width: 48%; flex-shrink: 0;
-  min-height: 0;
-  overflow-y: auto; overflow-x: hidden;
-  overscroll-behavior-y: contain;
-  scrollbar-gutter: stable;
-  position: relative;
-  border-left: 1px solid color-mix(in srgb, var(--syn-fx-gloss) 7%, transparent);
+/* ═══ DAY — the strip, transport and status line follow the shell's day theme,
+   matching the effects' day chrome (shared/syn-chrome.css html[data-syn-theme="day"]:
+   cream / white, dark text, violet accent). The stage stays dark: it is the picture. */
+.syn-fxlab[data-theme="day"] {
+  --syn-fx-day-bar-hi: #ffffff;
+  --syn-fx-day-bar-lo: #f6f3ec;
+  --syn-fx-day-deep: #ffffff;
+  --syn-fx-day-cream: #f7f5f0;
+  --syn-fx-day-chip: #ece9e1;
+  --syn-fx-day-line: #d8d4ca;
+  --syn-fx-day-line-lo: #c9c4b8;
+  --syn-fx-day-t4: #1c1917;
+  --syn-fx-day-t3: #44403c;
+  --syn-fx-day-t2: #6b655d;
+  --syn-fx-day-t1: #a8a29e;
+  --syn-fx-day-accent: #6d28d9;
+  --syn-fx-day-accent-hi: #8b5cf6;
+  --syn-fx-day-accent-lo: #c4b5fd;
+  --syn-fx-day-accent-bg: #ede9fe;
+  --syn-fx-day-accent-bg-hi: #faf7ff;
+  --syn-fx-day-green: #15803d;
+  --syn-fx-day-teal: #0f766e;
+  --syn-fx-day-red: #dc2626;
+  --syn-fx-day-shadow: rgba(60, 50, 30, .14);
+}
+.syn-fxlab[data-theme="day"] .fxl-labbar {
+  background: linear-gradient(180deg, var(--syn-fx-day-bar-hi) 0%, var(--syn-fx-day-bar-lo) 100%);
+  border-bottom: 1px solid color-mix(in srgb, var(--syn-fx-day-t4) 8%, transparent);
+}
+.syn-fxlab[data-theme="day"] .fxl-labbar::before { background: none; }
+.syn-fxlab[data-theme="day"] .fxl-logo { color: var(--syn-fx-day-accent); filter: none; }
+.syn-fxlab[data-theme="day"] .fxl-sep { background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--syn-fx-day-t4) 18%, transparent), transparent); }
+.syn-fxlab[data-theme="day"] .fxl-tab { color: var(--syn-fx-day-t2); }
+.syn-fxlab[data-theme="day"] .fxl-tab:hover { color: var(--syn-fx-day-accent); }
+.syn-fxlab[data-theme="day"] .fxl-tab.on {
+  color: var(--syn-fx-day-accent);
+  background: linear-gradient(180deg, var(--syn-fx-day-accent-bg-hi) 0%, var(--syn-fx-day-accent-bg) 100%);
+  border-color: color-mix(in srgb, var(--syn-fx-day-accent) 45%, transparent);
+  box-shadow: 0 1px 2px var(--syn-fx-day-shadow);
+}
+.syn-fxlab[data-theme="day"] .fxl-tab-sep { color: var(--syn-fx-day-t1); }
+.syn-fxlab[data-theme="day"] .fxl-tab-state { color: var(--syn-fx-day-accent); }
+.syn-fxlab[data-theme="day"] .fxl-tab-state.missing { color: var(--syn-fx-day-red); }
+.syn-fxlab[data-theme="day"] .fxl-btn,
+.syn-fxlab[data-theme="day"] .fxl-pill {
+  background: linear-gradient(180deg, var(--syn-fx-day-bar-hi) 0%, var(--syn-fx-day-cream) 55%, var(--syn-fx-day-chip) 100%);
+  border: 1px solid var(--syn-fx-day-line); border-bottom-color: var(--syn-fx-day-line-lo);
+  color: var(--syn-fx-day-t3);
+  box-shadow: 0 1px 2px var(--syn-fx-day-shadow), inset 0 1px 0 var(--syn-fx-day-bar-hi);
+  animation: none;
+}
+.syn-fxlab[data-theme="day"] .fxl-btn::after { background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--syn-fx-day-accent-hi) 10%, transparent), transparent); }
+.syn-fxlab[data-theme="day"] .fxl-btn:hover:not(:disabled) { color: var(--syn-fx-day-accent); border-color: color-mix(in srgb, var(--syn-fx-day-accent) 55%, transparent); }
+.syn-fxlab[data-theme="day"] .fxl-btn.on,
+.syn-fxlab[data-theme="day"] .fxl-btn.primary {
+  color: var(--syn-fx-day-accent);
+  background: linear-gradient(180deg, var(--syn-fx-day-accent-bg-hi) 0%, var(--syn-fx-day-accent-bg) 100%);
+  border-color: color-mix(in srgb, var(--syn-fx-day-accent) 55%, transparent);
+}
+.syn-fxlab[data-theme="day"] .fxl-led { background: var(--syn-fx-day-chip); border-color: var(--syn-fx-day-line-lo); }
+.syn-fxlab[data-theme="day"] .on > .fxl-led {
+  background: radial-gradient(circle at 35% 30%, var(--syn-fx-day-accent-lo), var(--syn-fx-day-accent-hi));
+  border-color: var(--syn-fx-day-accent); box-shadow: 0 0 6px color-mix(in srgb, var(--syn-fx-day-accent-hi) 50%, transparent);
+}
+.syn-fxlab[data-theme="day"] .fxl-pill-pre { color: var(--syn-fx-day-t2); }
+.syn-fxlab[data-theme="day"] .fxl-pill .fxl-dot { background: var(--syn-fx-day-chip); border-color: var(--syn-fx-day-line-lo); }
+.syn-fxlab[data-theme="day"] .fxl-pill.live { color: var(--syn-fx-day-green); border-color: color-mix(in srgb, var(--syn-fx-day-green) 45%, transparent); }
+.syn-fxlab[data-theme="day"] .fxl-pill.live .fxl-dot { background: var(--syn-fx-day-green); border-color: transparent; }
+.syn-fxlab[data-theme="day"] .fxl-pill.amber { color: var(--syn-fx-day-accent); border-color: color-mix(in srgb, var(--syn-fx-day-accent) 40%, transparent); }
+.syn-fxlab[data-theme="day"] .fxl-pill.amber .fxl-dot { background: var(--syn-fx-day-accent-hi); border-color: transparent; box-shadow: 0 0 6px color-mix(in srgb, var(--syn-fx-day-accent-hi) 50%, transparent); }
+.syn-fxlab[data-theme="day"] .fxl-pill.rec { color: var(--syn-fx-day-red); border-color: color-mix(in srgb, var(--syn-fx-day-red) 45%, transparent); }
+.syn-fxlab[data-theme="day"] .fxl-fps { color: var(--syn-fx-day-t2); }
+.syn-fxlab[data-theme="day"] .fxl-fps b { color: var(--syn-fx-day-teal); text-shadow: none; }
+.syn-fxlab[data-theme="day"] .fxl-msg { color: var(--syn-fx-day-t3); }
+.syn-fxlab[data-theme="day"] .fxl-msg.err { color: var(--syn-fx-day-red); }
+.syn-fxlab[data-theme="day"] .fxl-pop {
+  background: var(--syn-fx-day-deep); border-color: var(--syn-fx-day-line);
+  box-shadow: 0 10px 30px var(--syn-fx-day-shadow);
+}
+.syn-fxlab[data-theme="day"] .fxl-pop-title { color: var(--syn-fx-day-accent); }
+.syn-fxlab[data-theme="day"] .fxl-input { background: var(--syn-fx-day-cream); color: var(--syn-fx-day-t4); border-bottom-color: var(--syn-fx-day-line-lo); }
+.syn-fxlab[data-theme="day"] .fxl-input::placeholder { color: var(--syn-fx-day-t1); }
+.syn-fxlab[data-theme="day"] .fxl-pop-item { background: var(--syn-fx-day-cream); border-color: var(--syn-fx-day-line); color: var(--syn-fx-day-t4); }
+.syn-fxlab[data-theme="day"] .fxl-pop-note { color: var(--syn-fx-day-t2); }
+/* transport, day (syn-extras.js day rules) */
+.syn-fxlab[data-theme="day"] .fxl-transport { background: var(--syn-fx-day-deep); border-top-color: color-mix(in srgb, var(--syn-fx-day-t4) 9%, transparent); }
+.syn-fxlab[data-theme="day"] .fxl-tl-pause {
+  background: linear-gradient(180deg, var(--syn-fx-day-bar-hi) 0%, var(--syn-fx-day-cream) 55%, var(--syn-fx-day-chip) 100%);
+  border: 1px solid var(--syn-fx-day-line); border-bottom-color: var(--syn-fx-day-line-lo);
+  color: var(--syn-fx-day-t3); box-shadow: 0 1px 2px var(--syn-fx-day-shadow), inset 0 1px 0 var(--syn-fx-day-bar-hi);
+}
+.syn-fxlab[data-theme="day"] .fxl-tl-pause:hover { border-color: var(--syn-fx-day-accent-hi); color: var(--syn-fx-day-accent); }
+.syn-fxlab[data-theme="day"] .fxl-tl-pause.paused {
+  border-color: color-mix(in srgb, var(--syn-fx-day-accent) 55%, transparent); color: var(--syn-fx-day-accent);
+  background: linear-gradient(180deg, var(--syn-fx-day-accent-bg-hi) 0%, var(--syn-fx-day-accent-bg) 100%);
+}
+.syn-fxlab[data-theme="day"] .fxl-tl-cur { color: var(--syn-fx-day-t3); }
+.syn-fxlab[data-theme="day"] .fxl-tl-dur { color: var(--syn-fx-day-t2); }
+.syn-fxlab[data-theme="day"] .fxl-tl-track::-webkit-slider-runnable-track {
   background:
-    radial-gradient(circle at 7% 10%, color-mix(in srgb, var(--syn-fx-gloss) 22%, transparent) 0%, transparent 10%),
-    radial-gradient(circle at 9% 12%, color-mix(in srgb, var(--syn-fx-shade) 55%, transparent) 0%, transparent 57%, color-mix(in srgb, var(--syn-fx-gloss) 30%, transparent) 59%, color-mix(in srgb, var(--syn-fx-gloss) 14%, transparent) 67%, transparent 76%),
-    radial-gradient(circle at 36% 31%, color-mix(in srgb, var(--syn-fx-gloss) 25%, transparent) 0%, transparent 14%),
-    radial-gradient(circle at 38% 33%, color-mix(in srgb, var(--syn-fx-shade) 60%, transparent) 0%, transparent 60%, color-mix(in srgb, var(--syn-fx-gloss) 32%, transparent) 62%, color-mix(in srgb, var(--syn-fx-gloss) 16%, transparent) 70%, transparent 79%),
-    radial-gradient(circle at 16% 61%, color-mix(in srgb, var(--syn-fx-gloss) 21%, transparent) 0%, transparent 12%),
-    radial-gradient(circle at 18% 63%, color-mix(in srgb, var(--syn-fx-shade) 55%, transparent) 0%, transparent 59%, color-mix(in srgb, var(--syn-fx-gloss) 28%, transparent) 61%, color-mix(in srgb, var(--syn-fx-gloss) 13%, transparent) 69%, transparent 78%),
-    radial-gradient(circle at 58% 74%, color-mix(in srgb, var(--syn-fx-gloss) 20%, transparent) 0%, transparent 11%),
-    radial-gradient(circle at 60% 76%, color-mix(in srgb, var(--syn-fx-shade) 50%, transparent) 0%, transparent 57%, color-mix(in srgb, var(--syn-fx-gloss) 26%, transparent) 59%, color-mix(in srgb, var(--syn-fx-gloss) 12%, transparent) 67%, transparent 76%),
-    radial-gradient(ellipse 130% 80% at 110% 115%, color-mix(in srgb, var(--syn-fx-shade) 90%, transparent) 0%, color-mix(in srgb, var(--syn-fx-shade) 50%, transparent) 35%, transparent 65%),
-    linear-gradient(160deg, var(--syn-fx-panel-1) 0%, var(--syn-fx-panel-2) 20%, var(--syn-fx-panel-3) 45%, var(--syn-fx-panel-2) 70%, var(--syn-fx-panel-3) 100%);
+    linear-gradient(90deg, var(--syn-fx-day-accent-lo), var(--syn-fx-day-accent)) 0 0 / var(--p, 0%) 100% no-repeat,
+    var(--syn-fx-day-line);
+  box-shadow: inset 0 1px 1px color-mix(in srgb, var(--syn-fx-day-t4) 12%, transparent);
 }
-.syn-fxlab .fxl-panel::-webkit-scrollbar { width: 3px; }
-.syn-fxlab .fxl-panel::-webkit-scrollbar-track { background: color-mix(in srgb, var(--syn-fx-shade) 90%, transparent); }
-.syn-fxlab .fxl-panel::-webkit-scrollbar-thumb { background: linear-gradient(180deg, color-mix(in srgb, var(--syn-fx-gloss) 40%, transparent), color-mix(in srgb, var(--syn-fx-gloss) 10%, transparent)); border-radius: 1px; }
-
-.syn-fxlab .fxl-empty {
-  margin: 18px 14px; padding: 14px;
-  border: 1px dashed var(--syn-fx-border-hi);
-  font-size: 8.5px; line-height: 1.7; letter-spacing: 1.5px; color: var(--syn-fx-t3); text-transform: uppercase;
-  background: color-mix(in srgb, var(--syn-fx-shade) 40%, transparent);
+.syn-fxlab[data-theme="day"] .fxl-tl-track::-webkit-slider-thumb {
+  background: radial-gradient(circle at 35% 30%, var(--syn-fx-day-bar-hi), var(--syn-fx-day-accent-hi));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--syn-fx-day-accent) 55%, transparent), 0 1px 4px var(--syn-fx-day-shadow);
 }
-.syn-fxlab .fxl-empty b { color: var(--syn-fx-amber); font-weight: 500; }
-
-/* ── one effect: its name bar, sticky at the top of the panel while open ── */
-.syn-fxlab .fxl-fx { position: relative; }
-.syn-fxlab .fxl-fx + .fxl-fx { border-top: 1px solid color-mix(in srgb, var(--syn-fx-shade) 80%, transparent); }
-.syn-fxlab .fxl-fx-head {
-  position: sticky; top: 0; z-index: 10;
-  width: 100%; height: 40px;
-  display: flex; align-items: center; gap: 10px; padding: 0 14px;
-  border: 0; margin: 0; text-align: left; cursor: pointer; overflow: hidden;
-  color: var(--syn-fx-amber);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--syn-fx-gloss) 5%, transparent) 0%, color-mix(in srgb, var(--syn-fx-gloss) 1%, transparent) 14%, transparent 45%, color-mix(in srgb, var(--syn-fx-shade) 30%, transparent) 100%),
-    linear-gradient(180deg, var(--syn-fx-bar-hi) 0%, var(--syn-fx-bar-lo) 100%);
-  box-shadow: 0 4px 10px color-mix(in srgb, var(--syn-fx-shade) 55%, transparent);
+.syn-fxlab[data-theme="day"] .fxl-tl-loop {
+  background: linear-gradient(180deg, var(--syn-fx-day-bar-hi) 0%, var(--syn-fx-day-chip) 100%);
+  border-color: var(--syn-fx-day-line); color: var(--syn-fx-day-t2);
 }
-.syn-fxlab .fxl-fx-head::before {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: repeating-linear-gradient(0deg, transparent, transparent 3px, color-mix(in srgb, var(--syn-fx-shade) 8%, transparent) 3px, color-mix(in srgb, var(--syn-fx-shade) 8%, transparent) 4px);
-}
-/* the effects' iridescent top line, under the name */
-.syn-fxlab .fxl-fx-head::after {
-  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px; pointer-events: none; opacity: .55;
-  background: linear-gradient(90deg, var(--syn-fx-iri-1), var(--syn-fx-iri-2), var(--syn-fx-iri-3), var(--syn-fx-iri-4), var(--syn-fx-iri-5), var(--syn-fx-iri-1));
-  background-size: 300% 100%;
-  animation: fxl-topline 6s linear infinite;
-}
-.syn-fxlab .fxl-fx.open .fxl-fx-head::after { opacity: 1; }
-.syn-fxlab .fxl-fx-head:hover .fxl-fx-name { filter: drop-shadow(0 0 14px color-mix(in srgb, var(--syn-fx-amber) 75%, transparent)); }
-.syn-fxlab .fxl-fx-idx { font-size: 8px; letter-spacing: 1px; color: var(--syn-fx-t2); position: relative; }
-.syn-fxlab .fxl-fx-name {
-  position: relative; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: var(--syn-fx-cond); font-weight: 900; font-size: 14px; letter-spacing: 5px;
-  color: var(--syn-fx-amber);
-  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--syn-fx-amber) 50%, transparent));
-}
-.syn-fxlab .fxl-fx-head .fxl-chev { margin-left: auto; }
-.syn-fxlab .fxl-chev { position: relative; color: var(--syn-fx-t3); font-size: 8px; transition: transform .18s; flex-shrink: 0; }
-.syn-fxlab .collapsed > .fxl-chev, .syn-fxlab .fxl-fx-head.collapsed .fxl-chev { transform: rotate(-90deg); }
-
-/* ── a sub-section inside the opened effect: .section / .sec-head / .sec-body ── */
-.syn-fxlab .fxl-sec { position: relative; }
-.syn-fxlab .fxl-sec::after {
-  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px; pointer-events: none;
-  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--syn-fx-iri-1) 18%, transparent) 18%, color-mix(in srgb, var(--syn-fx-iri-2) 22%, transparent) 36%, color-mix(in srgb, var(--syn-fx-iri-3) 20%, transparent) 54%, color-mix(in srgb, var(--syn-fx-iri-4) 18%, transparent) 72%, transparent 100%);
-  background-size: 300% 100%;
-  animation: fxl-topline 12s linear infinite;
-}
-.syn-fxlab .fxl-sec-head {
-  width: 100%; height: 32px;
-  display: flex; align-items: center; gap: 10px; padding: 0 14px 0 20px;
-  border: 0; margin: 0; text-align: left; cursor: pointer;
-  position: relative; overflow: hidden;
-  background:
-    radial-gradient(ellipse 100% 60% at 50% -8%, color-mix(in srgb, var(--syn-fx-gloss) 42%, transparent) 0%, color-mix(in srgb, var(--syn-fx-gloss) 22%, transparent) 30%, color-mix(in srgb, var(--syn-fx-gloss) 6%, transparent) 55%, transparent 75%),
-    radial-gradient(ellipse 35% 100% at -4% 50%, color-mix(in srgb, var(--syn-fx-gloss) 9%, transparent) 0%, transparent 55%),
-    radial-gradient(ellipse 120% 65% at 55% 145%, color-mix(in srgb, var(--syn-fx-shade) 90%, transparent) 0%, color-mix(in srgb, var(--syn-fx-shade) 50%, transparent) 40%, transparent 68%),
-    linear-gradient(180deg, var(--syn-fx-metal-1) 0%, var(--syn-fx-metal-2) 30%, var(--syn-fx-metal-3) 60%, var(--syn-fx-metal-4) 85%, var(--syn-fx-metal-5) 100%);
-  box-shadow:
-    inset 0 3px 16px color-mix(in srgb, var(--syn-fx-gloss) 20%, transparent), inset 0 -3px 12px color-mix(in srgb, var(--syn-fx-shade) 75%, transparent),
-    inset 3px 0 8px color-mix(in srgb, var(--syn-fx-gloss) 5%, transparent), inset -3px 0 8px color-mix(in srgb, var(--syn-fx-shade) 30%, transparent),
-    0 1px 0 color-mix(in srgb, var(--syn-fx-gloss) 10%, transparent), 0 2px 6px color-mix(in srgb, var(--syn-fx-shade) 60%, transparent);
-}
-.syn-fxlab .fxl-sec-head::before {
-  content: ''; position: absolute; top: 0; left: 8%; right: 8%; height: 1px; pointer-events: none;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--syn-fx-gloss) 50%, transparent), color-mix(in srgb, var(--syn-fx-gloss) 65%, transparent), color-mix(in srgb, var(--syn-fx-gloss) 50%, transparent), transparent);
-}
-.syn-fxlab .fxl-sec-head::after {
-  content: ''; position: absolute; top: 0; left: -80%; width: 40%; height: 100%; pointer-events: none; opacity: 0;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--syn-fx-gloss) 12%, transparent), transparent);
-  transform: skewX(-20deg);
-}
-.syn-fxlab .fxl-sec-head:hover::after { animation: fxl-shimmer .6s ease-out forwards; opacity: 1; }
-.syn-fxlab .fxl-sec-head:hover {
-  background:
-    radial-gradient(ellipse 100% 60% at 50% -8%, color-mix(in srgb, var(--syn-fx-gloss) 50%, transparent) 0%, color-mix(in srgb, var(--syn-fx-gloss) 28%, transparent) 30%, color-mix(in srgb, var(--syn-fx-gloss) 8%, transparent) 55%, transparent 75%),
-    radial-gradient(ellipse 120% 65% at 55% 145%, color-mix(in srgb, var(--syn-fx-shade) 85%, transparent) 0%, transparent 65%),
-    linear-gradient(180deg, var(--syn-fx-metal-5) 0%, var(--syn-fx-metal-1) 30%, var(--syn-fx-metal-2) 60%, var(--syn-fx-metal-5) 100%);
-}
-/* .sec-mark: the hue-spinning bar */
-.syn-fxlab .fxl-sec-mark {
-  width: 2px; height: 16px; flex-shrink: 0; border-radius: 1px; position: relative;
-  background: linear-gradient(180deg, var(--syn-fx-amber) 0%, var(--syn-fx-amber-deep) 100%);
-  animation: fxl-hue 5s linear infinite; opacity: .68;
-}
-.syn-fxlab .fxl-sec.open .fxl-sec-mark { opacity: 1; }
-/* .sec-title: iridescent, animated */
-.syn-fxlab .fxl-sec-title {
-  position: relative; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: var(--syn-fx-cond); font-size: 11px; font-weight: 700; letter-spacing: 3.5px; text-transform: uppercase;
-  background: linear-gradient(90deg, var(--syn-fx-iri-1), var(--syn-fx-iri-2), var(--syn-fx-iri-3), var(--syn-fx-iri-4), var(--syn-fx-iri-5), var(--syn-fx-iri-1));
-  background-size: 300% 100%;
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent;
-  animation: fxl-iri 5s linear infinite;
-}
-.syn-fxlab .fxl-sec-head .fxl-chev { margin-left: auto; }
-
-.syn-fxlab .fxl-sec-body {
-  padding: 11px 13px 12px 14px;
-  display: flex; flex-direction: column; gap: 7px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--syn-fx-shade) 55%, transparent) 0%, color-mix(in srgb, var(--syn-fx-shade) 35%, transparent) 100%);
-  border-top: 1px solid color-mix(in srgb, var(--syn-fx-gloss) 5%, transparent);
-}
-
-/* ── controls: .ctrl-row / .daw-slider / .ctrl-val, .led-btn for switches ── */
-.syn-fxlab .fxl-ctrl { display: flex; flex-direction: column; gap: 2px; }
-.syn-fxlab .fxl-row { display: flex; align-items: center; gap: 6px; }
-.syn-fxlab .fxl-lbl {
-  width: 66px; flex-shrink: 0;
-  font-size: 7px; letter-spacing: .8px; line-height: 1.25; color: var(--syn-fx-t2); text-transform: uppercase;
-  overflow-wrap: anywhere;
-}
-.syn-fxlab .fxl-track { flex: 1; min-width: 0; height: 18px; display: flex; align-items: center; }
-.syn-fxlab .fxl-slider {
-  -webkit-appearance: none; appearance: none; width: 100%; height: 2px; margin: 0;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--syn-fx-gloss) 6%, transparent), color-mix(in srgb, var(--syn-fx-gloss) 12%, transparent));
-  outline: none; cursor: ew-resize; border-radius: 1px;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--syn-fx-shade) 40%, transparent), 0 1px 0 color-mix(in srgb, var(--syn-fx-gloss) 6%, transparent);
-}
-.syn-fxlab .fxl-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 9px; height: 20px; border: none; border-radius: 2px; cursor: ew-resize;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--syn-fx-gloss) 50%, transparent) 0%, color-mix(in srgb, var(--syn-fx-amber) 45%, var(--syn-fx-gloss)) 10%, color-mix(in srgb, var(--syn-fx-amber) 85%, var(--syn-fx-gloss)) 40%, var(--syn-fx-amber-lo) 65%, var(--syn-fx-t1) 85%, color-mix(in srgb, var(--syn-fx-gloss) 20%, transparent) 100%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--syn-fx-gloss) 60%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--syn-fx-shade) 40%, transparent), 0 0 10px color-mix(in srgb, var(--syn-fx-amber) 45%, transparent), 0 2px 6px color-mix(in srgb, var(--syn-fx-shade) 80%, transparent);
-}
-.syn-fxlab .fxl-slider::-webkit-slider-thumb:hover {
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--syn-fx-gloss) 70%, transparent), 0 0 16px color-mix(in srgb, var(--syn-fx-amber) 70%, transparent), 0 0 32px color-mix(in srgb, var(--syn-fx-iri-3) 30%, transparent), 0 2px 8px color-mix(in srgb, var(--syn-fx-shade) 80%, transparent);
-}
-.syn-fxlab .fxl-slider::-moz-range-thumb {
-  width: 9px; height: 20px; border: none; border-radius: 2px; cursor: ew-resize;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--syn-fx-amber) 45%, var(--syn-fx-gloss)), var(--syn-fx-amber), var(--syn-fx-amber-lo), var(--syn-fx-t1));
-  box-shadow: 0 0 10px color-mix(in srgb, var(--syn-fx-amber) 45%, transparent), 0 2px 6px color-mix(in srgb, var(--syn-fx-shade) 80%, transparent);
-}
-/* the modulation depth slider: cyan, the colour of a live signal */
-.syn-fxlab .fxl-slider.mod::-webkit-slider-thumb {
-  width: 7px; height: 14px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--syn-fx-cyan) 40%, var(--syn-fx-gloss)), var(--syn-fx-cyan) 45%, color-mix(in srgb, var(--syn-fx-cyan) 45%, var(--syn-fx-shade)));
-  box-shadow: 0 0 8px color-mix(in srgb, var(--syn-fx-cyan) 55%, transparent), 0 2px 5px color-mix(in srgb, var(--syn-fx-shade) 80%, transparent);
-}
-.syn-fxlab .fxl-slider.mod::-moz-range-thumb { width: 7px; height: 14px; background: var(--syn-fx-cyan); }
-.syn-fxlab .fxl-val {
-  width: 34px; flex-shrink: 0; text-align: right;
-  font-size: 8.5px; color: var(--syn-fx-t4); font-variant-numeric: tabular-nums; letter-spacing: .3px;
-  text-shadow: 0 0 6px color-mix(in srgb, var(--syn-fx-amber) 30%, transparent);
-}
-.syn-fxlab .fxl-val.mod { color: var(--syn-fx-cyan); text-shadow: 0 0 6px color-mix(in srgb, var(--syn-fx-cyan) 40%, transparent); }
-/* the ~ chip: cycles the audio / video route of a reactive param */
-.syn-fxlab .fxl-mod {
-  width: 32px; height: 14px; flex-shrink: 0; padding: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 6.5px; letter-spacing: .4px; text-transform: uppercase;
-  color: var(--syn-fx-t2); cursor: pointer; border-radius: 1px;
-  background: linear-gradient(180deg, var(--syn-fx-metal-1), var(--syn-fx-panel-3));
-  border: 1px solid color-mix(in srgb, var(--syn-fx-gloss) 10%, transparent);
-}
-.syn-fxlab .fxl-mod:hover { color: var(--syn-fx-t4); border-color: color-mix(in srgb, var(--syn-fx-gloss) 20%, transparent); }
-.syn-fxlab .fxl-mod.on {
-  color: var(--syn-fx-cyan);
-  border-color: color-mix(in srgb, var(--syn-fx-cyan) 55%, transparent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--syn-fx-cyan) 30%, transparent);
-}
-.syn-fxlab .fxl-mod-slot { width: 32px; flex-shrink: 0; }
-.syn-fxlab .fxl-amt { font-size: 6.5px; letter-spacing: 1px; color: color-mix(in srgb, var(--syn-fx-cyan) 60%, var(--syn-fx-t2)); }
-
-/* a switch: .led-btn, full width */
-.syn-fxlab .fxl-switch {
-  height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 10px;
-  position: relative; overflow: hidden; cursor: pointer; border-radius: 1px;
-  background:
-    radial-gradient(ellipse 100% 55% at 50% -10%, color-mix(in srgb, var(--syn-fx-gloss) 22%, transparent) 0%, color-mix(in srgb, var(--syn-fx-gloss) 8%, transparent) 40%, transparent 72%),
-    linear-gradient(180deg, var(--syn-fx-metal-1) 0%, var(--syn-fx-metal-4) 35%, var(--syn-fx-panel-2) 70%, var(--syn-fx-metal-4) 100%);
-  border: 1px solid color-mix(in srgb, var(--syn-fx-gloss) 10%, transparent);
-  border-bottom-color: color-mix(in srgb, var(--syn-fx-shade) 65%, transparent);
-  box-shadow: inset 0 2px 10px color-mix(in srgb, var(--syn-fx-gloss) 15%, transparent), inset 0 -2px 8px color-mix(in srgb, var(--syn-fx-shade) 65%, transparent), 0 2px 5px color-mix(in srgb, var(--syn-fx-shade) 65%, transparent);
-}
-.syn-fxlab .fxl-switch.on { border-color: color-mix(in srgb, var(--syn-fx-amber) 42%, transparent); animation: fxl-glow 5s linear infinite; }
-.syn-fxlab .fxl-switch-txt { font-size: 8px; letter-spacing: 1.5px; color: var(--syn-fx-t3); text-transform: uppercase; }
-.syn-fxlab .fxl-switch.on .fxl-switch-txt { color: var(--syn-fx-t4); text-shadow: 0 0 8px color-mix(in srgb, var(--syn-fx-amber) 30%, transparent); }
-.syn-fxlab .fxl-switch:hover .fxl-switch-txt { color: var(--syn-fx-t4); }
-/* the real checkbox stays in the tree (testid, keyboard, a11y), drawn by the LED */
-.syn-fxlab .fxl-sr {
-  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
-  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; opacity: 0;
-}
-.syn-fxlab .fxl-switch:focus-within { outline: 1px solid color-mix(in srgb, var(--syn-fx-amber) 50%, transparent); outline-offset: 1px; }
-
-.syn-fxlab button:focus-visible, .syn-fxlab input:focus-visible { outline: 1px solid color-mix(in srgb, var(--syn-fx-amber) 60%, transparent); outline-offset: 1px; }
-
-@media (prefers-reduced-motion: reduce) {
-  .syn-fxlab *, .syn-fxlab *::before, .syn-fxlab *::after { animation: none !important; }
-}
+.syn-fxlab[data-theme="day"] .fxl-tl-loop.on { border-color: color-mix(in srgb, var(--syn-fx-day-teal) 45%, transparent); color: var(--syn-fx-day-teal); }
+/* status line, day */
+.syn-fxlab[data-theme="day"] .fxl-strip { background: var(--syn-fx-day-deep); color: var(--syn-fx-day-t2); border-top-color: color-mix(in srgb, var(--syn-fx-day-t4) 9%, transparent); }
+.syn-fxlab[data-theme="day"] .fxl-route b, .syn-fxlab[data-theme="day"] .fxl-route b.ready { color: var(--syn-fx-day-t4); }
+.syn-fxlab[data-theme="day"] .fxl-route b.loading { color: var(--syn-fx-day-t2); }
+.syn-fxlab[data-theme="day"] .fxl-route b.missing, .syn-fxlab[data-theme="day"] .fxl-err { color: var(--syn-fx-day-red); }
+.syn-fxlab[data-theme="day"] .fxl-note, .syn-fxlab[data-theme="day"] .fxl-track-name { color: var(--syn-fx-day-t3); }
+.syn-fxlab[data-theme="day"] .fxl-meter b, .syn-fxlab[data-theme="day"] .fxl-bpm { color: var(--syn-fx-day-t4); }
+.syn-fxlab[data-theme="day"] .fxl-meter-bar { background: var(--syn-fx-day-chip); }
+.syn-fxlab[data-theme="day"] .fxl-meter-bar > i, .syn-fxlab[data-theme="day"] .fxl-beat { background: var(--syn-fx-day-accent-hi); box-shadow: none; }
+.syn-fxlab[data-theme="day"] .fxl-icon-btn { background: var(--syn-fx-day-cream); border-color: var(--syn-fx-day-line); color: var(--syn-fx-day-t3); }
+.syn-fxlab[data-theme="day"] .fxl-icon-btn.on { color: var(--syn-fx-day-accent); border-color: color-mix(in srgb, var(--syn-fx-day-accent) 45%, transparent); }

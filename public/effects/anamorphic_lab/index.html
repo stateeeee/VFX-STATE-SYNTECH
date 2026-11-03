@@ -3242,6 +3242,7 @@ document.querySelector('.chip').classList.add('on');
   var TOGS=['tog-letterbox','tog-breathing','tog-flare','tog-flareMaster','tog-compare','tog-desqueeze'];
   function collect(){return {sliders:slVals(),toggles:ledGet(TOGS)};}
   function apply(s){if(!s)return;slApply(s.sliders);ledApply(s.toggles);}
+  window.__synBridge={collect:collect,apply:apply}; /* SYNTECH-LAB */
   window.addEventListener('message',function(ev){
     var d=ev&&ev.data;
     if(!d||typeof d!=='object'||typeof d.type!=='string')return;
@@ -3258,6 +3259,94 @@ document.querySelector('.chip').classList.add('on');
 })();
 </script>
 <!-- SYNTECH-BRIDGE-END -->
+<!-- SYNTECH-LAB-START (Lab chain adapter; standalone-safe) -->
+<script src="../shared/syn-lab.js"></script>
+<script>
+/* LAB v2 adapter — ANAMORPHIC LAB. Nothing here runs until the Lab shell calls SynLab.
+   VIDEO  : the Lab stream goes on the effect's own <video id=vid> (srcObject)
+            with a source mode of its own, 'lab'. The webcam mirror is the CSS
+            class canvas.mirrored, added only by toggleWebcam()'s loadeddata
+            handler: this path installs its own handlers (dropping any stale
+            webcam / file ones) and never adds it, so the picture is NOT
+            mirrored. Every own source choice runs stopAllSources(), which
+            clears vid.srcObject without touching the Lab's tracks.
+   AUDIO  : ANAMORPHIC LAB has no audio reactivity at all → no-op.
+   OUTPUT : #cv (single WebGL canvas, preserveDrawingBuffer:true; it follows
+            the source size, max 1280 wide, like the effect's own picture). */
+(function(){
+  'use strict';
+  var kit=SynLab.kit;
+  var cur=null;
+  function active(){ return !!cur && vid.srcObject===cur; }
+  function $(id){ return document.getElementById(id); }
+
+  function onReady(){
+    if(!active()||!vid.videoWidth) return;
+    resizeCanvasToVideo(); if(!tex) initTex();
+    cv.classList.add('on'); cv.classList.remove('mirrored');
+    $('drop-overlay').classList.add('hidden');
+    updateSourceUI('','LAB');
+    updateSrcInfo('LAB',vid.videoWidth+'×'+vid.videoHeight);
+  }
+  function attach(stream){
+    if(!active()) stopAllSources();              /* the effect's own webcam / camera / file / image go */
+    cur=stream; srcMode='lab';
+    vid.onloadedmetadata=vid.onloadeddata=vid.oncanplay=vid.oncanplaythrough=onReady;
+    vid.onerror=null;
+    vid.muted=true; vid.playsInline=true; vid.srcObject=stream;
+    cv.classList.remove('mirrored');
+    updateSourceUI('','LAB');
+    updateSrcInfo('LAB','Connecting…');
+    var p=vid.play(); if(p&&p.catch) p.catch(function(){});
+  }
+  function detach(){            /* = the webcam-off path: back to "no source", as at boot */
+    stopAllSources(); srcMode='none';
+    updateSourceUI('');
+    cv.classList.remove('on');
+    $('drop-overlay').classList.remove('hidden');
+    /* render() keeps drawing `tex`: a black texel, so the picture handed down the chain is black, as at boot */
+    if(tex){ gl.bindTexture(gl.TEXTURE_2D,tex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255])); }
+  }
+
+  SynLab.register({
+    setVideoStream:function(stream){
+      if(stream) attach(stream);
+      else { if(active()) detach(); cur=null; }
+    },
+    setAudioStream:function(){ /* no audio reactivity in ANAMORPHIC LAB */ },
+    outputCanvas:function(){ return cv; },
+    labelOf:function(el){
+      if(el.id==='s-bokehMM') return 'Ghost / Bokeh focal (mm)';
+      var c=el.closest('.ctrl'); var l=c&&c.querySelector('label');
+      var t='';
+      if(l){ var x=l.cloneNode(true); x.querySelectorAll('b,button').forEach(function(n){ n.remove(); }); t=kit.clean(x.textContent); }  /* the label without its live value / AUTO button */
+      if(t) return t;
+      return kit.rowLabel(el,'.ctrl-lbl');
+    },
+    /* the Bokeh section repeats Ghost's focal slider (same value, same handler) */
+    excludeKey:function(key){ return key==='s-bokehMM-bokeh'; },
+    controls:function(){
+      return [
+        kit.led('tog-compare','tog-compare',{label:'Compare A|B'}),
+        kit.led('tog-desqueeze','tog-desqueeze',{label:'Desqueeze Preview'}),
+        kit.led('tog-letterbox','tog-letterbox',{label:'Letterbox'}),
+        kit.led('tog-breathing','tog-breathing',{label:'Breathing'}),
+        kit.led('tog-ghostGlitch','tog-ghostGlitch',{label:'Ghost FX'}),
+        kit.led('tog-riccardo','tog-riccardo',{label:'Recognize & Blur'}),
+        kit.led('tog-flareMaster','tog-flareMaster',{label:'Flare On'}),
+        kit.led('tog-flare','tog-flare',{label:'Flare Auto Detect'})
+      ].filter(Boolean);
+    },
+    /* monitoring aids, not a grade: the AI must not flip them */
+    locked:['tog-compare','tog-desqueeze'],
+    state:function(){
+      var f=parseFloat(($('fps-val')||{}).textContent);
+      return {hasSource:srcMode!=='none', external:active(), fps:isFinite(f)?f:0};
+    }
+  });
+})();
+</script>
+<!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>
