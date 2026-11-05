@@ -26,7 +26,8 @@ export interface SynLabParam {
   locked?: boolean;
 }
 
-export interface SynLabState { hasSource: boolean; external: boolean; fps: number }
+/** budget: the frame budget the shell last set (null = native, 0 = paused, >0 = fps cap) */
+export interface SynLabState { hasSource: boolean; external: boolean; fps: number; budget?: number | null }
 
 export interface SynLabApi {
   version: number;
@@ -41,6 +42,9 @@ export interface SynLabApi {
   getSettings(): unknown;
   applySettings(s: unknown): void;
   state(): SynLabState;
+  /** frame budget (2026-11-05): 0 = paused, >0 = rAF capped at that rate, null = native.
+   *  Optional: a stale cached effect page may not have it. */
+  setFrameBudget?(fps: number | null): void;
 }
 
 /** The node's SynLab, once its adapter registered (null while loading, or for an

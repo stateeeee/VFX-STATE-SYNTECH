@@ -29,6 +29,36 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-11-05 — v0.12.1: LAB senza lag, menu dei nodi che scorre, FATTO.**
+Operatore, dopo aver provato la 0.12.0 sul Mac: *"nella sezione nodi non riesco a inserire gli effetti perché non c'è
+una funzione di scroll … se aggiungo dei nodi e apro la sezione lab … laggava tutto, andava a scatti; gli effetti
+normali senza entrare nella sezione lab erano ok"*.
+- **Menu Add Node**: 10 voci in un pannello `overflow-hidden` → le ultime (POINTCLOUD, QUADTREE, TIME MACHINE) erano
+  tagliate e non cliccabili. Ora il menu misura lo spazio che resta nel pannello all'apertura e scorre
+  (`NodalComposition.tsx`). Provato a 1100×700 / 1280×800 / 1440×860 / 1600×1000: tutte e 10 cliccabili.
+- **Lag del LAB**: gli iframe degli effetti sono same-origin → girano tutti sul thread della shell; con N nodi N motori
+  di render a 60/120 Hz, anche quando non servono. Nuovo `SynLab.setFrameBudget(fps)` in `shared/syn-lab.js` (avvolge
+  `requestAnimationFrame` DENTRO l'iframe; mai installato da solo o in EffectHost; nessun HTML di effetto toccato) e
+  `applyBudgets()` in `ChainLab.tsx`: LAB nascosto → tutti in pausa; scheda INPUT → tutti in pausa; scheda dell'effetto
+  k → effetti 1..k a 30 fps, quelli dopo in pausa (un solo nodo attivo → velocità nativa); OUTPUT, export Master o
+  cattura Gemini → tutti a 30. Misura nel sandbox (5 nodi): ritardo dei timer della shell 5,7 s → 0,6 s con la prima
+  scheda, 4,1 s → 0,09 s con il LAB nascosto.
+- **Revisione Opus**: FAIL al primo giro (menu ancora tagliato nelle finestre piccole; Gemini e l'export leggevano un
+  fotogramma VECCHIO dell'OUTPUT subito dopo la ripresa; il controllo "performance" dell'Optimizer leggeva 0 fps) →
+  corretti: `awaitFreshOutput()` aspetta fotogrammi nuovi prima di grab / clip / Master; `LabHandle.measureFps()` misura
+  sotto hold; `ChainState.fpsCap` = 30 e il controllo è ok da 27 fps.
+- **Aperti**: i `setInterval` di alcuni effetti (analisi movimento di BLOB REVEAL / ANAMORPHIC, PiP di BLOB TRACKER)
+  non sono in pausa; la scheda OUTPUT fa ancora girare tutti i nodi (a 30 fps) — catene pesanti (PAINTING +
+  POINTCLOUD) possono ancora scattare lì. L'operatore ha anche detto che con il LAB aperto "non spuntano più i nomi
+  degli effetti sulla destra": non riprodotto qui, chiesto uno screenshot. Seguito (revisione, non bloccante):
+  `whenReady` e `measureFps` non tengono un hold — se l'OUTPUT non ha MAI avuto un fotogramma (catena in pausa dal
+  caricamento) il primo risponde "no picture" dopo 8 s e il secondo 0 fps.
+- **Gemini con la catena in pausa** (trovato da `verify-gemini`): `recordOutputClip` rinunciava prima di alzare i
+  budget e `grabPair` aspettava il primo fotogramma solo 1,5 s — una coppia vuota il pannello la legge come "export in
+  corso" e non invia nulla. Ora entrambi aspettano dentro l'hold fino a 10 s (`FIRST_FRAME_WAIT_MS`); il contatore
+  rVFC dell'OUTPUT non conta più due volte. `verify-gemini` 11/11, 287 PASS.
+- `version` 0.12.0 → **0.12.1**.
+
 **SESSIONE 2026-11-03 — LAB v2: il LAB è una catena degli EFFETTI VERI (v0.12.0), FATTO.**
 Decisione dell'operatore (2026-10-28, "opzione 1"): ogni nodo del LAB è l'effetto vero (`public/effects/<id>`) in un
 iframe, con tutta la sua interfaccia, identica ad aprirlo da solo; tutti e 10 gli effetti sono nodi. Supera la regola

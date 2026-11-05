@@ -413,13 +413,15 @@ function computeChecks(chain: ChainState, signals: SignalSummary, luma: number |
   const motionFx = chain.order.filter((id) => MOTION_EFFECTS.includes(id)).map(effectName);
   const fps = Math.round(chain.fps);
   const res = Math.round(chain.resScale * 100);
-  const perfOk = chain.fps >= 30 && chain.resScale >= 1;
+  // the Lab renders capped at fpsCap (frame budget, 30): a healthy chain reads ~29-31, so 3 fps of slack
+  const cap = chain.fpsCap && chain.fpsCap > 0 ? chain.fpsCap : 30;
+  const perfOk = chain.fps >= cap - 3 && chain.resScale >= 1;
   const reactWords = reactive.length ? `${plural(reactive.length, 'reactive effect')} (${reactive.join(', ')})` : 'no reactive effect in the chain';
   return [
     {
       id: 'performance',
       ok: perfOk,
-      detail: `${fps} fps${chain.resScale < 1 ? ` at ${res}% render resolution` : ''}${perfOk ? '' : chain.resScale < 1 ? ' — adaptive resolution is cutting detail' : ' — below 30 fps'}`,
+      detail: `${fps} fps${chain.resScale < 1 ? ` at ${res}% render resolution` : ''}${perfOk ? '' : chain.resScale < 1 ? ' — adaptive resolution is cutting detail' : ` — below the Lab's ${cap} fps`}`,
     },
     {
       id: 'music',
@@ -1436,6 +1438,9 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
       // adaptive resolution) — and right before capture, so the bases are fresh
       const chain = lab.chainState();
       if (!chain.order.length) throw new AiError('bad_request', 'The Lab chain is empty: enable at least one effect.');
+      // the real OUTPUT rate, held live (the on-screen meter reads 0 while an earlier tab pauses the OUTPUT)
+      chain.fps = await lab.measureFps();
+      guard();
       b.step('Grabbing frames…');
       const pair = await lab.grabPair(768);
       guard();
@@ -1720,6 +1725,9 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
       // performance check would blame the look for the panel's own load
       const chain = lab.chainState();
       if (!chain.order.length) throw new AiError('bad_request', 'The Lab chain is empty: enable at least one effect.');
+      // the real OUTPUT rate, held live (the on-screen meter reads 0 while an earlier tab pauses the OUTPUT)
+      chain.fps = await lab.measureFps();
+      guard();
       // the frames first: a ready Lab that gives no picture is running a
       // Master export — stop before recording, before the request
       b.step('Grabbing frames…');

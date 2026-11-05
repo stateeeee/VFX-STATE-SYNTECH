@@ -64,6 +64,10 @@ export interface ChainLabProps {
 
 /** an iframe whose effect never registers SynLab is reported (and bypassed) after this */
 const LINK_TIMEOUT_MS = 15000;
+/** frame budget of a Lab node that feeds what is on screen (or the Master / a Gemini capture):
+ *  SynLab.setFrameBudget(LAB_FPS). The Master records the OUTPUT at 30 fps (record.ts
+ *  captureStream(30)), so 30 never starves an export. Nodes nobody watches get 0 (paused). */
+const LAB_FPS = 30;
 /** after a node's link comes up, an effect that drops the Lab stream by itself in this window is re-fed */
 const RESTORE_GUARD_MS = 4000;
 /** photo INPUT: redraw cadence, so its captured track keeps delivering frames */
@@ -77,6 +81,14 @@ const VIDEO_FRAME_GAP_MS = 500;
 const WEBCAM_SPAN_MS = 2000;
 const MAX_LIVE_FRAMES = 16;
 const GRAB_WAIT_MS = 1500;
+/** First frame after a hold raised paused budgets: every paused hop has to render once (shader / model
+ *  warm-up included) before the OUTPUT shows anything. A grab that gives up early reads to the Gemini
+ *  panel as "a Master export is running", so this is generous; an export still stops it at once. */
+const FIRST_FRAME_WAIT_MS = 10000;
+/** awaitFreshOutput: extra wait for at least one fresh OUTPUT frame on a very slow renderer */
+const FRESH_FALLBACK_MS = 3000;
+/** LabHandle.measureFps window */
+const FPS_WINDOW_MS = 1100;
 const HINT_MAX = 160;
 
 const wait = (ms: number) => new Promise<void>((r) => { window.setTimeout(r, ms); });
@@ -119,13 +131,15 @@ interface NodeRec {
   video: MediaStream | null | undefined;
   audio: MediaStream | null | undefined;
   out: MediaStream | null;
+  /** last SynLab.setFrameBudget sent to this node's link (null = native; undefined = never sent) */
+  budget: number | null | undefined;
 }
 type LinkState = 'loading' | 'ready' | 'missing';
 type Tab = 'input' | 'output' | ModuleId;
 
 interface TransportView { playing: boolean; t: number; dur: number; loop: boolean }
 
-type RvfcVideo = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number };
+type RvfcVideo = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number; cancelVideoFrameCallback?: (h: number) => void };
 type CaptureVideo = HTMLVideoElement & { captureStream?: () => MediaStream };
 
 const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
@@ -178,9 +192,16 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   const [links, setLinks] = useState<Partial<Record<ModuleId, LinkState>>>({});
   const pendingSettingsRef = useRef(new Map<ModuleId, unknown>());
   const [tab, setTab] = useState<Tab>(() => chain[0] ?? 'input');
+  const tabRef = useRef<Tab>(tab);
+  tabRef.current = tab;
 
   const [fps, setFps] = useState(0);
   const fpsRef = useRef(0);
+  /** frames presented by the OUTPUT <video> since mount (monotonic; the fps meter's rVFC counts them) */
+  const outFramesRef = useRef(0);
+  /** outFramesRef when a node last went from paused (0) to rendering: what is on the OUTPUT before
+   *  that is stale (see awaitFreshOutput) */
+  const raisedAtFrameRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [audioOn, setAudioOn] = useState(false);
@@ -242,6 +263,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       ov.srcObject = up;
       if (up) void ov.play().catch(() => {});
     }
+    applyBudgets();
   };
 
   /** first contact with a node's SynLab: its saved panel (or the preset's), then plumb */
@@ -252,6 +274,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     rec.refed = false;
     rec.video = undefined;
     rec.audio = undefined;
+    rec.budget = undefined;
     const pending = pendingSettingsRef.current;
     const s = pending.has(rec.id) ? pending.get(rec.id) : readEffectSettings(rec.id);
     pending.delete(rec.id);
@@ -316,7 +339,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         if (el) {
           const rec = map.get(id);
           if (rec && rec.iframe === el) return;
-          map.set(id, { id, iframe: el, win: null, loadedAt: 0, api: null, inited: false, readyAt: 0, refed: false, video: undefined, audio: undefined, out: null });
+          map.set(id, { id, iframe: el, win: null, loadedAt: 0, api: null, inited: false, readyAt: 0, refed: false, video: undefined, audio: undefined, out: null, budget: undefined });
         } else {
           map.delete(id);
         }
@@ -645,9 +668,8 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
      playing Track are paused (and remembered), the webcam and the mic are
      released; shown again, only what was playing resumes. A Master export or a
      Gemini capture in flight (`holdRef`) keeps everything live until it ends.
-     The effects' own render loops keep running (nothing in SynLab pauses them)
-     but on a frozen input. The signal loop (AudioEngine / VideoAnalyzer ticks)
-     runs only while live. */
+     The effects' render loops follow the frame budget (applyBudgets). The
+     signal loop (AudioEngine / VideoAnalyzer ticks) runs only while live. */
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   const holdRef = useRef(0);
@@ -655,6 +677,48 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   const parkedTrackRef = useRef(false);
   const liveRef = useRef(false);
   const rafRef = useRef(0);
+
+  /* ═══ FRAME BUDGET: only the nodes that feed the screen render ════════
+     Every node is a same-origin iframe: all their render loops share the
+     shell's main thread. So (SynLab.setFrameBudget, 03 §3.1):
+       a Master export or a Gemini capture hold  → every node at LAB_FPS
+       Lab hidden                               → every node paused (0)
+       OUTPUT tab (or the last node's tab)      → every node at LAB_FPS
+       effect tab k                             → nodes 0..k at LAB_FPS, the rest 0
+       INPUT tab                                → every node 0 (INPUT shows the source only)
+     When exactly ONE node renders and nothing holds the Lab (no export, no
+     capture) it runs native (null): a single effect keeps its v0.12.0
+     smoothness. Identity-checked per node, so it is called freely: from
+     replumb (every commit, the polls), syncLoop (visibility, hold, export).
+     A node raised from 0 marks the OUTPUT stale (raisedAtFrameRef) until
+     fresh frames went through the chain (awaitFreshOutput). */
+  const applyBudgets = () => {
+    const ids = chainRef.current;
+    const t = tabRef.current;
+    let upto: number; // nodes with chain index <= upto render
+    const held = holdRef.current > 0 || exportingRef.current;
+    if (held) upto = ids.length - 1;
+    else if (!visibleRef.current || t === 'input') upto = -1;
+    else if (t === 'output') upto = ids.length - 1;
+    else {
+      const k = ids.indexOf(t);
+      upto = k >= 0 ? k : ids.length - 1; // a tab that just left the chain: keep everything live
+    }
+    const rendering = Math.min(upto + 1, ids.length);
+    const run: number | null = !held && rendering === 1 ? null : LAB_FPS;
+    nodesRef.current.forEach((rec) => {
+      const api = rec.api;
+      if (!api || typeof api.setFrameBudget !== 'function') return;
+      const i = ids.indexOf(rec.id);
+      const want = i >= 0 && i <= upto ? run : 0;
+      if (rec.budget === want) return;
+      try {
+        api.setFrameBudget(want);
+        if (rec.budget === 0 && want !== 0) raisedAtFrameRef.current = outFramesRef.current;
+        rec.budget = want;
+      } catch { /* a torn-down frame: the poll will see it */ }
+    });
+  };
 
   const signalTick = (now: number) => {
     audioRef.current!.tick(now);
@@ -689,6 +753,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     }
   };
   const syncLoop = () => {
+    applyBudgets();
     const live = visibleRef.current || holdRef.current > 0 || exportingRef.current;
     if (live === liveRef.current) {
       if (!live) parkMedia(); // a source loaded while hidden: park it too
@@ -798,14 +863,21 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     if (!ov || typeof ov.requestVideoFrameCallback !== 'function') return;
     let frames = 0;
     let alive = true;
+    let pending = 0; // the one outstanding callback: never two, or every frame counts twice
     const onFrame = () => {
+      pending = 0;
       if (!alive) return;
       frames++;
-      ov.requestVideoFrameCallback!(onFrame);
+      outFramesRef.current++;
+      pending = ov.requestVideoFrameCallback!(onFrame);
     };
-    ov.requestVideoFrameCallback(onFrame);
-    // a fresh srcObject drops pending callbacks: re-arm on every new stream
-    const rearm = () => ov.requestVideoFrameCallback!(onFrame);
+    pending = ov.requestVideoFrameCallback(onFrame);
+    /* a fresh srcObject may drop the pending callback: re-arm on every new stream,
+       cancelling the old one first in case it survived */
+    const rearm = () => {
+      if (pending) ov.cancelVideoFrameCallback?.(pending);
+      pending = ov.requestVideoFrameCallback!(onFrame);
+    };
     ov.addEventListener('loadedmetadata', rearm);
     const t = window.setInterval(() => {
       fpsRef.current = frames;
@@ -980,6 +1052,8 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       if (k === 'video' && clipWantedRef.current && audioRef.current!.mode === 'off') {
         await startClipOn(v).catch(() => {});
       }
+      await awaitFreshOutput(); // the budgets were raised by the export: the take starts on fresh frames
+      if (exportStopRef.current) throw new Error('stopped');
       const ow = ov.videoWidth;
       const native = `${ow}×${ov.videoHeight}`;
       const width = ow >= 1600 ? MASTER_WIDTH : Math.max(2, Math.round(ow / 2) * 2);
@@ -1074,6 +1148,16 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     const ov = outputVideoRef.current;
     return !!ov && ov.readyState >= 2 && ov.videoWidth > 0;
   };
+  /** After a frame-budget raise (a capture / export on a Lab showing an earlier tab, or hidden) the
+   *  OUTPUT <video> still holds a frame from before: wait until chain.length + 1 frames were presented
+   *  since the raise (each hop adds a frame of latency). Bounded by `timeoutMs`; past it, when not even
+   *  ONE new frame arrived (software GL renders at ~1 fps), up to FRESH_FALLBACK_MS more for that one. */
+  const awaitFreshOutput = async (timeoutMs = GRAB_WAIT_MS) => {
+    const need = raisedAtFrameRef.current + chainRef.current.length + 1;
+    const t0 = performance.now();
+    while (outFramesRef.current < need && performance.now() - t0 < timeoutMs) await wait(30);
+    while (outFramesRef.current <= raisedAtFrameRef.current && performance.now() - t0 < timeoutMs + FRESH_FALLBACK_MS) await wait(50);
+  };
 
   const labRef = useRef<LabHandle | null>(null);
   if (!labRef.current) {
@@ -1095,11 +1179,19 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       grabPair: (maxSide = 768) => withLiveLoop(async () => {
         const none = { source: null, output: null };
         if (exportingRef.current || kindRef.current === 'none') return none;
-        const deadline = performance.now() + GRAB_WAIT_MS;
+        const deadline = performance.now() + FIRST_FRAME_WAIT_MS;
         while (!(inputHasFrame() && outputHasFrame())) {
           if (performance.now() > deadline || exportingRef.current) return none;
           await wait(60);
         }
+        await awaitFreshOutput(); // the budgets were just raised: never a frame from before
+        /* the wait can outlast a source hiccup (a seek / loop restart drops readyState): both again,
+           on the same generous deadline — an empty pair reads to the panel as "an export is running" */
+        while (!(inputHasFrame() && outputHasFrame())) {
+          if (performance.now() > deadline || exportingRef.current) return none;
+          await wait(60);
+        }
+        if (exportingRef.current) return none;
         const src = inputElement();
         const ov = outputVideoRef.current;
         if (!src || !ov) return none;
@@ -1143,12 +1235,23 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
 
       recordOutputClip: async (sec) => {
         const ov = outputVideoRef.current;
-        if (!ov || exportingRef.current || !outputHasFrame()) return null;
+        if (!ov || exportingRef.current || kindRef.current === 'none') return null;
         const audio = audioRef.current!;
         const stream = labAudioStream();
         const s = Number.isFinite(sec) && sec > 0 ? sec : 4;
         const what = !stream ? ' (no audio)' : audio.mode === 'mic' ? ' with mic audio' : ' with music';
-        return withLiveLoop(() => recordVideoClip(ov, stream, s, `OUTPUT clip ${s}s${what}`));
+        return withLiveLoop(async () => {
+          /* the hold raised the budgets: a paused chain (an earlier tab, hidden) may not have put a
+             single frame on the OUTPUT yet — wait for one, then for fresh ones */
+          const deadline = performance.now() + FIRST_FRAME_WAIT_MS;
+          while (!outputHasFrame()) {
+            if (performance.now() > deadline || exportingRef.current) return null;
+            await wait(60);
+          }
+          await awaitFreshOutput();
+          if (exportingRef.current) return null;
+          return recordVideoClip(ov, stream, s, `OUTPUT clip ${s}s${what}`);
+        });
       },
 
       signalSummary: (sec) => withLiveLoop(() => new Promise<SignalSummary>((resolve) => {
@@ -1195,6 +1298,16 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         window.setTimeout(() => { window.clearInterval(id); sample(); finish(); }, windowSec * 1000);
       })),
 
+      // the OUTPUT's real rate: under a hold (every node renders, capped at LAB_FPS), after fresh frames
+      measureFps: (windowMs = FPS_WINDOW_MS) => withLiveLoop(async () => {
+        if (exportingRef.current || !outputHasFrame()) return fpsRef.current;
+        await awaitFreshOutput();
+        const f0 = outFramesRef.current;
+        const t0 = performance.now();
+        await wait(clamp(windowMs, 300, 5000));
+        return Math.round(((outFramesRef.current - f0) * 10000) / (performance.now() - t0)) / 10;
+      }),
+
       chainState: (): ChainState => {
         const audio = audioRef.current!;
         const params: ParamDesc[] = [];
@@ -1209,6 +1322,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
           order: chainRef.current.slice(),
           params,
           fps: fpsRef.current,
+          fpsCap: LAB_FPS,
           resScale: 1,
           sourceKind: kindRef.current,
           audioActive: audio.active,
@@ -1356,6 +1470,10 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     : undefined;
   const missing = chain.filter((id) => linkOf(id) === 'missing');
 
+  /** the OUTPUT is paused by the frame budget (an earlier tab is on top): the pill says so instead of 0 */
+  const tabIndex = tab === 'input' || tab === 'output' ? -1 : chain.indexOf(tab);
+  const outputIdle = !exporting && (tab === 'input' || (tabIndex >= 0 && tabIndex < chain.length - 1));
+
   return (
     <div className="syn-fxlab" data-testid="chain-lab" data-theme={theme}>
       {/* ── the LAB strip: logo · tabs · commands · pills ── */}
@@ -1500,8 +1618,8 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
               <span className="fxl-pill-val">MASTER</span>
             </div>
           )}
-          <div className="fxl-fps" title="Frames per second of the chain OUTPUT">
-            <span>FPS <b data-testid="chain-fps">{fps}</b></span>
+          <div className="fxl-fps" title={outputIdle ? 'The chain OUTPUT is paused while an earlier tab is shown (only the nodes up to the selected one render)' : 'Frames per second of the chain OUTPUT'}>
+            <span>FPS <b data-testid="chain-fps">{outputIdle ? '–' : fps}</b></span>
           </div>
         </div>
       </div>

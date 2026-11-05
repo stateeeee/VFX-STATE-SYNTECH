@@ -376,6 +376,7 @@ function readChain(v: unknown): ChainState {
   if (!Array.isArray(c.params)) throw new GeminiFailure('bad_request', 'chain is missing: open the Lab and enable at least one effect.');
   const order = [...new Set(arr(c.order).filter(isModuleId))];
   if (!order.length) throw new GeminiFailure('bad_request', 'The Lab chain is empty: enable at least one effect.');
+  const fpsCap = fin(c.fpsCap); // the Lab's frame budget (LAB_FPS), absent from an older client
   /* only the effects of this chain, first mention of a key wins */
   const seen = new Set<string>();
   const params = c.params.slice(0, MAX_CHAIN_PARAMS).map(normalizeParam).filter((p): p is ParamDesc => {
@@ -387,6 +388,7 @@ function readChain(v: unknown): ChainState {
     order,
     params,
     fps: fin(c.fps) ?? 0,
+    ...(fpsCap !== null && fpsCap > 0 ? { fpsCap: Math.min(fpsCap, 240) } : {}),
     resScale: fin(c.resScale) ?? 1,
     sourceKind: SOURCE_KINDS.includes(c.sourceKind as SourceKindT) ? (c.sourceKind as SourceKindT) : 'none',
     audioActive: c.audioActive === true,
@@ -528,7 +530,7 @@ function describeParam(p: ParamDesc): string {
 /** The chain table: per effect, per panel section (in the order the Lab
  *  listed them — the panel's own order). */
 function describeChain(chain: ChainState): string {
-  const render = [`${n2(chain.fps)} fps`];
+  const render = [chain.fpsCap ? `${n2(chain.fpsCap)} fps cap (the Lab renders capped at ${n2(chain.fpsCap)} fps), measured ${n2(chain.fps)} fps` : `${n2(chain.fps)} fps`];
   if (chain.resScale < 1) render.push(`resolution scale ${Math.round(chain.resScale * 100)}%`);
   render.push(`source ${chain.sourceKind}`);
   if (chain.maskState) render.push(`person mask ${chain.maskState}`);

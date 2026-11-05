@@ -218,6 +218,8 @@ export interface ChainState {
   order: ModuleId[];         // enabled effects, render order
   params: ParamDesc[];       // ENABLED nodes only
   fps: number;
+  /** the Lab's frame budget (LAB_FPS): a healthy chain reads about this, never more */
+  fpsCap?: number;
   resScale: number;
   sourceKind: SourceKindT;
   audioActive: boolean;
@@ -349,6 +351,10 @@ export interface LabHandle {
   /** Samples the live signals at ~10Hz for `sec` seconds. */
   signalSummary(sec: number): Promise<SignalSummary>;
   chainState(): ChainState;
+  /** The OUTPUT's measured fps over ~1.1 s, with the chain held live (every node rendering at the
+   *  Lab's cap) and after fresh frames — chainState().fps is the on-screen meter, 0 while the OUTPUT
+   *  is paused by the frame budget (an earlier tab on top, Lab hidden). */
+  measureFps(windowMs?: number): Promise<number>;
   /** Applies a validated plan through the ParamBus; returns what it did and
    *  the previous value of every key it touched. Refused (applied 0) while a
    *  Master export runs. */
