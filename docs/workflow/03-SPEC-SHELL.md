@@ -64,8 +64,9 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
   playing); Clip audio is the video's own sound, so it goes silent with it.
   The webcam and the mic are switched off on hide and stay off on show. A
   running Master export or a Gemini capture already in flight plays the media
-  for its window. The effects' own render loops keep running underneath
-  (SynLab has no pause yet — a later `setPaused` is proposed).
+  for its window. Hidden, every node's rendering is **paused** through its
+  frame budget (§3.1, `SynLab.setFrameBudget(0)`); an export or a Gemini
+  capture runs them at 30 fps for its window.
 
 ### 3.1 LAB v2 — a chain of the real effects (operator decision 2026-10-28)
 
@@ -80,7 +81,7 @@ effect side.
 
 - **Stage** (`lab-stage`): one iframe per wired node (`lab-frame-<id>`), all
   stacked in the same rect; the selected tab is on top and takes the pointer,
-  the others keep rendering underneath. Iframes keep a stable DOM order
+  the others stay laid out underneath (rendering as the frame budget says). Iframes keep a stable DOM order
   (moving one would reload it), so re-ordering in the node graph only
   re-plumbs the streams. A node whose SynLab link does not come up is
   bypassed, and after 15 s the status line says "<EFFECT>: Lab link not
@@ -140,6 +141,24 @@ effect side.
   `options` for enums; `applyPlan` applies floors, snaps to the step, records
   the undo values, reports routes as skipped, and refuses during an export.
   OUTPUT stills come from the OUTPUT `<video>`.
+- **Frame budget** (2026-11-05, the "LAB lags with several nodes" fix): the
+  node iframes are same-origin, so every effect's render loop shares the
+  shell's main thread (and a 120 Hz display would run each at 120 fps). The
+  shell sets each node's `SynLab.setFrameBudget()` from one function
+  (`applyBudgets`, called by the plumbing, visibility, tab, export and Gemini
+  hold changes): a Master export or a Gemini capture hold → every node at
+  `LAB_FPS` = 30 (the Master records the OUTPUT at 30 fps); Lab hidden → every
+  node 0 (paused); OUTPUT tab → every node at 30; effect tab k → nodes 1..k at
+  30, every node after k at 0 (it feeds nothing on screen); INPUT tab → every
+  node 0 (INPUT shows the source only). When exactly one node renders and
+  nothing holds the Lab, it runs native (`null`) instead of 30. While the
+  OUTPUT is paused the FPS pill reads `–`. A capture or export that raises a
+  paused node first waits for fresh OUTPUT frames (`awaitFreshOutput`:
+  chain length + 1 frames, bounded), so it never grabs the paused frame; the
+  Gemini performance check uses `LabHandle.measureFps()` (held live, ~1.1 s)
+  against `ChainState.fpsCap` (30, ok at ≥ 27). Paused means the effect's rendering only: its media and audio keep
+  playing. A single effect (opened alone or in EffectHost) never gets a budget
+  and runs at the native rate.
 - **Order and bypass live in the node graph only**. More than five effect
   nodes lay out in two columns.
 - Projects → a saved chain opens the Lab and loads that preset, whether the
@@ -280,6 +299,19 @@ same origin) is specified in 02-ARCHITECTURE "One rendering world". Rules:
 - `params()` lists the look controls of the panel (never Source / Export /
   Info / Camera), grouped by panel section; `setParam` fires the same events a
   user gesture does.
+- `setFrameBudget(fps)` (2026-11-05): `null` / `undefined` = native (the
+  default; standalone never calls it), `0` = paused, `> 0` = the effect's
+  `requestAnimationFrame` callbacks capped at that rate. `syn-lab.js` gates
+  `window.requestAnimationFrame` / `cancelAnimationFrame` of the iframe,
+  installed on the shell's first `outputCanvas()` / `captureStream()` /
+  non-native budget call (a pure pass-through while native), before an
+  adapter wraps rAF itself (POINTCLOUD / PAINTING copy the WebGL canvas right
+  after the engine's frame). Under a cap queued callbacks fire together, in
+  order, with the real timestamp, once the interval has elapsed; paused they
+  are held (never dropped) and resume when the budget is raised; cancel
+  cancels a held one. `kit.compositor` follows it (paused, it neither redraws nor copies). Not gated: `setInterval` /
+  `setTimeout` loops (the effects' motion meters, UI refreshes) and
+  `requestVideoFrameCallback` counters. `state().budget` reports it.
 
 ## 6. Node graph spec (INPUT → effects → OUTPUT)
 

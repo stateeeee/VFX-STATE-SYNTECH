@@ -47,9 +47,12 @@ so that all ten effects are in the Lab with their own complete panels.
   node i+1 — an **external stream** source, never the webcam path (no mirror).
 - OUTPUT = node N's stream (shown clean in the OUTPUT tab, recorded by Master
   MP4, sampled by Gemini).
-- Every node iframe stays rendered (stacked under the one being edited): a
+- Every node iframe stays laid out (stacked under the one being edited): a
   `display:none` / offscreen iframe is throttled by Chromium and would stall
-  the chain.
+  the chain. What each node renders is the shell's **frame budget**
+  (`SynLab.setFrameBudget`, 03 §3.1): only the nodes that feed the screen (or
+  a Master export / Gemini capture) render, at 30 fps; the others and a
+  hidden Lab are paused.
 - Audio: `AudioEngine` (clip / track / mic) plays the sound once, feeds the
   sidebar meter, and its output stream goes to every node's
   `SynLab.setAudioStream()` — each effect reacts with its own analyser; no
@@ -77,7 +80,8 @@ interface SynLabApi {
   params(): SynLabParam[];                      // the look controls (no Source/Export/Info)
   setParam(key: string, v: number): boolean;    // same events as a user gesture
   getSettings(): unknown; applySettings(s: unknown): void;  // = SYNTECH-BRIDGE collect/apply
-  state(): { hasSource: boolean; external: boolean; fps: number };
+  state(): { hasSource: boolean; external: boolean; fps: number; budget: number | null };
+  setFrameBudget(fps: number | null): void;     // null = native (default), 0 = paused, >0 = rAF cap (03 §5.2)
 }
 ```
 

@@ -978,7 +978,10 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     beforeRun2 = await labState(page);
     const g1 = mock.generate.length;
     const r2 = await roleCall(page, '/api/gemini/agent', 'ai-agent-run');
-    check(' second run: 200, applied again', r2.status === 200 && new RegExp(`Applied ${n} changes`).test(await text(page, 'ai-agent-result')), `${r2.status} in ${r2.sec}s`);
+    // the card renders after the response lands: wait for it (a busy ~1 fps sandbox can take a while)
+    const applied2 = await page.waitForFunction((re) => new RegExp(re).test(document.querySelector('[data-testid="ai-agent-result"]')?.textContent || ''),
+      `Applied ${n} changes`, { timeout: 15_000 }).then(() => true).catch(() => false);
+    check(' second run: 200, applied again', r2.status === 200 && applied2, `${r2.status} in ${r2.sec}s · ${short(await text(page, 'ai-agent-result'), 120)}`);
     check(' second run: music was already on — no note, no new upload', (await gone(page, 'ai-agent-note')) && mock.uploads.length === u0 && uploadCalls() === p0);
     const rec2 = mock.generate.slice(g1).find((x) => x.role === 'agent');
     agentPicked = (rec2 && rec2.picked) || agentPicked;

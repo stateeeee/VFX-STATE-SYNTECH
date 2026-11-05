@@ -116,6 +116,10 @@ export default function NodalComposition({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [size, setSize] = useState({ w: 640, h: 300 });
   const [addOpen, setAddOpen] = useState(false);
+  /* the Add Node menu scrolls inside what is left of the (clipping) panel under it */
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuMax, setMenuMax] = useState<number | undefined>(undefined);
   const [hoverPort, setHoverPort] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -163,6 +167,15 @@ export default function NodalComposition({
       window.removeEventListener('blur', onBlur);
     };
   }, [selected]);
+
+  useLayoutEffect(() => {
+    if (!addOpen) return;
+    const root = rootRef.current;
+    const menu = menuRef.current;
+    if (!root || !menu) return;
+    const avail = root.getBoundingClientRect().bottom - menu.getBoundingClientRect().top - 6;
+    setMenuMax(Math.max(40, Math.floor(avail)));
+  }, [addOpen, size.w, size.h]);
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -342,6 +355,7 @@ export default function NodalComposition({
 
   return (
     <div
+      ref={rootRef}
       className={`w-full h-full rounded-2xl border flex flex-col relative overflow-hidden ${
         isDayMode ? 'border-neutral-200' : 'border-ink-700/60'
       }`}
@@ -365,8 +379,11 @@ export default function NodalComposition({
           </button>
           {addOpen && (
             <div
+              ref={menuRef}
               data-testid="nodal-add-menu"
-              className={`absolute left-0 top-7 z-30 w-52 rounded-lg border p-1.5 shadow-2xl ${
+              // ten effects do not fit a short panel (the panel clips): the menu scrolls
+              style={{ maxHeight: menuMax }}
+              className={`absolute left-0 top-7 z-30 w-52 rounded-lg border p-1.5 shadow-2xl overflow-y-auto overscroll-contain ${
                 isDayMode ? 'bg-white border-neutral-200' : 'bg-ink-850 border-ink-700'
               }`}
             >

@@ -26,6 +26,20 @@
        applySettings(s, bridgeApply), // → wraps the bridge's apply (bridgeApply(s) = the default)
      });
 
+   Frame budget (added 2026-11-05, shell-controlled — the Lab lag fix):
+     SynLab.setFrameBudget(fps)   null/undefined = native (the default: standalone
+                                  never calls it), 0 = paused, > 0 = cap at fps.
+   Implemented by a gate over window.requestAnimationFrame / cancelAnimationFrame
+   in this iframe, installed only by the shell's first outputCanvas() /
+   captureStream() / non-native setFrameBudget() call (in native mode it is a
+   pure pass-through). Under a cap, queued callbacks fire together, in request
+   order, with the real frame timestamp, once the interval has elapsed; paused,
+   they are HELD (never dropped) and fire when the budget is raised;
+   cancelAnimationFrame cancels a held one. The compositor below follows it.
+   Only rendering is gated: media elements and audio keep playing. Timers
+   (setInterval / setTimeout) and requestVideoFrameCallback are NOT gated.
+   state().budget reports the current budget.
+
    SynLab.kit (helpers for adapters, optional):
      kit.led(key, el|id, {label, group, onClass, get, set})       → boolean descriptor (click toggles)
      kit.seg(key, buttons|selector|fn, {label, group, options})    → enum descriptor (click option i)
@@ -50,6 +64,65 @@
   var FX_ID=m?m[1]:'effect';
   var A=null;               /* the effect's adapter */
   var streamCache=null, streamCanvas=null;
+
+  /* ── frame budget: a gate over this window's requestAnimationFrame ──── */
+  var budget=null;          /* null = native, 0 = paused, > 0 = fps cap */
+  var gate=null;            /* {raf, caf}: what window.requestAnimationFrame was when installed */
+  var GATE_ID0=0x40000000;  /* gate ids never collide with the browser's (small) native ids */
+  var gateSeq=0, held=[], heldById={}, pumpId=0, lastFire=-1e9;
+  function reportErr(e){
+    try{ if(typeof window.reportError==='function') window.reportError(e); else setTimeout(function(){ throw e; }); }catch(_){}
+  }
+  function schedulePump(){
+    if(!pumpId && budget!==0 && held.length) pumpId=gate.raf.call(window,pump);
+  }
+  function pump(t){
+    pumpId=0;
+    if(budget===0 || !held.length) return;              /* paused: everything stays held */
+    if(budget>0){
+      var iv=1000/budget, el=t-lastFire;
+      if(el<iv-2){ schedulePump(); return; }             /* 2 ms slack: 120 Hz → every 4th frame at 30 */
+      lastFire = el>iv*2 ? t : lastFire+iv;
+    }
+    var q=held; held=[];                                 /* re-requests during this pump go to the next one */
+    for(var i=0;i<q.length;i++){
+      var e=q[i];
+      if(heldById[e.id]!==e) continue;                   /* cancelled */
+      delete heldById[e.id];
+      try{ e.cb(t); }catch(err){ reportErr(err); }      /* like native: one throwing callback does not stop the rest */
+    }
+    schedulePump();
+  }
+  /* Installed once, never removed. The adapters of POINTCLOUD / PAINTING wrap
+     window.requestAnimationFrame inside their outputCanvas() (to copy the WebGL
+     canvas right after the engine draws): the gate is installed BEFORE that
+     (api.outputCanvas), so their wrappers sit on top of it and their copy runs
+     in the same gated callback. Load-time wrappers (BOKEH's motion sampler,
+     PAINTING's PAINT-off throttle) sit under it and keep working. */
+  function installGate(){
+    if(gate) return;
+    gate={raf:window.requestAnimationFrame, caf:window.cancelAnimationFrame};
+    window.requestAnimationFrame=function(cb){
+      if(budget==null) return gate.raf.call(window,cb); /* native: pure pass-through */
+      var e={id:GATE_ID0+(++gateSeq), cb:cb};
+      held.push(e); heldById[e.id]=e;
+      schedulePump();
+      return e.id;
+    };
+    window.cancelAnimationFrame=function(id){
+      var e=heldById[id];
+      if(e){ delete heldById[id]; var i=held.indexOf(e); if(i>=0) held.splice(i,1); return; }
+      return gate.caf.call(window,id);
+    };
+  }
+  function setFrameBudget(fps){
+    var b=null;
+    if(fps!=null){ b=Number(fps); b=isFinite(b) ? Math.max(0,b) : null; }
+    if(b===budget) return;
+    if(b!==null) installGate();
+    budget=b; lastFire=-1e9;
+    if(gate) schedulePump();                             /* raised / native again: held callbacks resume */
+  }
 
   /* ── generic panel scan ────────────────────────────────────────────── */
   /* The panel section a control lives in: the .sec-title of the .sec-head
@@ -165,6 +238,9 @@
       cv.width=16; cv.height=9;
       var raf=0, lastTouch=0;
       function draw(){
+        /* paused (frame budget 0): no copy either — PAINTING's PAINT-off loop calls draw() from the
+           native rAF it saved at load (outside the gate); this keeps that loop at ~zero cost */
+        if(budget===0) return;
         var s=null; try{ s=o.size(); }catch(e){}
         if(s && s.w>0 && s.h>0){ if(cv.width!==s.w) cv.width=s.w; if(cv.height!==s.h) cv.height=s.h; }
         ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
@@ -277,7 +353,8 @@
     setAudioStream:function(stream){
       if(A&&A.setAudioStream){ try{ A.setAudioStream(stream||null); }catch(e){ try{ console.warn('[SynLab] setAudioStream',e); }catch(_){} } }
     },
-    outputCanvas:function(){ try{ return A&&A.outputCanvas ? A.outputCanvas()||null : null; }catch(e){ return null; } },
+    /* the gate goes in (pass-through) before the adapter's outputCanvas() may wrap rAF itself */
+    outputCanvas:function(){ installGate(); try{ return A&&A.outputCanvas ? A.outputCanvas()||null : null; }catch(e){ return null; } },
     captureStream:function(){
       var c=api.outputCanvas();
       if(!c||typeof c.captureStream!=='function') return null;
@@ -313,9 +390,15 @@
       try{ if(A&&A.applySettings) A.applySettings(s,base); else base(s); }catch(e){}
     },
     state:function(){
-      if(A&&A.state){ try{ return A.state(); }catch(e){} }
-      return {hasSource:false,external:false,fps:liveFps()};
-    }
+      var s=null;
+      if(A&&A.state){ try{ s=A.state(); }catch(e){ s=null; } }
+      if(!s) s={hasSource:false,external:false,fps:liveFps()};
+      var out={}; for(var k in s) if(Object.prototype.hasOwnProperty.call(s,k)) out[k]=s[k];
+      out.budget=budget;
+      return out;
+    },
+    /* null = native (default), 0 = paused, > 0 = cap (fps) — see the header */
+    setFrameBudget:setFrameBudget
   };
   window.SynLab=api;
 })();
