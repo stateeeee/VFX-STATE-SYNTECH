@@ -42,8 +42,17 @@ essere pubblicata"* (abbonamento, codice chiuso; login e pagamenti dopo) + stima
 - **Chiuso in questo commit**: `body-parser` 1.20.8 → 1.20.9 (solo lockfile, nessuna dipendenza nuova); `LICENSE`
   proprietaria "tutti i diritti riservati" (bozza: va fatta vedere a un legale, con il nome legale del titolare).
   Revisione Opus: PASS (`npm ci` provato in una copia, lint e build puliti).
-- **Prossimo**: correzioni del server, della shell desktop e del ponte degli effetti (registro nel rapporto privato),
-  poi cancello Opus e verifica finale del regista con gli stessi attacchi.
+- **Chiuso (commit 2) — ponte degli effetti**: il listener `message` del blocco SYNTECH-BRIDGE di ognuno dei 10
+  effetti obbediva a `syn:get-settings` / `syn:apply-settings` da QUALUNQUE finestra. Ora la prima istruzione è
+  `if(ev.origin!==location.origin)return; /* SYNTECH-SEC */` (una riga aggiunta per effetto, nient'altro toccato);
+  stesso controllo sui listener `syn:theme` di `shared/syn-chrome.js` e `syn-extras.js`; `src/App.tsx`: l'effetto
+  salvato si valida con `hasOwnProperty` (prima passava anche "constructor"). Shell ed effetti sono sempre sulla
+  stessa origine (src relativi), quindi il flusso vero non cambia. **Verifica del regista** (Playwright, 10/10):
+  pagina estranea su un'altra porta → nessuna risposta, nessun valore cambiato; pagina della stessa origine →
+  risposta e valore cambiato. Costruttore (Sonnet): Save/ripristino e tema giorno/notte 10/10. Revisione Opus: PASS.
+  Nota: un effetto aperto da disco (`file://`) ignora quei messaggi — nessuno glieli manda, comportamento invariato.
+- **Prossimo**: correzioni del server e della shell desktop (registro nel rapporto privato), poi cancello Opus e
+  verifica finale del regista con gli stessi attacchi.
 - **Solo l'operatore**: rendere **privato** il repository su GitHub (oggi codice e 5 release dell'app sono scaricabili
   da chiunque); certificati di firma del codice; marchio; termini d'uso.
 

@@ -43,6 +43,7 @@
     try{ new MutationObserver(function(){ apply(fe.getAttribute('data-syn-theme')); }).observe(fe,{attributes:true,attributeFilter:['data-syn-theme']}); }catch(e){}
   }
   window.addEventListener('message', function(ev){
+    if(ev.origin!==location.origin) return; /* SYNTECH-SEC: same-origin senders only */
     var d=ev.data;
     if(!d||typeof d!=='object'||d.type!=='syn:theme'||!d.payload) return;
     if(fe && ev.source!==window.parent) return;

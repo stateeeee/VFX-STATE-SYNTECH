@@ -7536,6 +7536,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
     if(s.xy&&typeof setPad==='function')setPad(s.xy[0],1-s.xy[1]);}
   window.__synBridge={collect:collect,apply:apply}; /* SYNTECH-LAB */
   window.addEventListener('message',function(ev){
+    if(ev.origin!==location.origin)return; /* SYNTECH-SEC: obey only this app's own windows (shell and effects are same-origin) */
     var d=ev&&ev.data;
     if(!d||typeof d!=='object'||typeof d.type!=='string')return;
     if(d.type==='syn:get-settings'){

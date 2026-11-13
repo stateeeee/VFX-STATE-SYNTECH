@@ -210,7 +210,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('PARAMETERS');
   const [activeModule, setActiveModule] = useState<ModuleId>(() => {
     const saved = readSession().activeModule;
-    return saved && saved in EFFECTS_REGISTRY ? saved : 'blob_tracker';
+    return saved && Object.prototype.hasOwnProperty.call(EFFECTS_REGISTRY, saved) ? saved : 'blob_tracker';
   });
   const [signalSource, setSignalSource] = useState<SignalSource>('L_INPUT_CHANNEL_01');
   const [bufferSize, setBufferSize] = useState<number>(8192);
