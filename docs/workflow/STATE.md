@@ -29,6 +29,24 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-11-13 — CONTROLLO DI SICUREZZA prima del lancio pubblico: IN CORSO.**
+Operatore: *"sei l'orchestratore, crea un workflow e cura la verifica finale, usa Opus / Sonnet / Haiku … analizza la
+mia app, trova tutte le falle di sicurezza, nessuno deve avere accesso al codice tranne me … deve essere pronta per
+essere pubblicata"* (abbonamento, codice chiuso; login e pagamenti dopo) + stima del valore dell'app.
+- **Workflow**: `docs/workflow/10-SECURITY-WORKFLOW.md` (fasi S0–S6, verifica del regista su ogni falla e su ogni
+  correzione, cambio chat a 1/4 del contesto, cancello di sicurezza per ogni rilascio). Finché il repo è pubblico i
+  dettagli delle falle ancora aperte NON entrano nel repo: stanno nel rapporto privato all'operatore.
+- **Giro 1 — audit fatto** (sola lettura, in parallelo): Haiku = scansione meccanica; Opus = server/API; Opus =
+  Electron + CI + riservatezza del codice; Sonnet = client (shell + 10 effetti). Il regista ha ricontrollato: storia di
+  git (147 commit) **0 segreti**, nessun `.env` mai committato; `npm audit --omit=dev` 1 alta → 0.
+- **Chiuso in questo commit**: `body-parser` 1.20.8 → 1.20.9 (solo lockfile, nessuna dipendenza nuova); `LICENSE`
+  proprietaria "tutti i diritti riservati" (bozza: va fatta vedere a un legale, con il nome legale del titolare).
+  Revisione Opus: PASS (`npm ci` provato in una copia, lint e build puliti).
+- **Prossimo**: correzioni del server, della shell desktop e del ponte degli effetti (registro nel rapporto privato),
+  poi cancello Opus e verifica finale del regista con gli stessi attacchi.
+- **Solo l'operatore**: rendere **privato** il repository su GitHub (oggi codice e 5 release dell'app sono scaricabili
+  da chiunque); certificati di firma del codice; marchio; termini d'uso.
+
 **SESSIONE 2026-11-05 — v0.12.1: LAB senza lag, menu dei nodi che scorre, FATTO.**
 Operatore, dopo aver provato la 0.12.0 sul Mac: *"nella sezione nodi non riesco a inserire gli effetti perché non c'è
 una funzione di scroll … se aggiungo dei nodi e apro la sezione lab … laggava tutto, andava a scatti; gli effetti

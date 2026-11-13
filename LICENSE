@@ -1,0 +1,33 @@
+VFX SYNTECH — PROPRIETARY SOFTWARE
+Copyright (c) 2026 State. All rights reserved.
+
+This repository and everything in it — source code, the effect applications
+under public/effects/, shaders, prompts, design, graphics, video, audio,
+documentation and the names "VFX SYNTECH" and "SYNTECH" — is the exclusive
+property of its author ("State").
+
+NO LICENSE IS GRANTED. This is not open-source software. Unless you hold a
+written agreement signed by the author, you may NOT:
+
+  - copy, clone, fork, mirror, download for reuse, or redistribute any part
+    of this software, in source or compiled form;
+  - modify it, create derivative works from it, or incorporate any part of it
+    into another product or service;
+  - sell, rent, sublicense, host or offer it to third parties;
+  - decompile, disassemble, unpack or reverse engineer the distributed
+    applications, except where applicable law expressly permits it despite
+    this restriction;
+  - use it, or any part of it, to train or evaluate machine-learning models.
+
+Access to a copy of this software (for example because the repository or a
+build was publicly reachable at some point in time) does not grant any right
+to use it.
+
+Third-party components — those bundled under public/effects/vendor/, those
+listed in package.json and their dependencies, including the ones compiled
+into distributed builds — remain under their own licenses, which are not
+affected by this notice.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY ARISING FROM THE SOFTWARE OR ITS USE.
