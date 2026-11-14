@@ -29,7 +29,7 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
-**SESSIONE 2026-11-13 — CONTROLLO DI SICUREZZA prima del lancio pubblico: IN CORSO.**
+**SESSIONE 2026-11-13/14 — CONTROLLO DI SICUREZZA prima del lancio pubblico (v0.12.2): GIRO 1 FATTO.**
 Operatore: *"sei l'orchestratore, crea un workflow e cura la verifica finale, usa Opus / Sonnet / Haiku … analizza la
 mia app, trova tutte le falle di sicurezza, nessuno deve avere accesso al codice tranne me … deve essere pronta per
 essere pubblicata"* (abbonamento, codice chiuso; login e pagamenti dopo) + stima del valore dell'app.
@@ -63,10 +63,53 @@ essere pubblicata"* (abbonamento, codice chiuso; login e pagamenti dopo) + stima
   iframe di effetto; geolocalizzazione / notifiche / MIDI / appunti negati; nessuna voce DevTools e `openDevTools()`
   senza effetto. Costruttore: `verify-lab-chain` 47/47 sull'app impacchettata, 0 violazioni CSP dentro Electron.
   Non provato qui: menu e DevTools su Windows e Mac veri (la CI apre e prova l'app impacchettata su entrambi).
-- **Prossimo**: correzioni del server (registro nel rapporto privato), poi cancello Opus e verifica finale del
-  regista con gli stessi attacchi.
-- **Solo l'operatore**: rendere **privato** il repository su GitHub (oggi codice e 5 release dell'app sono scaricabili
-  da chiunque); certificati di firma del codice; marchio; termini d'uso.
+- **Chiuso (commit 4, v0.12.2) — server** (`server.ts`, nuovo `security.ts`, `ai-provider.ts`, `ai-roles.ts`,
+  `package.json` script, `.env.example`). Ogni voce riprovata dal regista con lo stesso attacco prima → dopo:
+  - il bundle del server stava dentro `dist/` (servita in statico): `/server.cjs` e `/server.cjs.map` (sorgente
+    completo, prompt compresi) **200 → 404**; ora si compila in `dist-server/`, e ogni `*.map` risponde 404;
+  - `npm start` senza `NODE_ENV` avviava Vite in sviluppo (tutto il progetto leggibile) → un bundle compilato è
+    sempre produzione (`--define:__SYNTECH_BUILT__=true`);
+  - la chiave del server era concessa a chi arrivava da un proxy sulla stessa macchina (`Host: 127.0.0.1`, o
+    `0.0.0.0`): `serverKey` **true → false**; ora solo in `npm run dev` e nell'app desktop;
+  - senza chiave: upload su disco **30 MB → 0** (rifiuto in 4 ms); 12 corpi JSON da 38 MB **1.323 MB → 71 MB** di
+    RSS; 200 POST di fila **200 accettate → 30 al minuto**;
+  - intestazioni di sicurezza **nessuna → tutte** (nosniff, Referrer-Policy, X-Frame-Options, COOP, CORP,
+    Permissions-Policy, HSTS solo su HTTPS, niente `X-Powered-By`) + **CSP** quando si serve una build
+    (`script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:` ecc., `frame-ancestors 'self'`): 0 violazioni su
+    shell, 10 effetti, LAB a 3 nodi, e dentro Electron;
+  - richieste all'API da un altro sito (`Origin` estranea / `Sec-Fetch-Site: cross-site`) **200 → 403**;
+  - `fileUri` solo sull'host delle Files API; `GEMINI_BASE_URL` (aggancio di test) solo verso loopback; l'app
+    desktop non legge più `.env` dalla cartella corrente; messaggi d'errore senza percorsi; bundle minimizzati.
+  **Prima revisione Opus: FAIL** — i limiti globali prescritti dal regista (2 upload, 4 chiamate AI) si occupavano
+  con due indirizzi e una chiave inventata, a un byte alla volta: AI bloccata per tutti (provato). **Correzione**:
+  la chiave incollata viene provata con Google (`models.get`, esito in cache per hash: valida 10 min, rifiutata
+  60 s) PRIMA di concedere un posto o leggere un byte; velocità minima dei corpi (AI ≥ 32 KB/s dopo 10 s, upload
+  ≥ 48 KB/s dopo 30 s); limiti 6 upload / 16 chiamate (1 / 2 per client) + tetto di 160 MB di corpi in volo, tutti
+  regolabili (`SYNTECH_MAX_UPLOADS`, `SYNTECH_MAX_ROLE_CALLS`, `SYNTECH_ROLE_BYTES_MB`); `HOST` → `SYNTECH_HOST`;
+  `TRUST_PROXY` rigoroso; log limitati. **Seconda revisione Opus: PASS** (600 richieste parcheggiate e 691
+  connessioni malformate: il processo non esce mai, contatori a zero). **Verifica finale del regista**: chiave finta
+  → 401 subito, nessun posto occupato; chiave valida a goccia → taglio a 11 s (AI) e 30 s (upload), utente
+  normale servito subito dopo, 0 cartelle temporanee; `verify-gemini` **11/11, 287 PASS** a macchina libera (sotto
+  carico i passi con timeout falliscono a caso: va lanciata da sola); app Linux impacchettata `verify-desktop`
+  **38/38**, `verify-lab-chain` **47/47**. CI: commit 2 e 3 verdi su Windows e Mac.
+- **Come pubblicare il sito senza riaprire le falle**: `10-SECURITY-WORKFLOW.md` § "Pubblicare il sito".
+
+**PROSSIMO GIRO (sicurezza, giro 2) — la sessione successiva parte da qui.** Il rapporto privato all'operatore
+(falle aperte comprese) NON è nel repo: è nel passaggio di consegne della chat. In ordine:
+1. Note non bloccanti della seconda revisione del server: tetto globale ai controlli-chiave non ancora in cache
+   (oggi 30/min per indirizzo, senza tetto tra indirizzi); `.finally` sulla pulizia di `keyChecks`; non cancellare
+   un verdetto valido quando Google non risponde; un gestore d'errore finale silenzioso per i percorsi non-API;
+   commento di testa di `security.ts` (il 408 non è su ogni taglio).
+2. Avvisi di licenza delle librerie incluse (MediaPipe Apache-2.0, font OFL, three MIT…) dentro il pacchetto.
+3. `getAll()` non protetto in 4 effetti (analog, blob_tracker, quadtree, time_machine): un valore non-array nel
+   localStorage rompe l'avvio dell'effetto (serve una scrittura sulla stessa origine: bassa).
+4. Osservazione: TIME MACHINE aperto da solo, nei test senza schermo, a volte resta sul fotogramma 0 dopo aver
+   caricato un video (succede con e senza CSP) — capire se è solo del test.
+5. **Decisioni dell'operatore**: aggiornamento di Electron (32 è fuori supporto), firma del codice, fusibili +
+   integrità dell'asar + aggiornamento automatico (dopo la firma), minimizzazione degli HTML degli effetti in build.
+- **Solo l'operatore**: rendere **privato** il repository su GitHub (oggi codice e release dell'app sono scaricabili
+  da chiunque) — con il repo privato le build consumano minuti (Mac ×10); certificati di firma; marchio; termini
+  d'uso; non mettere mai la propria chiave Gemini su un server pubblico; mai `npm run dev` online.
 
 **SESSIONE 2026-11-05 — v0.12.1: LAB senza lag, menu dei nodi che scorre, FATTO.**
 Operatore, dopo aver provato la 0.12.0 sul Mac: *"nella sezione nodi non riesco a inserire gli effetti perché non c'è

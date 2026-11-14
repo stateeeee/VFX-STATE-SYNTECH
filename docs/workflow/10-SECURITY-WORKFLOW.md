@@ -58,7 +58,9 @@ L'operatore non vuole pagare contesto inutile. Il regista:
 - [ ] `npm audit --omit=dev`: nessuna vulnerabilità alta o critica aperta.
 - [ ] Storia di git: nessun segreto (chiavi `AIza…`, token, `.env`).
 - [ ] Build di produzione: il server web restituisce solo l'app — mai sorgenti,
-      mappe, file di configurazione o documenti interni (prova con `curl`).
+      mappe, file di configurazione o documenti interni: `GET /server.cjs`,
+      `/server.cjs.map`, `/*.map`, `/server.ts`, `/src/App.tsx` → 404 o la pagina
+      dell'app, mai codice. Il bundle del server sta in `dist-server/`, fuori da `dist/`.
 - [ ] Intestazioni di sicurezza presenti su `/` e su `/effects/*`.
 - [ ] `/api/*` rifiuta un `Host` sconosciuto e una `Origin` estranea; la chiave
       del server non è mai usabile da fuori dalla macchina.
@@ -66,6 +68,22 @@ L'operatore non vuole pagare contesto inutile. Il regista:
 - [ ] App desktop: finestra bloccata sulla propria origine, permessi solo
       camera/microfono, nessuna mappa o documento interno nel pacchetto.
 - [ ] Nessun URL esterno caricato a runtime (app 100% offline, AI a parte).
+
+## Pubblicare il sito (versione web) senza riaprire le falle
+
+- **Mai `npm run dev` su un server pubblico**: è la modalità di sviluppo e mostra tutto il progetto. Online si
+  usa `npm run build` e poi `npm start` (un bundle compilato è sempre in produzione, qualunque sia `NODE_ENV`).
+- **La chiave Gemini dell'operatore non va sul server pubblico.** `npm start` la ignora comunque: ogni utente
+  incolla la propria finché non ci sono login e abbonamenti.
+- **Nome del sito**: va in `ALLOWED_HOSTS` (l'API risponde solo ai nomi elencati, a `localhost`, agli IP e ai `.local`).
+- **Dietro un proxy** (nginx, Cloudflare, la piattaforma di hosting): il proxy deve passare il nome che il browser
+  ha usato (`proxy_set_header Host $host;`) oppure si imposta `TRUST_PROXY` e si inoltra `X-Forwarded-Host`;
+  altrimenti l'API rifiuta ogni richiesta del pannello con 403 e lo scrive una volta nel log. Con `TRUST_PROXY`
+  i limiti contano l'indirizzo vero del visitatore (senza, tutti i visitatori sembrano il proxy).
+- **Limiti** (`.env.example`): `SYNTECH_MAX_UPLOADS` (6), `SYNTECH_MAX_ROLE_CALLS` (16), `SYNTECH_ROLE_BYTES_MB`
+  (160). Caso peggiore: 3 GB di disco temporaneo e circa 0,5 GB di memoria. HTTPS lo fornisce il proxy.
+- Le protezioni vivono in `security.ts` (intestazioni + CSP, richieste da altri siti, limiti, velocità minima)
+  e in `ai-provider.ts` (chiave provata con Google prima di ogni lavoro costoso).
 
 ## Cose che può fare solo l'operatore (fuori dal codice)
 

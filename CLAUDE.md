@@ -35,7 +35,8 @@ done, what is next, and every decision made so far. Then follow
 npm install          # first time only
 npm run dev          # tsx server.ts → http://localhost:3000 (Express + Vite middleware)
 npm run lint         # tsc --noEmit (must stay clean)
-npm run build        # vite build + esbuild server bundle
+npm run build        # vite build → dist/  +  esbuild server bundle → dist-server/ (never inside dist/)
+npm start            # the built server (always production; this is what a public deploy runs)
 npm run desktop      # build + open the desktop app (Electron, unpackaged)
 npm run desktop:dist # package the desktop app for this OS into release/
 ```
@@ -45,7 +46,8 @@ by `.github/workflows/desktop.yml` — see `docs/workflow/DESKTOP.md`.
 
 The Gemini 3.8 panel (Art Director / Agent / Optimizer) needs a Gemini key:
 paste it in the panel, or put `GEMINI_API_KEY` in `.env.local` (used only for
-browsers on this machine). Without a key the AI modes are simply locked — there
+browsers on this machine, in `npm run dev` and in the desktop app — a built
+server started with `npm start` never uses it). Without a key the AI modes are simply locked — there
 are no offline AI answers. No non-AI feature ever needs a key; never make one
 require it.
 
@@ -54,6 +56,7 @@ require it.
 ```
 server.ts                       Express: /api/gemini/* endpoints, serves /effects statically
 ai-provider.ts                  Gemini client: key resolution (header / loopback .env), errors, Files upload
+security.ts                     Server hardening: security headers + CSP, cross-site guard, rate limit, slots, byte budget, body floors
 ai-roles.ts                     The three roles: prompts, per-request schemas, plan validator
 desktop/main.ts                 Electron shell: runs server.ts inside the app on 127.0.0.1:47291
 src/App.tsx                     Shell: top bar, left nav, layout, composition state, save/projects

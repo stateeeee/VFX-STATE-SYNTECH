@@ -11,4 +11,5 @@ coverage/
 __SCRATCH__/
 tools/frame/out/
 dist-desktop/
+dist-server/
 release/

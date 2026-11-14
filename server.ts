@@ -1,4 +1,5 @@
 import express, { type NextFunction, type Request, type Response } from "express";
+import http from "http";
 import path from "path";
 import os from "os";
 import fs from "fs";
@@ -6,8 +7,14 @@ import net from "net";
 import dotenv from "dotenv";
 
 /* .env.local first (the operator's own, git-ignored), then .env. The first
-   file to define a variable wins; neither is required. */
-dotenv.config({ path: [".env.local", ".env"], quiet: true });
+   file to define a variable wins; neither is required.
+   SYNTECH-SECURITY (DSK-07): NOT inside the desktop app. Its main process has
+   already loaded the one .env that belongs to it (the app's userData folder)
+   before importing this module; a .env in whatever folder the app happened to
+   be launched from must not configure it. (This line runs after every import
+   below — ES imports are hoisted — which is why nothing reads process.env at
+   import time: see geminiModel() in ai-provider.ts.) */
+if (!process.env.SYNTECH_DESKTOP) dotenv.config({ path: [".env.local", ".env"], quiet: true });
 
 /* GEMINI 3.8 — six endpoints under /api/gemini, all speaking the wire format of
    src/ai/contract.ts:
@@ -30,23 +37,92 @@ dotenv.config({ path: [".env.local", ".env"], quiet: true });
    validators live in ai-roles.ts; the Gemini client, key handling and error
    classification in ai-provider.ts. */
 import {
+  admitKey,
   checkKey,
   failure,
+  forgetKey,
   generateJson,
   geminiModel,
   GeminiFailure,
+  headerKey,
   hostnameOf,
   looseRetryReason,
   reportFailure,
   resolveKey,
   serverKeyAvailable,
+  serverKeyPolicy,
+  testHookBaseUrl,
   uploadAndWait,
+  validateKey,
   type AiFailure,
 } from "./ai-provider";
 import { agentJob, artDirectorJob, optimizerJob, type RoleJob } from "./ai-roles";
 import { GEMINI_KEY_HEADER, type KeyResponse, type StatusResponse, type UploadResponse } from "./src/ai/contract";
+import {
+  bodyFlowing,
+  ByteBudget,
+  configureTrustProxy,
+  crossSiteGuard,
+  envPositiveInt,
+  guardBody,
+  holdSlot,
+  IS_BUILT,
+  keyPlausible,
+  limitedWarn,
+  RateLimiter,
+  refuse,
+  securityHeaders,
+  Slots,
+  clientId,
+  type BodyGuard,
+} from "./security";
 
 const app = express();
+
+/* ── SYNTECH-SECURITY: headers, proxies, slow bodies (security.ts) ── */
+
+/* No "X-Powered-By: Express". Every response — page, effect, API, 404 — gets
+   the security headers; the CSP only once startServer has chosen to serve a
+   built dist/ (Vite dev would fight it). */
+app.disable("x-powered-by");
+let serveCsp = false;
+app.use(securityHeaders(() => serveCsp));
+const TRUST_PROXY_HOPS = configureTrustProxy(app);
+
+/* Node's requestTimeout is off (startServer): these take its place (a cut
+   answers 408 and closes). An upload may take long over a slow uplink, but it
+   must keep moving: 60 s without a byte, or under 48 KB/s on average once it
+   has been read for 30 s, cuts it (2 h at most). A role call's JSON (a few MB
+   from the panel) must keep 32 KB/s once read for 10 s, never stall for 30 s
+   and be complete within 5 min. On those routes the body is read only after
+   the key is proven and a slot is held (keyProof, holdSlot): until then it is
+   left unread and only BODY_CHECKS_MS applies. Any other body (/key, a stray
+   POST) must arrive within 5 min and never stall for 30 s. */
+const UPLOAD_BODY: BodyGuard = { idleMs: 60_000, totalMs: 2 * 60 * 60_000, minBytesPerSec: 48 * 1024, graceMs: 30_000 };
+const ROLE_BODY: BodyGuard = { idleMs: 30_000, totalMs: 5 * 60_000, minBytesPerSec: 32 * 1024, graceMs: 10_000 };
+const OTHER_BODY: BodyGuard = { idleMs: 30_000, totalMs: 5 * 60_000 };
+/* The checks before the body (the key's one models.get has a 15 s timeout)
+   must be done by then. */
+const BODY_CHECKS_MS = 45_000;
+const ROLE_PATHS = new Set(["/api/gemini/art-director", "/api/gemini/agent", "/api/gemini/optimizer"]);
+const UPLOAD_PATH = "/api/gemini/upload";
+/* Express routes case-insensitively and with or without a trailing slash:
+   classify the same way, so /API/GEMINI/UPLOAD/ gets the upload's rules. */
+const routeOf = (req: Request) => req.path.toLowerCase().replace(/\/+$/, "");
+/* The 408 is answered only on the API routes whose every step checks
+   res.headersSent before writing. Anywhere else the connection is just cut:
+   Express's own 404 (finalhandler) waits for the body to end and then writes
+   unconditionally — a 408 sent before it would make it throw and take the
+   whole server down. */
+app.use((req, res, next) => {
+  if (!req.complete) {
+    const route = routeOf(req);
+    if (route === UPLOAD_PATH) guardBody(req, UPLOAD_BODY, { res, deferredMs: BODY_CHECKS_MS });
+    else if (ROLE_PATHS.has(route)) guardBody(req, ROLE_BODY, { res, deferredMs: BODY_CHECKS_MS });
+    else guardBody(req, OTHER_BODY, route === "/api/gemini/key" ? { res } : {});
+  }
+  next();
+});
 
 /* PORT from the environment (default 3000), so a second server — a test run,
    a parallel session — can live next to the operator's own. */
@@ -128,9 +204,129 @@ app.use("/api", (req, res, next) => {
   sendFailure(res, { ...failure("bad_request", message), status: 403 });
 });
 
+/* ── SYNTECH-SECURITY: what /api checks before reading any body ──
+   In this order: the Host guard (above), another site's request (403), the
+   per-client rate limit (429), then per route a key (401) and an in-flight
+   slot (429). A refusal answers at once and closes the connection, so a body
+   nobody asked for is never read. Limits are far above what the panel does:
+   it asks /status once per page load and makes one POST per click. */
+app.use("/api", crossSiteGuard);
+
+const GET_LIMIT = new RateLimiter(120);   // GET /status and friends, per client per minute
+const POST_LIMIT = new RateLimiter(30);   // /key, /upload and the three roles, per client per minute
+app.use("/api", (req, res, next) => {
+  const limiter = req.method === "GET" || req.method === "HEAD" ? GET_LIMIT : POST_LIMIT;
+  const wait = limiter.hit(clientId(req));
+  if (wait === null) return next();
+  refuse(res, 429, "quota",
+    `Too many requests to this server (${limiter.limit} a minute). Wait ${Math.ceil(wait)} s and try again — this is the app server's own limit, not your Gemini quota.`,
+    { retryAfter: wait, close: true });
+});
+
+const IMPLAUSIBLE_KEY = "This is not a Gemini API key (a key is 20+ letters, digits, '-', '_' or '.'). Paste the key from https://aistudio.google.com/apikey.";
+/* A role call without a key still learns what is wrong with its body
+   (400 no_media / bad_request, then 401 no_key) as long as the body is tiny:
+   that costs nothing. Anything bigger — or of unknown length — without a key
+   is refused unread. */
+const KEYLESS_PROBE_BYTES = 16 * 1024;
+
+/** Before the body: a header key that cannot be a key → invalid_key; no key
+ *  at all → no_key (/key keeps its 200 KeyResponse contract). */
+function keyGate(route: "role" | "upload" | "key") {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const pasted = headerKey(req);
+    /* The verify suites' mock keys ('MOCKKEY', 'BADKEY') are short: the length
+       floor is lifted only while the loopback test hook is active. */
+    if (pasted && !keyPlausible(pasted, testHookBaseUrl() ? 1 : 20)) {
+      if (route === "key") {
+        res.set("Connection", "close");
+        const body: KeyResponse = { active: false, error: "invalid_key", message: IMPLAUSIBLE_KEY };
+        res.json(body);
+        return;
+      }
+      return refuse(res, 401, "invalid_key", IMPLAUSIBLE_KEY, { close: true });
+    }
+    if (resolveKey(req)) return next();
+    if (route === "key") {
+      res.set("Connection", "close");
+      const body: KeyResponse = { active: false, error: "no_key", message: NO_KEY_MESSAGE };
+      res.json(body);
+      return;
+    }
+    const declared = req.get("content-length");
+    if (route === "role" && declared !== undefined && /^\d+$/.test(declared) && Number(declared) <= KEYLESS_PROBE_BYTES) {
+      res.locals.keyless = true;
+      return next();
+    }
+    refuse(res, 401, "no_key", NO_KEY_MESSAGE, { close: true });
+  };
+}
+
+/* SYNTECH-SECURITY (B1): a pasted key is proven with Google BEFORE the
+   request may take a slot or send one body byte — a made-up key never holds
+   anything. One models.get per key, cached by its hash (ai-provider.ts
+   admitKey: valid 10 min, invalid 60 s, other failures not cached and refused
+   as they are). The POST rate limit above bounds how many checks one client
+   can cause. Keyless probes and the server's own key (dev, desktop) skip it.
+   While Google is asked the body stays unread (no listener, stream paused);
+   a client that hangs up meanwhile has taken nothing. */
+function keyProof(req: Request, res: Response, next: NextFunction) {
+  if (res.locals.keyless) return next();
+  const pasted = headerKey(req);
+  if (!pasted) return next();
+  let gone = false;
+  const hungUp = () => { gone = true; };
+  res.once("close", hungUp);
+  admitKey(pasted).then((f) => {
+    res.off("close", hungUp);
+    if (gone || res.headersSent || req.socket.destroyed) return;
+    if (f) return refuse(res, f.status, f.kind, f.message, { close: true });
+    next();
+  }, () => {
+    res.off("close", hungUp);
+    refuse(res, 500, "server_error", "Unexpected server error. Try again.", { close: true });
+  });
+}
+
+/* In flight at once, per server and per client (SRV-02/03): uploads write up
+   to 500 MB to the temp folder each, a role call holds up to 40 MB of JSON in
+   memory. The panel never runs two of the same kind from one browser, so the
+   per-client caps (1 upload, 2 role calls) are fixed. The global caps are
+   SYNTECH_MAX_UPLOADS (6) and SYNTECH_MAX_ROLE_CALLS (16); on top, the
+   declared sizes of the role bodies in flight may add up to
+   SYNTECH_ROLE_BYTES_MB (160 MB) — a body of unknown length (chunked) counts
+   as the 40 MB maximum. .env.example says what each implies in RAM / disk. */
+const ROLE_BODY_MAX = 40 * 1024 * 1024;
+const UPLOAD_SLOTS = new Slots("upload", envPositiveInt("SYNTECH_MAX_UPLOADS", 6), 1);
+const ROLE_SLOTS = new Slots("role", envPositiveInt("SYNTECH_MAX_ROLE_CALLS", 16), 2);
+const ROLE_BYTES = new ByteBudget("role", envPositiveInt("SYNTECH_ROLE_BYTES_MB", 160) * 1024 * 1024);
+const roleBodyCost = (req: Request) => {
+  const declared = req.get("content-length");
+  return declared !== undefined && /^\d{1,12}$/.test(declared) ? Math.min(Number(declared), ROLE_BODY_MAX) : ROLE_BODY_MAX;
+};
+const uploadSlot = holdSlot(UPLOAD_SLOTS, "Another upload is in progress.");
+const roleSlotHeld = holdSlot(ROLE_SLOTS, "Too many Gemini requests in progress.", { bytes: ROLE_BYTES, cost: roleBodyCost });
+const roleSlot = (req: Request, res: Response, next: NextFunction) =>
+  (res.locals.keyless ? next() : roleSlotHeld(req, res, next));
+/** Every check passed: the body may be read now (guardBody's clocks start). */
+const flow = (req: Request, _res: Response, next: NextFunction) => { bodyFlowing(req); next(); };
+
 /* Frames and a 4s clip arrive inline as base64; 40MB is far above what the
-   panel sends and still below anything that would hurt the dev server. */
-app.use(express.json({ limit: "40mb" }));
+   panel sends. Parsed only on the role routes, only after the checks above
+   (keyless probes: 16 KB). */
+const roleJsonFull = express.json({ limit: "40mb" });
+const roleJsonProbe = express.json({ limit: KEYLESS_PROBE_BYTES });
+const roleJson = (req: Request, res: Response, next: NextFunction) =>
+  (res.locals.keyless ? roleJsonProbe : roleJsonFull)(req, res, next);
+const rolePipeline = [keyGate("role"), keyProof, roleSlot, flow, roleJson];
+
+/** A real call that Google answered invalid_key: the pasted key's cached
+ *  "valid" goes, so the next request relocks at once. */
+function forgetIfRejected(req: Request, f: AiFailure): AiFailure {
+  const pasted = headerKey(req);
+  if (pasted && f.kind === "invalid_key") forgetKey(pasted);
+  return f;
+}
 
 /* ── status + key ─────────────────────────────────────────────── */
 
@@ -142,21 +338,30 @@ app.get("/api/gemini/status", (req, res) => {
 });
 
 /* Answers 200 with a KeyResponse either way: "this key does not work" is the
-   successful outcome of a validation, not a server failure. */
-app.post("/api/gemini/key", async (req, res) => {
+   successful outcome of a validation, not a server failure. A pasted key is
+   always asked about afresh (validateKey: one models.get, or the one already
+   running for it), and the verdict lands in the cache keyProof reads — the
+   panel's "Connect" proves the key for the calls that follow. */
+app.post("/api/gemini/key", keyGate("key"), express.json({ limit: "64kb" }), async (req, res) => {
   const fromHeader = !!req.get(GEMINI_KEY_HEADER)?.trim();
   const apiKey = resolveKey(req);
   let body: KeyResponse;
   if (!apiKey) {
     body = { active: false, error: "no_key", message: NO_KEY_MESSAGE };
   } else {
-    try {
-      await checkKey(apiKey);
-      body = { active: true, model: geminiModel(), source: fromHeader ? "browser" : "server" };
-    } catch (err) {
-      const f = reportFailure(err);
-      body = { active: false, error: f.kind, message: f.message };
+    let f: AiFailure | null = null;
+    if (fromHeader) {
+      f = await validateKey(apiKey);
+    } else {
+      try {
+        await checkKey(apiKey);
+      } catch (err) {
+        f = reportFailure(err);
+      }
     }
+    body = f
+      ? { active: false, error: f.kind, message: f.message }
+      : { active: true, model: geminiModel(), source: fromHeader ? "browser" : "server" };
   }
   res.json(body);
 });
@@ -215,7 +420,7 @@ function receiveToFile(req: Request, filePath: string, cap: number): Promise<num
   });
 }
 
-app.post("/api/gemini/upload", async (req, res) => {
+app.post("/api/gemini/upload", keyGate("upload"), keyProof, uploadSlot, flow, async (req, res) => {
   let tmpDir: string | null = null;
   /* If the browser goes away at any point — mid-body or while Google works —
      give up on its behalf: the handler returns at once, the transfer to
@@ -260,7 +465,7 @@ app.post("/api/gemini/upload", async (req, res) => {
       res.set("Connection", "close");
       sendFailure(res, reportFailure(new GeminiFailure("too_large", "File too large to upload (limit 500 MB).")));
     } else {
-      sendFailure(res, reportFailure(err));
+      sendFailure(res, forgetIfRejected(req, reportFailure(err)));
     }
   } finally {
     if (tmpDir) fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
@@ -303,29 +508,30 @@ function roleEndpoint<R>(build: (body: unknown) => RoleJob<R>) {
            is a failure. One log line says which branch ran. */
         const why = job.looseSchema && !abort.signal.aborted ? looseRetryReason(err) : null;
         if (!why) throw err;
-        console.warn(`[gemini] ${req.path}: strict schema failed (${why}), retrying once with the loose schema`);
+        const where = routeOf(req).slice(0, 40);
+        limitedWarn("gemini:schema", `[gemini] ${where}: strict schema failed (${why}), retrying once with the loose schema`, 5);
         try {
           raw = await ask(job.looseSchema as Record<string, unknown>);
         } catch (err2) {
-          console.warn(`[gemini] ${req.path}: the loose schema failed too`);
+          limitedWarn("gemini:schema-failed", `[gemini] ${where}: the loose schema failed too`, 5);
           throw err2;
         }
-        console.warn(`[gemini] ${req.path}: the loose schema answered`);
+        limitedWarn("gemini:schema-ok", `[gemini] ${where}: the loose schema answered`, 5);
       }
       res.json(job.finish(raw));
     } catch (err) {
       if (abort.signal.aborted) {
-        console.warn("[gemini] request cancelled: the browser hung up before Gemini answered");
+        limitedWarn("gemini:cancelled", "[gemini] request cancelled: the browser hung up before Gemini answered", 5);
         return;
       }
-      sendFailure(res, reportFailure(err));
+      sendFailure(res, forgetIfRejected(req, reportFailure(err)));
     }
   };
 }
 
-app.post("/api/gemini/art-director", roleEndpoint(artDirectorJob));
-app.post("/api/gemini/agent", roleEndpoint(agentJob));
-app.post("/api/gemini/optimizer", roleEndpoint(optimizerJob));
+app.post("/api/gemini/art-director", ...rolePipeline, roleEndpoint(artDirectorJob));
+app.post("/api/gemini/agent", ...rolePipeline, roleEndpoint(agentJob));
+app.post("/api/gemini/optimizer", ...rolePipeline, roleEndpoint(optimizerJob));
 
 /* Anything else under /api is a 404 in the contract's error shape — not the
    SPA's index.html, which is what the Vite middleware would answer. */
@@ -335,9 +541,16 @@ app.all("/api/*", (_req, res) => {
 
 /* Errors raised before a handler runs — body-parser's 413 (entity.too.large)
    and 400 (entity.parse.failed) — still answer as AiErrorResponse JSON. */
-app.use("/api", (err: unknown, _req: Request, res: Response, next: NextFunction) => {
-  if (res.headersSent) return next(err);
+app.use("/api", (err: unknown, req: Request, res: Response, _next: NextFunction) => {
   const type = (err as { type?: string })?.type;
+  if (res.headersSent) {
+    /* Already answered — typically guardBody's 408, after which the parser
+       sees the body aborted. Do what Express would (drop the connection)
+       without its stack trace per request: a client could flood the log. */
+    if (type !== "request.aborted") limitedWarn("server:after-response", `[server] error after the response was sent: ${String(type || (err as Error)?.name || "error").slice(0, 60)}`, 5);
+    req.socket.destroy();
+    return;
+  }
   if (type === "entity.too.large") return sendFailure(res, failure("too_large", "Request too large (limit 40 MB). Send fewer frames or a shorter clip."));
   if (type === "entity.parse.failed") return sendFailure(res, failure("bad_request", "Request body is not valid JSON."));
   sendFailure(res, reportFailure(err));
@@ -383,12 +596,35 @@ export interface ServeOptions {
   distPath?: string;
 }
 
+/** True for a URL path that must never be served from a built dist/: any
+ *  source map, and the server bundle (it lives in dist-server/ since the
+ *  build moved it out, but an old or hand-made dist/ may still hold one).
+ *  Decoded and normalised first, so /server%2Ecjs, /SERVER.CJS (a
+ *  case-insensitive disk) or a trailing dot cannot slip past. */
+function forbiddenInDist(urlPath: string): boolean {
+  let p: string;
+  try {
+    p = decodeURIComponent(urlPath);
+  } catch {
+    return true; // a malformed escape: nothing legitimate looks like that
+  }
+  const base = path.posix.basename(p.replace(/\\/g, "/")).toLowerCase().split(":")[0].replace(/[. ]+$/, "");
+  return base.endsWith(".map") || base === "server.cjs";
+}
+
 // Configure Vite middleware or static route handling depending on production state
 export const startServer = async (opts: ServeOptions = {}): Promise<number> => {
   const port = opts.port ?? PORT;
-  const host = opts.host ?? "0.0.0.0";
+  /* SYNTECH_HOST picks the bind address (default every interface, so a phone
+     or an iPad on the LAN can open the dev app). SYNTECH_HOST=127.0.0.1 keeps
+     it on this machine. Not plain HOST: some shells, containers and PaaS
+     export HOST for their own purposes. The desktop shell always passes
+     127.0.0.1. */
+  const host = opts.host ?? (process.env.SYNTECH_HOST?.trim() || "0.0.0.0");
   await sweepStaleUploads();
-  if (!opts.distPath && process.env.NODE_ENV !== "production") {
+  /* SYNTECH-SECURITY (SRV-04): a BUILT server is production, whatever NODE_ENV
+     says — it never starts Vite (which would serve the whole project tree). */
+  if (!opts.distPath && !IS_BUILT && process.env.NODE_ENV !== "production") {
     // Effect builds are self-contained static apps: serve them ahead of the
     // Vite pipeline, which blocks public assets requested as <script src>
     app.use("/effects", express.static(path.join(process.cwd(), "public/effects")));
@@ -403,21 +639,39 @@ export const startServer = async (opts: ServeOptions = {}): Promise<number> => {
     app.use(vite.middlewares);
   } else {
     const distPath = opts.distPath ?? path.join(process.cwd(), "dist");
+    serveCsp = true;
+    /* SYNTECH-SECURITY (SRV-05): never a source map or the server bundle. */
+    app.use((req, res, next) => {
+      if (forbiddenInDist(req.path)) return res.status(404).type("text/plain").send("Not found");
+      next();
+    });
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
+  /* SYNTECH-SECURITY (SRV-10, slow requests): Node's requestTimeout (300 s) is off — it
+     cut legitimate slow uploads; guardBody (above) bounds bodies instead.
+     Headers must arrive within 20 s (checked every 5 s). */
+  const server = http.createServer({ requestTimeout: 0, headersTimeout: 20_000, connectionsCheckingInterval: 5_000 }, app);
   return new Promise<number>((resolve, reject) => {
-    const server = app.listen(port, host, () => {
+    server.once("error", reject);
+    server.listen(port, host, () => {
       const bound = (server.address() as net.AddressInfo).port;
+      const hasKey = !!process.env.GEMINI_API_KEY?.trim();
+      const policy = serverKeyPolicy();
       console.log(`Server launched on port ${bound} // Full-stack core ready.`);
+      console.log(`Mode: ${serveCsp ? "built app (dist/)" : "dev (Vite)"}${IS_BUILT ? ", production bundle" : ""}${process.env.SYNTECH_DESKTOP ? ", desktop" : ""}; bound to ${host}${opts.host === undefined && process.env.SYNTECH_HOST?.trim() ? " (SYNTECH_HOST)" : ""}${TRUST_PROXY_HOPS ? `; trusting ${TRUST_PROXY_HOPS} proxy hop(s)` : ""}`);
+      console.log(`Limits: ${UPLOAD_SLOTS.global} uploads and ${ROLE_SLOTS.global} Gemini calls at once (1 and 2 per client), ${Math.round(ROLE_BYTES.budget / 1048576)} MB of Gemini request bodies in flight`);
       console.log(`API hosts: ${HOST_RULE.any ? "any (ALLOWED_HOSTS=*)" : ["localhost", "IP addresses", "*.local", ...HOST_RULE.names.map((n) => (n.startsWith(".") ? `*${n}` : n))].join(", ")}`);
-      console.log(`Gemini: model=${geminiModel()}, server key: ${process.env.GEMINI_API_KEY?.trim() ? "set (used only by browsers on this machine)" : "not set (a key can be pasted in the panel)"}`);
+      console.log(`Gemini: model=${geminiModel()}, server key: ${!hasKey
+        ? "not set (a key can be pasted in the panel)"
+        : policy === "off"
+          ? "IGNORED — a built standalone server never lends its key; every user pastes their own in the panel"
+          : "set (used only by browsers on this machine)"}`);
       resolve(bound);
     });
-    server.once("error", reject);
   });
 };
 

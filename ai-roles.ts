@@ -28,7 +28,7 @@
  */
 
 import { MediaResolution, type Part } from '@google/genai';
-import { GeminiFailure } from './ai-provider';
+import { GeminiFailure, testHookBaseUrl } from './ai-provider';
 import {
   MODULE_IDS, PARAM_FLOORS, PARAM_KEY_PATTERN, LOCKED_GROUPS, LOCKED_CONTROL_PATTERN, INLINE_VIDEO_FPS,
   type AgentPlan, type AgentResult, type ArtDirection, type ArtDirectorResult, type AudioModeT,
@@ -301,13 +301,40 @@ function readMedia(v: unknown): MediaPart[] {
 
 const SOURCE_KINDS: readonly SourceKindT[] = ['none', 'video', 'image', 'webcam'];
 
+/* SYNTECH-SECURITY (SRV-09): a source reference is a file this app uploaded —
+   a Gemini Files API URI (https://generativelanguage.googleapis.com/…), or one
+   of the loopback mock while the GEMINI_BASE_URL test hook is active. Any other
+   URL (a YouTube link, someone's server) would make Google fetch it on the
+   key's account, around our own upload cap. */
+function isFilesApiUri(v: unknown): v is string {
+  if (typeof v !== 'string' || v.length > 2048) return false;
+  let u: URL;
+  try {
+    u = new URL(v);
+  } catch {
+    return false;
+  }
+  if (u.username || u.password) return false;
+  if (u.protocol === 'https:' && u.hostname === 'generativelanguage.googleapis.com' && !u.port) return true;
+  const hook = testHookBaseUrl();
+  if (!hook) return false;
+  try {
+    return u.origin === new URL(hook).origin;
+  } catch {
+    return false;
+  }
+}
+
 function readSource(v: unknown): SourceRef {
   const s = obj(v);
   const kind = SOURCE_KINDS.includes(s.kind as SourceKindT) ? (s.kind as SourceKindT) : 'none';
   const src: SourceRef = { kind };
   const name = str(s.name, 160);
   if (name) src.name = name;
-  if (typeof s.fileUri === 'string' && /^https?:\/\//.test(s.fileUri) && s.fileUri.length <= 2048) {
+  if (s.fileUri !== undefined && s.fileUri !== null && s.fileUri !== '') {
+    if (!isFilesApiUri(s.fileUri)) {
+      throw new GeminiFailure('bad_request', 'source.fileUri must be a file uploaded through this app (Gemini Files API).');
+    }
     src.fileUri = s.fileUri;
     src.fileMimeType = cleanMime(s.fileMimeType) ?? 'video/mp4';
   }

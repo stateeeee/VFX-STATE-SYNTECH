@@ -33,8 +33,10 @@ import {
   type File as GeminiFile,
 } from '@google/genai';
 import type { Request } from 'express';
+import { createHash } from 'node:crypto';
 import fs from 'fs';
 import { GEMINI_MODEL_DEFAULT, GEMINI_KEY_HEADER, type AiErrorKind } from './src/ai/contract';
+import { IS_BUILT, limitedWarn } from './security';
 
 /* ── model ────────────────────────────────────────────────────── */
 
@@ -83,13 +85,27 @@ function isDirectLocal(req: Request): boolean {
   const name = hostnameOf(req.headers.host);
   if (!name) return false;
   return name === 'localhost' || name.endsWith('.localhost')
-    || name === '::1' || name === '0.0.0.0'
+    || name === '::1'
     || /^(::ffff:)?127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(name);
 }
 
+/* SYNTECH-SECURITY (SRV-01): WHICH servers may lend their key at all. The
+   server key is a convenience for the operator's own machine: `npm run dev`
+   (tsx, not built) and the desktop app (SYNTECH_DESKTOP, one local user). A
+   BUILT standalone server (`npm start`) is a deploy — behind a reverse proxy a
+   visitor's request can look exactly like a local one (nginx's default sends
+   Host: 127.0.0.1 from 127.0.0.1, no X-Forwarded-*) — so it never uses it,
+   whatever the request looks like: every user pastes their own key. */
+export type ServerKeyPolicy = 'dev' | 'desktop' | 'off';
+export function serverKeyPolicy(): ServerKeyPolicy {
+  if (process.env.SYNTECH_DESKTOP) return 'desktop';
+  return IS_BUILT ? 'off' : 'dev';
+}
+
 /** The server's own key, for a request allowed to use it: a browser on this
- *  machine, talking to it directly. */
+ *  machine, talking to it directly, on a server whose policy lends it. */
 function serverKeyFor(req: Request): string | null {
+  if (serverKeyPolicy() === 'off') return null;
   return isLoopback(req) && isDirectLocal(req) ? process.env.GEMINI_API_KEY?.trim() || null : null;
 }
 
@@ -107,6 +123,11 @@ export function resolveKey(req: Request): string | null {
   return serverKeyFor(req);
 }
 
+/** The pasted key from the header, trimmed, or null (no server fallback). */
+export function headerKey(req: Request): string | null {
+  return req.get(GEMINI_KEY_HEADER)?.trim() || null;
+}
+
 /* One client per key, built on first use. Always an explicit apiKey — the SDK
    would otherwise go looking in the environment on its own, and the browser's
    key and the server's key must never be confused. The cap only stops a long
@@ -122,10 +143,36 @@ export function resolveKey(req: Request): string | null {
 const clients = new Map<string, GoogleGenAI>();
 const MAX_CLIENTS = 8;
 
+/* SYNTECH-SECURITY (DSK-07): the test hook is honoured ONLY when it points at
+   this machine (127.0.0.0/8, localhost, [::1]) — the verify suites' mock. A
+   GEMINI_BASE_URL planted in some .env that points anywhere else would send the
+   pasted key and the user's footage to that host: it is ignored, with one
+   warning in the log. Read on use (dotenv runs after the imports). */
+let warnedBaseUrl = '';
+function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return h === 'localhost' || h === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+}
+export function testHookBaseUrl(): string | null {
+  const raw = process.env.GEMINI_BASE_URL?.trim();
+  if (!raw) return null;
+  let ok = false;
+  try {
+    const u = new URL(raw);
+    ok = (u.protocol === 'http:' || u.protocol === 'https:') && isLoopbackHost(u.hostname);
+  } catch { /* not a URL */ }
+  if (ok) return raw;
+  if (warnedBaseUrl !== raw) {
+    warnedBaseUrl = raw;
+    console.warn('[gemini] GEMINI_BASE_URL ignored: the test hook may only point at this machine (127.0.0.1, localhost, [::1]). Using Google.');
+  }
+  return null;
+}
+
 export function getClient(apiKey: string): GoogleGenAI {
   let ai = clients.get(apiKey);
   if (!ai) {
-    const baseUrl = process.env.GEMINI_BASE_URL;
+    const baseUrl = testHookBaseUrl();
     ai = new GoogleGenAI({
       apiKey,
       vertexai: false,
@@ -178,8 +225,16 @@ export function failure(kind: AiErrorKind, message: string): AiFailure {
    messages never contain the key, but a message is cheap to scrub and a leaked
    key in a log or a screenshot is not. */
 const KEY_SHAPE = /AIza[0-9A-Za-z_\-]{20,}/g;
+/* SYNTECH-SECURITY (SRV-10): local filesystem paths never reach a browser
+   (/tmp/syntech-upload-…, /home/…, C:\Users\…). A URL's path is left alone:
+   an absolute path only counts at the start or after a space, quote or
+   bracket, never after a host name. */
+const FS_PATH = /(^|[\s'"(=,:])(?:\/(?:[\w.@~+-]+\/)+[\w.@~+-]*|[A-Za-z]:\\[^\s'"]*|\\\\[^\s'"]+)/g;
+export function stripPaths(text: string): string {
+  return text.replace(FS_PATH, '$1[path]');
+}
 function scrub(text: string, max = 240): string {
-  const clean = text.replace(KEY_SHAPE, '[key]').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const clean = stripPaths(text.replace(KEY_SHAPE, '[key]')).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
@@ -310,8 +365,11 @@ export function classifyError(err: unknown): AiFailure {
   if (isNetworkish(err)) {
     return failure('upstream', 'Could not reach Gemini (timeout or network error). Try again in a moment.');
   }
+  /* SYNTECH-SECURITY (SRV-10): an internal error (fs, a bug) says what failed
+     in the server log, never to the browser: a fixed message there. */
   const msg = err instanceof Error ? err.message : String(err);
-  return failure('server_error', `Unexpected server error: ${scrub(msg)}`);
+  limitedWarn('server:internal', `[server] internal error: ${scrub(msg, 400)}`, 5);
+  return failure('server_error', 'Unexpected server error. Try again; if it keeps happening, restart the app.');
 }
 
 /** True when Google refused the response SCHEMA itself and SAID so (too
@@ -360,11 +418,13 @@ export function worthLooseRetry(err: unknown): boolean {
 }
 
 /** Classify AND log, once. Every failing /api/gemini call goes through here,
- *  so a wrong key, a quota hit and a rejected model id each leave exactly one
- *  readable line in the server log — never the key, never a header. */
+ *  so a wrong key, a quota hit and a rejected model id each leave one
+ *  readable line in the server log — never the key, never a header. Any
+ *  client can make requests fail at will, so the lines are rate-limited per
+ *  kind (5 per 10 s, the rest counted in one summary line). */
 export function reportFailure(err: unknown): AiFailure {
   const f = classifyError(err);
-  console.warn(`[gemini] ${f.kind}: ${f.message}`);
+  limitedWarn(`gemini:${f.kind}`, `[gemini] ${f.kind}: ${f.message}`, 5);
   return f;
 }
 
@@ -374,6 +434,77 @@ export function reportFailure(err: unknown): AiFailure {
  *  is reachable with it, and spends no tokens. Throws on failure. */
 export async function checkKey(apiKey: string): Promise<void> {
   await getClient(apiKey).models.get({ model: geminiModel(), config: { httpOptions: { timeout: 15_000 } } });
+}
+
+/* ── pasted keys, proven once (SYNTECH-SECURITY, B1) ─────────────
+   A pasted key is proven with ONE models.get before a request may take an
+   upload or Gemini slot or send a single body byte (server.ts keyProof): a
+   made-up key never holds anything. The verdict is cached by the key's
+   SHA-256 — the key itself is never stored here:
+     valid          10 min
+     invalid_key    60 s (a typo'd key is not re-asked on every click)
+     anything else  NOT cached (quota, outage, network, unknown model: the
+                    key may be fine; the request is refused with that failure)
+   One upstream check per key at a time (concurrent requests join it); the
+   cache holds at most 2000 verdicts, oldest out first. A real call that
+   Google answers with invalid_key drops the verdict (forgetKey), so a key
+   revoked mid-session relocks at once. /api/gemini/key always asks Google
+   afresh (validateKey) and records what it learns. */
+const KEY_OK_MS = 10 * 60_000;
+const KEY_BAD_MS = 60_000;
+const KEY_CACHE_MAX = 2000;
+const keyVerdicts = new Map<string, { ok: boolean; until: number }>();
+const keyChecks = new Map<string, Promise<AiFailure | null>>();
+const keyHash = (apiKey: string) => createHash('sha256').update(apiKey).digest('hex');
+const keyRejected = () => failure('invalid_key', 'Google rejected this API key. Paste a valid key from https://aistudio.google.com/apikey.');
+
+function recordVerdict(hash: string, f: AiFailure | null): void {
+  keyVerdicts.delete(hash);
+  if (f && f.kind !== 'invalid_key') return; // not the key's fault: not cached
+  if (keyVerdicts.size >= KEY_CACHE_MAX) {
+    const oldest = keyVerdicts.keys().next();
+    if (!oldest.done) keyVerdicts.delete(oldest.value);
+  }
+  keyVerdicts.set(hash, { ok: !f, until: Date.now() + (f ? KEY_BAD_MS : KEY_OK_MS) });
+}
+
+/** Asks Google about this key now (or joins the check already running for
+ *  it) and records the verdict. null = the key works; otherwise the failure,
+ *  already classified and logged. Never rejects. */
+export function validateKey(apiKey: string): Promise<AiFailure | null> {
+  const hash = keyHash(apiKey);
+  let running = keyChecks.get(hash);
+  if (!running) {
+    running = checkKey(apiKey)
+      .then((): AiFailure | null => null, (err: unknown) => reportFailure(err))
+      .then((f) => {
+        recordVerdict(hash, f);
+        keyChecks.delete(hash);
+        return f;
+      });
+    keyChecks.set(hash, running);
+  }
+  return running;
+}
+
+/** The cached verdict on a pasted key, asking Google only when there is
+ *  none. null = proven; otherwise refuse the request with that failure. */
+export function admitKey(apiKey: string): Promise<AiFailure | null> {
+  const hash = keyHash(apiKey);
+  const v = keyVerdicts.get(hash);
+  if (v && v.until > Date.now()) return Promise.resolve(v.ok ? null : keyRejected());
+  if (v) keyVerdicts.delete(hash);
+  return validateKey(apiKey);
+}
+
+/** Google said invalid_key to a real call: forget that the key was good. */
+export function forgetKey(apiKey: string): void {
+  keyVerdicts.delete(keyHash(apiKey));
+}
+
+/** For the verify scripts: how many verdicts are cached / checks running. */
+export function keyCacheSize(): { verdicts: number; checking: number } {
+  return { verdicts: keyVerdicts.size, checking: keyChecks.size };
 }
 
 /* Generous: a whole music video plus model thinking is a long request, and

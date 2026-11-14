@@ -17,6 +17,9 @@ directories:
 
 files:
   - dist/**/*
+  # The standalone server bundle is built into dist-server/ (never shipped: the
+  # desktop app runs its own copy inside dist-desktop/main.cjs). These two
+  # exclusions stay as a guard in case an old or hand-made dist/ still holds it.
   - "!dist/server.cjs"
   - "!dist/server.cjs.map"
   - dist-desktop/**/*

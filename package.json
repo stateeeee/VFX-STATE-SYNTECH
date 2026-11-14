@@ -1,7 +1,7 @@
 {
   "name": "vfx-syntech",
   "private": true,
-  "version": "0.12.1",
+  "version": "0.12.2",
   "productName": "VFX SYNTECH",
   "description": "Audio/video-reactive VFX for videomakers",
   "author": "State",
@@ -9,11 +9,11 @@
   "main": "dist-desktop/main.cjs",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
-    "clean": "rm -rf dist dist-desktop release server.js",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --define:__SYNTECH_BUILT__=true --minify --keep-names --sourcemap --outfile=dist-server/server.cjs",
+    "start": "node dist-server/server.cjs",
+    "clean": "rm -rf dist dist-server dist-desktop release server.js",
     "lint": "tsc --noEmit",
-    "desktop:bundle": "esbuild desktop/main.ts --bundle --platform=node --format=cjs --external:electron --external:vite --outfile=dist-desktop/main.cjs",
+    "desktop:bundle": "esbuild desktop/main.ts --bundle --platform=node --format=cjs --external:electron --external:vite --define:__SYNTECH_BUILT__=true --minify --keep-names --outfile=dist-desktop/main.cjs",
     "desktop": "npm run build && npm run desktop:bundle && electron .",
     "desktop:dist": "npm run build && npm run desktop:bundle && electron-builder --publish never"
   },
