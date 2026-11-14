@@ -51,8 +51,20 @@ essere pubblicata"* (abbonamento, codice chiuso; login e pagamenti dopo) + stima
   pagina estranea su un'altra porta → nessuna risposta, nessun valore cambiato; pagina della stessa origine →
   risposta e valore cambiato. Costruttore (Sonnet): Save/ripristino e tema giorno/notte 10/10. Revisione Opus: PASS.
   Nota: un effetto aperto da disco (`file://`) ignora quei messaggi — nessuno glieli manda, comportamento invariato.
-- **Prossimo**: correzioni del server e della shell desktop (registro nel rapporto privato), poi cancello Opus e
-  verifica finale del regista con gli stessi attacchi.
+- **Chiuso (commit 3) — shell desktop + pipeline** (`desktop/main.ts`, `.github/workflows/desktop.yml`,
+  `DESKTOP.md` § Sicurezza): navigazione e `window.open` giudicate per **origine esatta** (prima `startsWith`, che
+  `http://127.0.0.1:47291@altro-sito/` superava), per ogni webContents, più `will-redirect` e niente `<webview>`;
+  **permessi** solo camera / microfono / schermo intero e solo all'origine dell'app (prima Electron concedeva tutto);
+  **app impacchettata senza DevTools** (menu proprio: Edit, View con reload/zoom/fullscreen, Window, su Mac anche
+  app + File; `SYNTECH_DEVTOOLS=1` da terminale li riattiva); workflow con `permissions: contents: read` e
+  `persist-credentials: false`. Costruttore Sonnet; revisione Opus PASS (una correzione consigliata — Cmd+W su Mac —
+  e le note applicate dal regista). **Verifica del regista sull'app Linux impacchettata e ricostruita**:
+  `verify-desktop` 38/38; attacco di navigazione bloccato; `getUserMedia` e fullscreen ok dalla pagina e da un
+  iframe di effetto; geolocalizzazione / notifiche / MIDI / appunti negati; nessuna voce DevTools e `openDevTools()`
+  senza effetto. Costruttore: `verify-lab-chain` 47/47 sull'app impacchettata, 0 violazioni CSP dentro Electron.
+  Non provato qui: menu e DevTools su Windows e Mac veri (la CI apre e prova l'app impacchettata su entrambi).
+- **Prossimo**: correzioni del server (registro nel rapporto privato), poi cancello Opus e verifica finale del
+  regista con gli stessi attacchi.
 - **Solo l'operatore**: rendere **privato** il repository su GitHub (oggi codice e 5 release dell'app sono scaricabili
   da chiunque); certificati di firma del codice; marchio; termini d'uso.
 

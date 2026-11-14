@@ -179,3 +179,18 @@ Nel sandbox si possono costruire anche l'`.exe` Windows
 (`npx electron-builder --win portable`) ma non eseguirlo; lo `.zip` Mac universal
 solo su macOS (serve `lipo`).
 Per questo il workflow esegue la stessa verifica su Windows e Mac veri.
+
+## Sicurezza della shell desktop (2026-11-14)
+
+- La finestra non esce mai dall'origine dell'app (confronto esatto dell'origine, non del prefisso); i link esterni
+  http/https si aprono nel browser vero; nessun `<webview>`.
+- Permessi: solo **camera, microfono e schermo intero**, e solo per l'origine dell'app. Tutto il resto è negato.
+  Un effetto nuovo che usa un'altra funzione protetta (appunti, MIDI, posizione…) va aggiunto a
+  `ALLOWED_PERMISSIONS` in `desktop/main.ts` **e** alla `Permissions-Policy` in `security.ts`.
+- **App impacchettata: niente DevTools** (né voce di menu né `openDevTools()`). Per riaverli su una build già
+  distribuita si avvia l'eseguibile da terminale con la variabile `SYNTECH_DEVTOOLS=1` (il doppio clic non la passa):
+  Windows `set SYNTECH_DEVTOOLS=1` e poi il `.exe` dalla stessa finestra; Mac
+  `SYNTECH_DEVTOOLS=1 "/percorso/VFX SYNTECH.app/Contents/MacOS/VFX SYNTECH"`. `npm run desktop` non è mai limitato.
+- Il server interno manda le stesse intestazioni di sicurezza del sito (CSP compresa): vedi `security.ts`.
+- Non ancora fatto (serve la firma del codice): fusibili di Electron, integrità dell'asar, aggiornamento automatico.
+  Attenzione: spegnere il fusibile che permette `--inspect` rompe `verify-desktop` (Playwright guida l'app così).

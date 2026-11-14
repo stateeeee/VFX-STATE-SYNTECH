@@ -14,6 +14,11 @@
  *      external links open in the real browser, a second launch focuses the
  *      window that is already open.
  *
+ * Hardening (security audit DSK-03/04/05): navigation and window.open are
+ * judged by strict origin comparison; only this app's own origin gets camera /
+ * microphone / fullscreen, every other permission is denied; the packaged app
+ * has no DevTools (unless SYNTECH_DEVTOOLS=1 is set — the owner's escape hatch).
+ *
  * Why a FIXED port: presets, sessions and effect settings live in localStorage,
  * and localStorage belongs to an origin — http://127.0.0.1:<port>. A random port
  * would be a new, empty origin on every launch. Only if the fixed port is taken
@@ -24,7 +29,8 @@
  * or put GEMINI_API_KEY=... in a file named ".env" in the app's data folder —
  * see docs/workflow/DESKTOP.md for the path per OS.
  */
-import { app, BrowserWindow, dialog, shell } from "electron";
+import { app, BrowserWindow, dialog, Menu, session, shell } from "electron";
+import type { MenuItemConstructorOptions } from "electron";
 import path from "path";
 import net from "net";
 import dotenv from "dotenv";
@@ -44,6 +50,110 @@ app.commandLine.appendSwitch("force_high_performance_gpu");
 app.commandLine.appendSwitch("enable-unsafe-swiftshader");
 
 let win: BrowserWindow | null = null;
+
+/* Packaged app = no DevTools, no "Toggle Developer Tools" menu item — unless the
+   owner sets SYNTECH_DEVTOOLS=1 to debug a shipped build. Unpackaged runs
+   (npm run desktop, electron .) are never restricted. */
+const LOCKED_DOWN = app.isPackaged && process.env.SYNTECH_DEVTOOLS !== "1";
+
+/* Strict origin comparison. `startsWith(origin)` is bypassed by
+   http://127.0.0.1:47291@evil.example/ (userinfo) — so parse, never prefix-match. */
+function isOwn(url: string, origin: string): boolean {
+  try {
+    return new URL(url).origin === origin;
+  } catch {
+    return false; // unparsable = foreign
+  }
+}
+
+function openExternalIfWeb(url: string) {
+  try {
+    const p = new URL(url).protocol;
+    if (p === "http:" || p === "https:") shell.openExternal(url);
+  } catch {
+    /* unparsable: ignore */
+  }
+}
+
+/* Guards for EVERY webContents the app ever creates (the window, and anything
+   a future feature opens). The app uses no <webview>. */
+function installGuards(origin: string) {
+  app.on("web-contents-created", (_e, wc) => {
+    wc.setWindowOpenHandler(({ url }) => {
+      if (!isOwn(url, origin)) openExternalIfWeb(url);
+      return { action: "deny" };
+    });
+    // The window never leaves the app. (A file dropped outside a drop zone would
+    // otherwise replace the whole UI with that file.)
+    wc.on("will-navigate", (e, url) => {
+      if (isOwn(url, origin)) return;
+      e.preventDefault();
+      openExternalIfWeb(url);
+    });
+    // A server-side redirect must not carry any frame off the app either.
+    wc.on("will-redirect", (e, url) => {
+      if (!isOwn(url, origin)) e.preventDefault();
+    });
+    wc.on("will-attach-webview", (e) => e.preventDefault());
+  });
+}
+
+/* Electron grants every permission to every origin by default. Only this app's
+   own origin (the page and its same-origin effect iframes) gets what the app
+   uses: camera + microphone (getUserMedia → "media") and fullscreen. */
+const ALLOWED_PERMISSIONS = new Set<string>(["media", "fullscreen"]);
+
+function installPermissionHandlers(origin: string) {
+  const ses = session.defaultSession;
+  ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    callback(ALLOWED_PERMISSIONS.has(permission) && isOwn(details.requestingUrl, origin));
+  });
+  ses.setPermissionCheckHandler((_wc, permission, requestingOrigin) =>
+    ALLOWED_PERMISSIONS.has(permission) && isOwn(requestingOrigin, origin),
+  );
+  // No USB / HID / serial / Bluetooth device is ever offered or remembered.
+  ses.setDevicePermissionHandler(() => false);
+}
+
+/* Packaged app: its own minimal menu (no devtools item). The menu bar stays
+   auto-hidden on Windows/Linux, the accelerators (copy/paste, F11, reload) work. */
+function installMenu() {
+  if (!LOCKED_DOWN) return; // unpackaged, or SYNTECH_DEVTOOLS=1: Electron's default menu
+  const isMac = process.platform === "darwin";
+  const template: MenuItemConstructorOptions[] = [
+    // macOS: the app menu (Quit, Hide) and File (Cmd+W closes the window).
+    ...(isMac ? [{ role: "appMenu" }, { role: "fileMenu" }] as MenuItemConstructorOptions[] : []),
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "View",
+      // Everything the default View menu had except the DevTools item: an
+      // accidental Ctrl+wheel zoom must stay undoable (Ctrl+0).
+      submenu: [
+        { role: "reload" },
+        { role: "forceReload" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    { role: "windowMenu" },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
 
 function portIsFree(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -82,6 +192,7 @@ function createWindow(origin: string) {
       // Keep rendering when the window is behind another one — a recording or
       // an export must not slow down because the operator switched app.
       backgroundThrottling: false,
+      devTools: !LOCKED_DOWN,
     },
   });
 
@@ -90,19 +201,8 @@ function createWindow(origin: string) {
     win?.show();
   });
 
-  // Links meant for a new tab go to the real browser; the app never opens a second window.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url) && !url.startsWith(origin)) shell.openExternal(url);
-    return { action: "deny" };
-  });
-
-  // The window never leaves the app. (A file dropped outside a drop zone would
-  // otherwise replace the whole UI with that file.)
-  win.webContents.on("will-navigate", (e, url) => {
-    if (url.startsWith(origin)) return;
-    e.preventDefault();
-    if (/^https?:\/\//.test(url)) shell.openExternal(url);
-  });
+  // (New-tab links go to the real browser and in-window navigation is guarded
+  // by installGuards(), which covers every webContents.)
 
   win.on("closed", () => {
     win = null;
@@ -125,7 +225,11 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     try {
       const port = await startBackend();
-      createWindow(`http://${HOST}:${port}`);
+      const origin = `http://${HOST}:${port}`;
+      installGuards(origin);
+      installPermissionHandlers(origin);
+      installMenu();
+      createWindow(origin);
     } catch (err) {
       dialog.showErrorBox("VFX SYNTECH", `The app could not start.\n\n${String(err)}`);
       app.quit();
