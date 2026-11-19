@@ -280,7 +280,7 @@ function keyProof(req: Request, res: Response, next: NextFunction) {
   admitKey(pasted).then((f) => {
     res.off("close", hungUp);
     if (gone || res.headersSent || req.socket.destroyed) return;
-    if (f) return refuse(res, f.status, f.kind, f.message, { close: true });
+    if (f) return refuse(res, f.status, f.kind, f.message, { close: true, retryAfter: f.retryAfter });
     next();
   }, () => {
     res.off("close", hungUp);
@@ -352,6 +352,9 @@ app.post("/api/gemini/key", keyGate("key"), express.json({ limit: "64kb" }), asy
     let f: AiFailure | null = null;
     if (fromHeader) {
       f = await validateKey(apiKey);
+      /* the server's own "too many key checks at once": a real 429 +
+         Retry-After (not a verdict on this key), unlike the 200 contract */
+      if (f?.retryAfter !== undefined) return refuse(res, f.status, f.kind, f.message, { close: true, retryAfter: f.retryAfter });
     } else {
       try {
         await checkKey(apiKey);
@@ -650,6 +653,24 @@ export const startServer = async (opts: ServeOptions = {}): Promise<number> => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+  /* SYNTECH-SECURITY (N3): the last middleware. Anything that reaches it
+     failed OUTSIDE /api (static files, the SPA fallback, Vite): without it
+     Express's finalhandler prints the error's whole stack for every such
+     request (a bad Range header on a file, a malformed URL in dev…) — a
+     client could flood the log. Answers tersely (a 4xx the error carries,
+     else 500; no stack, no path), logs one rate-limited line. */
+  app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+    const e = err as { status?: unknown; statusCode?: unknown; name?: unknown } | null;
+    const code = Number(e?.status ?? e?.statusCode);
+    const status = Number.isInteger(code) && code >= 400 && code < 500 ? code : 500;
+    limitedWarn("server:outside-api", `[server] ${status} on ${String(req.method).slice(0, 10)}: ${String(e?.name || "error").replace(/[^\w.-]/g, "?").slice(0, 60)}`, 5);
+    if (res.headersSent) {
+      req.socket.destroy();
+      return;
+    }
+    res.status(status).type("text/plain").send(http.STATUS_CODES[status] || "Error");
+  });
 
   /* SYNTECH-SECURITY (SRV-10, slow requests): Node's requestTimeout (300 s) is off — it
      cut legitimate slow uploads; guardBody (above) bounds bodies instead.

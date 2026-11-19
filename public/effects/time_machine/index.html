@@ -2442,7 +2442,7 @@ function applyState(s){
 }
 
 // ── Storage helpers ───────────────────────────────────────
-function getAll(){try{return JSON.parse(localStorage.getItem(LS_KEY)||'[]');}catch(e){return[];}}
+function getAll(){try{const a=JSON.parse(localStorage.getItem(LS_KEY)||'[]');return Array.isArray(a)?a.filter(p=>p&&typeof p==='object'&&!Array.isArray(p)):[];}catch(e){return[];}} /* SYNTECH-SEC: a stored value of the wrong shape (not an array of preset objects) reads as no presets instead of breaking the list and SAVE PRESET */
 function setAll(arr){try{localStorage.setItem(LS_KEY,JSON.stringify(arr));}catch(e){}} /* SYNTECH-FIX: storage may be blocked */
 
 function fmtDate(ts){

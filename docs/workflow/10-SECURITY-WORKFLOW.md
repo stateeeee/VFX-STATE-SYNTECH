@@ -81,7 +81,7 @@ L'operatore non vuole pagare contesto inutile. Il regista:
   altrimenti l'API rifiuta ogni richiesta del pannello con 403 e lo scrive una volta nel log. Con `TRUST_PROXY`
   i limiti contano l'indirizzo vero del visitatore (senza, tutti i visitatori sembrano il proxy).
 - **Limiti** (`.env.example`): `SYNTECH_MAX_UPLOADS` (6), `SYNTECH_MAX_ROLE_CALLS` (16), `SYNTECH_ROLE_BYTES_MB`
-  (160). Caso peggiore: 3 GB di disco temporaneo e circa 0,5 GB di memoria. HTTPS lo fornisce il proxy.
+  (160), `SYNTECH_MAX_KEY_CHECKS` (64). Caso peggiore: 3 GB di disco temporaneo e circa 0,5 GB di memoria. HTTPS lo fornisce il proxy.
 - Le protezioni vivono in `security.ts` (intestazioni + CSP, richieste da altri siti, limiti, velocità minima)
   e in `ai-provider.ts` (chiave provata con Google prima di ogni lavoro costoso).
 

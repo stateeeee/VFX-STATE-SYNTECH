@@ -237,7 +237,11 @@ const candidate = (text) => ({
 
 /* ── the server ──────────────────────────────────────────────── */
 
-function startMockGemini({ port = 0, model = MODEL, goodKey = GOOD_KEY, processingPolls = 1 } = {}) {
+/* slowKeyMs: an OPT-IN delay (default 0 = none, the suites are unchanged) for the key
+   check (models.get) of keys that start with 'SLOW': the answer — normal, so 400 for
+   a key that is not goodKey — comes that many ms later. Standalone: MOCK_DELAY_MS.
+   verify-security.cjs uses it to hold Google's key check open (global key-check cap). */
+function startMockGemini({ port = 0, model = MODEL, goodKey = GOOD_KEY, processingPolls = 1, slowKeyMs = Number(process.env.MOCK_DELAY_MS) || 0 } = {}) {
   const state = {
     log: [],        // every request: {method, url, key, cmd, bytes}
     keyChecks: [],  // models.get: {model, key, ok}
@@ -287,13 +291,17 @@ function startMockGemini({ port = 0, model = MODEL, goodKey = GOOD_KEY, processi
         if (req.method === 'GET' && m) {
           const ok = keyOk(key);
           state.keyChecks.push({ model: m[1], key, ok });
-          if (!ok) return send(res, 400, KEY_INVALID_BODY);
-          if (m[1] !== model) return send(res, 404, notFound(m[1]));
-          return send(res, 200, {
-            name: `models/${model}`, version: '3.8', displayName: 'Gemini 3.8 Flash (mock)',
-            inputTokenLimit: 1048576, outputTokenLimit: 65536,
-            supportedGenerationMethods: ['generateContent', 'countTokens'],
-          });
+          const answer = () => {
+            if (!ok) return send(res, 400, KEY_INVALID_BODY);
+            if (m[1] !== model) return send(res, 404, notFound(m[1]));
+            return send(res, 200, {
+              name: `models/${model}`, version: '3.8', displayName: 'Gemini 3.8 Flash (mock)',
+              inputTokenLimit: 1048576, outputTokenLimit: 65536,
+              supportedGenerationMethods: ['generateContent', 'countTokens'],
+            });
+          };
+          if (slowKeyMs > 0 && key.startsWith('SLOW')) return void setTimeout(answer, slowKeyMs);
+          return answer();
         }
 
         /* generateContent — the three roles */

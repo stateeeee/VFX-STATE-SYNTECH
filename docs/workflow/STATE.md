@@ -94,17 +94,43 @@ essere pubblicata"* (abbonamento, codice chiuso; login e pagamenti dopo) + stima
   **38/38**, `verify-lab-chain` **47/47**. CI: commit 2 e 3 verdi su Windows e Mac.
 - **Come pubblicare il sito senza riaprire le falle**: `10-SECURITY-WORKFLOW.md` § "Pubblicare il sito".
 
-**PROSSIMO GIRO (sicurezza, giro 2) — la sessione successiva parte da qui.** Il rapporto privato all'operatore
-(falle aperte comprese) NON è nel repo: è nel passaggio di consegne della chat. In ordine:
-1. Note non bloccanti della seconda revisione del server: tetto globale ai controlli-chiave non ancora in cache
-   (oggi 30/min per indirizzo, senza tetto tra indirizzi); `.finally` sulla pulizia di `keyChecks`; non cancellare
-   un verdetto valido quando Google non risponde; un gestore d'errore finale silenzioso per i percorsi non-API;
-   commento di testa di `security.ts` (il 408 non è su ogni taglio).
-2. Avvisi di licenza delle librerie incluse (MediaPipe Apache-2.0, font OFL, three MIT…) dentro il pacchetto.
-3. `getAll()` non protetto in 4 effetti (analog, blob_tracker, quadtree, time_machine): un valore non-array nel
-   localStorage rompe l'avvio dell'effetto (serve una scrittura sulla stessa origine: bassa).
-4. Osservazione: TIME MACHINE aperto da solo, nei test senza schermo, a volte resta sul fotogramma 0 dopo aver
-   caricato un video (succede con e senza CSP) — capire se è solo del test.
+**SICUREZZA, GIRO 2 FATTO (2026-11-14/19, v0.12.3).** CI di `a7421ab`: primo giro rosso per tempi delle macchine
+GitHub (Mac: intro chiusa all'82%; Windows: screenshot in timeout), rilanciato → **verde su Windows e Mac**.
+- **Server** (`ai-provider.ts`, `server.ts`, `security.ts`, `.env.example`): tetto globale ai controlli-chiave non in
+  cache (`SYNTECH_MAX_KEY_CHECKS`, 64) → 429 + `Retry-After: 5`, mai in cache; chiavi già provate e chi si aggancia a
+  un controllo in corso lo saltano; pulizia di `keyChecks` in `.finally` (la promessa non rifiuta mai); un guasto di
+  Google non cancella più un verdetto valido (solo "funziona" / `invalid_key` lo sostituiscono); gestore d'errore
+  finale fuori da `/api` (un header Range malformato stampava uno stack per richiesta → una riga limitata); commenti
+  del 408 resi veri. `src/App.tsx`: un 429 del nostro server mostra il suo messaggio, non "Free quota reached".
+- **Cancello di sicurezza eseguibile**: `tools/verify/verify-security.cjs` (gruppi A–I: niente codice servito,
+  intestazioni, chiave del server mai prestata, guardia cross-site, niente accettato senza chiave, frequenza, corpi a
+  goccia, tetto ai controlli-chiave, ponte degli effetti 10/10 contro un'altra origine). **103/103** in ~95 s, a
+  macchina libera. `mock-gemini.cjs`: chiavi `SLOW…` con risposta ritardata (opzione, di default spenta).
+- **Avvisi di licenza**: `tools/gen-third-party-notices.cjs` genera `THIRD-PARTY-NOTICES.txt` (radice + `public/`,
+  servito a `/THIRD-PARTY-NOTICES.txt`) dai testi in `node_modules` e dai file ufficiali; testi accanto ai vendor in
+  `public/effects/vendor/LICENSES/`; `electron-builder.yml` mette gli avvisi accanto all'app e, su Mac, rimette le
+  licenze di Electron/Chromium che electron-builder toglie. Da rigenerare a ogni cambio di dipendenze.
+- **4 effetti** (analog, blob_tracker, quadtree, time_machine): `getAll()` dei preset con una riga `SYNTECH-SEC` —
+  un valore di forma sbagliata nel localStorage rompeva lista preset, SAVE PRESET e ripristino della sessione; ora
+  vale "nessun preset". 40/40 valori cattivi partono puliti; preset buoni salvati/ricaricati/applicati 4/4. Gli
+  altri 6 effetti non avevano il problema.
+- **TIME MACHINE "fermo al fotogramma 0"**: **non è un difetto dell'app**. `tools/verify/gen1080.js` in headless
+  scrive clip di 0,2–0,35 s (non 3 s), che "si fermano" uguali in bokeh e analog; con clip vere 200/200 prove ok
+  (autoplay, scheda nascosta, CPU rallentata, headed, H.264). Da correggere solo lo strumento di test.
+- **Revisione Opus**: prima FAIL (licenze di Electron assenti nello zip Mac; il cancello passava anche senza il tetto;
+  messaggio "quota" sbagliato nel pannello) → corretto dal regista → seconda revisione PASS.
+- **Verifica del regista**: lint + build puliti; `verify-security` 103/103; `verify-gemini` **11/11 passi, 276
+  controlli** (il "287" del giro 1 contava anche le 11 righe di riepilogo dei passi) in 351 s a macchina libera; app
+  Linux impacchettata `verify-desktop` 38/38 (licenze accanto all'eseguibile); revisore: `verify-lab-chain` 47/47;
+  QUADTREE vecchio si rompe con `"x"`/`{}`/`null`/`42`, nuovo parte pulito; pannello: messaggio giusto sul 429.
+
+**PROSSIMO GIRO (sicurezza, giro 3).** Il rapporto privato all'operatore resta fuori dal repo. Senza decisioni:
+1. Controllare nell'artefatto Mac della CI che `Contents/` contenga THIRD-PARTY-NOTICES.txt, LICENSE.electron.txt e
+   LICENSES.chromium.html.
+2. `tools/verify/gen1080.js`: clip di prova di durata vera (ffmpeg `testsrc2`, o controllo della durata).
+3. Licenze da chiarire con l'operatore: modello `selfie_multiclass_256x256.tflite` (nessuna scheda ufficiale
+   trovata), riga di copyright di MediaPipe, "ported from reference" in bokeh (DATAMOSH, PIXEL SORT).
+4. Note: anamorphic_lab "Load last" accetta campi di tipo sbagliato fino al ricaricamento (non rompe l'avvio).
 5. **Decisioni dell'operatore**: aggiornamento di Electron (32 è fuori supporto), firma del codice, fusibili +
    integrità dell'asar + aggiornamento automatico (dopo la firma), minimizzazione degli HTML degli effetti in build.
 - **Solo l'operatore**: rendere **privato** il repository su GitHub (oggi codice e release dell'app sono scaricabili

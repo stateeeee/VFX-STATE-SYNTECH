@@ -36,7 +36,7 @@ import type { Request } from 'express';
 import { createHash } from 'node:crypto';
 import fs from 'fs';
 import { GEMINI_MODEL_DEFAULT, GEMINI_KEY_HEADER, type AiErrorKind } from './src/ai/contract';
-import { IS_BUILT, limitedWarn } from './security';
+import { IS_BUILT, envPositiveInt, limitedWarn } from './security';
 
 /* ── model ────────────────────────────────────────────────────── */
 
@@ -187,7 +187,14 @@ export function getClient(apiKey: string): GoogleGenAI {
 /* ── errors ───────────────────────────────────────────────────── */
 
 /** What every failure is reduced to before it reaches the browser. */
-export interface AiFailure { kind: AiErrorKind; message: string; status: number }
+export interface AiFailure {
+  kind: AiErrorKind;
+  message: string;
+  status: number;
+  /** seconds: set only on the server's own "too many key checks at once"
+   *  refusal (a 429 that is not Google's quota) — the Retry-After to send */
+  retryAfter?: number;
+}
 
 /** HTTP status our server answers with, per kind. The browser keys on the
  *  body's `error`, so these only need to be honest, not clever. */
@@ -445,22 +452,30 @@ export async function checkKey(apiKey: string): Promise<void> {
      invalid_key    60 s (a typo'd key is not re-asked on every click)
      anything else  NOT cached (quota, outage, network, unknown model: the
                     key may be fine; the request is refused with that failure)
-   One upstream check per key at a time (concurrent requests join it); the
-   cache holds at most 2000 verdicts, oldest out first. A real call that
+   One upstream check per key at a time (concurrent requests join it), and at
+   most SYNTECH_MAX_KEY_CHECKS (64) DIFFERENT keys are asked at once: past
+   that, a key with no cached verdict and no check running is refused with a
+   429 at once (never cached, Google not called) — a flood of made-up keys
+   from many addresses cannot park dozens of sockets on a slow Google. Cached
+   verdicts and joining a running check skip the cap. The cache holds at most
+   2000 verdicts, oldest out first. A real call that
    Google answers with invalid_key drops the verdict (forgetKey), so a key
    revoked mid-session relocks at once. /api/gemini/key always asks Google
-   afresh (validateKey) and records what it learns. */
+   afresh (validateKey) and records what it learns — but only a CERTAIN
+   verdict (works / invalid_key) replaces a cached one: a Google outage never
+   erases a valid verdict the running session relies on. */
 const KEY_OK_MS = 10 * 60_000;
 const KEY_BAD_MS = 60_000;
 const KEY_CACHE_MAX = 2000;
+const MAX_KEY_CHECKS = envPositiveInt('SYNTECH_MAX_KEY_CHECKS', 64);
 const keyVerdicts = new Map<string, { ok: boolean; until: number }>();
 const keyChecks = new Map<string, Promise<AiFailure | null>>();
 const keyHash = (apiKey: string) => createHash('sha256').update(apiKey).digest('hex');
 const keyRejected = () => failure('invalid_key', 'Google rejected this API key. Paste a valid key from https://aistudio.google.com/apikey.');
 
 function recordVerdict(hash: string, f: AiFailure | null): void {
-  keyVerdicts.delete(hash);
-  if (f && f.kind !== 'invalid_key') return; // not the key's fault: not cached
+  if (f && f.kind !== 'invalid_key') return; // not the key's fault: not cached, and a cached verdict stays
+  keyVerdicts.delete(hash); // a certain verdict: replaces the old one (and becomes the newest)
   if (keyVerdicts.size >= KEY_CACHE_MAX) {
     const oldest = keyVerdicts.keys().next();
     if (!oldest.done) keyVerdicts.delete(oldest.value);
@@ -470,18 +485,37 @@ function recordVerdict(hash: string, f: AiFailure | null): void {
 
 /** Asks Google about this key now (or joins the check already running for
  *  it) and records the verdict. null = the key works; otherwise the failure,
- *  already classified and logged. Never rejects. */
+ *  already classified and logged. Never rejects. When SYNTECH_MAX_KEY_CHECKS
+ *  other keys are already being asked, a key with no running check is not
+ *  asked: its cached verdict if there is one, else a 429 (not cached). */
 export function validateKey(apiKey: string): Promise<AiFailure | null> {
   const hash = keyHash(apiKey);
   let running = keyChecks.get(hash);
   if (!running) {
+    if (keyChecks.size >= MAX_KEY_CHECKS) {
+      const v = keyVerdicts.get(hash);
+      if (v && v.until > Date.now()) return Promise.resolve(v.ok ? null : keyRejected());
+      limitedWarn('gemini:key-checks', `[gemini] ${MAX_KEY_CHECKS} key checks already running: a new key is refused for now`, 5);
+      return Promise.resolve({
+        ...failure('quota', 'The server is checking many API keys right now: try again in a few seconds. This is the app server\'s own limit, not your Gemini quota.'),
+        retryAfter: 5,
+      });
+    }
     running = checkKey(apiKey)
       .then((): AiFailure | null => null, (err: unknown) => reportFailure(err))
       .then((f) => {
         recordVerdict(hash, f);
-        keyChecks.delete(hash);
         return f;
-      });
+      })
+      .catch((err: unknown): AiFailure => {
+        /* an unexpected throw in the steps above: still a classified failure */
+        try { return reportFailure(err); } catch {
+          /* even classifying/logging threw: say so once on the console, never silently */
+          console.warn('[gemini] key check: unexpected error while recording its outcome');
+          return failure('server_error', 'Unexpected server error. Try again.');
+        }
+      })
+      .finally(() => { keyChecks.delete(hash); });
     keyChecks.set(hash, running);
   }
   return running;

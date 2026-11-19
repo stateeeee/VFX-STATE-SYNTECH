@@ -558,7 +558,10 @@ export default function App() {
     setGeminiStatus('standby');
     setGeminiSource(null);
     setGeminiError(err instanceof AiError ? err.kind : 'server_error');
-    setGeminiErrorMsg(isHostRefusal(err) ? err.message : null);
+    /* the server's own refusals carry their own wording: the Host guard's 403
+       and the 429s of the server's limits (too many requests from this address,
+       too many key checks at once) — not "your free Gemini quota is used up" */
+    setGeminiErrorMsg(isHostRefusal(err) || (err instanceof AiError && err.status === 429) ? err.message : null);
   };
 
   /** the browser's key if one is stored, else the server's if it has one.

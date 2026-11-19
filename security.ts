@@ -12,7 +12,8 @@
  *   RateLimiter     fixed one-minute window per client, bounded memory
  *   Slots           in-flight caps (global + per client), released on close
  *   ByteBudget      the bytes of role bodies in flight, summed, capped
- *   guardBody       a request body that stalls or trickles is cut (408)
+ *   guardBody       a request body that stalls or trickles is cut (connection
+ *                   closed; a 408 answer only on upload, the three roles, /key)
  *   keyPlausible    a header key that cannot be a Gemini key never reaches Google
  *   limitedWarn     a log line any client can trigger is rate-limited
  *   envPositiveInt  a numeric setting from the environment, garbage refused
@@ -427,7 +428,8 @@ export function bodyFlowing(req: Request): void {
    its place, per request: it watches the socket's byte counter (which only
    moves while somebody consumes the body), so a body that stops arriving, or
    trickles to hold a slot, loses its connection — with a 408 in the
-   AiErrorResponse shape when nothing was answered yet. Headers are bounded by
+   AiErrorResponse shape when the route asked for it (GuardOptions.res: upload,
+   the three roles, /key) and nothing was answered yet; elsewhere just cut. Headers are bounded by
    server.headersTimeout. Checked once a second, only while the body is
    incomplete. */
 export function guardBody(req: Request, g: BodyGuard, opts: GuardOptions = {}): void {
