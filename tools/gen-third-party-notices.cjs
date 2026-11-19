@@ -188,7 +188,7 @@ The desktop app is built on Electron (https://www.electronjs.org, MIT licence,
 Copyright (c) Electron contributors, Copyright (c) 2013-2020 GitHub Inc.) which embeds Chromium and
 many other third-party components. Their full licence texts ship with the app
 (Windows and Linux: next to the application executable; macOS: inside
-VFX SYNTECH.app/Contents/):
+VFX SYNTECH.app/Contents/Resources/):
   LICENSE.electron.txt   (Electron's licence)
   LICENSES.chromium.html (notices of Chromium and its dependencies)
 `);

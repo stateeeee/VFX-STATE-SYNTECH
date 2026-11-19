@@ -108,8 +108,8 @@ GitHub (Mac: intro chiusa all'82%; Windows: screenshot in timeout), rilanciato �
   macchina libera. `mock-gemini.cjs`: chiavi `SLOW…` con risposta ritardata (opzione, di default spenta).
 - **Avvisi di licenza**: `tools/gen-third-party-notices.cjs` genera `THIRD-PARTY-NOTICES.txt` (radice + `public/`,
   servito a `/THIRD-PARTY-NOTICES.txt`) dai testi in `node_modules` e dai file ufficiali; testi accanto ai vendor in
-  `public/effects/vendor/LICENSES/`; `electron-builder.yml` mette gli avvisi accanto all'app e, su Mac, rimette le
-  licenze di Electron/Chromium che electron-builder toglie. Da rigenerare a ogni cambio di dipendenze.
+  `public/effects/vendor/LICENSES/`; `electron-builder.yml` mette gli avvisi accanto all'eseguibile (Windows, Linux) e, su Mac, in
+  `Contents/Resources/` insieme alle licenze di Electron/Chromium che electron-builder toglie. Da rigenerare a ogni cambio di dipendenze.
 - **4 effetti** (analog, blob_tracker, quadtree, time_machine): `getAll()` dei preset con una riga `SYNTECH-SEC` —
   un valore di forma sbagliata nel localStorage rompeva lista preset, SAVE PRESET e ripristino della sessione; ora
   vale "nessun preset". 40/40 valori cattivi partono puliti; preset buoni salvati/ricaricati/applicati 4/4. Gli
@@ -125,8 +125,9 @@ GitHub (Mac: intro chiusa all'82%; Windows: screenshot in timeout), rilanciato �
   QUADTREE vecchio si rompe con `"x"`/`{}`/`null`/`42`, nuovo parte pulito; pannello: messaggio giusto sul 429.
 
 **PROSSIMO GIRO (sicurezza, giro 3).** Il rapporto privato all'operatore resta fuori dal repo. Senza decisioni:
-1. Controllare nell'artefatto Mac della CI che `Contents/` contenga THIRD-PARTY-NOTICES.txt, LICENSE.electron.txt e
-   LICENSES.chromium.html.
+1. Controllare nell'artefatto Mac della CI che `Contents/Resources/` contenga THIRD-PARTY-NOTICES.txt,
+   LICENSE.electron.txt e LICENSES.chromium.html (su Mac la firma rifiuta file sciolti direttamente in `Contents/`:
+   la CI di `96ed4ca` si è fermata lì, corretto subito con `mac.extraResources`; Windows era verde).
 2. `tools/verify/gen1080.js`: clip di prova di durata vera (ffmpeg `testsrc2`, o controllo della durata).
 3. Licenze da chiarire con l'operatore: modello `selfie_multiclass_256x256.tflite` (nessuna scheda ufficiale
    trovata), riga di copyright di MediaPipe, "ported from reference" in bokeh (DATAMOSH, PIXEL SORT).

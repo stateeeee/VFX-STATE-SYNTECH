@@ -27,19 +27,20 @@ files:
   - package.json
   - "!node_modules/**/*"
 
-# Third-party licence notices, placed OUTSIDE the asar where a user can open them
-# (Windows: next to the unpacked app files; macOS: inside the .app at Contents/).
-# Electron's own LICENSE (renamed LICENSE.electron.txt) + LICENSES.chromium.html are
-# kept by electron-builder next to the executable on Windows and Linux; on macOS
-# electron-builder deletes them, so mac.extraFiles below puts them back in Contents/.
-# Regenerate the notices with `node tools/gen-third-party-notices.cjs`.
+# Third-party licence notices, placed OUTSIDE the asar where a user can open them.
+# Windows / Linux: `extraFiles` in their blocks below, next to the executable, where
+# electron-builder also keeps Electron's own LICENSE (renamed LICENSE.electron.txt) and
+# LICENSES.chromium.html. macOS: `mac.extraResources`, i.e. VFX SYNTECH.app/Contents/Resources/
+# — codesign refuses loose files directly in Contents/ ("code object is not signed at all"),
+# and electron-builder deletes Electron's two licence files from a Mac build, so they are
+# put back there too. Regenerate the notices with `node tools/gen-third-party-notices.cjs`.
 # The vendored licence files travel inside dist/effects/vendor/LICENSES/ (Vite copies public/).
-extraFiles:
-  - from: THIRD-PARTY-NOTICES.txt
-    to: .
 
 # ── Windows: one .exe, double-click, nothing to install ─────────────────────
 win:
+  extraFiles:
+    - from: THIRD-PARTY-NOTICES.txt
+      to: .
   target:
     - target: portable
       arch: [x64]
@@ -70,9 +71,10 @@ mac:
   # last line that supports 10.15. Do NOT upgrade Electron without reading
   # docs/workflow/DESKTOP.md — the workflow fails the build if this drifts.
   minimumSystemVersion: "10.15"
-  # electron-builder removes Electron's licence files from a Mac build (see the
-  # top-level extraFiles comment): ship them inside the .app, next to the notices.
-  extraFiles:
+  # Licence notices inside the .app (see the comment above `win:`).
+  extraResources:
+    - from: THIRD-PARTY-NOTICES.txt
+      to: THIRD-PARTY-NOTICES.txt
     - from: node_modules/electron/dist/LICENSE
       to: LICENSE.electron.txt
     - from: node_modules/electron/dist/LICENSES.chromium.html
@@ -84,6 +86,9 @@ mac:
 
 # ── Linux: only used to test the desktop build in the cloud sandbox ─────────
 linux:
+  extraFiles:
+    - from: THIRD-PARTY-NOTICES.txt
+      to: .
   target:
     - target: AppImage
       arch: [x64]
