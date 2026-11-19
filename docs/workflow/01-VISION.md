@@ -34,7 +34,7 @@ out to every effect in the app.
 ## Product shape (operator's mental model)
 
 - **Left sidebar**: all the commands (Home, Save, Projects, Lab, and the
-  three Gemini 3.8 modes).
+  three Gemini modes).
 - **Right sidebar**: the effects library (the 5 effects; artwork covers coming).
 - **Center hero**: the animated brain graph on launch; the video takes this
   space while working.
@@ -48,7 +48,7 @@ out to every effect in the app.
   their connection holes runs multiple effects on the same video in real time.
   An effect disconnected from either side ghosts to ~50% opacity and stops
   processing.
-- **Gemini 3.8**: a panel of three AI roles that really watch and listen to
+- **Gemini**: a panel of three AI roles that really watch and listen to
   the footage — never just its filename. The **Art Director** is the creative
   mind: it watches the source (a video with its music, a photo, the webcam)
   and proposes which effects fit. The **Agent** is the operator: with source

@@ -15,7 +15,7 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
   Lab, the ✕ still removes.
 - **Left sidebar**: nav = Home (its icon IS the app logo — no separate logo
   above it, 2026-10-10), Save, Projects,
-  Lab; below the divider, the GEMINI 3.8 label and the three Gemini modes
+  Lab; below the divider, the GEMINI label and the three Gemini modes
   (Art Dir, Agent, Optimizer) — locked until a key is active (§9).
 - **Center hero**: on launch, the animated brain graph (`VfxCanvas`) — the
   app's "second brain": VFX SYNTECH core firing neural connections to every
@@ -28,7 +28,7 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
   Lab / Clear" bar — operator request 2026-10-11). Open the Lab from the left
   bar; clear/edit the chain in the node graph panel.
 - **Below the hero**: the node graph panel (`NodalComposition`) — this IS the
-  Lab's wiring surface — plus the Gemini 3.8 panel (`AiDirector`, §9) beside
+  Lab's wiring surface — plus the Gemini panel (`AiDirector`, §9) beside
   it.
 - **Right sidebar**: the effects library (10 cards since 2026-10-22; artwork images arrive
   later).
@@ -355,11 +355,13 @@ same origin) is specified in 02-ARCHITECTURE "One rendering world". Rules:
   PAINTING) are Lab nodes, chainable from the node graph, the brain-graph hub drag,
   saved compositions and Gemini "Open in Lab" (`isLabModule` = `MODULE_IDS`, all ten).
 
-## 9. Gemini 3.8 panel (Art Director · Agent · Optimizer)
+## 9. Gemini panel (Art Director · Agent · Optimizer)
 
-The panel beside the node graph (`AiDirector`). One model:
-`gemini-3.8-flash` (the server's `GEMINI_MODEL` may override it; the panel
-names whichever model the server runs). Gemini always receives real pixels
+The panel beside the node graph (`AiDirector`). The model is the operator's
+choice, made in the panel (§9.14): default **`gemini-4-hydrogen` at effort
+High** (operator, 2026-11-18 — "the best one, and free"); the server's
+`GEMINI_MODEL` only sets the default when the panel sends none. The name is
+just "Gemini" everywhere (header, rail). Gemini always receives real pixels
 and/or audio — never just a filename. The wire format shared by panel and
 server is `src/ai/contract.ts`. Panel chrome is English; everything Gemini
 writes back (reads, proposals, summaries, findings) is in Italian.
@@ -384,20 +386,24 @@ writes back (reads, proposals, summaries, findings) is in Italian.
   key, else the server key; with neither it stays STANDBY.
 - The key travels only browser → our server, in that header: never in a URL,
   never in a log line, never from the browser to Google.
-- ACTIVE card: "Gemini 3.8 is active", the three roles again as buttons
-  (`ai-pick-<mode>`, same switch as the rail — always reachable, even when the
-  rail's lower buttons sit under the meter on a short window), where the key
-  lives ("key from this browser" / "key from server .env") and **Forget key**
-  (`ai-key-forget`, browser key only).
+- ACTIVE card (operator-approved redesign, 2026-11-18): the SAME card as the
+  key form — "API KEY" with **Forget key** (`ai-key-forget`, browser key
+  only; "server key" otherwise) on the right, the key masked (last 4
+  characters, eye to reveal; "key from server .env" for the server key), the
+  AI Studio link under it — and in the place of Connect the **model button**
+  (`ai-model-button`): the model's short name only ("HYDROGEN") + a chevron.
+  It opens the picker (§9.14). The three role buttons are gone: roles are
+  picked only in the left rail. The header icon is the single four-point
+  star (lucide `Sparkle`).
 - A role call that comes back `invalid_key` or `no_key` (key revoked
   mid-session) drops the panel back to STANDBY and locks the rail again.
 
 ### 9.2 Rail gating
 
-- The three mode buttons under GEMINI 3.8 (`nav-gemini-art_director`,
+- The three mode buttons under GEMINI (`nav-gemini-art_director`,
   `nav-gemini-agent`, `nav-gemini-optimizer`) are disabled until ACTIVE:
   dimmed, not-allowed cursor, tooltip "Paste your Gemini key in the Gemini
-  3.8 panel to unlock". Leaving ACTIVE closes whatever mode was open.
+  panel to unlock". Leaving ACTIVE closes whatever mode was open.
 - Once unlocked, a click toggles that mode; the panel header shows its name.
 
 ### 9.3 Server key fallback (this machine only)
@@ -429,9 +435,14 @@ writes back (reads, proposals, summaries, findings) is in Italian.
   music, a photo, or the webcam) and proposes which effects fit. Works
   everywhere: Home, an open effect, the Lab — always on the INPUT node's
   source (or the Lab's webcam).
-- **Agent** — the operator. Source and effects are already chosen; it sets
-  the parameters AND the audio routing so video, music and effect play
-  together, and applies them. **Lab only.**
+- **Agent** — the operator. It sets the effects' own controls (their audio
+  reaction included) so video, music and effect play together, and applies
+  them. Since 2026-11-18 it may also CHANGE THE CHAIN (add / remove /
+  reorder, 1–3 effects) and, on a video, write a beat-synced CUE TIMELINE
+  (§9.15) — so "in base al beat e al video metti gli effetti" on a clip with
+  no effects is a complete request. Long, structured requests (numbered
+  points, timestamps, slang) are read whole (`INTENT_MAX` 4000 characters,
+  multi-line field) and answered point by point. **Lab only.**
 - **Optimizer** — the Agent's controller. Looks at the RESULT (a short output
   clip with its music, plus frames) and reports errors and improvements, each
   with a fix that can be applied. **Lab only.**
@@ -608,7 +619,8 @@ the recording's own load never shows up as a performance problem.
 | Method + path | Does | Answers |
 |---|---|---|
 | `GET /api/gemini/status` | model + whether this client may use a server key (no key needed) | `StatusResponse` |
-| `POST /api/gemini/key` | validates the header key (or the server key) with one `models.get` | `KeyResponse` (200 either way) |
+| `POST /api/gemini/key` | validates the header key (or the server key) with one `models.get` on the chosen model | `KeyResponse` (200 either way) |
+| `GET /api/gemini/models` | the Gemini models this key can use (`models.list`, filtered), with FREE/PAID/NEW facts and efforts | `ModelsResponse` |
 | `POST /api/gemini/upload` | raw file bytes → Files API, waits until Google has processed it | `UploadResponse` |
 | `POST /api/gemini/art-director` | watch the source, propose chains | `ArtDirectorResult` |
 | `POST /api/gemini/agent` | values for the effects' own controls in the Lab chain | `AgentResult` |
@@ -650,9 +662,74 @@ the music through its own reactive controls, which are ordinary parameters.
 - **Floors** (`PARAM_FLOORS`): `analog` / `quadtree` / `time_machine`
   Reactive › Mod Depth (`sl-modDepth`) never below 0.1 (it scales the
   effect's whole music response); a lower value is raised to the floor.
-- **Plan size**: at most 12 parameter changes; a route Gemini still sends is
+- **Plan size**: at most 20 parameter changes (`MAX_PLAN_PARAMS`); a route Gemini still sends is
   refused ("signal routes no longer exist"), and the plan carries
   `routes: []`.
 - The old SynEngine lists (`ENUM_KEYS`, `CARRIER_KEYS`, `PROTECTED_KEYS`,
   `MAX_ROUTE_AMOUNT`, `CARRIER_AMOUNT_*`) stay exported as `@deprecated`
   only so legacy code compiles; nothing reads them.
+
+### 9.14 Model + effort picker (operator, 2026-11-18)
+
+- The model button opens the picker IN the same card (`ai-model-picker`):
+  "MODEL" + **Done** (`ai-model-done`), the list (`ai-model-row-<id>`, ~4 rows
+  visible — ~2.5 on windows under 850 px tall — scrolls), then "EFFORT" and a **slider** (`ai-effort-slider`,
+  a real range input — the operator asked for a ChatGPT-style slider, not
+  buttons) with one dot per stop inside the track and the labels under it
+  (LOW · MEDIUM · HIGH · X-HIGH for Hydrogen).
+- The rows come from `GET /api/gemini/models`: every `gemini-…` model the key
+  can call with generateContent, version ≥ 2.5, minus embedding / image /
+  TTS / live / Gemma models. Known models first (`KNOWN_MODELS`: Hydrogen,
+  3.8 Flash, Argon, Carbon), then any other by version. Tags: **FREE**,
+  **PAID** (row greyed, still selectable — "Paid model: a free key cannot
+  use it."), **NEW** (a model this build does not know: a new Google release
+  shows up by itself, no code change). If the list call fails, the rows are
+  `KNOWN_MODELS` and a one-line warning.
+- The choice (`syntech.geminiChoice` = `{ model, effort }`) is stored at once
+  and sent with every call (`x-gemini-model`, `x-gemini-effort`). Effort =
+  Gemini's thinking level, sent as `thinkingConfig.thinkingLevel` (LOW,
+  MEDIUM, HIGH, XHIGH, MINIMAL) — never substituted: an effort a known model
+  does not offer is a 400 from OUR server before Google, and one Google
+  refuses is shown as such. 'default' ("Auto") sends no thinking config.
+- **Proof**: every role result carries `meta` (`RunMeta`): Google's own
+  `modelVersion`, the effort sent, thinking/input/output tokens. Each result
+  card ends with that line (`ai-meta-<role>`), e.g. "gemini-4-hydrogen · high
+  · 1,204 thinking tokens".
+- Errors name the chosen model: not available for this key (404 → pick
+  another), **no free quota** (429 with limit 0 → a paid-only model on a free
+  key), effort refused. A stored choice whose model disappeared is forgotten
+  automatically at the next key check (never locks the operator out).
+
+### 9.15 Agent: chain change + beat-synced cue timeline (operator, 2026-11-18)
+
+- **Beat grid**: the Lab decodes the INPUT video's own soundtrack in the
+  browser (`src/lab/beatgrid.ts`): BPM, beat phase, downbeat, energy
+  sections, confidence (`BeatGrid`). Local, free, no quota.
+- **First Agent call** (`chainChanged` absent, `allowChain: true`): may
+  answer `chain` (1–3 ids). An EMPTY Lab is accepted on this call (the
+  operator's main case: a clip with no effects + "in base al beat e al video
+  metti gli effetti") — the prompt then says the Agent must choose the chain. Then params and cues are emptied by the validator; the panel wires
+  that chain, waits for the Lab, and calls again with `chainChanged: true`
+  (chain final). At most two calls.
+- **Cues** (`wantCues` on a video): `{ at, label, params }`, at most
+  `MAX_CUES` (24). The server validates each cue's params like a plan, drops
+  cues outside the clip, snaps `at` to the nearest beat (anything up to half a
+  beat after the first beat → 0), merges cues on the same beat (at most 20
+  changes per cue), sorts. The chain may change only when the panel sends
+  `allowChain: true` (opt-in). The top-level params
+  are the base look; cues are the changes over time.
+- **The Lab plays them** on the SOURCE video's timeline (frame-accurate, not
+  timeupdate): state at t = the value each cued key had before install +
+  every cue at ≤ t. Scrubbing, loop and the Master export follow it. **CUE
+  AUTO** (`cue-auto`) holds/plays the automation. One Undo (`PlanUndo.cues`)
+  returns EXACTLY to the state before that run: it removes the run's
+  timeline, restores every key, reinstalls the timeline the run replaced,
+  and — when the run changed the chain — puts the previous chain back
+  (orchestrator decision 2026-11-19: "one Undo" means back to before the
+  run). The undo stack and the Lab always agree: every Agent run on a video
+  replaces the timeline (with its cues, or with none).
+- **Lane** (`cue-lane`) above the scrub track: one block per stretch between
+  cues (same labels merged; high energy amber), faint bar lines, a diamond
+  per cue (`cue-mark-<i>`) with a tooltip of its changes in the panel's own
+  words. The Agent's result card lists the cues (time · label · changes).
+

@@ -9,10 +9,11 @@ import dotenv from "dotenv";
    file to define a variable wins; neither is required. */
 dotenv.config({ path: [".env.local", ".env"], quiet: true });
 
-/* GEMINI 3.8 — six endpoints under /api/gemini, all speaking the wire format of
+/* GEMINI — seven endpoints under /api/gemini, all speaking the wire format of
    src/ai/contract.ts:
 
-     GET  /status        is there a server key, which model          (no key needed)
+     GET  /status        is there a server key, which default model  (no key needed)
+     GET  /models        the models Google lists for this key        → ModelsResponse
      POST /key           validate the pasted key (one models.get)    → KeyResponse
      POST /upload        a whole source video → Gemini Files API     → UploadResponse
      POST /art-director  watch the source, propose effect chains     → ArtDirectorResult
@@ -36,15 +37,18 @@ import {
   geminiModel,
   GeminiFailure,
   hostnameOf,
+  listModels,
   looseRetryReason,
   reportFailure,
+  resolveEffort,
   resolveKey,
+  resolveModel,
   serverKeyAvailable,
   uploadAndWait,
   type AiFailure,
 } from "./ai-provider";
 import { agentJob, artDirectorJob, optimizerJob, type RoleJob } from "./ai-roles";
-import { GEMINI_KEY_HEADER, type KeyResponse, type StatusResponse, type UploadResponse } from "./src/ai/contract";
+import { GEMINI_KEY_HEADER, type EffortT, type KeyResponse, type RunMeta, type StatusResponse, type UploadResponse } from "./src/ai/contract";
 
 const app = express();
 
@@ -55,7 +59,7 @@ const PORT = (() => {
   return Number.isInteger(n) && n > 0 && n < 65536 ? n : 3000;
 })();
 
-const NO_KEY_MESSAGE = "No Gemini key: paste one in the Gemini 3.8 panel (free at https://aistudio.google.com/apikey).";
+const NO_KEY_MESSAGE = "No Gemini key: paste one in the Gemini panel (free at https://aistudio.google.com/apikey).";
 
 function sendFailure(res: Response, f: AiFailure) {
   if (res.headersSent) return;
@@ -147,18 +151,32 @@ app.post("/api/gemini/key", async (req, res) => {
   const fromHeader = !!req.get(GEMINI_KEY_HEADER)?.trim();
   const apiKey = resolveKey(req);
   let body: KeyResponse;
+  let model = geminiModel();
   if (!apiKey) {
     body = { active: false, error: "no_key", message: NO_KEY_MESSAGE };
   } else {
     try {
-      await checkKey(apiKey);
-      body = { active: true, model: geminiModel(), source: fromHeader ? "browser" : "server" };
+      model = resolveModel(req);
+      await checkKey(apiKey, model);
+      body = { active: true, model, source: fromHeader ? "browser" : "server" };
     } catch (err) {
-      const f = reportFailure(err);
+      const f = reportFailure(err, { model, effort: "default" });
       body = { active: false, error: f.kind, message: f.message };
     }
   }
   res.json(body);
+});
+
+/* The models Google lists for this key, filtered to the usable Gemini text
+   models (ai-provider.ts listModels). New releases appear with no code change. */
+app.get("/api/gemini/models", async (req, res) => {
+  try {
+    const apiKey = resolveKey(req);
+    if (!apiKey) throw new GeminiFailure("no_key", NO_KEY_MESSAGE);
+    res.json(await listModels(apiKey));
+  } catch (err) {
+    sendFailure(res, reportFailure(err));
+  }
 });
 
 /* ── upload ───────────────────────────────────────────────────── */
@@ -278,12 +296,18 @@ function roleEndpoint<R>(build: (body: unknown) => RoleJob<R>) {
   return async (req: Request, res: Response) => {
     const abort = new AbortController();
     res.on("close", () => { if (!res.writableFinished) abort.abort(); });
+    let ctx: { model: string; effort: EffortT } | undefined;
     try {
       const job = build(req.body);
       const apiKey = resolveKey(req);
       if (!apiKey) throw new GeminiFailure("no_key", NO_KEY_MESSAGE);
+      const model = resolveModel(req);
+      const effort = resolveEffort(req, model);
+      ctx = { model, effort };
       const ask = (responseJsonSchema: Record<string, unknown>) => generateJson<unknown>({
         apiKey,
+        model,
+        effort,
         systemInstruction: job.systemInstruction,
         parts: job.parts,
         responseJsonSchema,
@@ -291,8 +315,10 @@ function roleEndpoint<R>(build: (body: unknown) => RoleJob<R>) {
         signal: abort.signal,
       });
       let raw: unknown;
+      let meta: RunMeta;
+      const t0 = Date.now();
       try {
-        raw = await ask(job.responseJsonSchema);
+        ({ value: raw, meta } = await ask(job.responseJsonSchema));
       } catch (err) {
         /* Google refuses a response schema it finds too complex (big key
            enums, arrays with length limits nested under other arrays,
@@ -305,20 +331,21 @@ function roleEndpoint<R>(build: (body: unknown) => RoleJob<R>) {
         if (!why) throw err;
         console.warn(`[gemini] ${req.path}: strict schema failed (${why}), retrying once with the loose schema`);
         try {
-          raw = await ask(job.looseSchema as Record<string, unknown>);
+          ({ value: raw, meta } = await ask(job.looseSchema as Record<string, unknown>));
         } catch (err2) {
           console.warn(`[gemini] ${req.path}: the loose schema failed too`);
           throw err2;
         }
         console.warn(`[gemini] ${req.path}: the loose schema answered`);
+        meta = { ...meta, ms: Date.now() - t0 };
       }
-      res.json(job.finish(raw));
+      res.json({ ...(job.finish(raw) as object), meta });
     } catch (err) {
       if (abort.signal.aborted) {
         console.warn("[gemini] request cancelled: the browser hung up before Gemini answered");
         return;
       }
-      sendFailure(res, reportFailure(err));
+      sendFailure(res, reportFailure(err, ctx));
     }
   };
 }
@@ -414,7 +441,7 @@ export const startServer = async (opts: ServeOptions = {}): Promise<number> => {
       const bound = (server.address() as net.AddressInfo).port;
       console.log(`Server launched on port ${bound} // Full-stack core ready.`);
       console.log(`API hosts: ${HOST_RULE.any ? "any (ALLOWED_HOSTS=*)" : ["localhost", "IP addresses", "*.local", ...HOST_RULE.names.map((n) => (n.startsWith(".") ? `*${n}` : n))].join(", ")}`);
-      console.log(`Gemini: model=${geminiModel()}, server key: ${process.env.GEMINI_API_KEY?.trim() ? "set (used only by browsers on this machine)" : "not set (a key can be pasted in the panel)"}`);
+      console.log(`Gemini: default model=${geminiModel()}, server key: ${process.env.GEMINI_API_KEY?.trim() ? "set (used only by browsers on this machine)" : "not set (a key can be pasted in the panel)"}`);
       resolve(bound);
     });
     server.once("error", reject);

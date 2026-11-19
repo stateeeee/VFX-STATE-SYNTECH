@@ -29,6 +29,51 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-11-18/19 — v0.13.0: Gemini 4 Hydrogen, scelta modello + effort, pannello nuovo, AI più sveglia,
+timeline di cue sul beat. FATTO (verifica finale: vedi sotto).**
+Operatore: *"sostituisci Gemini 3.8 Flash con Gemini 4 Hydrogen … voglio scegliere il modello dall'app … se scelgo
+Hydrogen effort alto deve davvero essere quel modello … nella sezione gemini solo 'gemini' … grafica troppo AI slop,
+prima screenshot … se scrivo un prompt complicato non va … metto un video senza effetti, scrivo 'in base al beat e al
+video applica gli effetti' e l'AI capisce da sola che effetti mettere e quando"*. Gratis deve restare gratis.
+- **Decisioni dell'operatore** (AskUserQuestion, con screenshot prima di toccare la grafica): grafica approvata con
+  modifiche (effort a SLIDER tipo ChatGPT, stella singola senza + e °, nel bottone solo "HYDROGEN"); nel menu TUTTI i
+  Gemini della chiave, i PAID in grigio; solo Gemini come fornitore (niente Qwen/GPT/OpenRouter per ora); timeline di
+  cue approvata dopo i suoi screenshot. "Gemini 5 Preview" NON esiste (era un nome finto del mockup: detto all'operatore).
+- **Modello + effort** (03-SPEC §9.14): default `gemini-4-hydrogen` · High; `GET /api/gemini/models` (models.list
+  filtrato, FREE/PAID/NEW, un modello nuovo di Google appare da solo); scelta in `syntech.geminiChoice`, inviata con
+  `x-gemini-model` / `x-gemini-effort` → `thinkingConfig.thinkingLevel` (XHIGH incluso), mai sostituita; ogni
+  risultato mostra `modelVersion` di Google + effort + token di ragionamento (prova). 404 / quota 0 (modello a
+  pagamento) / effort rifiutato con messaggi che nominano il modello; un modello sparito non blocca mai l'operatore.
+- **Pannello** (AiDirector + App): card attiva = card della chiave (Forget key, link AI Studio, bottone HYDROGEN),
+  picker con slider a 4 punti, niente più bottoni dei ruoli (solo barra sinistra), "GEMINI" ovunque, campi prompt
+  multi-riga (Invio = esegui, Shift+Invio = a capo, 4000 caratteri).
+- **AI più sveglia** (ai-roles.ts): la richiesta veniva TAGLIATA a 600 caratteri (causa del "si bugga" sui prompt
+  strutturati) → `INTENT_MAX` 4000 in blocco verbatim; nuove sezioni di prompt REQUEST_READING (leggi tutto, punto per
+  punto, traduci risultati in controlli senza chiedere, prendi l'iniziativa) e DIRECTOR_LANGUAGE (le frasi da set →
+  effetti); piano fino a 20 controlli.
+- **Timeline di cue** (03-SPEC §9.15): `src/lab/beatgrid.ts` (BPM/fase/sezioni dal sonoro del video, nel browser:
+  esatto su 7 clip di prova, fase ≤ 1 ms), `src/lab/cues.ts`, motore in ChainLab (rVFC sul video INPUT, scrub, loop,
+  export Master), fascia + rombi + CUE AUTO. L'Agent può cambiare la catena (anche partendo da un Lab VUOTO: il caso
+  dell'operatore) in due chiamate e scrive i cue, che il server aggancia alla battuta. UN solo Annulla torna allo stato
+  di prima del run, catena compresa (decisione del regista 2026-11-19).
+- **Processo**: Haiku (screenshot prima), Sonnet ×2 (server modelli; pannello), Opus architect (motore cue +
+  integrazione Agent), orchestratore Opus (contratto, prompt, validatore cue, documenti). Revisione Opus preliminare
+  FAIL (textarea alta 0, box doppio, focus Done→Forget, blocco su modello mancante) → corretti; revisione ECC
+  typescript/security WARNING (nessun critico) → corretti i punti utili; revisione Opus finale FAIL (Lab vuoto rifiutato;
+  timeline fuori dalla pila Annulla) → corretti; **revisione Opus del delta: PASS**.
+- **ECC (everything claude code)** installato come plugin (user scope, `ecc@ecc` 2.2.3) e usato per la revisione
+  TypeScript/sicurezza. Sul Mac: `claude plugin marketplace add affaan-m/ECC` poi `claude plugin install ecc@ecc`.
+- **Non verificato qui**: nessuna risposta vera di Gemini 4 Hydrogen (niente chiave; ai.google.dev bloccato dalla rete
+  della sessione: prezzi/limiti da fonti terze); tempi dei cue su GPU vera (qui SwiftShader: 0,4–1,5 s di ritardo con
+  tutti i nodi accesi; su GPU atteso ~1 fotogramma) → **da provare sul Mac**.
+- **Aperti** (non bloccanti, dalla revisione del delta): (1) un Annulla che deve solo rimettere una timeline vecchia
+  non più reinstallabile (video cambiato / effetto uscito) risponde "export in corso" e resta in pila → `revertPlan`
+  dovrebbe segnalare `cuesLost`; (2) la card di un run che ha solo tolto la timeline dice "No changes" invece di
+  "timeline removed"; (3) con Lab vuoto lo schema dice "lista vuota = tieni la catena" mentre il prompt dice MUST →
+  `minItems: 1`; (4) durante l'export Master i cue seguono rVFC (con tutti i nodi su CPU possono arrivare tardi):
+  pilotarli dal loop del recorder (`src/lab/record.ts`) se sul Mac si vede ritardo.
+- `version` 0.12.1 → **0.13.0**.
+
 **SESSIONE 2026-11-05 — v0.12.1: LAB senza lag, menu dei nodi che scorre, FATTO.**
 Operatore, dopo aver provato la 0.12.0 sul Mac: *"nella sezione nodi non riesco a inserire gli effetti perché non c'è
 una funzione di scroll … se aggiungo dei nodi e apro la sezione lab … laggava tutto, andava a scatti; gli effetti

@@ -31,8 +31,8 @@ import type { AudioEngine } from './engine/AudioEngine';
 import { gelMaterialTile } from './lib/gelTexture';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { HOLES, DAY_BACKDROPS, VIDEO_BOX, CAGE_BED, CAGE_SURFACE, cageBox, cagePlane } from './cage/cage';
-import { GEMINI_MODEL_DEFAULT, MODULE_IDS, type AiErrorKind, type KeyResponse, type LabHandle, type StatusResponse } from './ai/contract';
-import { AiError, aiGet, forgetKey, getStoredKey, isHostRefusal, storeKey, validateKey } from './ai/client';
+import { GEMINI_MODEL_DEFAULT, MODULE_IDS, type AiErrorKind, type GeminiChoice, type KeyResponse, type LabHandle, type StatusResponse } from './ai/contract';
+import { AiError, aiGet, forgetChoice, forgetKey, getStoredChoice, getStoredKey, isHostRefusal, storeKey, validateKey } from './ai/client';
 
 // explicit session snapshot for the SAVE nav action (decision #9: localStorage)
 const GEL_TILE = 640; // gel material tile edge (px) — also its background-size
@@ -515,7 +515,7 @@ export default function App() {
     );
   };
 
-  // ── GEMINI 3.8 (src/ai/contract.ts) ──
+  // ── GEMINI (src/ai/contract.ts) ──
   // The three modes stay locked until a key is validated: the browser's pasted
   // key (sent only to our server) or, failing that, the server's .env key.
   // 'checking' and 'standby' both read as STANDBY; only 'active' unlocks.
@@ -529,7 +529,12 @@ export default function App() {
   const [geminiSource, setGeminiSource] = useState<'browser' | 'server' | null>(null);
   // the model the server runs (GEMINI_MODEL may override the default): the
   // panel names it when Google says this key cannot use it
-  const [geminiModel, setGeminiModel] = useState<string>(GEMINI_MODEL_DEFAULT);
+  const [geminiModel, setGeminiModel] = useState<string>(() => getStoredChoice()?.model ?? GEMINI_MODEL_DEFAULT);
+  // set when the key is valid but Google says the chosen model is not
+  // available to it: the panel is then active and opens its picker
+  const [geminiModelWarn, setGeminiModelWarn] = useState<string | null>(null);
+  // the model the server runs (from /api/gemini/status), for resetting a forgotten choice
+  const serverModelRef = useRef<string>(GEMINI_MODEL_DEFAULT);
   const geminiActive = geminiStatus === 'active';
   // the Lab's handle — what the Agent and the Optimizer drive. Null until the
   // Lab is first opened; then the same object for the whole session (hiding
@@ -554,6 +559,37 @@ export default function App() {
       if (r.model) setGeminiModel(r.model);
     }
   };
+  /** validateKey with the stored model choice; a model that has disappeared
+   *  (model_unavailable) drops the choice and asks once more with none, so it
+   *  can never lock the operator out of the picker. */
+  const validateSeqRef = useRef(0);
+  /** null = a later validation started meanwhile: this one's answer is stale and changes nothing */
+  const validateWithChoice = async (key: string | null): Promise<KeyResponse | null> => {
+    const seq = ++validateSeqRef.current;
+    const stale = () => seq !== validateSeqRef.current;
+    const choice = getStoredChoice();
+    let r = await validateKey(key, choice);
+    if (stale()) return null;
+    let asked = choice?.model ?? serverModelRef.current;
+    let gone: string | null = null;
+    if (r.active === false && r.error === 'model_unavailable' && choice) {
+      forgetChoice();
+      gone = choice.model;
+      asked = serverModelRef.current;
+      setGeminiModel(asked);
+      r = await validateKey(key, null);
+      if (stale()) return null;
+    }
+    if (r.active === false && r.error === 'model_unavailable') {
+      // the key itself is fine: only this model is out of reach. Active, with
+      // a warning, so the operator can reach the picker and choose another.
+      setGeminiModelWarn(`${asked} is not available for this key — pick another`);
+      return { active: true, model: asked, source: key ? 'browser' : 'server' };
+    }
+    // a stored model that has disappeared was dropped: say so (the card / picker shows it)
+    setGeminiModelWarn(gone && r.active ? `${gone} is no longer available — using ${r.model || asked}` : null);
+    return r;
+  };
   const keyFailure = (err: unknown) => {
     setGeminiStatus('standby');
     setGeminiSource(null);
@@ -577,7 +613,8 @@ export default function App() {
         if (!stored) throw err;
       }
       if (!isAlive()) return;
-      if (st?.model) setGeminiModel(st.model);
+      if (st?.model) serverModelRef.current = st.model;
+      if (st?.model && !getStoredChoice()) setGeminiModel(st.model);
       if (!stored && st) {
         if (!st.serverKey) {
           setGeminiStatus('standby');
@@ -587,8 +624,8 @@ export default function App() {
           return;
         }
       }
-      const r = await validateKey(stored);
-      if (isAlive()) applyKeyResponse(r);
+      const r = await validateWithChoice(stored);
+      if (r && isAlive()) applyKeyResponse(r);
     } catch (err) {
       if (isAlive()) keyFailure(err);
     }
@@ -608,7 +645,8 @@ export default function App() {
     setGeminiError(null);
     setGeminiErrorMsg(null);
     try {
-      const r = await validateKey(key || getStoredKey());
+      const r = await validateWithChoice(key || getStoredKey());
+      if (!r) return false; // a later check owns the panel state
       if (r.active && key) storeKey(key);
       applyKeyResponse(r);
       return r.active;
@@ -974,7 +1012,7 @@ export default function App() {
         {/* ═══════════════ LEFT SIDEBAR ═══════════════ */}
         {/* The tall left opening. With the meter moved out of it (below), the slot
             is shorter than the nav wants, so the rhythm tightens — otherwise
-            LAB and GEMINI 3.8 collide. Tighten the spacing, never the type. */}
+            LAB and GEMINI collide. Tighten the spacing, never the type. */}
         <nav
           className={`syn-hole flex flex-col items-center pt-3 pb-3 rounded-2xl border ${isDayMode ? 'border-neutral-200 bg-[#f7f5f0]' : 'border-ink-700/60 bg-ink-950'}`}
           style={cageBox(HOLES.railTop, 4, 6)}
@@ -1001,7 +1039,7 @@ export default function App() {
           {/* Divider */}
           <div className={`w-8 h-px my-4 shrink-0 ${isDayMode ? 'bg-neutral-300' : 'bg-ink-700'}`} />
 
-          <span className={`text-[7px] uppercase tracking-[0.2em] font-bold mb-2.5 shrink-0 ${isDayMode ? 'text-neutral-400' : 'text-neutral-500'}`}>GEMINI 3.8</span>
+          <span className={`text-[7px] uppercase tracking-[0.2em] font-bold mb-2.5 shrink-0 ${isDayMode ? 'text-neutral-400' : 'text-neutral-500'}`}>GEMINI</span>
           <ul className="flex flex-col gap-3.5 w-full items-center">
             {[
               { key: 'art_director', label: 'Art Dir', Icon: Lightbulb, onClick: () => setActiveGeminiMode(activeGeminiMode === 'art_director' ? null : 'art_director'), active: activeGeminiMode === 'art_director', title: 'Art Director' },
@@ -1018,7 +1056,7 @@ export default function App() {
                   onClick={onClick}
                   disabled={!geminiActive}
                   aria-disabled={!geminiActive}
-                  title={geminiActive ? title : 'Paste your Gemini key in the Gemini 3.8 panel to unlock'}
+                  title={geminiActive ? title : 'Paste your Gemini key in the Gemini panel to unlock'}
                   className={`group flex flex-col items-center gap-1 w-full transition-colors ${
                     !geminiActive ? 'opacity-35 cursor-not-allowed text-neutral-500'
                       : active ? 'cursor-pointer text-violet-500'
@@ -1039,8 +1077,8 @@ export default function App() {
         {/* Playback level of the loaded clip. There is a SEPARATE small opening
             under the rail in the artwork, so the meter leaves the rail's flow and
             is centred in that hole — which is also why the hairline that used to
-            divide the two is gone. (The one above GEMINI 3.8 stays: without it,
-            LAB and GEMINI 3.8 end up touching.) */}
+            divide the two is gone. (The one above GEMINI stays: without it,
+            LAB and GEMINI end up touching.) */}
         <div className="flex flex-col" style={cageBox(HOLES.meter, 6, 6)}>
           <AudioMeter isDayMode={isDayMode} source={meterSource} />
         </div>
@@ -1274,6 +1312,8 @@ export default function App() {
                           onOpenLab={openGeminiLab}
                           onPickMode={setActiveGeminiMode}
                           model={geminiModel}
+                          modelWarning={geminiModelWarn}
+                          onChoice={(c: GeminiChoice) => { setGeminiModel(c.model); setGeminiModelWarn(null); }}
                         />
                       </div>
                     </Panel>

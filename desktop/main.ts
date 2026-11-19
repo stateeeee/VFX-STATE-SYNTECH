@@ -20,7 +20,7 @@
  * by another program does the app fall back to a free one (it still works; the
  * saved presets just are not visible in that run).
  *
- * AI keys: nothing but the Gemini 3.8 panel needs one. Paste it in the panel,
+ * AI keys: nothing but the Gemini panel needs one. Paste it in the panel,
  * or put GEMINI_API_KEY=... in a file named ".env" in the app's data folder —
  * see docs/workflow/DESKTOP.md for the path per OS.
  */

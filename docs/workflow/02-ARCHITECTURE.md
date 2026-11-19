@@ -6,8 +6,8 @@
   `lucide-react` icons, `motion`, `react-resizable-panels`.
 - **Server**: `server.ts` (Express, port `PORT` or 3000, launched via `tsx`;
   loads `.env.local`, then `.env`). Serves the Vite app, statically serves
-  `public/effects` at `/effects`, and exposes the six Gemini 3.8 endpoints
-  under `/api/gemini/*` (see "Gemini 3.8 layer" below). There are no offline
+  `public/effects` at `/effects`, and exposes the seven Gemini endpoints
+  under `/api/gemini/*` (see "Gemini layer" below). There are no offline
   AI answers: without a key the AI modes are simply locked, and nothing that
   is not AI ever needs one.
 - **Desktop**: `desktop/main.ts` (Electron) runs the same `server.ts` inside
@@ -106,10 +106,10 @@ effect's audio response is tuned through its own panel controls).
 - Save nav button currently stores `{activeModule, isDayMode}` to
   `syntech.session` — Phase 1 extends save semantics (see 03-SPEC-SHELL §4).
 
-## Gemini 3.8 layer (panel ⇄ our server ⇄ Google)
+## Gemini layer (panel ⇄ our server ⇄ Google)
 
 One provider, Gemini only, because it can SEE: every role sends real pixels
-and/or audio. Model `gemini-3.8-flash` (`GEMINI_MODEL` overrides it), through
+and/or audio. Model chosen in the panel (default `gemini-4-hydrogen` at High; `GEMINI_MODEL` sets the default when the panel sends none — 03-SPEC §9.14), through
 `@google/genai`. The Groq provider added on 2026-07-31 is gone — text-only, it
 could only guess from a filename. Product behavior: 03-SPEC-SHELL §9.
 

@@ -21,10 +21,10 @@ npm run dev         # http://localhost:3000
   run, a parallel session) takes its own port —
   `PORT=31xx DISABLE_HMR=true npm run dev` — and is stopped by that port only
   (`fuser -k 31xx/tcp`).
-- No key is fine for everything that is not AI: the Gemini 3.8 panel just
+- No key is fine for everything that is not AI: the Gemini panel just
   stays STANDBY with its three modes locked (there are no offline AI answers
   any more). That must never block non-AI verification. The AI flow itself is
-  verified against the local mock (§3, "Gemini 3.8 suite"), never with a real
+  verified against the local mock (§3, "Gemini suite"), never with a real
   key in the sandbox.
 
 ## 3. Browser verification (headless, in this environment)
@@ -50,7 +50,7 @@ Useful checks (the shell already ships `data-testid`s — keep them working):
   §3.1; `?labdebug` exposes `window.__synLabDebug`)
 - `source-file`, `chain-file`, `hero-video`, `hero-image` (a still photo on
   Home) — source loading
-- Gemini 3.8 panel: `ai-status` (STANDBY / ACTIVE pill), `ai-key-input`,
+- Gemini panel: `ai-status` (STANDBY / ACTIVE pill), `ai-key-input`,
   `ai-key-submit`, `ai-key-error`, `ai-key-forget`, `ai-pick-<mode>`,
   `ai-open-lab`; Art Director `ai-ad-intent`, `ai-ad-run`, `ai-ad-result`,
   `ai-ad-stale`, `ai-ad-proposal-<i>` (`data-in-use` on the chosen one),
@@ -86,7 +86,7 @@ Full panels in every node, every hop flowing, no mirror, Clip audio on by
 itself and heard, transport, presets v2, LabHandle apply/revert, Master
 export, day theme, hidden-Lab parking. `LAB_CHAIN=a,b,c` picks the chain.
 
-### Gemini 3.8 suite (no real key, no network)
+### Gemini suite (no real key, no network)
 
 ```bash
 node tools/verify/verify-gemini.cjs                # 15–25 min under SwiftShader (iframe Lab); exit 0 = all PASS
@@ -170,7 +170,7 @@ For the effect being ported, prove equivalence between the standalone HTML
 - Save → Home → reopen restores settings (Phase 1+).
 - Lab arm/disarm keeps composition state; wiring still drag-operable
   (Phase 2+).
-- With no key: Gemini 3.8 panel STANDBY, rail modes locked, nothing else
+- With no key: Gemini panel STANDBY, rail modes locked, nothing else
   affected. After any AI change: `verify-gemini.cjs` passes (Phase 11+).
 - `npm run lint` clean; no new console errors on the dashboard.
 - The sidebar level meter follows the sound on screen and reads it right:

@@ -19,12 +19,21 @@
  */
 
 import {
+  EFFORTS,
+  GEMINI_CHOICE_STORAGE,
+  GEMINI_EFFORT_HEADER,
   GEMINI_FILES_STORAGE,
   GEMINI_KEY_HEADER,
   GEMINI_KEY_STORAGE,
+  GEMINI_MODEL_HEADER,
+  KNOWN_MODELS,
+  MODEL_ID_PATTERN,
   type AiErrorKind,
   type AiErrorResponse,
+  type EffortT,
+  type GeminiChoice,
   type KeyResponse,
+  type ModelsResponse,
   type UploadCacheEntry,
   type UploadResponse,
 } from './contract';
@@ -77,6 +86,35 @@ export function forgetKey(): void {
   try { localStorage.removeItem(GEMINI_KEY_STORAGE); } catch { /* private mode */ }
 }
 
+/* ── the model + effort choice ───────────────────────────────── */
+
+const MODEL_RE = new RegExp(MODEL_ID_PATTERN);
+
+/** The stored { model, effort }, or null (nothing stored, or not valid: the
+ *  server then uses its default model and that model's default effort). */
+export function getStoredChoice(): GeminiChoice | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(GEMINI_CHOICE_STORAGE) ?? 'null');
+    if (raw && typeof raw.model === 'string' && MODEL_RE.test(raw.model)
+      && typeof raw.effort === 'string' && (EFFORTS as readonly string[]).includes(raw.effort)) {
+      /* an effort the (known) model does not offer would make every call a
+         400: fall back on that model's default instead */
+      const known = KNOWN_MODELS.find((k) => k.id === raw.model);
+      const effort = known && !known.efforts.includes(raw.effort as EffortT) ? known.defaultEffort : (raw.effort as EffortT);
+      return { model: raw.model, effort };
+    }
+  } catch { /* private mode / malformed */ }
+  return null;
+}
+
+export function storeChoice(c: GeminiChoice): void {
+  try { localStorage.setItem(GEMINI_CHOICE_STORAGE, JSON.stringify({ model: c.model, effort: c.effort })); } catch { /* private mode */ }
+}
+
+export function forgetChoice(): void {
+  try { localStorage.removeItem(GEMINI_CHOICE_STORAGE); } catch { /* private mode */ }
+}
+
 /**
  * A short, one-way tag for a key (first 12 hex of its SHA-256): it names the
  * key in the upload cache without storing the key a second time. SubtleCrypto
@@ -116,6 +154,12 @@ function withKey(headers: Record<string, string>, key?: string | null): Record<s
   return k ? { ...headers, [GEMINI_KEY_HEADER]: k } : headers;
 }
 
+/** Adds the model + effort headers: `choice` undefined = whatever is stored. */
+function withChoice(headers: Record<string, string>, choice?: GeminiChoice | null): Record<string, string> {
+  const c = choice === undefined ? getStoredChoice() : choice;
+  return c ? { ...headers, [GEMINI_MODEL_HEADER]: c.model, [GEMINI_EFFORT_HEADER]: c.effort } : headers;
+}
+
 /** Reads a non-2xx answer into an AiError. The server always speaks
  *  AiErrorResponse; anything else (a proxy page, a crash) is classified by
  *  its status so the panel still gets a kind it knows. */
@@ -149,15 +193,15 @@ async function send<T>(path: string, init: RequestInit): Promise<T> {
 }
 
 /** GET an /api/gemini endpoint (the stored key rides along when there is one). */
-export function aiGet<T>(path: string, opts: { signal?: AbortSignal } = {}): Promise<T> {
-  return send<T>(path, { method: 'GET', headers: withKey({ Accept: 'application/json' }), signal: opts.signal });
+export function aiGet<T>(path: string, opts: { signal?: AbortSignal; choice?: GeminiChoice | null } = {}): Promise<T> {
+  return send<T>(path, { method: 'GET', headers: withChoice(withKey({ Accept: 'application/json' }), opts.choice), signal: opts.signal });
 }
 
 /** POST JSON to an /api/gemini endpoint, adding the stored key's header. */
-export function aiPost<T>(path: string, body?: unknown, opts: { signal?: AbortSignal; key?: string | null } = {}): Promise<T> {
+export function aiPost<T>(path: string, body?: unknown, opts: { signal?: AbortSignal; key?: string | null; choice?: GeminiChoice | null } = {}): Promise<T> {
   return send<T>(path, {
     method: 'POST',
-    headers: withKey({ 'Content-Type': 'application/json', Accept: 'application/json' }, opts.key),
+    headers: withChoice(withKey({ 'Content-Type': 'application/json', Accept: 'application/json' }, opts.key), opts.choice),
     body: JSON.stringify(body ?? {}),
     signal: opts.signal,
   });
@@ -170,8 +214,13 @@ export function aiPost<T>(path: string, body?: unknown, opts: { signal?: AbortSi
  * "This key does not work" comes back as {active:false}, not as a throw —
  * only a server that cannot be reached throws.
  */
-export function validateKey(key?: string | null): Promise<KeyResponse> {
-  return aiPost<KeyResponse>('/api/gemini/key', {}, { key });
+export function validateKey(key?: string | null, choice?: GeminiChoice | null): Promise<KeyResponse> {
+  return aiPost<KeyResponse>('/api/gemini/key', {}, { key, choice });
+}
+
+/** The models Google lists for the stored (or server) key. */
+export function listModels(): Promise<ModelsResponse> {
+  return aiGet<ModelsResponse>('/api/gemini/models');
 }
 
 /* ── upload, with the GEMINI_FILES_STORAGE cache ─────────────── */

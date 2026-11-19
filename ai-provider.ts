@@ -1,5 +1,5 @@
 /*
- * GEMINI 3.8 — the one AI provider behind /api/gemini/*.
+ * GEMINI — the one AI provider behind /api/gemini/*.
  *
  * Gemini only, and only because it can SEE: the three roles (Art Director,
  * Agent, Optimizer — see src/ai/contract.ts) all send real pixels and audio,
@@ -29,12 +29,29 @@ import {
   ApiError,
   FileState,
   type MediaResolution,
+  type ThinkingLevel,
   type Part,
   type File as GeminiFile,
 } from '@google/genai';
 import type { Request } from 'express';
 import fs from 'fs';
-import { GEMINI_MODEL_DEFAULT, GEMINI_KEY_HEADER, type AiErrorKind } from './src/ai/contract';
+import {
+  EFFORTS,
+  EFFORT_LABEL,
+  GEMINI_EFFORT_HEADER,
+  GEMINI_KEY_HEADER,
+  GEMINI_MODEL_DEFAULT,
+  GEMINI_MODEL_HEADER,
+  KNOWN_MODELS,
+  MODEL_ID_PATTERN,
+  UNKNOWN_MODEL_EFFORTS,
+  type AiErrorKind,
+  type EffortT,
+  type KnownModel,
+  type ModelInfo,
+  type ModelsResponse,
+  type RunMeta,
+} from './src/ai/contract';
 
 /* ── model ────────────────────────────────────────────────────── */
 
@@ -45,6 +62,43 @@ import { GEMINI_MODEL_DEFAULT, GEMINI_KEY_HEADER, type AiErrorKind } from './src
    always sees the loaded value. */
 export function geminiModel(): string {
   return process.env.GEMINI_MODEL || GEMINI_MODEL_DEFAULT;
+}
+
+const MODEL_RE = new RegExp(MODEL_ID_PATTERN);
+
+/** The model for this request: the panel's header, else the server default.
+ *  A malformed id is a 400 before any Google call. */
+export function resolveModel(req: Request): string {
+  const raw = req.get(GEMINI_MODEL_HEADER);
+  if (raw === undefined || !raw.trim()) return geminiModel();
+  const id = raw.trim().toLowerCase().replace(/^models\//, '');
+  if (!MODEL_RE.test(id)) throw new GeminiFailure('bad_request', 'The requested model id is not a valid Gemini model id (gemini-…).');
+  return id;
+}
+
+/** What this build knows about a model id (see KNOWN_MODELS). */
+export function modelProfile(id: string): { efforts: readonly EffortT[]; defaultEffort: EffortT; known: KnownModel | null } {
+  const known = KNOWN_MODELS.find((m) => m.id === id) ?? null;
+  if (known) return { efforts: known.efforts, defaultEffort: known.defaultEffort, known };
+  if (/^gemini-2\./.test(id)) return { efforts: ['default'], defaultEffort: 'default', known: null };
+  return { efforts: UNKNOWN_MODEL_EFFORTS, defaultEffort: 'default', known: null };
+}
+
+/** The effort for this request. Never substituted: a known model that does not
+ *  offer the asked effort is a 400; an unknown model is left to Google. */
+export function resolveEffort(req: Request, model: string): EffortT {
+  const profile = modelProfile(model);
+  const raw = req.get(GEMINI_EFFORT_HEADER);
+  if (raw === undefined || !raw.trim()) return profile.defaultEffort;
+  const effort = raw.trim().toLowerCase() as EffortT;
+  if (!EFFORTS.includes(effort)) {
+    throw new GeminiFailure('bad_request', `Unknown effort "${scrub(raw, 30)}". Pick one of: ${EFFORTS.join(', ')}.`);
+  }
+  if (profile.known && !profile.known.efforts.includes(effort)) {
+    const offered = profile.known.efforts.map((e) => EFFORT_LABEL[e].toLowerCase()).join(', ');
+    throw new GeminiFailure('bad_request', `${profile.known.name} does not offer effort "${EFFORT_LABEL[effort].toLowerCase()}". Pick one of: ${offered}.`);
+  }
+  return effort;
 }
 
 /* ── key + client ─────────────────────────────────────────────── */
@@ -273,7 +327,8 @@ function isNetworkish(err: unknown): boolean {
 
 /** Reduces any thrown value to {kind, message, status}. The message is ours,
  *  in English, short, actionable — and never contains a key. */
-export function classifyError(err: unknown): AiFailure {
+export function classifyError(err: unknown, ctx?: { model: string; effort: EffortT }): AiFailure {
+  const modelId = ctx?.model ?? geminiModel();
   if (err instanceof GeminiFailure) return { kind: err.kind, message: scrub(err.message), status: err.status };
 
   if (err instanceof ApiError) {
@@ -294,11 +349,19 @@ export function classifyError(err: unknown): AiFailure {
       return failure('invalid_key', `Google refused this key (permission denied): ${said}`);
     }
     if (code === 404) {
-      return failure('model_unavailable', `Model "${geminiModel()}" is not available for this key. Set GEMINI_MODEL in .env.local to a model your key can use.`);
+      return failure('model_unavailable', `Model "${modelId}" is not available for this key. Pick another model in the Gemini panel.`);
     }
-    if (code === 429) return failure('quota', quotaMessage(g));
+    if (code === 429) {
+      if (/limit:\s*0\b/i.test(g.message) || /limit:\s*0\b/i.test(err.message)) {
+        return failure('quota', `"${modelId}" has no free quota for this key (paid only). Pick a free model — e.g. Gemini 4 Hydrogen — in the Gemini panel.`);
+      }
+      return failure('quota', quotaMessage(g));
+    }
     if (code === 413 || /payload|too large|exceeds the (maximum|limit)|request size/i.test(g.message)) {
       return failure('too_large', 'Too much media for one Gemini request. Use a shorter clip or fewer frames.');
+    }
+    if (code === 400 && /thinking/i.test(g.message)) {
+      return failure('bad_request', `"${modelId}" does not accept effort "${ctx?.effort ?? 'default'}". Pick another effort in the Gemini panel.`);
     }
     if (code === 400) return failure('bad_request', `Gemini refused the request: ${said}`);
     if (code === 408 || code >= 500) {
@@ -362,18 +425,18 @@ export function worthLooseRetry(err: unknown): boolean {
 /** Classify AND log, once. Every failing /api/gemini call goes through here,
  *  so a wrong key, a quota hit and a rejected model id each leave exactly one
  *  readable line in the server log — never the key, never a header. */
-export function reportFailure(err: unknown): AiFailure {
-  const f = classifyError(err);
+export function reportFailure(err: unknown, ctx?: { model: string; effort: EffortT }): AiFailure {
+  const f = classifyError(err, ctx);
   console.warn(`[gemini] ${f.kind}: ${f.message}`);
   return f;
 }
 
 /* ── calls ────────────────────────────────────────────────────── */
 
-/** One models.get on the configured model: proves the key works AND the model
- *  is reachable with it, and spends no tokens. Throws on failure. */
-export async function checkKey(apiKey: string): Promise<void> {
-  await getClient(apiKey).models.get({ model: geminiModel(), config: { httpOptions: { timeout: 15_000 } } });
+/** One models.get on `model`: proves the key works AND the model is
+ *  reachable with it, and spends no tokens. Throws on failure. */
+export async function checkKey(apiKey: string, model: string): Promise<void> {
+  await getClient(apiKey).models.get({ model, config: { httpOptions: { timeout: 15_000 } } });
 }
 
 /* Generous: a whole music video plus model thinking is a long request, and
@@ -382,6 +445,9 @@ const GENERATE_TIMEOUT_MS = 240_000;
 
 export interface GenerateJsonRequest {
   apiKey: string;
+  /** The model id to ask (resolveModel) and the thinking level (resolveEffort). */
+  model: string;
+  effort: EffortT;
   systemInstruction: string;
   /** One user turn: media items and the text that frames them. */
   parts: Part[];
@@ -400,15 +466,21 @@ const declined = (why: string) => new GeminiFailure('bad_request', `Gemini decli
 
 /** One Gemini call that must answer with a JSON object; returns it parsed.
  *  No temperature override — Google tunes Gemini 3 for its default. */
-export async function generateJson<T>(req: GenerateJsonRequest): Promise<T> {
+export async function generateJson<T>(req: GenerateJsonRequest): Promise<{ value: T; meta: RunMeta }> {
+  const t0 = Date.now();
   const response = await getClient(req.apiKey).models.generateContent({
-    model: geminiModel(),
+    model: req.model,
     contents: [{ role: 'user', parts: req.parts }],
     config: {
       systemInstruction: req.systemInstruction,
       responseMimeType: 'application/json',
       responseJsonSchema: req.responseJsonSchema,
       ...(req.mediaResolution ? { mediaResolution: req.mediaResolution } : {}),
+      /* The SDK's ThinkingLevel enum has no XHIGH, but thinkingConfig is
+         forwarded to the API as is: the string goes out untouched. */
+      ...(req.effort !== 'default'
+        ? { thinkingConfig: { thinkingLevel: req.effort.toUpperCase() as unknown as ThinkingLevel } }
+        : {}),
       ...(req.signal ? { abortSignal: req.signal } : {}),
       httpOptions: { timeout: GENERATE_TIMEOUT_MS },
     },
@@ -428,13 +500,102 @@ export async function generateJson<T>(req: GenerateJsonRequest): Promise<T> {
   }
   /* responseMimeType makes fences unlikely; strip them anyway. */
   const body = text.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+  const usage = response.usageMetadata;
+  const meta: RunMeta = {
+    requested: req.model,
+    model: response.modelVersion || req.model,
+    effort: req.effort,
+    thoughtsTokens: usage?.thoughtsTokenCount ?? null,
+    inputTokens: usage?.promptTokenCount ?? null,
+    outputTokens: usage?.candidatesTokenCount ?? null,
+    ms: Date.now() - t0,
+  };
   try {
-    return JSON.parse(body) as T;
+    return { value: JSON.parse(body) as T, meta };
   } catch {
     throw new GeminiFailure('upstream', finish === 'MAX_TOKENS'
       ? 'Gemini’s answer was cut off before it finished. Try again.'
       : 'Gemini answered with malformed JSON. Try again.');
   }
+}
+
+/* ── the model list ──────────────────────────────────────────── */
+
+const LIST_TIMEOUT_MS = 15_000;
+const LIST_CACHE_MS = 10 * 60_000;
+const LIST_CAP = 300;
+const LIST_EXCLUDE = /embed|imagen|image|tts|live|native-audio|aqa|robotics|computer-use|veo|lyria|learnlm|gemma/i;
+const listCache = new Map<string, { at: number; value: ModelsResponse }>();
+
+const versionOf = (id: string): number => {
+  const n = Number(id.match(/^gemini-(\d+(?:\.\d+)?)/)?.[1]);
+  return Number.isFinite(n) ? n : 0;
+};
+
+function rowFor(id: string, google?: { displayName?: string; description?: string; inputTokenLimit?: number }): ModelInfo {
+  const p = modelProfile(id);
+  return {
+    id,
+    name: google?.displayName || p.known?.name || id,
+    description: google?.description || '',
+    inputTokenLimit: google?.inputTokenLimit ?? null,
+    efforts: [...p.efforts],
+    defaultEffort: p.defaultEffort,
+    free: p.known?.free ?? 'unknown',
+    note: p.known?.note ?? '',
+    known: !!p.known,
+    listed: !!google,
+  };
+}
+
+const pickRecommended = (rows: ModelInfo[]): string => (rows.find((r) => r.free === 'yes') ?? rows[0])?.id ?? GEMINI_MODEL_DEFAULT;
+
+/** The gemini-… text models Google lists for this key (>= 2.5, no embedding,
+ *  image, audio or live models), the models this build knows first. A wrong
+ *  key throws; any other failure falls back on KNOWN_MODELS with a warning. */
+export async function listModels(apiKey: string): Promise<ModelsResponse> {
+  const cached = listCache.get(apiKey);
+  if (cached && Date.now() - cached.at < LIST_CACHE_MS) return cached.value;
+
+  let value: ModelsResponse;
+  try {
+    const pager = await getClient(apiKey).models.list({ config: { pageSize: 100, httpOptions: { timeout: LIST_TIMEOUT_MS } } });
+    const found = new Map<string, { displayName?: string; description?: string; inputTokenLimit?: number }>();
+    let seen = 0;
+    for await (const m of pager) {
+      if (++seen > LIST_CAP) break;
+      const id = (m.name ?? '').replace(/^models\//, '');
+      if (!m.name?.startsWith('models/gemini-') || !MODEL_RE.test(id)) continue;
+      if (!m.supportedActions?.includes('generateContent')) continue;
+      if (LIST_EXCLUDE.test(id) || versionOf(id) < 2.5) continue;
+      found.set(id, { displayName: m.displayName, description: m.description, inputTokenLimit: m.inputTokenLimit });
+    }
+    const rows: ModelInfo[] = [];
+    for (const k of KNOWN_MODELS) if (found.has(k.id)) rows.push(rowFor(k.id, found.get(k.id)));
+    const others = [...found.keys()].filter((id) => !KNOWN_MODELS.some((k) => k.id === id))
+      .sort((a, b) => versionOf(b) - versionOf(a) || a.localeCompare(b));
+    for (const id of others) rows.push(rowFor(id, found.get(id)));
+    value = { models: rows, recommended: pickRecommended(rows), source: 'google' };
+  } catch (err) {
+    const f = classifyError(err);
+    if (f.kind === 'invalid_key') throw err;
+    console.warn(`[gemini] model list unavailable (${f.kind}): ${f.message}`);
+    const rows = KNOWN_MODELS.map((k) => rowFor(k.id));
+    const fallback: ModelsResponse = {
+      models: rows,
+      recommended: GEMINI_MODEL_DEFAULT,
+      source: 'catalog',
+      warning: `Could not read Google's model list (${f.kind}); showing the models this app knows.`,
+    };
+    /* remembered briefly (backdated so it expires after ~30 s): reopening the
+       picker must not wait another 15 s timeout on every click */
+    if (listCache.size >= MAX_CLIENTS) listCache.delete(listCache.keys().next().value as string);
+    listCache.set(apiKey, { at: Date.now() - LIST_CACHE_MS + 30_000, value: fallback });
+    return fallback;
+  }
+  if (listCache.size >= MAX_CLIENTS) listCache.delete(listCache.keys().next().value as string);
+  listCache.set(apiKey, { at: Date.now(), value });
+  return value;
 }
 
 /* ── uploads (Files API) ─────────────────────────────────────── */

@@ -560,3 +560,115 @@
 .syn-fxlab[data-theme="day"] .fxl-meter-bar > i, .syn-fxlab[data-theme="day"] .fxl-beat { background: var(--syn-fx-day-accent-hi); box-shadow: none; }
 .syn-fxlab[data-theme="day"] .fxl-icon-btn { background: var(--syn-fx-day-cream); border-color: var(--syn-fx-day-line); color: var(--syn-fx-day-t3); }
 .syn-fxlab[data-theme="day"] .fxl-icon-btn.on { color: var(--syn-fx-day-accent); border-color: color-mix(in srgb, var(--syn-fx-day-accent) 45%, transparent); }
+
+/* ═══ CUE TIMELINE — the Agent's beat-synced cues on the transport ═══════
+   Faint bar lines on the track (every bar of the beat grid), a 10-px lane of
+   section blocks right above it (one block per run of cues with the same
+   label; violet tones by the song's energy, the high-energy stretches amber),
+   a diamond on the track at each cue (hover: what it changes), and the
+   CUE AUTO chip in the status line. Everything sits on a rail inset by the
+   scrub thumb's half width, so a position in % is the thumb's own position.
+   No cues and no grid: none of it is drawn and the transport is unchanged. */
+.syn-fxlab {
+  --syn-fx-cue: #8b5cf6;       /* the shell accent (--syn-accent) */
+  --syn-fx-cue-ink: #ddd6fe;   /* --syn-accent-200 */
+  --syn-fx-cue-pale: #ede9fe;  /* --syn-accent-100 */
+  --syn-fx-cue-lane: #8b5cf6;
+  --syn-fx-cue-tip-bg: #0a0812;
+}
+.syn-fxlab .fxl-tl-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
+.syn-fxlab .fxl-tl-wrap > .fxl-tl-track { width: 100%; }
+/* with cues the bar is 4 px taller: the lane gets its room above the track */
+.syn-fxlab .fxl-transport.has-cues { position: relative; z-index: 5; height: 40px; padding-top: 4px; }
+.syn-fxlab .fxl-cue-rail { position: absolute; top: 0; bottom: 0; left: 6px; right: 6px; pointer-events: none; }
+.syn-fxlab .fxl-cue-bar {
+  position: absolute; top: 1px; bottom: 1px; width: 1px; margin-left: -0.5px;
+  background: color-mix(in srgb, var(--syn-fx-gloss) 10%, transparent);
+}
+.syn-fxlab .fxl-cue-lane { position: absolute; left: 0; right: 0; bottom: calc(100% + 3px); height: 10px; }
+.syn-fxlab .fxl-cue-sec {
+  position: absolute; top: 0; height: 10px; min-width: 2px; border-radius: 3px; overflow: hidden;
+  display: flex; align-items: center; padding-left: 4px; white-space: nowrap;
+  background: color-mix(in srgb, var(--syn-fx-cue-lane) var(--cue-mix, 28%), transparent);
+  color: var(--syn-fx-cue-ink); font-family: var(--syn-fx-mono); font-size: 6.5px; font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase; line-height: 1;
+  pointer-events: auto; cursor: default;
+}
+.syn-fxlab .fxl-cue-sec.hot { background: color-mix(in srgb, var(--syn-fx-amber) 28%, transparent); color: var(--syn-fx-t4); }
+.syn-fxlab .fxl-cue-mark {
+  position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; padding: 0; border: 0;
+  background: transparent; cursor: pointer; pointer-events: auto;
+}
+.syn-fxlab .fxl-cue-mark::before {
+  content: ''; position: absolute; left: 3px; top: 3px; width: 8px; height: 8px; transform: rotate(45deg);
+  background: var(--syn-fx-cue); border: 1px solid var(--syn-fx-cue-ink);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--syn-fx-cue) 80%, transparent);
+  transition: transform .12s;
+}
+.syn-fxlab .fxl-cue-mark.hot::before {
+  background: var(--syn-fx-amber); border-color: color-mix(in srgb, var(--syn-fx-amber) 45%, var(--syn-fx-gloss));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--syn-fx-amber) 80%, transparent);
+}
+.syn-fxlab .fxl-cue-mark.on::before { transform: rotate(45deg) scale(1.3); }
+.syn-fxlab .fxl-cue-mark:hover::before, .syn-fxlab .fxl-cue-mark:focus-visible::before { transform: rotate(45deg) scale(1.4); }
+.syn-fxlab .fxl-cue-mark:focus-visible { outline: none; }
+.syn-fxlab .fxl-cue-tip {
+  position: absolute; bottom: calc(100% + 3px); left: 0; visibility: hidden; z-index: 2;
+  min-width: 150px; max-width: 280px; padding: 6px 8px; border-radius: 6px; pointer-events: none;
+  background: color-mix(in srgb, var(--syn-fx-cue-tip-bg) 96%, transparent);
+  border: 1px solid color-mix(in srgb, var(--syn-fx-cue) 60%, transparent);
+  box-shadow: 0 4px 18px color-mix(in srgb, var(--syn-fx-shade) 60%, transparent);
+  font-family: var(--syn-fx-mono); font-size: 8px; line-height: 1.55; letter-spacing: .02em;
+  color: color-mix(in srgb, var(--syn-fx-gloss) 88%, transparent); white-space: nowrap;
+}
+.syn-fxlab .fxl-cue-tip > div { overflow: hidden; text-overflow: ellipsis; }
+.syn-fxlab .fxl-cue-tip-head { color: var(--syn-fx-cue-ink); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.syn-fxlab .fxl-cue-tip.hot { border-color: color-mix(in srgb, var(--syn-fx-amber) 60%, transparent); }
+.syn-fxlab .fxl-cue-tip.hot .fxl-cue-tip-head { color: var(--syn-fx-amber); }
+/* the chip sits right after the route; the meters stay right-aligned */
+.syn-fxlab .fxl-strip.has-cues .fxl-route { flex: 0 1 auto; }
+.syn-fxlab .fxl-cue-chip {
+  flex-shrink: 0; margin-right: auto; height: 16px; padding: 0 7px; border-radius: 4px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--syn-fx-mono); font-size: 7.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--syn-fx-t2); background: transparent;
+  border: 1px solid color-mix(in srgb, var(--syn-fx-gloss) 14%, transparent);
+  transition: all .12s;
+}
+.syn-fxlab .fxl-cue-chip-dot { width: 5px; height: 5px; border-radius: 50%; background: color-mix(in srgb, var(--syn-fx-gloss) 25%, transparent); }
+.syn-fxlab .fxl-cue-chip:hover { border-color: color-mix(in srgb, var(--syn-fx-cue) 60%, transparent); color: var(--syn-fx-cue-ink); }
+.syn-fxlab .fxl-cue-chip.on {
+  color: var(--syn-fx-cue-ink); border-color: var(--syn-fx-cue);
+  background: color-mix(in srgb, var(--syn-fx-cue) 18%, transparent);
+}
+.syn-fxlab .fxl-cue-chip.on .fxl-cue-chip-dot { background: var(--syn-fx-cue); box-shadow: 0 0 6px var(--syn-fx-cue); }
+
+/* cues, day: violet on white, the hot stretches a warm amber, the tooltip a white card */
+.syn-fxlab[data-theme="day"] { --syn-fx-cue-lane: var(--syn-fx-day-accent-hi); }
+.syn-fxlab[data-theme="day"] .fxl-cue-bar { background: color-mix(in srgb, var(--syn-fx-day-t4) 13%, transparent); }
+.syn-fxlab[data-theme="day"] .fxl-cue-sec { color: var(--syn-fx-day-accent); }
+.syn-fxlab[data-theme="day"] .fxl-cue-sec.hot { background: color-mix(in srgb, var(--syn-fx-amber) 30%, transparent); color: var(--syn-fx-amber-deep); }
+.syn-fxlab[data-theme="day"] .fxl-cue-mark::before {
+  background: var(--syn-fx-day-accent-hi); border-color: var(--syn-fx-day-bar-hi);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--syn-fx-day-accent) 45%, transparent), 0 1px 3px var(--syn-fx-day-shadow);
+}
+.syn-fxlab[data-theme="day"] .fxl-cue-mark.hot::before {
+  background: var(--syn-fx-amber); border-color: var(--syn-fx-day-bar-hi);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--syn-fx-amber-deep) 55%, transparent), 0 1px 3px var(--syn-fx-day-shadow);
+}
+.syn-fxlab[data-theme="day"] .fxl-cue-tip {
+  background: var(--syn-fx-day-bar-hi); color: var(--syn-fx-day-t3);
+  border-color: color-mix(in srgb, var(--syn-fx-day-accent) 40%, transparent);
+  box-shadow: 0 4px 16px var(--syn-fx-day-shadow);
+}
+.syn-fxlab[data-theme="day"] .fxl-cue-tip-head { color: var(--syn-fx-day-accent); }
+.syn-fxlab[data-theme="day"] .fxl-cue-tip.hot { border-color: color-mix(in srgb, var(--syn-fx-amber-deep) 50%, transparent); }
+.syn-fxlab[data-theme="day"] .fxl-cue-tip.hot .fxl-cue-tip-head { color: var(--syn-fx-amber-deep); }
+.syn-fxlab[data-theme="day"] .fxl-cue-chip { color: var(--syn-fx-day-t2); border-color: var(--syn-fx-day-line); background: var(--syn-fx-day-cream); }
+.syn-fxlab[data-theme="day"] .fxl-cue-chip-dot { background: var(--syn-fx-day-line-lo); }
+.syn-fxlab[data-theme="day"] .fxl-cue-chip:hover { color: var(--syn-fx-day-accent); border-color: color-mix(in srgb, var(--syn-fx-day-accent) 45%, transparent); }
+.syn-fxlab[data-theme="day"] .fxl-cue-chip.on {
+  color: var(--syn-fx-day-accent); border-color: color-mix(in srgb, var(--syn-fx-day-accent) 55%, transparent);
+  background: linear-gradient(180deg, var(--syn-fx-day-accent-bg-hi) 0%, var(--syn-fx-day-accent-bg) 100%);
+}
+.syn-fxlab[data-theme="day"] .fxl-cue-chip.on .fxl-cue-chip-dot { background: var(--syn-fx-day-accent-hi); box-shadow: 0 0 5px color-mix(in srgb, var(--syn-fx-day-accent-hi) 60%, transparent); }

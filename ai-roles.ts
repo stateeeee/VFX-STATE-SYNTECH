@@ -1,5 +1,5 @@
 /*
- * GEMINI 3.8 — the three roles, server side.
+ * GEMINI — the three roles, server side.
  *
  * For each role (Art Director, Agent, Optimizer — defined in
  * src/ai/contract.ts) this file owns four things:
@@ -30,8 +30,8 @@
 import { MediaResolution, type Part } from '@google/genai';
 import { GeminiFailure } from './ai-provider';
 import {
-  MODULE_IDS, PARAM_FLOORS, PARAM_KEY_PATTERN, LOCKED_GROUPS, LOCKED_CONTROL_PATTERN, INLINE_VIDEO_FPS,
-  type AgentPlan, type AgentResult, type ArtDirection, type ArtDirectorResult, type AudioModeT,
+  MODULE_IDS, PARAM_FLOORS, PARAM_KEY_PATTERN, LOCKED_GROUPS, LOCKED_CONTROL_PATTERN, INLINE_VIDEO_FPS, MAX_CUES, INTENT_MAX,
+  type AgentPlan, type AgentResult, type BeatGrid, type Cue, type SongSection, type ArtDirection, type ArtDirectorResult, type AudioModeT,
   type ChainState, type CheckResult, type MediaPart, type OptimizerIssue,
   type OptimizerResult, type ParamDesc, type SignalSummary, type SourceKindT, type SourceRef,
 } from './src/ai/contract';
@@ -39,8 +39,13 @@ import type { ModuleId } from './src/types';
 
 /* ── limits ───────────────────────────────────────────────────── */
 
-/** Few, decisive changes: a plan that touches 40 sliders is not direction. */
-export const MAX_PLAN_PARAMS = 12;
+/** Decisive changes, not a sweep of every slider — but enough room for a
+ *  structured brief that asks several things of a three-effect chain (the
+ *  operator, 2026-11-18: long structured prompts must work). */
+export const MAX_PLAN_PARAMS = 20;
+/* INTENT_MAX (contract.ts): how much of the director's typed request reaches
+   Gemini. It was 600 characters: a structured brief was cut in the middle and
+   the model answered half of it — "as if it did not understand". */
 /** The Agent's schema names the allowed keys in an enum only up to this many
  *  (a one-effect chain, or two small ones). Past it the key is a plain
  *  string: the chain table lists every key, the validator drops the rest. A
@@ -146,6 +151,32 @@ const ENGINE_FACTS = `HOW THE LAB RENDERS (an iframe chain)
 - Every effect costs frame rate; three in a chain is heavy — use three only when each one earns its place.
 - Music reaches the effects only while the Lab has audio on: a Track (an audio file), the Clip (the source video's own soundtrack) or the Mic. Each effect hears it through its OWN analyser. Only effects with their own reactive section (analog, time_machine, quadtree: Reactive; blob_reveal, blob_tracker: Audio Reactive) move with it; the others (anamorphic_lab, bokeh, invisible, pointcloud, painting) never do — in a chain they are the look the reactive ones play over.`;
 
+/* How to read what the director TYPES, shared by the three roles. The
+   operator (2026-11-18): a structured, complicated prompt "does not work",
+   and a simple one only works when he names the control himself — "it takes
+   me longer to ask than to do it". So: read everything, split it, translate
+   results into controls without asking, never stall. */
+const REQUEST_READING = `READING THE DIRECTOR'S REQUEST
+- It can be one word ("più cinema"), a sentence, or a long structured brief: numbered points, sections, timestamps ("al drop 0:45…"), references to artists, films or other videos, Italian slang, typos. Read ALL of it before deciding anything — never stop at the first line.
+- Break it into its separate asks and do EVERY ask the tools in front of you can do. For an ask they cannot do (it needs an effect that is not in the chain, another source, a cut or an edit the Lab does not make), still do everything else and say exactly what that point would need (e.g. "per il punto 3 serve BOKEH nella catena").
+- The director describes RESULTS, not controls ("avvicina il soggetto allo sfondo", "più sporco sul drop", "che respiri con l'808", "più costoso"). Turning a result into effects and control values is YOUR job: never ask which control to move, never answer that the request is unclear or too long. When it can be read two ways, take the reading that best serves a trap / drill / rap music video and THIS footage, act on it, and name the assumption in a few words.
+- Numbers, values and timestamps the director writes are exact: respect them.
+- When two points contradict each other, the later and more specific one wins.
+- No request at all: decide yourself what this footage and this music need — the director wants you to take the initiative, not to wait for instructions.`;
+
+/* The director's words → the studio's tools. Starting points the model can
+   reason from, not a lookup table it must obey. */
+const DIRECTOR_LANGUAGE = `DIRECTOR'S LANGUAGE → TOOLS (starting points, not limits)
+- "cinema / cinematico / costoso / da film / anamorfico / lente": anamorphic_lab (letterbox, flare, halation, grade); with one clear person, bokeh for the shallow depth of field.
+- "stacca / isola il soggetto", "sfondo sfocato", "profondità", "avvicina / allontana il soggetto dallo sfondo": bokeh — its blur and focus controls set how far the background falls away (less blur: subject and background closer; more blur: the subject pops away from it).
+- "VHS / anni 2000 / vintage / sporco / grezzo / lo-fi / CRT": analog. "glitch / tear / disturbo / sul drop": analog's sync tear, chroma and tracking, pushed on the hits through its Reactive section.
+- "scie / eco / trail / psichedelico / ipnotico": analog's Feedback Loop, or time_machine when the shot moves.
+- "slit-scan / il tempo che si deforma / fluido": time_machine. "digitale / pixel / mosaico / blocchi / cover": quadtree.
+- "HUD / sorveglianza / tech / dati / tracking / Matrix": blob_tracker. "sparisce / fantasma / invisibile / predator": invisible (locked-off camera).
+- "solo le luci / buio con finestre di luce / rotoscope": blob_reveal. "sogno / spazio / cosmico / particelle / 3D": pointcloud. "dipinto / acquerello / olio / quadro": painting.
+- "sul beat / con l'808 / che pompa / che respiri / che spinga": the reactive sections (engine on, Sensitivity, Mod Depth, bands) of the reactive effects in the chain — more depth for "più aggressivo", less for "più morbido / elegante".
+- "più / meno" (intenso, forte, leggero, pulito, scuro, caldo, freddo): move the controls that dominate that quality, decisively enough to SEE the difference.`;
+
 const ITALIAN = `LANGUAGE: write every prose field in ITALIAN — the director is Italian. Effect ids, parameter keys and section names stay exactly as given (they are code / panel labels). Scene slang that Italians use in English (808, drop, hook, flare, glitch, b-roll) is fine inside Italian sentences.`;
 
 const FLOOR_TEXT = Object.entries(PARAM_FLOORS).map(([k, v]) => `${k} never below ${v}`).join('; ') || 'none';
@@ -164,7 +195,7 @@ Audio OFF is the Lab's normal starting state, even for a music video: the source
 
 PLAN RULES (anything else is refused by the validator)
 - params: { key, value } — the key exactly as in the chain table; the value inside its range (on/off 0 or 1; an enum the option index).
-- At most ${MAX_PLAN_PARAMS} params. Few, decisive changes that make a visible difference — leave the rest alone. routes is always an empty list.
+- At most ${MAX_PLAN_PARAMS} params. Decisive changes that make a visible difference — as many as the request needs, never a sweep of every slider; leave the rest alone. routes is always an empty list.
 - LOCKED controls: never touch them (A/B compare splits, presets and performance pads that rewrite other controls, anything the Lab marks LOCKED).
 - FLOORS: ${FLOOR_TEXT} — each scales an effect's whole music response; a lower value is raised to the floor.
 - An effect's reactive ENGINE switch: leave it on unless the intent asks that effect to stop moving with the music.
@@ -187,6 +218,11 @@ PROPOSE 1–3 LOOKS
 - why: tie the choice to what you SAW — concrete details ("le luci della strada dietro di lui diventano dischi enormi", "il volto è sempre al centro, il mask regge"). No generic praise. If an effect needs a person, light points, motion or a still camera that the source lacks, do not propose it.
 - audioIdea: how the look should move with THIS track — which element (kick/808, hi-hats, snare, vocal, the drop) drives which visual, through the reactive effects of the chain — concrete enough for the Agent to set it. A chain with no reactive effect does not move with the music: then say what the music suggests for the look instead. For a photo or silent source, say what to set once a Track or the Mic is on.
 
+${REQUEST_READING}
+- For you, the request shapes the looks: when it names effects, a mood, references or moments of the song, every proposal must answer it (and say in "why" which point it serves); when it asks for something no effect can do, say so in the first proposal's "why".
+
+${DIRECTOR_LANGUAGE}
+
 ${ENGINE_FACTS}
 
 ${EFFECT_CATALOG}
@@ -195,7 +231,7 @@ ${ITALIAN}
 
 Answer only with the JSON object described by the response schema.`;
 
-const AGENT_SYSTEM = `You are the AGENT of VFX SYNTECH — the operator at the desk. The director has already chosen the source and the effect chain in the Lab. Your job: set the effects' own panel controls so that the video, the music and the effects play together like a beat under a vocal — composed with the song, never pasted on top.
+const AGENT_SYSTEM = `You are the AGENT of VFX SYNTECH — the operator at the desk. The director has loaded the source and an effect chain in the Lab. Your job: set the effects' own panel controls — and, when the request says so, the chain itself and a timeline of changes — so that the video, the music and the effects play together like a beat under a vocal — composed with the song, never pasted on top.
 
 WHAT YOU RECEIVE
 - Possibly the whole SOURCE video as a file, WITH its soundtrack (sampled for you at about 1 fps). That is the song the video is cut to: listen to it end to end — where the sections change, where the drop and the hook land, where the 808 comes in and where it breaks down — and watch how the camera and the subject move across the whole clip. If the file is silent (no soundtrack), never invent a song: set the reactive controls the look needs for a Track or the Mic, and say so in the summary.
@@ -212,13 +248,32 @@ HOW TO WORK
 - Tie every change to that evidence, and set for the WHOLE song: a sensitivity tuned on a quiet verse must still look right on the drop.
 - Audio OFF (the Lab's default): still set the reactive controls the look needs — they wait for music. Say in the summary that they come alive once the Clip (the video's own song), a Track or the Mic is switched on.
 
+THE CHAIN — YOU MAY CHANGE IT (only when the request says CHAIN: open)
+- When the request or the footage needs effects that are not in the chain (or one in it does more harm than good), answer "chain" with the 1–3 effect ids you want, in render order (keep the ones that stay; mind the ORDER rules below). The Lab rebuilds the chain and calls you again with the new chain table: on that second call you set its controls and write the cues.
+- When you change the chain, leave params and cues EMPTY on this call (they would be lost in the rebuild) and say in the summary which chain you chose and why.
+- When the chain already serves, or the request says CHAIN: final, "chain" is an empty list.
+
+THE TIMELINE — CUES (only when the request says TIMELINE: write cues)
+- A cue is { at, label, params }: at "at" seconds of the source video the controls in params take those values, and hold until a later cue changes them. Your top-level params are the BASE look, applied now for the whole song; cues are the CHANGES over time.
+- Make the effects follow the SONG and the PICTURE: calmer on the intro and the verses, the reactive effects pushed on the drop and the hook, a new look on a beat switch, a hit on a big moment you HEAR (the 808 coming in, a stop, a riser) or SEE (a cut, the artist stepping into the light). Listen to the whole song and watch the whole video.
+- The BEAT GRID (measured by the Lab — exact) gives the tempo, the bars and the energy sections: put cues on bar starts (downbeats) unless the hit lands elsewhere; the Lab snaps every "at" to the nearest beat. Trust your ears when the grid's confidence is low.
+- label: the moment in the director's words (scene slang): "INTRO", "STROFA", "PRE", "DROP", "HOOK", "BRIDGE", "BEAT SWITCH", "STOP", "OUTRO".
+- In cues use LOOK controls that switch instantly (amounts, mix, depth, sensitivity, intensity, colour, on/off of a look). Never cue controls that rebuild the effect (resolution, quality, cache or buffer size, model choice, segmentation on/off): they stutter on every change — set those once in the base params, if at all.
+- Typically 3–12 cues for a song (never more than ${MAX_CUES}), each changing only what makes that moment different (1–6 controls). A look that should come back needs a later cue that sets it back. A cue at 0 sets the opening when it differs from the base.
+- No request, or a request like "metti gli effetti in base al beat e al video": write the full timeline yourself — that is exactly what the director wants. A request for one fixed look: cues [].
+
+${REQUEST_READING}
+- For you, with CHAIN: open, an ask that needs an effect the chain lacks is a reason to CHANGE THE CHAIN (answer "chain"), not to report it; report it only when the chain is final or fixed.
+
+${DIRECTOR_LANGUAGE}
+
 ${PLAN_RULES}
 
 ${ENGINE_FACTS}
 
 ${EFFECT_CATALOG}
 
-summary: 2–4 sentences in Italian — what you changed and why, and what the director should now see and hear.
+summary: in Italian — what you changed and why, and what the director should now see and hear: 2–4 sentences, or, when the request has several points, one short line per point ("1. … fatto: …", "3. … non possibile qui: serve …").
 
 ${ITALIAN}
 
@@ -249,7 +304,12 @@ FOR EACH ISSUE (at most ${MAX_ISSUES}, most important first)
 Do not invent issues to fill the list: a good result gets verdict "ok" with no issues or only tips.
 
 verdict: "ok" (nothing important), "improve" (works, clearly better possible), "broken" (error-level issues).
-summary: 1–3 sentences in Italian.
+summary: 1–3 sentences in Italian (with a multi-point request: say which points the result delivers and which it does not).
+
+${REQUEST_READING}
+- For you, the request says what to check or improve: every point of it gets an issue (or an explicit "ok" in the summary).
+
+${DIRECTOR_LANGUAGE}
 
 ${PLAN_RULES}
 
@@ -312,7 +372,7 @@ function readSource(v: unknown): SourceRef {
     src.fileMimeType = cleanMime(s.fileMimeType) ?? 'video/mp4';
   }
   const dur = fin(s.durationSec);
-  if (dur !== null && dur >= 0) src.durationSec = dur;
+  if (dur !== null && dur > 0) src.durationSec = dur; // 0 means unknown, never a clip of 0 s
   return src;
 }
 
@@ -371,11 +431,13 @@ function normalizeParam(raw: unknown): ParamDesc | null {
 
 const AUDIO_MODES: readonly AudioModeT[] = ['off', 'mic', 'file', 'clip'];
 
-function readChain(v: unknown): ChainState {
+function readChain(v: unknown, allowEmpty = false): ChainState {
   const c = obj(v);
   if (!Array.isArray(c.params)) throw new GeminiFailure('bad_request', 'chain is missing: open the Lab and enable at least one effect.');
   const order = [...new Set(arr(c.order).filter(isModuleId))];
-  if (!order.length) throw new GeminiFailure('bad_request', 'The Lab chain is empty: enable at least one effect.');
+  /* empty is fine only where the Agent may choose the chain itself — the
+     operator's "clip with no effects + 'metti gli effetti'" case */
+  if (!order.length && !allowEmpty) throw new GeminiFailure('bad_request', 'The Lab chain is empty: enable at least one effect.');
   const fpsCap = fin(c.fpsCap); // the Lab's frame budget (LAB_FPS), absent from an older client
   /* only the effects of this chain, first mention of a key wins */
   const seen = new Set<string>();
@@ -554,8 +616,16 @@ function describeChain(chain: ChainState): string {
 }
 
 function describeIntent(intent: unknown, fallback: string, who = "DIRECTOR'S INTENT"): string {
-  const i = str(intent, 600);
-  return i ? `${who}: "${i}"` : `${who}: none given — ${fallback}`;
+  const i = str(intent, INTENT_MAX);
+  if (!i) return `${who}: none given — ${fallback}`;
+  /* A long or multi-line brief goes in a fenced block, verbatim: in quotes
+     on one line its structure (numbered points, sections) was easy to lose. */
+  if (i.length > 160 || i.includes('\n')) {
+    /* the fence cannot be closed early by the director's own text */
+    const body = i.replace(/<<<|>>>/g, '«»');
+    return `${who} — verbatim, read ALL of it and answer every point:\n<<<\n${body}\n>>>`;
+  }
+  return `${who}: "${i}"`;
 }
 
 /** The art direction, as a brief. `order` is the Lab chain right now: when the
@@ -637,21 +707,47 @@ function paramItem(keys: string[] | null): Record<string, unknown> {
 /** The Agent's plan for THIS chain, one level deep: the allowed keys as an
  *  enum only up to ENUM_KEY_LIMIT, the one array cap at the top. No routes
  *  field: the validator answers routes [] whatever comes. */
-export function planSchema(chain: ChainState): Record<string, unknown> {
+export function planSchema(chain: ChainState, opts: { cues?: boolean; chain?: boolean } = {}): Record<string, unknown> {
   const keys = planKeys(chain);
-  return {
-    type: 'object',
-    properties: {
-      params: {
-        type: 'array',
-        maxItems: keys.length ? MAX_PLAN_PARAMS : 0,
-        description: `Controls to set, at most ${MAX_PLAN_PARAMS}.`,
-        items: paramItem(keys.length <= ENUM_KEY_LIMIT ? keys : null),
-      },
-      summary: { type: 'string', description: 'In Italian: what changes and why.' },
+  const properties: Record<string, unknown> = {
+    params: {
+      type: 'array',
+      maxItems: keys.length ? MAX_PLAN_PARAMS : 0,
+      description: `Controls to set, at most ${MAX_PLAN_PARAMS}.`,
+      items: paramItem(keys.length <= ENUM_KEY_LIMIT ? keys : null),
     },
-    required: ['params', 'summary'],
+    summary: { type: 'string', description: 'In Italian: what changes and why.' },
   };
+  const required = ['params', 'summary'];
+  /* Kept simple on purpose (see the header): the chain is a flat id enum,
+     the cues' keys are plain strings — the validator checks them all. */
+  if (opts.chain) {
+    properties.chain = {
+      type: 'array',
+      maxItems: MAX_CHAIN,
+      description: 'The chain you need, in render order — an empty list keeps the current chain.',
+      items: { type: 'string', enum: [...MODULE_IDS] },
+    };
+    required.push('chain');
+  }
+  if (opts.cues) {
+    properties.cues = {
+      type: 'array',
+      maxItems: MAX_CUES,
+      description: 'The timeline: changes at moments of the source video. Empty for a fixed look.',
+      items: {
+        type: 'object',
+        properties: {
+          at: { type: 'number', description: 'Seconds on the source video.' },
+          label: { type: 'string', description: 'The moment: INTRO, STROFA, DROP, HOOK…' },
+          params: { type: 'array', items: paramItem(null) },
+        },
+        required: ['at', 'label', 'params'],
+      },
+    };
+    required.push('cues');
+  }
+  return { type: 'object', properties, required };
 }
 
 export function artDirectorSchema(): Record<string, unknown> {
@@ -864,7 +960,127 @@ export function validatePlan(plan: unknown, chain: ChainState): AgentResult & { 
   /* Notes only for what survived the limit, in the order of the rows. */
   const adjusted = paramList.filter((p) => notes.has(p.key)).map((p) => `${p.key}: ${notes.get(p.key)}`);
 
-  return { plan: { summary: str(src.summary, 900), params: paramList, routes: [] }, dropped, adjusted };
+  return { plan: { summary: str(src.summary, 1500), params: paramList, routes: [] }, dropped, adjusted };
+}
+
+/* ── beat grid + cues ─────────────────────────────────────────── */
+
+/** The Lab's beat grid, made trustworthy (null when absent or unusable). */
+export function readBeatGrid(v: unknown): BeatGrid | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const g = obj(v);
+  const bpm = fin(g.bpm);
+  const duration = fin(g.duration);
+  if (bpm === null || bpm < 40 || bpm > 240 || duration === null || duration <= 0 || duration > 4 * 3600) return null;
+  const beat = 60 / bpm;
+  const bpb = Math.round(fin(g.beatsPerBar) ?? 4);
+  const beatsPerBar = bpb >= 1 && bpb <= 12 ? bpb : 4;
+  const phase = (x: number | null) => (x === null || x < 0 ? 0 : x % (beat * beatsPerBar));
+  const firstBeat = (fin(g.firstBeat) ?? 0) < 0 ? 0 : (fin(g.firstBeat) ?? 0) % beat;
+  const firstDownbeat = phase(fin(g.firstDownbeat));
+  const sections: SongSection[] = arr(g.sections).slice(0, 16).map((x) => obj(x))
+    .map((x) => ({ start: fin(x.start), end: fin(x.end), energy: fin(x.energy) }))
+    .filter((x): x is { start: number; end: number; energy: number } => x.start !== null && x.end !== null && x.energy !== null && x.end > x.start)
+    .map((x) => ({ start: clamp(x.start, 0, duration), end: clamp(x.end, 0, duration), energy: clamp(x.energy, 0, 1) }))
+    .filter((x) => x.end > x.start)
+    .sort((a, b) => a.start - b.start);
+  return { bpm, firstBeat, beatsPerBar, firstDownbeat, duration, sections, confidence: clamp(fin(g.confidence) ?? 0.5, 0, 1) };
+}
+
+/** The nearest beat to `t` on the grid (never below 0). */
+export function snapToBeat(t: number, g: BeatGrid): number {
+  const beat = 60 / g.bpm;
+  const k = Math.round((t - g.firstBeat) / beat);
+  const snapped = g.firstBeat + k * beat;
+  return Math.round(Math.max(0, snapped) * 1000) / 1000;
+}
+
+function describeBeatGrid(g: BeatGrid | null, wantCues: boolean): string {
+  if (!g) return wantCues ? 'BEAT GRID: not available (no soundtrack the Lab could read) — place the cues by what you hear and see.' : 'BEAT GRID: not available.';
+  const beat = 60 / g.bpm;
+  const bar = beat * g.beatsPerBar;
+  const barOf = (t: number) => Math.floor((t - g.firstDownbeat) / bar) + 1;
+  const lines = [
+    `BEAT GRID (measured by the Lab from the source's own soundtrack): ${g.bpm.toFixed(1)} BPM, ${g.beatsPerBar} beats per bar — a beat every ${beat.toFixed(3)} s, a bar every ${bar.toFixed(3)} s; first downbeat at ${g.firstDownbeat.toFixed(3)} s; clip length ${clock(g.duration)}. Tempo confidence ${g.confidence.toFixed(2)}${g.confidence < 0.4 ? ' (LOW — trust your ears over the grid)' : ''}.`,
+  ];
+  if (g.sections.length) {
+    lines.push('ENERGY SECTIONS (measured, 1 = the loudest stretch of this song; you name them from what you hear):');
+    for (const x of g.sections) {
+      lines.push(`- ${clock(x.start)}–${clock(x.end)} (bars ${Math.max(1, barOf(x.start))}–${Math.max(1, barOf(Math.max(x.start, x.end - 0.01)))}) energy ${x.energy.toFixed(2)}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+/** The Agent's answer: the plan (validatePlan), plus — when allowed — the
+ *  chain it asks for and its cue timeline. A chain change empties params and
+ *  cues: the Lab rebuilds the chain (reloading its effects) and the panel
+ *  asks again, so anything set now would be lost. */
+export function validateAgent(
+  raw: unknown,
+  chain: ChainState,
+  ctx: { cues: boolean; chainOpen: boolean; grid: BeatGrid | null; durationSec: number | null },
+): AgentResult & { adjusted: string[] } {
+  const base = validatePlan(raw, chain);
+  const src = obj(raw);
+  const dropped = [...base.dropped];
+  const adjusted = [...base.adjusted];
+
+  let nextChain: ModuleId[] | null = null;
+  const asked = [...new Set(arr(src.chain).filter(isModuleId))].slice(0, MAX_CHAIN);
+  if (asked.length && asked.join(',') !== chain.order.join(',')) {
+    if (ctx.chainOpen) nextChain = asked;
+    else dropped.push(`chain ${asked.join(' → ')}: the chain is final on this run — kept ${chain.order.join(' → ')}`);
+  }
+  if (nextChain) {
+    /* the params are thrown away: their clamp/floor notes would describe nothing */
+    return { plan: { summary: base.plan.summary, params: [], routes: [], cues: [] }, chain: nextChain, dropped, adjusted: [] };
+  }
+
+  const cues: Cue[] = [];
+  if (ctx.cues) {
+    const end = ctx.durationSec ?? ctx.grid?.duration ?? null;
+    const byAt = new Map<number, Cue>();
+    /* the loose schema has no maxItems: bound the work before validating */
+    for (const [i, rawCue] of arr(src.cues).slice(0, 4 * MAX_CUES).entries()) {
+      const c = obj(rawCue);
+      const at0 = fin(c.at);
+      const label = str(c.label, 24) || `CUE ${i + 1}`;
+      if (at0 === null || at0 < 0 || (end !== null && at0 > end + 0.5)) {
+        dropped.push(`cue "${label}" at ${at0 === null ? '?' : clock(at0)}: outside the clip`);
+        continue;
+      }
+      /* The opening (anything before the first beat lands) stays at 0: a cue
+         "at 0" snapped to the first beat would leave the first frames unset. */
+      let at = !ctx.grid ? Math.round(at0 * 1000) / 1000
+        : at0 <= ctx.grid.firstBeat + 30 / ctx.grid.bpm ? 0
+        : snapToBeat(at0, ctx.grid);
+      if (end !== null && at > end) at = Math.max(0, Math.round((at - 60 / (ctx.grid?.bpm ?? 120)) * 1000) / 1000);
+      const v = validatePlan({ params: c.params, summary: '' }, chain);
+      const tag = `cue ${clock(at)} ${label}`;
+      for (const d of v.dropped) dropped.push(`${tag} · ${d}`);
+      for (const a of v.adjusted) adjusted.push(`${tag} · ${a}`);
+      if (!v.plan.params.length) { dropped.push(`${tag}: nothing valid to change`); continue; }
+      const prev = byAt.get(at);
+      if (prev) {
+        /* two cues on the same beat: one cue, the later values win */
+        const merged = new Map(prev.params.map((p) => [p.key, p.value]));
+        for (const p of v.plan.params) { merged.delete(p.key); merged.set(p.key, p.value); }
+        const all = [...merged].map(([key, value]) => ({ key, value }));
+        for (const p of all.slice(0, Math.max(0, all.length - MAX_PLAN_PARAMS))) dropped.push(`${tag} · ${p.key}: over the ${MAX_PLAN_PARAMS}-parameter limit of one cue`);
+        prev.params = all.slice(-MAX_PLAN_PARAMS); // the latest values win
+      } else {
+        byAt.set(at, { at, label, params: v.plan.params });
+      }
+    }
+    const sorted = [...byAt.values()].sort((a, b) => a.at - b.at);
+    for (const c of sorted.slice(MAX_CUES)) dropped.push(`cue ${clock(c.at)} ${c.label}: over the ${MAX_CUES}-cue limit`);
+    cues.push(...sorted.slice(0, MAX_CUES));
+  } else if (arr(src.cues).length) {
+    dropped.push('cues: no timeline on this run — the base look is applied');
+  }
+
+  return { plan: { ...base.plan, cues }, chain: null, dropped, adjusted };
 }
 
 /** A proposal's chain made renderable: valid ids only, no repeats, at most
@@ -994,26 +1210,46 @@ export function agentJob(body: unknown): RoleJob<AgentResult> {
   const source = readSource(b.source);
   const media = readMedia(b.media);
   if (!media.length) throw new GeminiFailure('no_media', `${NO_LAB_FRAMES}: nothing to tune. Run again when the Lab shows the picture.`);
-  const chain = readChain(b.chain);
+  const chain = readChain(b.chain, b.allowChain === true && b.chainChanged !== true);
   const direction = readDirection(b.direction);
-  const hasIntent = !!str(b.intent, 600);
+  const hasIntent = !!str(b.intent, INTENT_MAX);
+  /* A timeline needs a video; the chain may change only on the first call. */
+  const wantCues = b.wantCues === true && source.kind === 'video';
+  /* opt-in: only a panel that can rebuild the chain may be asked for one */
+  const chainOpen = b.allowChain === true && b.chainChanged !== true;
+  const chainFinal = b.chainChanged === true;
+  const grid = wantCues ? readBeatGrid(b.beatGrid) : null;
+  const durationSec = source.durationSec ?? grid?.duration ?? null;
 
   const context = [
     describeIntent(b.intent, direction ? 'execute the art direction below.' : 'make this chain work for this footage and this music.'),
     describeDirection(direction, chain.order, hasIntent),
     describeAgentMedia(source, media, chain.audioActive),
     describeSignals(b.signals),
+    chainOpen && !chain.order.length
+      ? 'CHAIN: open — the Lab has NO effects yet (the OUTPUT is the untouched source). You MUST answer "chain" with the 1–3 effects this footage and this music need (params and cues empty on this call); the Lab builds it and calls you again.'
+      : chainOpen
+      ? `CHAIN: open — the Lab chain is ${chain.order.join(' → ')}. Change it ("chain") if the request or the footage needs other effects; otherwise "chain" is [].`
+      : chainFinal
+        ? `CHAIN: final — the Lab just rebuilt it as you asked (${chain.order.join(' → ')}). Now set its controls${wantCues ? ' and write the timeline' : ''}.`
+        : `CHAIN: fixed on this run (${chain.order.join(' → ')}) — work with these effects; if a point needs another one, say which in the summary.`,
+    wantCues
+      ? `TIMELINE: write cues — the source is a video${durationSec ? ` of ${clock(durationSec)}` : ''}; "at" in seconds of it.`
+      : source.kind === 'video'
+        ? 'TIMELINE: not on this run — one fixed look (no cues).'
+        : 'TIMELINE: none — this source has no timeline (a photo or the webcam).',
+    ...(wantCues ? [describeBeatGrid(grid, true)] : []),
     describeChain(chain),
-    `Write the plan: at most ${MAX_PLAN_PARAMS} params (keys exactly as in the chain table), routes none, summary in Italian.`,
+    `Write the plan: at most ${MAX_PLAN_PARAMS} params (keys exactly as in the chain table)${wantCues ? `, the cues (keys exactly as in the chain table, at most ${MAX_CUES})` : ''}, routes none, summary in Italian.`,
   ].join('\n\n');
 
-  const schema = planSchema(chain);
+  const schema = planSchema(chain, { cues: wantCues, chain: chainOpen });
   return {
     systemInstruction: AGENT_SYSTEM,
     parts: [...sourceFileParts(source), ...mediaParts(media), { text: context }],
     responseJsonSchema: schema,
     looseSchema: loosen(schema) as Record<string, unknown>,
-    finish: (raw) => validatePlan(raw, chain),
+    finish: (raw) => validateAgent(raw, chain, { cues: wantCues, chainOpen, grid, durationSec }),
   };
 }
 
@@ -1046,15 +1282,27 @@ function describeChecks(raw: unknown): string {
   return ['CHECKS (computed by the Lab — facts):', ...checks.slice(0, 24).map((c) => `- [${c.ok ? 'ok' : 'FAIL'}] ${str(c.id, 40)}: ${str(c.detail, 200)}`)].join('\n');
 }
 
+/** The last run's timeline, for the Optimizer (it judges a few seconds of a
+ *  song that changes look over time). */
+function describeCues(raw: unknown): string[] {
+  const cues = arr(raw).slice(0, MAX_CUES).map((x) => obj(x)).filter((c) => fin(c.at) !== null);
+  if (!cues.length) return [];
+  return [
+    `timeline (${cues.length} cues — the look changes at these moments of the source video):`,
+    ...cues.map((c) => `- ${clock(fin(c.at))} ${str(c.label, 24).replace(/\s+/g, ' ')}: ${arr(c.params).slice(0, 8).map((x) => obj(x)).map((p) => `${str(p.key, 100).replace(/\s+/g, '')}=${num(fin(p.value) ?? NaN)}`).join(', ')}`),
+  ];
+}
+
 function describeLastAgent(raw: unknown): string {
   if (!raw || typeof raw !== 'object') return 'LAST AGENT RUN: none in effect (never run, undone, or made for a different chain) — judge the chain as it is now, against the intent and the art direction.';
   const l = obj(raw);
   const plan = obj(l.plan);
-  const params = arr(plan.params).slice(0, 24).map((x) => obj(x)).map((p) => `${str(p.key, 100)}=${num(fin(p.value) ?? NaN)}`).join(', ') || 'none';
+  const params = arr(plan.params).slice(0, 24).map((x) => obj(x)).map((p) => `${str(p.key, 100).replace(/\s+/g, '')}=${num(fin(p.value) ?? NaN)}`).join(', ') || 'none';
   return [
-    `LAST AGENT RUN (${str(l.at, 40) || 'time unknown'}) — intent: ${str(l.intent, 400) ? `"${str(l.intent, 400)}"` : 'none'}`,
-    `summary: ${str(plan.summary, 600) || '—'}`,
+    `LAST AGENT RUN (${str(l.at, 40).replace(/\s+/g, ' ') || 'time unknown'}) — intent: ${str(l.intent, 1200) ? `"${str(l.intent, 1200)}"` : 'none'}`,
+    `summary: ${str(plan.summary, 1500) || '—'}`,
     `controls set: ${params}`,
+    ...describeCues(plan.cues),
   ].join('\n');
 }
 
@@ -1064,7 +1312,7 @@ export function optimizerJob(body: unknown): RoleJob<OptimizerResult> {
   if (!media.length) throw new GeminiFailure('no_media', `${NO_LAB_FRAMES}: nothing to judge. Run again when the Lab shows the picture.`);
   const chain = readChain(b.chain);
   const direction = readDirection(b.direction);
-  const hasIntent = !!str(b.intent, 600);
+  const hasIntent = !!str(b.intent, INTENT_MAX);
   const clip = media.find((m) => m.mimeType.startsWith('video/'));
 
   const context = [

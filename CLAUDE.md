@@ -43,11 +43,14 @@ npm run desktop:dist # package the desktop app for this OS into release/
 The desktop app (Windows .exe + macOS .zip) is built and tested on every push
 by `.github/workflows/desktop.yml` — see `docs/workflow/DESKTOP.md`.
 
-The Gemini 3.8 panel (Art Director / Agent / Optimizer) needs a Gemini key:
+The Gemini panel (Art Director / Agent / Optimizer) needs a Gemini key:
 paste it in the panel, or put `GEMINI_API_KEY` in `.env.local` (used only for
 browsers on this machine). Without a key the AI modes are simply locked — there
 are no offline AI answers. No non-AI feature ever needs a key; never make one
-require it.
+require it. The model + effort are picked IN the panel (default
+`gemini-4-hydrogen` · High; the list comes from Google, so new models appear by
+themselves — 03-SPEC-SHELL §9.14); the operator stays on free models. The Agent
+can change the chain and write a beat-synced cue timeline (§9.15).
 
 ## Repo map (the parts that matter)
 
@@ -59,10 +62,12 @@ desktop/main.ts                 Electron shell: runs server.ts inside the app on
 src/App.tsx                     Shell: top bar, left nav, layout, composition state, save/projects
 src/components/VfxCanvas.tsx    Animated "brain graph" hero (canvas), hub-drag chaining
 src/components/NodalComposition.tsx  Node graph panel (INPUT → effects → OUTPUT)
-src/components/ChainLab.tsx     Lab surface: iframe chain of the real effects, INPUT + transport, audio, presets, Master MP4, LabHandle
+src/components/ChainLab.tsx     Lab surface: iframe chain of the real effects, INPUT + transport, audio, presets, Master MP4, LabHandle, cue engine + lane
+src/lab/beatgrid.ts             Beat grid of the source's soundtrack (BPM, phase, energy sections), decoded in the browser
+src/lab/cues.ts                 Cue timeline helpers (state at t, snapping, lane segments)
 src/components/EffectHost.tsx   Full-screen iframe host for one standalone effect
 src/components/IntroSplash.tsx  Desktop-app opening: logo → pet video + LOADING 0–100% (browser: ?intro)
-src/components/AiDirector.tsx   Gemini 3.8 panel: key form, Art Director / Agent / Optimizer, Apply/Undo
+src/components/AiDirector.tsx   Gemini panel: key form, model + effort picker, Art Director / Agent / Optimizer, Apply/Undo
 src/ai/contract.ts              Panel ⇄ server wire format: types, safety lists, LabHandle
 src/ai/client.ts                Panel → /api/gemini/*: key header, AiError, upload cache
 src/ai/capture.ts               On-demand capture: JPEG frames, output webm clip

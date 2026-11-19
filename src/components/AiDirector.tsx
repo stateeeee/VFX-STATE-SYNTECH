@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  Sparkles,
+  Sparkle,
   Bot,
   Lightbulb,
   Settings,
@@ -11,12 +11,17 @@ import {
   ChevronRight,
   Check,
   Cpu,
+  ChevronDown,
   X,
 } from 'lucide-react';
 import type { ModuleId } from '../types';
 import { EFFECT_META } from './NodalComposition';
+import { buildSegments, fmtCueTime } from '../lab/cues';
 import {
+  EFFORT_LABEL,
   GEMINI_MODEL_DEFAULT,
+  KNOWN_MODELS,
+  INTENT_MAX,
   MAX_UPLOAD_BYTES,
   MODULE_IDS,
   PARAM_KEY_PATTERN,
@@ -27,24 +32,36 @@ import {
   type ArtDirection,
   type ArtDirectorRequest,
   type ArtDirectorResult,
+  type BeatGrid,
   type ChainState,
+  type Cue,
   type CheckResult,
+  type EffortT,
+  type GeminiChoice,
   type LabHandle,
   type MediaPart,
+  type ModelInfo,
+  type ModelsResponse,
   type OptimizerRequest,
   type OptimizerResult,
   type ParamDesc,
   type PlanUndo,
+  type RunMeta,
   type SignalSummary,
   type SourceRef,
   type UploadResponse,
+  UNKNOWN_MODEL_EFFORTS,
 } from '../ai/contract';
 import {
   AiError,
   aiPost,
   cachedUpload,
   forgetUpload,
+  getStoredChoice,
+  getStoredKey,
   isKeyText,
+  listModels,
+  storeChoice,
   isUnusableUpload,
   uploadSource,
   uploadVideoMime,
@@ -54,7 +71,7 @@ import { elementToJpeg, sampleVideoFrames } from '../ai/capture';
 import { GEMINI_FLOOR_BELOW_SCROLL } from '../cage/cage';
 
 /* ═══════════════════════════════════════════════════════════════
-   GEMINI 3.8 — the panel (src/ai/contract.ts is the wire format).
+   GEMINI — the panel (src/ai/contract.ts is the wire format).
 
    Locked until a key is active: the body is then the key form. Once
    active, a role is picked in the left rail (or on the ACTIVE card):
@@ -145,6 +162,8 @@ interface UndoEntry {
   run?: LastAgentRun;
   /** Optimizer: the issue index whose fix it is */
   fix?: number;
+  /** Agent: the chain before the run, when the run changed it (Undo puts it back) */
+  chainFrom?: ModuleId[];
 }
 type NewUndoEntry = Omit<UndoEntry, 'id'>;
 
@@ -205,6 +224,10 @@ interface AiDirectorProps {
   onPickMode: (mode: GeminiMode) => void;
   /** the model the server runs (/api/gemini/status; GEMINI_MODEL may override) */
   model?: string;
+  /** the picker saved a new { model, effort } (already in localStorage) */
+  onChoice?: (choice: GeminiChoice) => void;
+  /** the key works but the chosen model does not: the card says so and opens the picker */
+  modelWarning?: string | null;
 }
 
 /* ── copy ────────────────────────────────────────────────────── */
@@ -228,8 +251,6 @@ const keyErrorText = (kind: string | null, model: string): string | null =>
   kind ? (kind in KIND_TEXT ? kindText(kind as AiErrorKind, model) : 'Key check failed') : null;
 
 const MODE_TITLE: Record<GeminiMode, string> = { art_director: 'Art Director', agent: 'Agent', optimizer: 'Optimizer' };
-const MODE_ICON: Record<GeminiMode, typeof Bot> = { art_director: Lightbulb, agent: Bot, optimizer: Settings };
-const MODES: readonly GeminiMode[] = ['art_director', 'agent', 'optimizer'];
 
 const LAB_CHANGED = 'The Lab changed — run again';
 const CLIP_ON_NOTE = 'Clip audio switched on so Gemini can hear the music';
@@ -805,10 +826,10 @@ export default function AiDirector(props: AiDirectorProps) {
             {mode === 'art_director' ? <Lightbulb className="w-4 h-4 text-[#8b5cf6]" /> :
              mode === 'agent' ? <Bot className="w-4 h-4 text-[#8b5cf6]" /> :
              mode === 'optimizer' ? <Settings className="w-4 h-4 text-[#8b5cf6]" /> :
-             <Sparkles className="w-4 h-4 text-[#8b5cf6]" />}
+             <Sparkle className="w-4 h-4 text-[#8b5cf6]" />}
           </div>
           <h2 className="text-[11px] tracking-[0.22em] font-mono uppercase font-bold text-[#8b5cf6]">
-            {mode ? MODE_TITLE[mode] : 'Gemini 3.8'}
+            {mode ? MODE_TITLE[mode] : 'Gemini'}
           </h2>
         </div>
         <div className="flex items-center gap-2">
@@ -828,37 +849,7 @@ export default function AiDirector(props: AiDirectorProps) {
 
       {!active && <KeyForm k={k} status={status} error={error} errorMessage={props.errorMessage ?? null} model={model} onSubmitKey={onSubmitKey} />}
 
-      {active && !mode && (
-        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-          {/* sizes to its content, not h-full: the opening is shorter than the
-              panel's natural height (the cage) */}
-          <div className={k.card}>
-            <p className={k.text}>
-              <b className="text-[#8b5cf6]">Gemini 3.8 is active.</b> Pick a role here or in the left rail.
-            </p>
-            {/* the rail's three roles, again: on a short window the rail's
-                lower buttons sit under the meter — this row is always reachable */}
-            <div className="flex flex-wrap gap-1.5">
-              {MODES.map((m) => {
-                const Icon = MODE_ICON[m];
-                return (
-                  <button key={m} type="button" data-testid={`ai-pick-${m}`} onClick={() => onPickMode(m)} className={k.secondary}>
-                    <Icon className="w-3 h-3" /> {MODE_TITLE[m]}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className={k.sub}>{source === 'server' ? 'key from server .env' : 'key from this browser'}</span>
-              {source !== 'server' && (
-                <button type="button" data-testid="ai-key-forget" onClick={onForgetKey} className={k.link}>
-                  Forget key
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {active && !mode && <ActiveCard k={k} isDay={!!isDayMode} model={model} warning={props.modelWarning ?? null} source={source} onForgetKey={onForgetKey} onChoice={props.onChoice} />}
 
       {/* the three roles: always mounted, only hidden (D11) */}
       <ArtDirectorTab {...shared} visible={mode === 'art_director'} onChooseDirection={(d, from) => { setDirection(d); setDirectionFrom(from); }} />
@@ -967,6 +958,320 @@ function KeyForm({ k, status, error, errorMessage, model, onSubmitKey }: { k: In
           Free key: aistudio.google.com/apikey
         </a>
       </form>
+    </div>
+  );
+}
+
+/* ── what answered (RunMeta), under every role result ────────── */
+
+function MetaLine({ k, meta, testid }: { k: Ink; meta?: RunMeta; testid: string }) {
+  if (!meta) return null;
+  const parts = [meta.model, (EFFORT_LABEL[meta.effort as EffortT] ?? String(meta.effort)).toLowerCase()];
+  if (meta.thoughtsTokens !== null && meta.thoughtsTokens !== undefined) {
+    parts.push(`${meta.thoughtsTokens.toLocaleString('en-US')} thinking tokens`);
+  }
+  return (
+    <span data-testid={testid} className={k.sub}>
+      {parts.join(' · ')}{meta.requested && meta.model !== meta.requested ? ` (asked ${meta.requested})` : ''}
+    </span>
+  );
+}
+
+/* ── the intent field: a textarea that grows 1 → 6 lines ─────── */
+
+function IntentField({ k, testid, value, onChange, placeholder, disabled, visible }: { k: Ink; testid: string; value: string; onChange: (v: string) => void; placeholder: string; disabled: boolean; visible: boolean }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const fit = () => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    // a hidden tab measures 0: leave the natural (one-line) height, re-fit when shown
+    if (el.scrollHeight === 0) { el.style.height = ''; return; }
+    el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
+  };
+  useLayoutEffect(fit, [value, visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div className={`${k.box} !items-start`}>
+      <textarea
+        ref={ref}
+        data-testid={testid}
+        rows={1}
+        maxLength={INTENT_MAX}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={fit}
+        onKeyDown={(e) => {
+          // Enter runs (the form's submit), Shift+Enter is a new line
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
+            e.preventDefault();
+            e.currentTarget.form?.requestSubmit();
+          }
+        }}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={`${k.input} resize-none block leading-snug max-h-24 overflow-y-auto custom-scrollbar`}
+      />
+    </div>
+  );
+}
+
+/* ── the active card: key, model, effort ─────────────────────── */
+
+/** "Gemini 4 Hydrogen" → "Hydrogen"; "Gemini 3.8 Flash" → "3.8 Flash". */
+function shortModelName(name: string | undefined, id: string): string {
+  const base = (name ?? '').trim();
+  if (!base) return id.replace(/^gemini-/, '');
+  const rest = base.replace(/^Gemini\s+/i, '');
+  const m = /^\S+\s+([A-Z][a-z]+)$/.exec(rest);
+  if (m && !/^(Flash|Pro|Lite|Ultra|Nano)$/.test(m[1])) return m[1];
+  return rest;
+}
+
+const EFFORT_STOP: Record<EffortT, string> = { default: 'Auto', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-high' };
+
+const fromKnown = (): ModelInfo[] =>
+  KNOWN_MODELS.map((m) => ({
+    id: m.id, name: m.name, description: '', inputTokenLimit: null, efforts: [...m.efforts],
+    defaultEffort: m.defaultEffort, free: m.free, note: m.note, known: true, listed: false,
+  }));
+
+const SLIDER_CSS = `
+.syn-effort{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:16px;margin:0;position:relative;cursor:pointer}
+.syn-effort:focus{outline:none}
+.syn-effort::-webkit-slider-runnable-track{background:transparent;height:16px}
+.syn-effort::-moz-range-track{background:transparent;height:16px}
+.syn-effort::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:9999px;background:var(--syn-accent);border:2px solid var(--syn-accent-100);box-shadow:0 0 8px rgba(var(--syn-accent-rgb),.7);box-sizing:border-box}
+.syn-effort::-moz-range-thumb{width:16px;height:16px;border-radius:9999px;background:var(--syn-accent);border:2px solid var(--syn-accent-100);box-shadow:0 0 8px rgba(var(--syn-accent-rgb),.7);box-sizing:border-box}
+.syn-effort:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px rgba(var(--syn-accent-rgb),.45),0 0 8px rgba(var(--syn-accent-rgb),.7)}
+.syn-effort:focus-visible::-moz-range-thumb{box-shadow:0 0 0 3px rgba(var(--syn-accent-rgb),.45),0 0 8px rgba(var(--syn-accent-rgb),.7)}
+`;
+
+function EffortSlider({ k, isDay, efforts, value, onChange }: { k: Ink; isDay: boolean; efforts: readonly EffortT[]; value: EffortT; onChange: (e: EffortT) => void }) {
+  const n = efforts.length;
+  const idx = Math.max(0, efforts.indexOf(value));
+  const at = (i: number) => (n > 1 ? i / (n - 1) : 0);
+  // the thumb is 16px: its centre runs from 8px to (width - 8px)
+  const pos = (i: number) => `calc(8px + (100% - 16px) * ${at(i)})`;
+  return (
+    <div className="flex flex-col gap-1">
+      <style>{SLIDER_CSS}</style>
+      <div className="relative h-4">
+        <div className={`absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 rounded-full ${isDay ? 'bg-neutral-200' : 'bg-neutral-800'}`} />
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 rounded-full bg-[#8b5cf6]" style={{ width: pos(idx) }} />
+        {efforts.map((e, i) => (
+          <span
+            key={e}
+            className={`absolute top-1/2 w-1 h-1 rounded-full -translate-x-1/2 -translate-y-1/2 ${i <= idx ? 'bg-white' : isDay ? 'bg-neutral-400' : 'bg-neutral-500'}`}
+            style={{ left: pos(i) }}
+          />
+        ))}
+        <input
+          type="range"
+          data-testid="ai-effort-slider"
+          aria-label="Effort"
+          aria-valuetext={EFFORT_LABEL[efforts[idx]]}
+          min={0}
+          max={n - 1}
+          step={1}
+          value={idx}
+          onChange={(e) => onChange(efforts[Number(e.target.value)])}
+          className="syn-effort absolute inset-0"
+        />
+      </div>
+      <div className="relative h-3">
+        {efforts.map((e, i) => (
+          <span
+            key={e}
+            className={`absolute top-0 font-mono text-[8px] uppercase tracking-widest whitespace-nowrap ${i === idx ? 'text-[#8b5cf6] font-bold' : isDay ? 'text-neutral-500' : 'text-neutral-400'}`}
+            style={i === 0 ? { left: 0 } : i === n - 1 ? { right: 0 } : { left: pos(i), transform: 'translateX(-50%)' }}
+          >
+            {EFFORT_STOP[e]}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ActiveCard({ k, isDay, model, warning, source, onForgetKey, onChoice }: { k: Ink; isDay: boolean; model: string; warning: string | null; source: 'browser' | 'server' | null; onForgetKey: () => void; onChoice?: (c: GeminiChoice) => void }) {
+  const [show, setShow] = useState(false);
+  const [picking, setPicking] = useState(!!warning);
+  useEffect(() => { if (warning) setPicking(true); }, [warning]);
+  const listRef = useRef<HTMLDivElement>(null);
+  const modelBtn = useRef<HTMLButtonElement>(null);
+  const wasPicking = useRef(picking);
+  const [resp, setResp] = useState<ModelsResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [choice, setChoice] = useState<GeminiChoice | null>(() => getStoredChoice());
+
+  const rows: ModelInfo[] = resp?.models.length ? resp.models : fromKnown();
+  const modelId = choice?.model ?? model;
+  const info = rows.find((r) => r.id === modelId) ?? fromKnown().find((r) => r.id === modelId) ?? null;
+  const efforts: readonly EffortT[] = info?.efforts.length ? info.efforts : UNKNOWN_MODEL_EFFORTS;
+  const effort: EffortT = choice && efforts.includes(choice.effort) ? choice.effort : info?.defaultEffort ?? efforts[0];
+  const fullName = info?.name || modelId;
+
+  useEffect(() => {
+    if (!picking) return;
+    let alive = true;
+    setLoading(true);
+    setLoadErr(null);
+    listModels()
+      .then((r) => { if (alive) setResp(r); })
+      .catch((e) => { if (alive) setLoadErr(e instanceof Error && e.message ? e.message : 'Could not load the models'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [picking]);
+
+  // focus: into the selected row when the picker opens, back to the model button when it closes
+  useEffect(() => {
+    if (picking) {
+      const t = window.setTimeout(() => {
+        const sel = listRef.current?.querySelector<HTMLButtonElement>('button[aria-checked=true]') ?? listRef.current?.querySelector<HTMLButtonElement>('button[role=radio]');
+        sel?.focus();
+      }, 0);
+      wasPicking.current = true;
+      return () => window.clearTimeout(t);
+    }
+    if (wasPicking.current) modelBtn.current?.focus();
+    wasPicking.current = false;
+  }, [picking]);
+  // what the card shows must be what is sent: a stored effort this model does not offer is re-stored
+  useEffect(() => {
+    if (choice && info && choice.model === info.id && choice.effort !== effort) {
+      const fixed = { model: choice.model, effort };
+      setChoice(fixed);
+      storeChoice(fixed);
+      onChoice?.(fixed);
+    }
+  }, [choice, info, effort]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const save = (c: GeminiChoice) => {
+    setChoice(c);
+    storeChoice(c);
+    onChoice?.(c);
+  };
+
+  const key = getStoredKey();
+  const masked = key ? `••••••••  ${key.slice(-4)}` : '••••••••';
+
+  return (
+    // the key form's centring: between the header's line and the cage's floor
+    <div
+      className="flex-1 overflow-y-auto flex flex-col px-4 custom-scrollbar"
+      style={picking ? { paddingTop: 8, paddingBottom: 8 } : {
+        paddingTop: `calc(1rem + max(0px, ${GEMINI_FLOOR_BELOW_SCROLL}))`,
+        paddingBottom: `calc(1rem + max(0px, -1 * ${GEMINI_FLOOR_BELOW_SCROLL}))`,
+      }}
+    >
+      {!picking ? (
+        <div key="card" className={`${k.card} my-auto shrink-0`} data-testid="ai-active-card">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className={k.label}>API Key</span>
+            {source === 'server' ? (
+              <span className={k.sub}>server key</span>
+            ) : (
+              <button type="button" data-testid="ai-key-forget" onClick={onForgetKey} className={k.link}>
+                Forget key
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <div className={k.box}>
+              {source === 'server' ? (
+                <span className={`${k.input} truncate`}>key from server .env</span>
+              ) : (
+                <>
+                  <span data-testid="ai-key-masked" className={`${k.input} truncate`}>{show && key ? key : masked}</span>
+                  <button
+                    type="button"
+                    onClick={() => setShow((v) => !v)}
+                    aria-label={show ? 'Hide key' : 'Show key'}
+                    className="text-neutral-500 hover:text-[#8b5cf6] shrink-0 cursor-pointer"
+                  >
+                    {show ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              data-testid="ai-model-button"
+              ref={modelBtn}
+              title={`${fullName} · ${EFFORT_LABEL[effort]}`}
+              onClick={() => setPicking(true)}
+              className={k.primary}
+            >
+              {shortModelName(info?.name, modelId)} <ChevronDown className="w-3 h-3" />
+            </button>
+          </div>
+          <a
+            href="https://aistudio.google.com/apikey"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`${k.sub} hover:text-[#8b5cf6]`}
+          >
+            Free key: aistudio.google.com/apikey
+          </a>
+        </div>
+      ) : (
+        <div
+          key="picker"
+          className={`${k.card} !p-2.5 !gap-1.5 shrink-0`}
+          data-testid="ai-model-picker"
+          onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setPicking(false); } }}
+        >
+          <div className="flex items-baseline justify-between gap-2">
+            <span className={k.label}>Model</span>
+            <button type="button" data-testid="ai-model-done" onClick={() => setPicking(false)} className={`${k.link} !text-[#8b5cf6] font-bold`}>
+              Done
+            </button>
+          </div>
+          {warning && <span data-testid="ai-model-warning" className={k.amber}>{warning}</span>}
+          {loading && !resp && <span className={k.sub}>Loading models…</span>}
+          {loadErr && <span className={k.error}>{loadErr}</span>}
+          <div
+            ref={listRef}
+            role="radiogroup"
+            aria-label="Model"
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+              const btns = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('button[role=radio]') ?? []);
+              const i = btns.indexOf(document.activeElement as HTMLButtonElement);
+              if (i < 0) return;
+              e.preventDefault();
+              btns[(i + (e.key === 'ArrowDown' ? 1 : btns.length - 1)) % btns.length]?.focus();
+            }}
+            className="flex flex-col gap-px max-h-[4.9rem] [@media(max-height:850px)]:max-h-[3.3rem] overflow-y-auto custom-scrollbar">
+            {rows.map((r) => {
+              const sel = r.id === modelId;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={sel}
+                  data-testid={`ai-model-row-${r.id}`}
+                  title={r.note || r.description || undefined}
+                  onClick={() => save({ model: r.id, effort: r.defaultEffort })}
+                  className={`shrink-0 flex items-center gap-2 px-2 py-0.5 rounded-md text-left cursor-pointer transition-colors ${sel ? 'bg-[#8b5cf6]/15' : isDay ? 'hover:bg-neutral-100' : 'hover:bg-white/5'} ${r.free === 'no' ? 'opacity-45' : ''}`}
+                >
+                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 border ${sel ? 'bg-[#8b5cf6] border-[#8b5cf6]' : 'border-[#8b5cf6]'}`} />
+                  <span className={`flex-1 min-w-0 truncate font-mono text-[10px] ${sel ? 'text-[#8b5cf6] font-bold' : isDay ? 'text-neutral-800' : 'text-neutral-200'}`}>{r.name}</span>
+                  {r.free === 'yes' && <span className={`${k.pillBase} ${k.green} !py-0 !text-[7px]`}>Free</span>}
+                  {r.free === 'no' && <span className={`${k.pillBase} ${k.grey} !py-0 !text-[7px]`}>Paid</span>}
+                  {!r.known && <span className={`${k.pillBase} border border-[#8b5cf6]/60 text-[#8b5cf6] !py-0 !text-[7px]`}>New</span>}
+                </button>
+              );
+            })}
+          </div>
+          {resp?.warning && <span className={k.sub}>{resp.warning}</span>}
+          <span className={k.label}>Effort</span>
+          <EffortSlider k={k} isDay={isDay} efforts={efforts} value={effort} onChange={(e) => save({ model: modelId, effort: e })} />
+          {info?.free === 'no' && <span className={k.amber}>Paid model: a free key cannot use it.</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -1176,17 +1481,7 @@ function ArtDirectorTab({ k, visible, surface, labRef, compSource, graphChain, o
       <div className="flex flex-col gap-2.5">
         {/* the action row first: in the smallest opening it must be on screen */}
         <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void run(); }}>
-          <div className={k.box}>
-            <input
-              data-testid="ai-ad-intent"
-              type="text"
-              value={intent}
-              onChange={(e) => setIntent(e.target.value)}
-              placeholder="Direction (optional)"
-              disabled={b.busy}
-              className={k.input}
-            />
-          </div>
+                    <IntentField k={k} testid="ai-ad-intent" value={intent} onChange={setIntent} placeholder="Direction (optional)" disabled={b.busy} visible={visible} />
           <button type="submit" data-testid="ai-ad-run" disabled={b.busy || !hasSource} className={k.primary}>
             Analyze
           </button>
@@ -1277,6 +1572,7 @@ function ArtDirectorTab({ k, visible, surface, labRef, compSource, graphChain, o
                 );
               })}
             </div>
+            <MetaLine k={k} meta={out.result.meta} testid="ai-meta-art_director" />
           </div>
         )}
       </div>
@@ -1384,9 +1680,44 @@ interface AgentOut {
   lab: LabHandle;
   /** it changed something, so it went on the undo stack */
   pushed: boolean;
+  /** the cue timeline the Lab installed (its own validated copy), and the beat grid it was snapped to */
+  cues: Cue[];
+  grid: BeatGrid | null;
+  /** the Agent rebuilt the chain on the first call (two requests): from → to */
+  chainChange: { from: ModuleId[]; to: ModuleId[] } | null;
 }
 
-function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpenLab, reportError, direction, directionFrom, onClearDirection, desk }: TabProps) {
+/** How long the panel waits for the Lab to rebuild a chain the Agent asked for. */
+const REWIRE_WAIT_MS = 20000;
+/** How long a run waits for the local beat analysis before it goes on without a grid. */
+const GRID_WAIT_MS = 20000;
+
+/** The card's TIMELINE rows: time · label · the changes in the panel's words; hot (amber) as the Lab's lane decides. */
+function CueList({ k, cues, grid, chain, struck }: { k: Ink; cues: Cue[]; grid: BeatGrid | null; chain: ChainState; struck?: boolean }) {
+  if (!cues.length) return null;
+  const desc = descOf(chain);
+  const end = grid?.duration || cues[cues.length - 1].at + 1;
+  const segs = buildSegments(cues, end, grid);
+  const hot = (i: number) => segs.find((g) => i >= g.first && i <= g.last)?.hot ?? false;
+  return (
+    <div data-testid="ai-agent-cues" className="flex flex-col gap-1">
+      <span className={k.label}>
+        Timeline · {cues.length} cue{cues.length === 1 ? '' : 's'}{grid ? ` · ${Math.round(grid.bpm * 10) / 10} BPM` : ''}
+      </span>
+      {cues.map((c, i) => (
+        <div key={`${i}-${c.at}`} data-testid={`ai-agent-cue-${i}`} className={`flex gap-1.5 items-baseline font-mono text-[9px] leading-snug ${struck ? 'line-through opacity-60' : ''}`}>
+          <span className={`w-7 shrink-0 font-extrabold ${hot(i) ? k.amberInk : 'text-[#8b5cf6]'}`}>{fmtCueTime(c.at)}</span>
+          <span className={`w-14 shrink-0 truncate uppercase tracking-wider text-[8px] ${hot(i) ? k.amberInk : 'text-[#8b5cf6]/80'}`} title={c.label}>{c.label}</span>
+          <span className={k.text.replace('text-[10px]', 'text-[9px]')}>
+            {c.params.map((p) => `${paramName(p.key, desc)} ${fmtValue(desc.get(p.key), p.value)}`).join(', ')}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpenLab, onUseChain, reportError, direction, directionFrom, onClearDirection, desk }: TabProps) {
   const [intent, setIntent] = useState('');
   const [out, setOut] = useState<AgentOut | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -1408,18 +1739,46 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
     if (!exporting) setErr((e) => (isExportText(e) ? null : e));
   }, [exporting]);
 
+  // a run in flight: aborted (its requests too) when the tab goes away
+  const runCtrlRef = useRef<AbortController | null>(null);
+  useEffect(() => () => runCtrlRef.current?.abort(), []);
+
+  /** Rewires the Lab to `chain` (the Art Director's path, without its tab switch or direction) and
+   *  waits for it: the order matches and the OUTPUT has a picture. False after REWIRE_WAIT_MS. */
+  const rewire = async (lab: LabHandle, chain: ModuleId[], guard: () => void): Promise<boolean> => {
+    onUseChain(chain);
+    const deadline = performance.now() + REWIRE_WAIT_MS;
+    while (performance.now() < deadline) {
+      await wait(250);
+      guard();
+      let order: string[] = [];
+      try { order = lab.chainState().order; } catch { order = []; }
+      if (sameOrder(order, chain) && (await lab.whenReady(Math.max(500, Math.min(4000, deadline - performance.now()))))) return true;
+    }
+    return false;
+  };
+
   const run = async () => {
     const lab = labRef.current;
     if (!inLab || !lab || desk.exportLab === lab || !b.start('Waiting for the Lab…')) return;
     setErr(null);
     setNote(null);
+    // the whole run speaks to ONE model / effort (a pick made meanwhile applies to the next run),
+    // and its requests are aborted when the Lab it started on goes away
+    const choice = getStoredChoice();
+    const ctrl = new AbortController();
+    runCtrlRef.current = ctrl;
+    const watch = window.setInterval(() => { if (labRef.current !== lab) ctrl.abort(); }, 500);
+    const post = <T,>(path: string, body: unknown) => aiPost<T>(path, body, { choice, signal: ctrl.signal });
     // a clip already found silent is not tapped again
     const video0 = labVideo(lab, compSource);
     const knownSilent = !!video0 && desk.silentClips.has(video0.url);
     // before ANY await: the click's gesture is what lets the audio start
     const clipOn = knownSilent ? null : autoClipAudio(lab);
-    const guard = () => { if (labRef.current !== lab) throw new Error(LAB_CHANGED); };
+    const guard = () => { if (labRef.current !== lab) { ctrl.abort(); throw new Error(LAB_CHANGED); } };
     let fileUri: string | undefined;
+    /** set once the Lab was rebuilt for the Agent: a failure after it puts the chain (and timeline) back */
+    let rewired: { from: ModuleId[]; to: ModuleId[]; pre: PlanUndo | null } | null = null;
     try {
       let clipFailed = knownSilent;
       if (clipOn) {
@@ -1434,10 +1793,13 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
       const ready = await lab.whenReady();
       guard(); // a Lab closed meanwhile is 'changed', not 'no picture'
       if (!ready) throw new AiError('no_media', 'The Lab has no picture yet: load a source or start the webcam.');
+      // the beat grid of a video INPUT is read here, locally and free, while the captures run
+      const wantCues = lab.sourceKind() === 'video';
+      const gridP: Promise<BeatGrid | null> = wantCues ? lab.beatGrid().catch(() => null) : Promise.resolve(null);
       // read BEFORE anything records: a recording slows the engine (fps,
-      // adaptive resolution) — and right before capture, so the bases are fresh
+      // adaptive resolution) — and right before capture, so the bases are fresh.
+      // An EMPTY chain is fine: the OUTPUT is the source itself, and the Agent picks the effects.
       const chain = lab.chainState();
-      if (!chain.order.length) throw new AiError('bad_request', 'The Lab chain is empty: enable at least one effect.');
       // the real OUTPUT rate, held live (the on-screen meter reads 0 while an earlier tab pauses the OUTPUT)
       chain.fps = await lab.measureFps();
       guard();
@@ -1491,6 +1853,11 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
         guard();
       }
 
+      b.step('Reading the beat…');
+      // the analysis is local; a very long one does not hold the run (the Agent then places cues by ear)
+      const grid = await Promise.race([gridP, wait(GRID_WAIT_MS).then(() => null)]);
+      guard();
+
       const media = [pair.source, pair.output, clip].filter((x): x is MediaPart => !!x);
       const req: AgentRequest = {
         intent: intent.trim() || undefined,
@@ -1499,38 +1866,114 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
         media,
         signals,
         chain,
+        allowChain: true,
+        ...(wantCues ? { wantCues: true, beatGrid: grid } : {}),
       };
-      b.step('Gemini is setting the chain…');
-      const result = await aiPost<AgentResult>('/api/gemini/agent', req);
+      b.step(!chain.order.length ? 'Gemini is choosing the effects…' : wantCues ? 'Gemini is choosing the effects and the timeline…' : 'Gemini is setting the chain…');
+      let result = await post<AgentResult>('/api/gemini/agent', req);
       guard();
-      // applied at once (D1); applyPlan writes down what each key was — that,
-      // and only that, is the Undo
+      let finalChain = chain;
+      let chainChange: AgentOut['chainChange'] = null;
+      if (result.chain?.length && !sameOrder(result.chain, chain.order)) {
+        // the Agent wants other effects: the timeline playing now comes off first, on the record (the
+        // rebuild would drop it unrecorded), then the Lab is rewired, looked at again, and asked once more
+        const to = [...result.chain];
+        const pre = wantCues ? lab.setCues({ cues: [], grid: null }).undo : null;
+        rewired = { from: [...chain.order], to, pre };
+        b.step(`Chain: ${chainLabel(to)} (the Agent's choice) — rebuilding the Lab…`);
+        if (!(await rewire(lab, to, guard))) throw new Error(`the Lab did not finish rebuilding it within ${REWIRE_WAIT_MS / 1000} s`);
+        finalChain = lab.chainState();
+        finalChain.fps = await lab.measureFps();
+        guard();
+        b.step('Grabbing frames of the new chain…');
+        // fresh frames of the new chain, and a short fresh look at the signals (1 s, no new clip or upload)
+        const [pair2, signals2] = await Promise.all([lab.grabPair(768), lab.signalSummary(1)]);
+        guard();
+        if (!pair2.source && !pair2.output) {
+          if (lab.sourceKind() !== 'none') desk.onExport(lab);
+          throw new Error('a Master export started');
+        }
+        chainChange = { from: [...chain.order], to: [...finalChain.order] };
+        const req2: AgentRequest = {
+          ...req,
+          media: [pair2.source, pair2.output].filter((x): x is MediaPart => !!x),
+          signals: signals2,
+          chain: finalChain,
+          allowChain: undefined,
+          chainChanged: true,
+        };
+        b.step(wantCues ? 'Second request: Gemini is writing the timeline…' : 'Second request: Gemini is setting the new chain…');
+        result = await post<AgentResult>('/api/gemini/agent', req2);
+        guard();
+      } else if (!chain.order.length) {
+        // an empty Lab and no effects chosen: nothing to set
+        setErr(`The Agent did not pick any effect for this empty Lab${result.plan?.summary ? ` ("${result.plan.summary}")` : ''} — run again, or add effects in the node graph`);
+        return;
+      }
+      // applied at once (D1): the plan first (the base look, folded into a timeline that drives the same
+      // keys), then this run's timeline — on a video it ALWAYS replaces the one before (no cues: removed).
+      // Each step writes down what it changed; together they are ONE stack entry
       const r = lab.applyPlan(result.plan);
-      const planned = (result.plan?.params?.length ?? 0) + (result.plan?.routes?.length ?? 0);
-      if (!r.undo && r.applied === 0 && planned > 0) {
+      const planCues = result.plan?.cues ?? [];
+      const c = wantCues ? lab.setCues({ cues: planCues, grid }) : null;
+      if (c && !c.installed && isExportRefusal(c.skipped)) desk.onExport(lab);
+      const planned = (result.plan?.params?.length ?? 0) + (result.plan?.routes?.length ?? 0) + planCues.length;
+      const parts = [rewired?.pre ?? null, r.undo, c?.undo ?? null].filter((u): u is PlanUndo => !!u);
+      // revertPlan walks the entries newest first: the cue baselines (read after the plan) come back before
+      // the plan's own previous values; the timeline in place before the run (the earliest record) returns last
+      const entries = parts.flatMap((u) => u.entries);
+      const prevCues = parts.map((u) => u.prevCues).find((x) => x !== undefined);
+      let undo: PlanUndo | null = entries.length || parts.some((u) => u.cues)
+        ? { ...(parts.some((u) => u.cues) ? { cues: true } : {}), ...(prevCues !== undefined ? { prevCues } : {}), entries }
+        : null;
+      if (!undo && chainChange) undo = { entries: [] }; // the chain change alone is still this run's to undo
+      const skipped = [...r.skipped, ...(c?.skipped ?? [])];
+      if (!undo && r.applied === 0 && planned > 0) {
         // nothing landed: the previous result (and its Undo) stays on screen
-        if (isExportRefusal(r.skipped)) {
+        if (isExportRefusal(skipped)) {
           desk.onExport(lab);
           setErr('Gemini answered, but a Master export started meanwhile: nothing was applied — run again after it');
         } else {
-          const first = r.skipped[0] ? plainRefusal(r.skipped[0], descOf(chain)).text : '';
-          setErr(`Gemini's plan changed nothing on this Lab${first ? ` — ${first}` : ''}${r.skipped.length > 1 ? ` (+${r.skipped.length - 1} more)` : ''}`);
+          const first = skipped[0] ? plainRefusal(skipped[0], descOf(finalChain)).text : '';
+          setErr(`Gemini's plan changed nothing on this Lab${first ? ` — ${first}` : ''}${skipped.length > 1 ? ` (+${skipped.length - 1} more)` : ''}`);
         }
         return;
       }
+      rewired = null; // the run landed: its Undo now owns the chain change
       const id = ++resultSeq;
       const at = new Date().toISOString();
-      setOut({ id, result, chain, rows: describePlan(chain, result.plan), applied: r.applied, skipped: r.skipped, lab, pushed: !!r.undo });
-      if (r.undo) {
+      const installed = c?.installed ? lab.cues() : null;
+      if (c && !c.installed && planCues.length && isExportRefusal(c.skipped)) setNote('A Master export started meanwhile: the timeline was not installed — run again after it');
+      setOut({
+        id, result, chain: finalChain, rows: describePlan(finalChain, result.plan), applied: r.applied, skipped, lab, pushed: !!undo,
+        cues: installed?.cues ?? [], grid: installed?.grid ?? grid, chainChange,
+      });
+      if (undo) {
         desk.push([{
-          role: 'agent', lab, undo: r.undo, outId: id, label: `the Agent's run of ${clockOf(at)}`,
-          run: { intent: intent.trim(), plan: result.plan, at, lab, order: [...chain.order] },
+          role: 'agent', lab, undo, outId: id, label: `the Agent's run of ${clockOf(at)}`,
+          ...(chainChange ? { chainFrom: chainChange.from } : {}),
+          // the Optimizer is told the plan with the cues that really play (OptimizerTab reads lab.cues())
+          run: { intent: intent.trim(), plan: result.plan, at, lab, order: [...finalChain.order] },
         }]);
       }
     } catch (e) {
       if (fileUri && isUnusableUpload(e)) forgetUpload(fileUri);
-      setErr(reportError(e));
+      const changed = labRef.current !== lab;
+      const why = changed ? LAB_CHANGED : reportError(e);
+      if (rewired && !changed) {
+        // the chain was already changed for the Agent: put it back (and the timeline it took off)
+        const back = rewired;
+        b.step(`Putting the chain back to ${chainLabel(back.from)}…`);
+        let restored = false;
+        try { restored = await rewire(lab, back.from, () => { if (labRef.current !== lab) throw new Error(LAB_CHANGED); }); } catch { restored = false; }
+        if (restored && back.pre) lab.revertPlan(back.pre);
+        setErr(`The Agent changed the chain to ${chainLabel(back.to)}, but ${why}: ${restored
+          ? `the chain is back to ${chainLabel(back.from)} — nothing else was applied`
+          : `the Lab did not rebuild ${chainLabel(back.from)} in time — it may still show the new chain`}`);
+      } else setErr(why);
     } finally {
+      window.clearInterval(watch);
+      if (runCtrlRef.current === ctrl) runCtrlRef.current = null;
       b.stop();
     }
   };
@@ -1546,21 +1989,40 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
   const undone = !!out && out.pushed && !stale && !mine;
   const undoLabel = block ?? (target && target !== mine && target.run ? `Undo the ${clockOf(target.run.at)} run` : 'Undo');
 
-  const undo = () => {
+  /** One Undo = the Lab exactly as before the run: values, timeline — and the chain, when the run changed it. */
+  const undo = async () => {
     if (!target || block || b.busy || exporting) return;
-    if (labRef.current !== target.lab) {
+    const lab = target.lab;
+    if (labRef.current !== lab) {
       setErr(LAB_CHANGED);
       return;
     }
-    const { reverted } = target.lab.revertPlan(target.undo);
-    if (!reverted) {
-      desk.onExport(target.lab);
+    const u = target.undo;
+    const expects = u.entries.length > 0 || !!u.cues || !!u.prevCues;
+    let order: string[] = [];
+    try { order = lab.chainState().order; } catch { order = []; }
+    const chainBack = target.chainFrom && !sameOrder(order, target.chainFrom) ? target.chainFrom : null;
+    // with a chain to put back, the earlier timeline returns only once its effects are there again
+    const { prevCues, ...first } = u;
+    const { reverted } = lab.revertPlan(chainBack ? first : u);
+    if (!reverted && expects) {
+      desk.onExport(lab);
       setErr('Nothing was undone — a Master export is running; undo again after it');
       return;
     }
     setErr(null);
     // off the stack: the Optimizer now judges the run below it, if any
     desk.drop([target.id]);
+    if (!chainBack || !b.start(`Putting the chain back to ${chainLabel(chainBack)}…`)) return;
+    try {
+      const ok = await rewire(lab, chainBack, () => { if (labRef.current !== lab) throw new Error(LAB_CHANGED); });
+      if (ok && prevCues) lab.revertPlan({ entries: [], prevCues });
+      if (!ok) setErr(`Undone, but the Lab did not rebuild ${chainLabel(chainBack)} within ${REWIRE_WAIT_MS / 1000} s`);
+    } catch (e) {
+      setErr(reportError(e));
+    } finally {
+      b.stop();
+    }
   };
 
   /** the one line that says what leaves the machine (D10) */
@@ -1576,10 +2038,11 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
     if (clip) parts.push(clip);
     parts.push('3s of live signals');
     parts.push('the chain');
+    if (ctx.sourceKind === 'video') parts.push('the beat grid (read here, free)');
     if (direction) parts.push('the art direction');
     if (intent.trim()) parts.push('your request');
     const tail = videoSrc && !meta ? ` — ${framesOnlyWhy(videoSrc)}${silent ? '' : ', so not the whole song'}` : '';
-    return `Sends: ${parts.join(' + ')}${tail}`;
+    return `Sends: ${parts.join(' + ')}${tail}. If the Agent picks other effects: a 2nd request with a new frame pair (the clip is not uploaded again).`;
   })();
 
   const adjusted = out ? notesByRow(out.result.adjusted) : null;
@@ -1592,17 +2055,7 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
         <div className="flex flex-col gap-2.5">
           {/* the action row first: in the smallest opening it must be on screen */}
           <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void run(); }}>
-            <div className={k.box}>
-              <input
-                data-testid="ai-agent-intent"
-                type="text"
-                value={intent}
-                onChange={(e) => setIntent(e.target.value)}
-                placeholder="What should it do? (optional)"
-                disabled={b.busy}
-                className={k.input}
-              />
-            </div>
+                        <IntentField k={k} testid="ai-agent-intent" value={intent} onChange={setIntent} placeholder="What should it do? (optional)" disabled={b.busy} visible={visible} />
             <button type="submit" data-testid="ai-agent-run" disabled={b.busy || !inLab || exporting} className={k.primary}>
               Run
             </button>
@@ -1625,12 +2078,20 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
               {stale && <span data-testid="ai-agent-stale" className={k.amber}>{STALE_LAB_TEXT}</span>}
               <div className={staleBody(stale)}>
                 <p className={k.text}>{out.result.plan.summary}</p>
+                {out.chainChange && (
+                  <span data-testid="ai-agent-chain-change" className={k.sub}>
+                    Chain: {chainLabel(out.chainChange.to)} (the Agent's choice, was {chainLabel(out.chainChange.from)}) · 2 requests
+                  </span>
+                )}
                 <span className={k.label}>
                   {stale
                     ? `${plural(out.applied, 'change')} on that Lab`
-                    : undone ? 'Undone' : out.applied ? `Applied ${plural(out.applied, 'change')}` : 'No changes'}
+                    : undone ? 'Undone' : out.applied || out.cues.length
+                      ? `Applied ${plural(out.applied, 'change')}${out.cues.length ? ` + a timeline of ${plural(out.cues.length, 'cue')}` : ''}`
+                      : 'No changes'}
                 </span>
                 <ChangeList k={k} rows={out.rows} notes={adjusted!.byRow} extra={adjusted!.rest} struck={undone} testid="ai-agent-rows" />
+                <CueList k={k} cues={out.cues} grid={out.grid} chain={out.chain} struck={undone} />
                 <NotApplied k={k} items={[...out.result.dropped, ...out.skipped]} chain={out.chain} />
                 <button
                   type="button"
@@ -1641,6 +2102,7 @@ function AgentTab({ k, visible, surface, labRef, compSource, openEffectId, onOpe
                 >
                   <Undo2 className="w-3 h-3" /> {undoLabel}
                 </button>
+                <MetaLine k={k} meta={out.result.meta} testid="ai-meta-agent" />
               </div>
             </div>
           )}
@@ -1761,7 +2223,8 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
       const req: OptimizerRequest = {
         intent: intent.trim() || undefined,
         ...(direction ? { direction } : {}),
-        lastAgent: last ? { intent: last.intent, plan: last.plan, at: last.at } : null,
+        // the cues it is told about are the ones really playing now (a fix may have folded some in)
+        lastAgent: last ? { intent: last.intent, plan: { ...last.plan, cues: lab.cues()?.cues ?? [] }, at: last.at } : null,
         media,
         signals,
         chain,
@@ -1883,17 +2346,7 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
           {/* the action row first: in the smallest opening it must be on screen —
               the Agent's row: an optional request, then the button */}
           <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void run(); }}>
-            <div className={k.box}>
-              <input
-                data-testid="ai-opt-intent"
-                type="text"
-                value={intent}
-                onChange={(e) => setIntent(e.target.value)}
-                placeholder="What should it check? (optional)"
-                disabled={b.busy}
-                className={k.input}
-              />
-            </div>
+                        <IntentField k={k} testid="ai-opt-intent" value={intent} onChange={setIntent} placeholder="What should it check? (optional)" disabled={b.busy} visible={visible} />
             <button type="submit" data-testid="ai-opt-run" disabled={b.busy || !inLab || exporting} className={k.primary}>
               <Cpu className="w-3.5 h-3.5" /> Check output
             </button>
@@ -1992,6 +2445,7 @@ function OptimizerTab({ k, visible, surface, labRef, compSource, openEffectId, o
                 })}
 
                 <NotApplied k={k} items={loose} chain={out.chain} />
+                <MetaLine k={k} meta={out.result.meta} testid="ai-meta-optimizer" />
               </div>
             </div>
           )}

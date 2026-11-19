@@ -1,11 +1,11 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pause, Play as PlayIcon, Repeat, Trash2, Upload } from 'lucide-react';
 import { AudioEngine, AudioMode, FileTransport } from '../engine/AudioEngine';
 import { VideoAnalyzer } from '../engine/VideoAnalyzer';
 import { ModuleId } from '../types';
 import {
-  AgentPlan, ChainState, LabHandle, MediaPart, ParamDesc, PlanUndo, SignalSummary, SourceKindT, Stat,
-  LOCKED_CONTROL_PATTERN, LOCKED_GROUPS, PARAM_FLOORS,
+  AgentPlan, BeatGrid, ChainState, Cue, CueTimeline, LabHandle, MediaPart, ParamDesc, PlanUndo, SignalSummary, SourceKindT, Stat,
+  LOCKED_CONTROL_PATTERN, LOCKED_GROUPS, MAX_CUES, PARAM_FLOORS,
 } from '../ai/contract';
 import { elementToJpeg } from '../ai/capture';
 import { labFrameSrc } from '../effects-registry';
@@ -13,6 +13,8 @@ import { EFFECT_META } from './NodalComposition';
 import { SynLabApi, SynLabParam, readEffectSettings, synLabOf } from '../lab/synlab';
 import { ChainPresetV2, StoredPreset, isV2, presetChain, readPresets, writePresets } from '../lab/presets';
 import { MasterRecorder, recordVideoClip } from '../lab/record';
+import { analyzeBeatGrid, withDuration } from '../lab/beatgrid';
+import { CUE_EPS, CueSegment, activeCueIndex, barLines, buildSegments, fmtCueTime, sanitizeGrid, stateAtIndex } from '../lab/cues';
 // the opened-effect look (LAB strip, stage, transport, status line), scoped under .syn-fxlab
 import './chainLab.css';
 
@@ -113,6 +115,51 @@ const LOCKED_RE = new RegExp(LOCKED_CONTROL_PATTERN, 'i');
 const isLockedParam = (p: SynLabParam) =>
   !!p.locked || LOCKED_GROUPS.includes((p.group ?? '').trim().toLowerCase()) || LOCKED_RE.test(p.key) || LOCKED_RE.test(p.label ?? '');
 const fxName = (id: ModuleId) => EFFECT_META[id]?.name ?? id.toUpperCase();
+/** a control's value as a plan's undo / a cue's baseline records it (booleans as switches 0/1) */
+const valueOf = (p: SynLabParam) => (p.type === 'boolean' ? (p.value >= 0.5 ? 1 : 0) : p.value);
+const undoEntryOf = (key: string, p: SynLabParam): PlanUndo['entries'][number] =>
+  p.type === 'boolean' ? { key, bool: valueOf(p) } : { key, base: p.value };
+
+/* ── CUE TIMELINE (contract "CUES"; the engine is in the component) ── */
+/** a cue label longer than this is cut (the lane and the tooltip are tiny) */
+const CUE_LABEL_MAX = 24;
+/** with requestVideoFrameCallback, no frame callback for this long while the INPUT plays (a hidden Lab
+ *  during a Master export, a background tab) → a rAF / timeupdate stand-in follows the clock instead */
+const CUE_STALL_MS = 400;
+/** the engine's debug log (?labdebug): the last N cue applications */
+const CUE_LOG_MAX = 60;
+/** what the tooltip says about one cued control */
+interface CueParamInfo { fx: string; label: string; type: SynLabParam['type']; step: number; options?: string[] }
+/** one installed timeline */
+interface CueRun {
+  /** the INPUT video (object URL) it was written for: any other source removes it */
+  src: string;
+  timeline: CueTimeline;
+  /** each cued key's value before the install (the state before the first cue; the undo) */
+  baseline: Map<string, number>;
+  ids: Set<ModuleId>;
+  info: Map<string, CueParamInfo>;
+  /** what the engine last wrote per key (starts as the baseline: what the effects hold) */
+  written: Map<string, number>;
+  /** the cue index last applied (-1 = before the first cue, -2 = nothing applied yet) */
+  index: number;
+  /** re-apply even when the index did not change (a node reloaded, CUE AUTO back on) */
+  dirty: boolean;
+  /** CUE AUTO */
+  enabled: boolean;
+  lastT: number;
+  writes: number;
+}
+interface CueMarkView { at: number; label: string; hot: boolean; lines: string[] }
+interface CueView { count: number; enabled: boolean; marks: CueMarkView[]; segments: CueSegment[]; grid: BeatGrid | null; duration: number }
+/** a tooltip line's value: ON / OFF, the option's name, or the number on its step's decimals */
+const fmtCueValue = (info: CueParamInfo | undefined, v: number) => {
+  if (!info) return String(round3(v));
+  if (info.type === 'boolean') return v >= 0.5 ? 'ON' : 'OFF';
+  if (info.type === 'enum') return info.options?.[Math.round(v)] ?? String(v);
+  const dec = info.step > 0 ? Math.min(3, (String(info.step).split('.')[1] ?? '').length) : 2;
+  return v.toFixed(dec);
+};
 
 /** one Lab node: its iframe and what the shell last plumbed into it */
 interface NodeRec {
@@ -220,6 +267,17 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   const [exportScale, setExportScale] = useState(1);
   const audioLogRef = useRef<string[]>([]);
   const lastExportRef = useRef<{ name: string; size: number; type: string; width: number; height: number; audio: boolean; url: string } | null>(null);
+  /* the cue timeline (the CUE TIMELINE section) and the INPUT's beat grid */
+  const cueRef = useRef<CueRun | null>(null);
+  const [cueView, setCueView] = useState<CueView | null>(null);
+  /** the cue index the engine last applied (the lane highlights its diamond) */
+  const [cueIdx, setCueIdx] = useState(-1);
+  /** the hovered diamond: its index and its centre x in the transport's box */
+  const [cueTip, setCueTip] = useState<{ i: number; x: number } | null>(null);
+  /** one beat-grid analysis per INPUT video (keyed by its URL; concurrent calls share the promise) */
+  const gridCacheRef = useRef<{ url: string; ctrl: AbortController; promise: Promise<BeatGrid | null>; value: BeatGrid | null } | null>(null);
+  /** the analysed grid of the INPUT on screen: its bar lines are drawn on the track */
+  const [gridView, setGridView] = useState<BeatGrid | null>(null);
 
   const nameSource = (name: string) => {
     sourceNameRef.current = name;
@@ -281,6 +339,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     if (s != null) {
       try { api.applySettings(s); } catch { /* the effect keeps its defaults */ }
     }
+    cueNodeReady(rec.id); // a reloaded node came back with its saved panel: the cue state goes on again
   };
 
   /** the link poll: picks up SynLab.ready, notices reloads / missing adapters, re-plumbs */
@@ -368,6 +427,9 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       return added.length || kept.length !== prev.length ? [...kept, ...added] : prev;
     });
     setTab((t) => (t === 'input' || t === 'output' || chain.includes(t) ? t : chain[0] ?? 'output'));
+    const run = cueRef.current;
+    const gone = run ? [...run.ids].filter((id) => !chain.includes(id)) : [];
+    if (gone.length) dropCues(`${gone.map(fxName).join(', ')} left the chain`);
     replumb();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chainKey]);
@@ -510,6 +572,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     const v = inputVideoRef.current;
     if (!v) return false;
     const seq = ++loadSeqRef.current;
+    cueSourceChange(url);
     releaseClip();
     stopCam();
     stopPhoto();
@@ -547,6 +610,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     if (seq !== loadSeqRef.current) return false;
     const c = photoCanvasRef.current;
     if (!c) return false;
+    cueSourceChange(null);
     releaseClip();
     stopCam();
     stopPhoto();
@@ -628,6 +692,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     const seq = ++loadSeqRef.current;
     const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
     if (seq !== loadSeqRef.current) { stream.getTracks().forEach((t) => t.stop()); return; }
+    cueSourceChange(null);
     releaseClip();
     stopPhoto();
     parkFileVideo();
@@ -975,6 +1040,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         pending.delete(id);
       }
     });
+    cueResync(); // a running timeline keeps driving its own controls over the loaded panels
   };
   const deletePreset = (name: string) => {
     const next = presets.filter((p) => p.name !== name);
@@ -1046,6 +1112,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
           v.currentTime = 0;
         });
         await wait(250);
+        cueSync(); // the take starts with the cue state at 0 (the engine then follows the playback)
       }
       if (exportStopRef.current) throw new Error('stopped');
       // a Clip the operator wants but that dropped (the clip had reached its end): back on for the take
@@ -1157,6 +1224,308 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     const t0 = performance.now();
     while (outFramesRef.current < need && performance.now() - t0 < timeoutMs) await wait(30);
     while (outFramesRef.current <= raisedAtFrameRef.current && performance.now() - t0 < timeoutMs + FRESH_FALLBACK_MS) await wait(50);
+  };
+
+  /** each node's params() read once per call (a DOM scan inside the effect) */
+  const paramsCache = () => {
+    const cache = new Map<ModuleId, SynLabParam[]>();
+    return (id: ModuleId, api: SynLabApi): SynLabParam[] => {
+      let l = cache.get(id);
+      if (!l) { try { l = api.params() ?? []; } catch { l = []; } cache.set(id, l); }
+      return l;
+    };
+  };
+  type ParamCheck = { ok: true; key: string; id: ModuleId; p: SynLabParam; api: SynLabApi; v: number } | { ok: false; why: string };
+  /** One `{ key, value }` checked against the live chain exactly as a plan's (applyPlan and setCues share
+   *  it): a control of a node of this chain, not locked; booleans 0/1, enums an option index, numbers
+   *  clamped and snapped to the slider's step, then raised to their floor (PARAM_FLOORS). */
+  const checkParam = (e: { key?: unknown; value?: unknown } | null | undefined, paramsOf: ReturnType<typeof paramsCache>): ParamCheck => {
+    const key = e?.key;
+    const where = typeof key === 'string' ? splitKey(key) : null;
+    const api = where ? readyApi(where.id) : null;
+    const p = where && api ? paramsOf(where.id, api).find((x) => x.key === where.pkey) : undefined;
+    if (!where || !api || !p) return { ok: false, why: `${String(key)}: not a parameter of this chain` };
+    if (isLockedParam(p)) return { ok: false, why: `${key}: locked` };
+    const value = e?.value;
+    const raw = typeof value === 'boolean' ? (value ? 1 : 0) : Number(value);
+    if (!Number.isFinite(raw)) return { ok: false, why: `${key}: value is not a number` };
+    let v: number;
+    if (p.type === 'boolean') v = raw >= 0.5 ? 1 : 0;
+    else if (p.type === 'enum') v = clamp(Math.round(raw), Math.ceil(p.min), Math.floor(p.max));
+    else {
+      v = snapTo(raw, p.min, p.max, p.step);
+      const floor = PARAM_FLOORS[key as string];
+      if (floor !== undefined) v = clamp(Math.max(v, floor), p.min, p.max);
+    }
+    return { ok: true, key: key as string, id: where.id, p, api, v };
+  };
+
+  /* ═══ CUE TIMELINE — the Agent's beat-synced cues (contract "CUES") ════
+     setCues installs a timeline bound to the INPUT video it was written for.
+     While it is installed and CUE AUTO is on, the ENGINE follows that video's
+     clock frame by frame — requestVideoFrameCallback on the INPUT <video>
+     (rAF where there is none) — and whenever the active cue changes (playback,
+     a seek back, the loop wrapping, a scrub, the Master's rewind) it writes the
+     state at that time (the baseline overlaid with every cue at <= t) through
+     SynLab.setParam: only the keys whose value differs from what it last
+     wrote. Per frame, when nothing changes: one binary search over <= 24 cues.
+     It follows the SOURCE clock, so a cue lands with the sound (the Clip audio
+     is the INPUT element's own). It never touches the frame budgets: a paused
+     node simply takes the value. While no frame callback arrives although the
+     INPUT plays (a hidden Lab during a Master export, a background tab), a rAF
+     / timeupdate stand-in follows the clock instead. Another INPUT, a node
+     leaving the chain, the Undo or the unmount remove the timeline. */
+  const cueLoopRef = useRef({ handle: 0, mode: '' as '' | 'rvfc' | 'raf', standIn: 0, lastFrameAt: 0, frameDur: 1 / 30, lastMedia: -1, lastPresented: -1 });
+  const cueAliveRef = useRef(true);
+  const cueLogRef = useRef<{ at: number; t: number; index: number; wrote: [string, number][] }[]>([]);
+  const cueTipRef = useRef<HTMLDivElement | null>(null);
+  const transportRef = useRef<HTMLDivElement | null>(null);
+
+  /** one engine step at the INPUT time `t` (default: its currentTime) */
+  const cueTick = (t?: number) => {
+    const run = cueRef.current;
+    if (!run || !run.enabled || !cueAliveRef.current) return;
+    const v = inputVideoRef.current;
+    if (!v || kindRef.current !== 'video' || fileSourceRef.current?.url !== run.src || v.readyState < 1) return;
+    const time = t ?? v.currentTime;
+    if (!Number.isFinite(time)) return;
+    const idx = activeCueIndex(time, run.timeline.cues);
+    if (idx === run.index && !run.dirty) return; // the per-frame case: nothing changed
+    const moved = idx !== run.index;
+    run.index = idx;
+    run.dirty = false;
+    run.lastT = time;
+    const wrote: [string, number][] = [];
+    stateAtIndex(idx, run.baseline, run.timeline.cues).forEach((val, key) => {
+      if (run.written.get(key) === val) return;
+      const where = splitKey(key);
+      const api = where ? readyApi(where.id) : null;
+      if (!where || !api) return; // its node is not up right now: written when it is (cueNodeReady)
+      let ok = false;
+      try { ok = api.setParam(where.pkey, val); } catch { ok = false; }
+      if (ok) { run.written.set(key, val); wrote.push([key, val]); }
+    });
+    run.writes += wrote.length;
+    if (debugOn) {
+      cueLogRef.current.push({ at: Math.round(performance.now()), t: round3(time), index: idx, wrote });
+      if (cueLogRef.current.length > CUE_LOG_MAX) cueLogRef.current.shift();
+    }
+    if (moved) setCueIdx(idx);
+  };
+
+  const onCueFrame: VideoFrameRequestCallback = (_now, meta) => {
+    const L = cueLoopRef.current;
+    L.handle = 0;
+    if (!cueAliveRef.current || !cueRef.current?.enabled) { L.mode = ''; return; }
+    L.lastFrameAt = performance.now();
+    let t: number | undefined;
+    if (meta && Number.isFinite(meta.mediaTime)) {
+      /* the frame on screen spans [mediaTime, mediaTime + one frame): a cue whose time falls inside it is
+         on from this frame (a seek to the cue's exact time agrees). The frame length is learnt from
+         consecutive frames. */
+      if (meta.presentedFrames === L.lastPresented + 1 && meta.mediaTime > L.lastMedia) {
+        const d = meta.mediaTime - L.lastMedia;
+        if (d > 1 / 240 && d < 1 / 10) L.frameDur = L.frameDur * 0.8 + d * 0.2;
+      }
+      L.lastMedia = meta.mediaTime;
+      L.lastPresented = meta.presentedFrames;
+      t = meta.mediaTime + L.frameDur * 0.98;
+    }
+    cueTick(t);
+    cueArm();
+  };
+  const onCueRaf = () => {
+    const L = cueLoopRef.current;
+    L.handle = 0;
+    if (!cueAliveRef.current || !cueRef.current?.enabled) { L.mode = ''; return; }
+    cueTick();
+    cueArm();
+  };
+  /** the stand-in while frame callbacks stall: follows currentTime on rAF until they come back */
+  const onCueStandIn = () => {
+    const L = cueLoopRef.current;
+    L.standIn = 0;
+    const v = inputVideoRef.current;
+    if (!cueAliveRef.current || !cueRef.current?.enabled || !v || v.paused) return;
+    if (performance.now() - L.lastFrameAt < CUE_STALL_MS) return; // frame callbacks are back
+    cueTick();
+    L.standIn = requestAnimationFrame(onCueStandIn);
+  };
+  const cueArm = () => {
+    const L = cueLoopRef.current;
+    const v = inputVideoRef.current;
+    if (L.handle || !v || !cueAliveRef.current || !cueRef.current?.enabled) return;
+    if (typeof v.requestVideoFrameCallback === 'function') {
+      L.mode = 'rvfc';
+      L.handle = v.requestVideoFrameCallback(onCueFrame);
+    } else {
+      L.mode = 'raf';
+      L.handle = requestAnimationFrame(onCueRaf);
+    }
+  };
+  const cueDisarm = () => {
+    const L = cueLoopRef.current;
+    const v = inputVideoRef.current;
+    if (L.handle) {
+      if (L.mode === 'rvfc') { try { v?.cancelVideoFrameCallback(L.handle); } catch { /* gone */ } }
+      else cancelAnimationFrame(L.handle);
+    }
+    if (L.standIn) cancelAnimationFrame(L.standIn);
+    L.handle = 0;
+    L.standIn = 0;
+    L.mode = '';
+  };
+  /** the timeline goes (Undo, another INPUT, an effect left the chain, a replacement); the values stay */
+  const dropCues = (reason?: string) => {
+    if (!cueRef.current) return;
+    cueRef.current = null;
+    cueDisarm();
+    setCueView(null);
+    setCueIdx(-1);
+    setCueTip(null);
+    if (reason) {
+      console.warn(`[Lab] cue timeline removed: ${reason}`);
+      setNote(`cue timeline removed — ${reason}`);
+    }
+  };
+  /** write the state at the current time again: every key (`ids` omitted) or the keys of those nodes */
+  const cueResync = (ids?: ModuleId[]) => {
+    const run = cueRef.current;
+    if (!run) return;
+    if (!ids) run.written.clear();
+    else run.written.forEach((_v, key) => { if (ids.some((id) => key.startsWith(`${id}.`))) run.written.delete(key); });
+    run.dirty = true;
+    cueTick();
+  };
+  const cueNodeReady = (id: ModuleId) => { if (cueRef.current?.ids.has(id)) cueResync([id]); };
+  /** the Master's rewind: the state at the INPUT's current time, now */
+  const cueSync = () => {
+    const run = cueRef.current;
+    if (!run) return;
+    run.dirty = true;
+    cueTick();
+  };
+  /** keys something else just wrote (a plan, an undo): the engine writes them again at its next change */
+  const cueForget = (keys: Iterable<string>) => {
+    const run = cueRef.current;
+    if (run) for (const k of keys) run.written.delete(k);
+  };
+  /** a new INPUT: a timeline written for another video goes, and so does that video's beat grid */
+  const cueSourceChange = (url: string | null) => {
+    if (cueRef.current && cueRef.current.src !== url) dropCues('the INPUT changed');
+    const c = gridCacheRef.current;
+    if (c && c.url !== url) {
+      c.ctrl.abort();
+      gridCacheRef.current = null;
+      setGridView(null);
+    }
+  };
+  const cueTeardown = () => {
+    cueAliveRef.current = false;
+    cueDisarm();
+    gridCacheRef.current?.ctrl.abort();
+    gridCacheRef.current = null;
+  };
+  // INPUT clock events: a seek (paused or not), a new src (it may drop the pending frame callback),
+  // and timeupdate as the last resort while frame callbacks stall
+  useEffect(() => {
+    cueAliveRef.current = true;
+    const v = inputVideoRef.current;
+    if (!v) return;
+    const onSeeked = () => cueTick();
+    const onLoaded = () => { if (cueRef.current?.enabled) { cueDisarm(); cueArm(); cueSync(); } };
+    const onTime = () => {
+      const L = cueLoopRef.current;
+      if (!cueRef.current?.enabled || L.mode !== 'rvfc' || v.paused) return;
+      if (performance.now() - L.lastFrameAt < CUE_STALL_MS) return;
+      cueTick();
+      if (!L.standIn) L.standIn = requestAnimationFrame(onCueStandIn);
+    };
+    v.addEventListener('seeked', onSeeked);
+    v.addEventListener('loadeddata', onLoaded);
+    v.addEventListener('timeupdate', onTime);
+    return () => {
+      v.removeEventListener('seeked', onSeeked);
+      v.removeEventListener('loadeddata', onLoaded);
+      v.removeEventListener('timeupdate', onTime);
+      cueTeardown();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** the lane / tooltip / chip picture of an installed timeline */
+  const cueViewOf = (run: CueRun, duration: number): CueView => {
+    const cues = run.timeline.cues;
+    const segments = buildSegments(cues, duration, run.timeline.grid);
+    const hotAt = (i: number) => segments.find((s) => i >= s.first && i <= s.last)?.hot ?? false;
+    return {
+      count: cues.length,
+      enabled: run.enabled,
+      grid: run.timeline.grid,
+      duration,
+      segments,
+      marks: cues.map((c, i) => ({
+        at: c.at,
+        label: c.label,
+        hot: hotAt(i),
+        lines: c.params.map((p) => {
+          const info = run.info.get(p.key);
+          return `${info?.fx ?? p.key} · ${info?.label ?? ''} ${fmtCueValue(info, p.value)}`.replace(/\s+/g, ' ').trim();
+        }),
+      })),
+    };
+  };
+  const cueTimelineCopy = (tl: CueTimeline): CueTimeline => ({
+    cues: tl.cues.map((c) => ({ at: c.at, label: c.label, params: c.params.map((p) => ({ key: p.key, value: p.value })) })),
+    grid: tl.grid ? { ...tl.grid, sections: tl.grid.sections.map((x) => ({ ...x })) } : null,
+  });
+  /** an installed timeline as an undo record (PlanUndo.prevCues): enough to reinstall it as it is now */
+  const cueSnapshot = (run: CueRun): NonNullable<PlanUndo['prevCues']> => ({
+    timeline: cueTimelineCopy(run.timeline),
+    baseline: [...run.baseline].map(([key, value]) => ({ key, value })),
+    enabled: run.enabled,
+    source: run.src,
+  });
+  /** the lane's length: the INPUT video's duration, else the grid's, else just past the last cue */
+  const cueLaneDur = (tl: CueTimeline) => {
+    const v = inputVideoRef.current;
+    if (v && Number.isFinite(v.duration) && v.duration > 0) return v.duration;
+    return tl.grid?.duration || (tl.cues.length ? tl.cues[tl.cues.length - 1].at + 1 : 1);
+  };
+  /** Installs `timeline` (already validated) with this `baseline`, replacing whatever was installed,
+   *  and writes the state at the current time. null when one of its controls is not in the chain now. */
+  const installCues = (src: string, timeline: CueTimeline, baseline: Map<string, number>, enabled: boolean, written = new Map<string, number>()): CueRun | null => {
+    const paramsOf = paramsCache();
+    const info = new Map<string, CueParamInfo>();
+    const ids = new Set<ModuleId>();
+    for (const key of baseline.keys()) {
+      const where = splitKey(key);
+      const api = where ? readyApi(where.id) : null;
+      const p = where && api ? paramsOf(where.id, api).find((x) => x.key === where.pkey) : undefined;
+      if (!where || !p) return null;
+      info.set(key, { fx: fxName(where.id), label: p.label, type: p.type, step: p.step, options: p.options });
+      ids.add(where.id);
+    }
+    const run: CueRun = {
+      src, timeline, baseline, ids, info,
+      written, // what the effects are known to hold (empty: every key gets the state at the current time)
+      index: -2, dirty: true, enabled, lastT: NaN, writes: 0,
+    };
+    dropCues();
+    cueRef.current = run;
+    setCueView(cueViewOf(run, cueLaneDur(timeline)));
+    if (enabled) { cueTick(); cueArm(); }
+    return run;
+  };
+  /** Puts back a timeline an undo recorded (PlanUndo.prevCues) — on the same INPUT video only. */
+  const reinstallCues = (snap: PlanUndo['prevCues']): boolean => {
+    if (!snap || !Array.isArray(snap.timeline?.cues) || !snap.timeline.cues.length) return false;
+    const src = fileSourceRef.current;
+    if (kindRef.current !== 'video' || !src || src.url !== snap.source) return false;
+    const baseline = new Map((snap.baseline ?? []).map((b) => [b.key, b.value] as [string, number]));
+    const run = installCues(src.url, cueTimelineCopy(snap.timeline), baseline, snap.enabled !== false);
+    if (!run) console.warn('[Lab] could not put the earlier cue timeline back: one of its effects is not in the chain');
+    return !!run;
   };
 
   const labRef = useRef<LabHandle | null>(null);
@@ -1338,46 +1707,58 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         if (exportingRef.current) return { applied: 0, skipped: ['a Master export is running'], undo: null };
         let applied = 0;
         const undo = new Map<string, PlanUndo['entries'][number]>();
-        const cache = new Map<ModuleId, SynLabParam[]>();
-        const paramsOf = (id: ModuleId, api: SynLabApi) => {
-          let l = cache.get(id);
-          if (!l) { try { l = api.params() ?? []; } catch { l = []; } cache.set(id, l); }
-          return l;
-        };
+        const paramsOf = paramsCache();
         for (const e of Array.isArray(plan?.params) ? plan.params : []) {
-          const key = e?.key;
-          const where = typeof key === 'string' ? splitKey(key) : null;
-          const api = where ? readyApi(where.id) : null;
-          const p = where && api ? paramsOf(where.id, api).find((x) => x.key === where.pkey) : undefined;
-          if (!where || !api || !p) { skipped.push(`${String(key)}: not a parameter of this chain`); continue; }
-          if (isLockedParam(p)) { skipped.push(`${key}: locked`); continue; }
-          const raw = typeof e.value === 'boolean' ? (e.value ? 1 : 0) : Number(e.value);
-          if (!Number.isFinite(raw)) { skipped.push(`${key}: value is not a number`); continue; }
-          let v: number;
-          if (p.type === 'boolean') v = raw >= 0.5 ? 1 : 0;
-          else if (p.type === 'enum') v = clamp(Math.round(raw), Math.ceil(p.min), Math.floor(p.max));
-          else {
-            v = snapTo(raw, p.min, p.max, p.step);
-            const floor = PARAM_FLOORS[key];
-            if (floor !== undefined) v = clamp(Math.max(v, floor), p.min, p.max);
-          }
+          const c = checkParam(e, paramsOf);
+          if (c.ok === false) { skipped.push(c.why); continue; }
           let ok = false;
-          try { ok = api.setParam(p.key, v); } catch { ok = false; }
-          if (!ok) { skipped.push(`${key}: the effect did not take the value`); continue; }
-          if (!undo.has(key)) {
-            undo.set(key, p.type === 'boolean' ? { key, bool: p.value >= 0.5 ? 1 : 0 } : { key, base: p.value });
-          }
+          try { ok = c.api.setParam(c.p.key, c.v); } catch { ok = false; }
+          if (!ok) { skipped.push(`${c.key}: the effect did not take the value`); continue; }
+          if (!undo.has(c.key)) undo.set(c.key, undoEntryOf(c.key, c.p));
           applied++;
         }
         for (const r of Array.isArray(plan?.routes) ? plan.routes : []) {
           skipped.push(`${String(r?.key)}: signal routes do not exist in the Lab — each effect reacts through its own controls`);
         }
-        return { applied, skipped, undo: undo.size ? { entries: [...undo.values()] } : null };
+        if (!undo.size) return { applied, skipped, undo: null };
+        /* A key the installed timeline drives would be overwritten at its next cue: the new value is folded
+           in — it becomes that key's value for the whole timeline (its baseline; the cues stop changing it;
+           a cue left empty goes). The undo carries the timeline as it was, so reverting puts it back. */
+        const run = cueRef.current;
+        const folded = run ? [...undo.keys()].filter((k) => run.baseline.has(k)) : [];
+        if (run && folded.length) {
+          const before = cueSnapshot(run);
+          const now = new Map<string, number>();
+          const paramsAfter = paramsCache();
+          for (const k of folded) {
+            const where = splitKey(k);
+            const api = where ? readyApi(where.id) : null;
+            const p = where && api ? paramsAfter(where.id, api).find((x) => x.key === where.pkey) : undefined;
+            if (p) now.set(k, valueOf(p));
+          }
+          for (const [k, v] of now) { run.baseline.set(k, v); run.written.set(k, v); }
+          run.timeline = {
+            ...run.timeline,
+            cues: run.timeline.cues
+              .map((c) => ({ ...c, params: c.params.filter((x) => !now.has(x.key)) }))
+              .filter((c) => c.params.length),
+          };
+          if (!run.timeline.cues.length) dropCues();
+          else {
+            run.index = -2;
+            run.dirty = true;
+            setCueView(cueViewOf(run, cueLaneDur(run.timeline)));
+          }
+          return { applied, skipped, undo: { cues: true, prevCues: before, entries: [...undo.values()] } };
+        }
+        return { applied, skipped, undo: { entries: [...undo.values()] } };
       },
 
       revertPlan: (u: PlanUndo) => {
         if (exportingRef.current || !Array.isArray(u?.entries)) return { reverted: 0 };
         let reverted = 0;
+        // a timeline's undo: the timeline it installed goes first, then the values, then the one it replaced
+        if (u.cues === true && cueRef.current) { dropCues(); reverted++; }
         /* newest first: a control that resets its siblings is undone before them */
         for (const e of [...u.entries].reverse()) {
           const where = typeof e?.key === 'string' ? splitKey(e.key) : null;
@@ -1389,6 +1770,8 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
           try { ok = api.setParam(where.pkey, v); } catch { ok = false; }
           if (ok) reverted++;
         }
+        cueForget(u.entries.map((e) => e?.key).filter((k): k is string => typeof k === 'string'));
+        if (u.prevCues && reinstallCues(u.prevCues)) reverted++;
         return { reverted };
       },
 
@@ -1404,6 +1787,115 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         } catch {
           return false;
         }
+      },
+
+      // the INPUT video's soundtrack, analysed once per video (concurrent calls share the promise)
+      beatGrid: () => {
+        const src = fileSourceRef.current;
+        if (kindRef.current !== 'video' || !src || src.kind !== 'video') return Promise.resolve(null);
+        const c = gridCacheRef.current;
+        if (c && c.url === src.url) return c.promise;
+        c?.ctrl.abort();
+        const url = src.url;
+        const ctrl = new AbortController();
+        const entry = { url, ctrl, promise: Promise.resolve<BeatGrid | null>(null), value: null as BeatGrid | null };
+        entry.promise = analyzeBeatGrid(url, ctrl.signal).then((g) => {
+          if (!g || ctrl.signal.aborted) return null;
+          const v = inputVideoRef.current;
+          const fitted = v && fileSourceRef.current?.url === url && Number.isFinite(v.duration) && v.duration > 0 ? withDuration(g, v.duration) : g;
+          entry.value = fitted;
+          if (gridCacheRef.current === entry) setGridView(fitted); // its bar lines go on the track
+          return fitted;
+        }, () => null);
+        gridCacheRef.current = entry;
+        return entry.promise;
+      },
+
+      /* A timeline replaces the one installed before; an empty one only removes it. Every cue param is
+         checked like a plan's; the undo = the baseline (each cued key's value now) + the replaced
+         timeline (prevCues), so reverting gives back exactly the state before. */
+      setCues: (timeline: CueTimeline) => {
+        if (exportingRef.current) return { installed: 0, skipped: ['a Master export is running'], undo: null };
+        const v = inputVideoRef.current;
+        const src = fileSourceRef.current;
+        if (kindRef.current !== 'video' || !v || !src || src.kind !== 'video') {
+          return { installed: 0, skipped: ['cues play on a video INPUT: there is none'], undo: null };
+        }
+        const dur = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : Infinity;
+        const skipped: string[] = [];
+        const paramsOf = paramsCache();
+        const seen = new Map<string, { id: ModuleId; p: SynLabParam }>();
+        let list: Cue[] = [];
+        for (const c of Array.isArray(timeline?.cues) ? timeline.cues : []) {
+          const at = Number(c?.at);
+          const label = (typeof c?.label === 'string' ? c.label.trim() : '').slice(0, CUE_LABEL_MAX) || 'CUE';
+          const tag = `cue ${Number.isFinite(at) ? fmtCueTime(at) : '?'} (${label})`;
+          if (!Number.isFinite(at) || at < -0.05) { skipped.push(`${tag}: no valid time`); continue; }
+          if (at >= dur) { skipped.push(`${tag}: after the end of the video`); continue; }
+          const params = new Map<string, number>(); // one value per key: the last one wins
+          for (const e of Array.isArray(c?.params) ? c.params : []) {
+            const r = checkParam(e, paramsOf);
+            if (r.ok === false) { skipped.push(`${tag} · ${r.why}`); continue; }
+            params.set(r.key, r.v);
+            if (!seen.has(r.key)) seen.set(r.key, { id: r.id, p: r.p });
+          }
+          if (!params.size) { skipped.push(`${tag}: no valid control — dropped`); continue; }
+          list.push({ at: Math.max(0, at), label, params: [...params].map(([key, value]) => ({ key, value })) });
+        }
+        // sorted (stable), one cue per time (a later one at the same time adds to / overrides it), capped
+        list.sort((a, b) => a.at - b.at);
+        list = list.reduce<Cue[]>((acc, c) => {
+          const prev = acc[acc.length - 1];
+          if (prev && c.at - prev.at < CUE_EPS) {
+            const m = new Map(prev.params.map((p) => [p.key, p.value] as [string, number]));
+            c.params.forEach((p) => m.set(p.key, p.value));
+            prev.params = [...m].map(([key, value]) => ({ key, value }));
+          } else acc.push(c);
+          return acc;
+        }, []);
+        if (list.length > MAX_CUES) {
+          list.slice(MAX_CUES).forEach((c) => skipped.push(`cue ${fmtCueTime(c.at)} (${c.label}): over the ${MAX_CUES}-cue limit`));
+          list = list.slice(0, MAX_CUES);
+        }
+        const old = cueRef.current;
+        const prevCues = old ? cueSnapshot(old) : null;
+        if (!list.length) {
+          // no cue: the run has a fixed look — the timeline installed before goes (its values stay)
+          if (!old) return { installed: 0, skipped, undo: null };
+          dropCues();
+          return { installed: 0, skipped, undo: { cues: true, prevCues, entries: [] } };
+        }
+        // the baseline: what every key the timeline touches holds right now
+        const baseline = new Map<string, number>();
+        const entries: PlanUndo['entries'] = [];
+        list.forEach((c) => c.params.forEach(({ key }) => {
+          if (baseline.has(key)) return;
+          const { p } = seen.get(key)!;
+          baseline.set(key, valueOf(p));
+          entries.push(undoEntryOf(key, p));
+        }));
+        const fileGrid = gridCacheRef.current?.url === src.url ? gridCacheRef.current.value : null;
+        // the effects hold the baseline now: only the differences are written (the state at the current time)
+        const run = installCues(src.url, { cues: list, grid: sanitizeGrid(timeline?.grid) ?? fileGrid }, baseline, true, new Map(baseline));
+        if (!run) return { installed: 0, skipped: [...skipped, 'the timeline could not be installed'], undo: null };
+        return { installed: list.length, skipped, undo: { cues: true, prevCues, entries } };
+      },
+
+      cues: () => (cueRef.current ? cueTimelineCopy(cueRef.current.timeline) : null),
+
+      // CUE AUTO: off holds the values where they are; back on writes the state at the current time
+      setCuesEnabled: (on: boolean) => {
+        const run = cueRef.current;
+        const want = !!on;
+        if (!run || run.enabled === want) return;
+        run.enabled = want;
+        if (want) {
+          cueResync(); // every key: the operator may have moved some by hand meanwhile
+          cueArm();
+        } else {
+          cueDisarm();
+        }
+        setCueView((cv) => (cv ? { ...cv, enabled: want } : cv));
       },
     };
   }
@@ -1442,6 +1934,23 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         outputStream: () => outputStreamRef.current,
         inputVideo: () => inputVideoRef.current,
         lastExport: () => lastExportRef.current,
+        /** the cue engine: the index it last applied, at what INPUT time, how it follows the clock, its log */
+        cueEngine: () => {
+          const run = cueRef.current;
+          const L = cueLoopRef.current;
+          return {
+            installed: !!run,
+            enabled: run?.enabled ?? false,
+            index: run ? run.index : null,
+            lastT: run ? run.lastT : null,
+            writes: run?.writes ?? 0,
+            armed: !!L.handle,
+            mode: L.mode,
+            standIn: !!L.standIn,
+            written: run ? Object.fromEntries(run.written) : null,
+            log: cueLogRef.current.slice(),
+          };
+        },
       };
     }
   };
@@ -1469,6 +1978,30 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     ? { width: `${exportScale * 100}%`, height: `${exportScale * 100}%`, transform: `scale(${1 / exportScale})`, transformOrigin: '0 0' }
     : undefined;
   const missing = chain.filter((id) => linkOf(id) === 'missing');
+
+  /* the cue lane: bar lines of the beat grid (the timeline's, else the analysed one), the section blocks,
+     a diamond per cue — all placed in % of the scrub track's travel (the rail is inset by the thumb's half) */
+  const laneGrid = cueView?.grid ?? gridView;
+  const laneDur = tp.dur > 0 ? tp.dur : cueView?.duration ?? laneGrid?.duration ?? 0;
+  const bars = useMemo(() => barLines(laneGrid, laneDur), [laneGrid, laneDur]);
+  const laneOn = kind === 'video' && laneDur > 0 && (!!cueView || bars.length > 0);
+  const lanePct = (t: number) => `${clamp(t / laneDur, 0, 1) * 100}%`;
+  const showCueTip = (i: number, el: HTMLElement) => {
+    const tr = transportRef.current;
+    if (!tr) return;
+    const a = el.getBoundingClientRect();
+    setCueTip({ i, x: a.left + a.width / 2 - tr.getBoundingClientRect().left });
+  };
+  const tipMark = cueTip && cueView ? cueView.marks[cueTip.i] ?? null : null;
+  // the tooltip is centred on its diamond, kept inside the transport
+  useLayoutEffect(() => {
+    const tip = cueTipRef.current;
+    const tr = transportRef.current;
+    if (!tip || !tr || !cueTip) return;
+    const w = tip.offsetWidth;
+    tip.style.left = `${clamp(cueTip.x - w / 2, 6, Math.max(6, tr.clientWidth - w - 6))}px`;
+    tip.style.visibility = 'visible';
+  }, [cueTip, tipMark]);
 
   /** the OUTPUT is paused by the frame budget (an earlier tab is on top): the pill says so instead of 0 */
   const tabIndex = tab === 'input' || tab === 'output' ? -1 : chain.indexOf(tab);
@@ -1667,30 +2200,76 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
 
       {/* ── transport (video INPUT): BLOB REVEAL's bar ── */}
       {kind === 'video' && (
-        <div className="fxl-transport" data-testid="lab-transport">
+        <div className={`fxl-transport${cueView ? ' has-cues' : ''}`} data-testid="lab-transport" ref={transportRef}>
           <button type="button" data-testid="lab-play" className={`fxl-tl-pause${tp.playing ? '' : ' paused'}`} onClick={togglePlay} title={tp.playing ? 'Pause the INPUT (the whole chain and the sound)' : 'Play'}>
             {tp.playing ? '▮▮ PAUSE' : '▶ PLAY'}
           </button>
           <span className="fxl-tl-cur" data-testid="lab-time">{fmtTC(tp.t)}</span>
-          <input
-            type="range"
-            className="fxl-tl-track"
-            data-testid="lab-scrub"
-            min={0}
-            max={tp.dur || 0}
-            step={0.01}
-            value={Math.min(tp.t, tp.dur || 0)}
-            style={{ '--p': `${tp.dur ? (tp.t / tp.dur) * 100 : 0}%` } as React.CSSProperties}
-            onChange={(e) => scrub(parseFloat(e.target.value))}
-            aria-label="Scrub the INPUT video"
-          />
+          <div className="fxl-tl-wrap">
+            <input
+              type="range"
+              className="fxl-tl-track"
+              data-testid="lab-scrub"
+              min={0}
+              max={tp.dur || 0}
+              step={0.01}
+              value={Math.min(tp.t, tp.dur || 0)}
+              style={{ '--p': `${tp.dur ? (tp.t / tp.dur) * 100 : 0}%` } as React.CSSProperties}
+              onChange={(e) => scrub(parseFloat(e.target.value))}
+              aria-label="Scrub the INPUT video"
+            />
+            {laneOn && (
+              <div className="fxl-cue-rail">
+                {bars.map((t) => <i key={t} className="fxl-cue-bar" data-testid="cue-bar" style={{ left: lanePct(t) }} />)}
+                {cueView && (
+                  <div className="fxl-cue-lane" data-testid="cue-lane">
+                    {cueView.segments.map((g) => (
+                      <span
+                        key={`${g.first}-${g.start}`}
+                        className={`fxl-cue-sec${g.hot ? ' hot' : ''}`}
+                        style={{
+                          left: `calc(${lanePct(g.start)} + 1px)`,
+                          width: `calc(${clamp((g.end - g.start) / laneDur, 0, 1) * 100}% - 2px)`,
+                          '--cue-mix': `${Math.round(18 + 26 * (g.energy ?? 0.4))}%`,
+                        } as React.CSSProperties}
+                        title={`${g.label} · ${fmtCueTime(g.start)}–${fmtCueTime(g.end)}`}
+                      >
+                        {g.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {cueView?.marks.map((m, i) => (
+                  <button
+                    key={`${i}-${m.at}`}
+                    type="button"
+                    className={`fxl-cue-mark${m.hot ? ' hot' : ''}${i === cueIdx ? ' on' : ''}`}
+                    data-testid={`cue-mark-${i}`}
+                    style={{ left: lanePct(m.at) }}
+                    aria-label={`${fmtCueTime(m.at)} · ${m.label} — go to this cue`}
+                    onMouseEnter={(e) => showCueTip(i, e.currentTarget)}
+                    onMouseLeave={() => setCueTip(null)}
+                    onFocus={(e) => showCueTip(i, e.currentTarget)}
+                    onBlur={() => setCueTip(null)}
+                    onClick={() => scrub(m.at)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
           <span className="fxl-tl-dur">{fmtTC(tp.dur)}</span>
           <button type="button" data-testid="lab-loop" className={`fxl-tl-loop${tp.loop ? ' on' : ''}`} onClick={toggleLoop} title="Loop">⟳ LOOP</button>
+          {tipMark && (
+            <div ref={cueTipRef} className={`fxl-cue-tip${tipMark.hot ? ' hot' : ''}`} data-testid="cue-tip" role="tooltip" key={cueTip!.i}>
+              <div className="fxl-cue-tip-head">{fmtCueTime(tipMark.at)} · {tipMark.label}</div>
+              {tipMark.lines.map((l, j) => <div key={j}>{l}</div>)}
+            </div>
+          )}
         </div>
       )}
 
       {/* ── status line: route + link states · track · audio meters · errors ── */}
-      <div className="fxl-strip">
+      <div className={`fxl-strip${cueView ? ' has-cues' : ''}`}>
         <span className="fxl-route" data-testid="chain-route">
           SOURCE →{' '}
           {chain.map((id) => (
@@ -1700,6 +2279,21 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
           ))}
           OUT
         </span>
+        {cueView && (
+          <button
+            type="button"
+            className={`fxl-cue-chip${cueView.enabled ? ' on' : ''}`}
+            data-testid="cue-auto"
+            data-on={cueView.enabled ? '1' : '0'}
+            aria-pressed={cueView.enabled}
+            onClick={() => labRef.current?.setCuesEnabled(!cueView.enabled)}
+            title={cueView.enabled
+              ? `The ${cueView.count} cues play with the video — click to hold the controls where they are`
+              : 'Cue automation is off: the controls hold their values — click to play the cues again'}
+          >
+            <span className="fxl-cue-chip-dot" />CUE AUTO · {cueView.count}
+          </button>
+        )}
         {track && (
           <span className="fxl-group">
             <button type="button" className="fxl-icon-btn on" onClick={() => { audioRef.current!.togglePlay(); mirror(); }} data-testid="audio-playpause" title={track.playing ? 'Pause the track' : 'Play the track'}>

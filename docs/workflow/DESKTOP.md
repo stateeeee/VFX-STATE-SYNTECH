@@ -60,7 +60,7 @@ workflow senza toccare l'app.
 
 ### L'AI nella versione desktop
 
-Nulla dell'app ha bisogno di una chiave tranne il pannello Gemini 3.8: senza,
+Nulla dell'app ha bisogno di una chiave tranne il pannello Gemini: senza,
 resta bloccato (come in browser — non ci sono più risposte AI offline). La chiave
 si incolla nel pannello; resta salvata nell'app perché l'origine è fissa
 (`127.0.0.1:47291`). In alternativa, sul **tuo** computer, un file di testo
