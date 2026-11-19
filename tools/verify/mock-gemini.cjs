@@ -2,10 +2,11 @@
  * MOCK GEMINI — a tiny local stand-in for generativelanguage.googleapis.com.
  *
  * It speaks exactly the slice of the Gemini API that @google/genai (as used by
- * ai-provider.ts) calls, so the whole Gemini 3.8 flow can be verified with no
+ * ai-provider.ts) calls, so the whole Gemini flow can be verified with no
  * real key and no network. The app server is pointed at it with
  * GEMINI_BASE_URL=http://127.0.0.1:<port> (a test hook, see ai-provider.ts).
  *
+ *   GET  /v1beta/models                         models.list (the picker)
  *   GET  /v1beta/models/<model>                 key check (models.get)
  *   POST /v1beta/models/<model>:generateContent the three roles
  *   POST /upload/v1beta/files                   resumable upload: start
@@ -16,7 +17,7 @@
  * Keys travel in the x-goog-api-key header (never in the URL). 'MOCKKEY' is
  * accepted; anything else — 'BADKEY' in the suite — gets Google's real
  * 400 INVALID_ARGUMENT / API_KEY_INVALID body. A model id other than
- * MODEL (default gemini-3.8-flash) gets a 404 NOT_FOUND, so a suite also
+ * MODEL (default gemini-4-hydrogen) gets a 404 NOT_FOUND, so a suite also
  * proves which model the server asks for.
  *
  * generateContent records every request body (and its prompt text, `rec.text`)
@@ -28,6 +29,15 @@
  * its floor, an enum index out of range, a route — routes no longer exist)
  * that the validator must drop (`dropped`) or keep changed (`adjusted`: the
  * floor, the clamp — in the Agent's plan and in the Optimizer's first fix).
+ * CUES (LAB v2 timeline): when the request's prompt says "TIMELINE: write cues"
+ * the Agent's answer also carries `cues`: 3 valid ones on chain-table keys (at 0,
+ * and two deliberately OFF the beat so the validator's snapping shows) plus one
+ * with an unknown key (dropped: 'nothing valid to change'). The grid the panel
+ * sent is read back from the prompt (rec.grid {bpm, beat, firstDownbeat}).
+ * mock.agentCues(false) turns the cues off; mock.agentChainOnce(['bokeh','analog'])
+ * makes the NEXT agent answer to a 'CHAIN: open' prompt return `chain` (params and
+ * cues empty, as the prompt asks) — the panel then rebuilds the Lab and asks again
+ * ('CHAIN: final'), which gets the normal answer.
  * The Optimizer's fixes come in its flat shape: { summary, params }, with
  * params [] meaning "no fix".
  *
@@ -46,7 +56,42 @@
 
 const http = require('http');
 
-const MODEL = 'gemini-3.8-flash';
+const MODEL = 'gemini-4-hydrogen';
+/** Models that answer generateContent (any other id → 404). 'gemini-5-preview-test'
+ *  is one the build does NOT know: it must still show up in the list. */
+const OK_MODELS = ['gemini-4-hydrogen', 'gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-5-preview-test'];
+/** Exists, but a free key gets Google's real 429 with a limit of 0. */
+const PAID_ONLY = 'gemini-4-argon';
+const THOUGHTS = { MINIMAL: 20, LOW: 100, MEDIUM: 400, HIGH: 1200, XHIGH: 3000 };
+
+/** What Google answers on a paid-only model with a free key. */
+const FREE_LIMIT_ZERO_BODY = {
+  error: {
+    code: 429,
+    message: 'You exceeded your current quota, please check your plan and billing details. * Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0',
+    status: 'RESOURCE_EXHAUSTED',
+    details: [{
+      '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+      violations: [{ quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests', quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', quotaValue: '0' }],
+    }],
+  },
+};
+
+/** models.list rows (REST shape). The last four are decoys the server must drop. */
+const LIST_ROWS = [
+  ['gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite', ['generateContent', 'countTokens']],
+  ['gemini-5-preview-test', 'Gemini 5 Preview (test)', ['generateContent']],
+  ['gemini-4-argon', 'Gemini 4 Argon', ['generateContent']],
+  ['gemini-3.8-flash', 'Gemini 3.8 Flash', ['generateContent', 'countTokens']],
+  ['gemini-4-hydrogen', 'Gemini 4 Hydrogen', ['generateContent', 'countTokens']],
+  ['gemini-embedding-001', 'Gemini Embedding', ['embedContent']],
+  ['imagen-4.0-generate-001', 'Imagen 4', ['predict']],
+  ['gemini-2.0-flash', 'Gemini 2.0 Flash', ['generateContent']],
+  ['gemini-3.8-flash-preview-tts', 'Gemini 3.8 Flash TTS', ['generateContent']],
+].map(([id, displayName, methods]) => ({
+  name: `models/${id}`, version: '1', displayName, description: `${displayName} (mock)`,
+  inputTokenLimit: 1048576, outputTokenLimit: 65536, supportedGenerationMethods: methods,
+}));
 const GOOD_KEY = 'MOCKKEY';
 
 /** What Google really answers for a key it does not know. */
@@ -173,8 +218,23 @@ function artDirectorAnswer(body) {
   };
 }
 
-function agentAnswer(body) {
-  const rows = parseChainTable(contextText(body));
+/** the beat grid the panel sent, as describeBeatGrid wrote it into the prompt (null: none) */
+function parseGrid(text) {
+  const m = String(text || '').match(/BEAT GRID \(measured[^)]*\): ([\d.]+) BPM, (\d+) beats per bar — a beat every ([\d.]+) s, a bar every ([\d.]+) s; first downbeat at ([\d.]+) s/);
+  if (!m) return null;
+  return { bpm: Number(m[1]), beatsPerBar: Number(m[2]), beat: Number(m[3]), bar: Number(m[4]), firstDownbeat: Number(m[5]) };
+}
+
+/** `t`, moved (by 0.4 beat) if needed so it sits clearly between two beats */
+function offBeat(t, grid) {
+  if (!grid) return t;
+  const frac = ((((t - grid.firstDownbeat) / grid.beat) % 1) + 1) % 1;
+  return Math.round((frac < 0.2 || frac > 0.8 ? t + 0.4 * grid.beat : t) * 1000) / 1000;
+}
+
+function agentAnswer(body, opts = {}) {
+  const text = contextText(body);
+  const rows = parseChainTable(text);
   const t = tunable(rows);
   const P = t[0] || null;
   // a second number, asked far above its range: clamped, kept (adjusted)
@@ -193,8 +253,27 @@ function agentAnswer(body) {
   if (sw) params.push({ key: sw.key, value: true });                    // a boolean as true: becomes 1
   // routes no longer exist: any route is refused with a reason
   const routes = P ? [{ key: P.key, source: 'beat', amount: 0.2 }] : [];
+  const answer = { params, routes, summary: 'MOCK-AGENT: ho spinto un parametro e regolato la reazione alla musica.' };
+  const grid = parseGrid(text);
+  let cueKeys = null;
+  if (opts.cues !== false && /^TIMELINE: write cues/m.test(text)) {
+    // three keys the plan does not touch (the 3rd cue sets the 1st one's key again), each cue far from its base
+    const ck = [t[2], t[3], t[4]].map((x, i) => x || t[i % Math.max(1, t.length)]).filter(Boolean);
+    const at = [0, offBeat(2.3, grid), offBeat(4.1, grid)];
+    answer.cues = ck.length ? [
+      { at: at[0], label: 'INTRO', params: [{ key: ck[0].key, value: farFrom(ck[0]) }] },
+      { at: at[1], label: 'DROP', params: [{ key: ck[1 % ck.length].key, value: farFrom(ck[1 % ck.length]) }] },
+      { at: at[2], label: 'OUTRO', params: [{ key: ck[2 % ck.length].key, value: farFrom(ck[2 % ck.length]) }] },
+      // an unknown key: the validator drops the whole cue ('nothing valid to change')
+      { at: 3.0, label: 'GHOST', params: [{ key: 'nope.ghost', value: 1 }] },
+    ] : [];
+    cueKeys = ck.map((x) => x.key);
+    cueKeys = { keys: cueKeys, at };
+  }
   return {
-    answer: { params, routes, summary: 'MOCK-AGENT: ho spinto un parametro e regolato la reazione alla musica.' },
+    answer,
+    grid,
+    cueKeys,
     picked: {
       P: P && P.key, C: C && C.key, Cmax: C && C.max, locked: locked && locked.key,
       floor: floor && floor.key, floorValue: floor ? FLOORS[floor.key] : null, enum: en && en.key, enumMax: en && en.max, sw: sw && sw.key,
@@ -229,15 +308,15 @@ function optimizerAnswer(body) {
   };
 }
 
-const candidate = (text) => ({
+const candidate = (text, model = MODEL, level = '') => ({
   candidates: [{ content: { role: 'model', parts: [{ text }] }, finishReason: 'STOP', index: 0 }],
-  usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
-  modelVersion: MODEL,
+  usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, thoughtsTokenCount: THOUGHTS[level] || 0, totalTokenCount: 2 + (THOUGHTS[level] || 0) },
+  modelVersion: model,
 });
 
 /* ── the server ──────────────────────────────────────────────── */
 
-function startMockGemini({ port = 0, model = MODEL, goodKey = GOOD_KEY, processingPolls = 1 } = {}) {
+function startMockGemini({ port = 0, goodKey = GOOD_KEY, processingPolls = 1 } = {}) {
   const state = {
     log: [],        // every request: {method, url, key, cmd, bytes}
     keyChecks: [],  // models.get: {model, key, ok}
@@ -282,15 +361,27 @@ function startMockGemini({ port = 0, model = MODEL, goodKey = GOOD_KEY, processi
           return send(res, 200, { log: state.log, generate: state.generate.map((g) => ({ role: g.role, model: g.model, picked: g.picked })), uploads: state.uploads });
         }
 
+        /* models.list — the picker's source (pageSize / pageToken honoured) */
+        if (req.method === 'GET' && pathname === '/v1beta/models') {
+          state.lists = (state.lists || 0) + 1;
+          if (!keyOk(key)) return send(res, 400, KEY_INVALID_BODY);
+          const q = new URL(url, 'http://x').searchParams;
+          const size = Math.max(1, Number(q.get('pageSize')) || 50);
+          const start = Number(q.get('pageToken')) || 0;
+          const page = LIST_ROWS.slice(start, start + size);
+          const next = start + size < LIST_ROWS.length ? String(start + size) : undefined;
+          return send(res, 200, { models: page, ...(next ? { nextPageToken: next } : {}) });
+        }
+
         /* models.get — the key check */
         let m = pathname.match(/^\/v1beta\/models\/([^/:]+)$/);
         if (req.method === 'GET' && m) {
           const ok = keyOk(key);
           state.keyChecks.push({ model: m[1], key, ok });
           if (!ok) return send(res, 400, KEY_INVALID_BODY);
-          if (m[1] !== model) return send(res, 404, notFound(m[1]));
+          if (m[1] !== PAID_ONLY && !OK_MODELS.includes(m[1])) return send(res, 404, notFound(m[1]));
           return send(res, 200, {
-            name: `models/${model}`, version: '3.8', displayName: 'Gemini 3.8 Flash (mock)',
+            name: `models/${m[1]}`, version: '4', displayName: `${m[1]} (mock)`,
             inputTokenLimit: 1048576, outputTokenLimit: 65536,
             supportedGenerationMethods: ['generateContent', 'countTokens'],
           });
@@ -301,7 +392,7 @@ function startMockGemini({ port = 0, model = MODEL, goodKey = GOOD_KEY, processi
         if (req.method === 'POST' && m) {
           const body = JSON.parse(raw.toString() || '{}');
           const role = roleOf(body);
-          const rec = { role, model: m[1], key, body, text: contextText(body), answer: null, picked: null, status: 200 };
+          const rec = { role, model: m[1], thinkingConfig: null, key, body, text: contextText(body), answer: null, picked: null, status: 200 };
           state.generate.push(rec);
           if (state.pendingFail) {
             const f = state.pendingFail;
@@ -310,23 +401,47 @@ function startMockGemini({ port = 0, model = MODEL, goodKey = GOOD_KEY, processi
             return send(res, f.status, f.body);
           }
           if (!keyOk(key)) { rec.status = 400; return send(res, 400, KEY_INVALID_BODY); }
-          if (m[1] !== model) { rec.status = 404; return send(res, 404, notFound(m[1])); }
+          if (m[1] === PAID_ONLY) { rec.status = 429; return send(res, 429, FREE_LIMIT_ZERO_BODY); }
+          if (!OK_MODELS.includes(m[1])) { rec.status = 404; return send(res, 404, notFound(m[1])); }
+          const tc = body?.generationConfig?.thinkingConfig || null;
+          rec.thinkingConfig = tc;
+          const level = tc && tc.thinkingLevel ? String(tc.thinkingLevel) : '';
+          if (m[1] === 'gemini-4-hydrogen' && level === 'MINIMAL') {
+            rec.status = 400;
+            return send(res, 400, { error: { code: 400, message: 'thinking_level MINIMAL is not supported for this model.', status: 'INVALID_ARGUMENT' } });
+          }
+          if (m[1].startsWith('gemini-4') && tc && tc.thinkingBudget !== undefined) {
+            rec.status = 400;
+            return send(res, 400, { error: { code: 400, message: 'thinking_budget is not supported for this model; use thinking_level.', status: 'INVALID_ARGUMENT' } });
+          }
+          const candidate_ = (t) => candidate(t, m[1], level);
           if (role === 'art_director') {
             rec.answer = artDirectorAnswer(body);
-            return send(res, 200, candidate(JSON.stringify(rec.answer)));
+            return send(res, 200, candidate_(JSON.stringify(rec.answer)));
           }
           if (role === 'agent') {
-            const a = agentAnswer(body);
+            if (state.chainOnce && /^CHAIN: open/m.test(rec.text)) {
+              // the Agent wants other effects: chain only, params and cues empty (what the prompt asks)
+              const chain = state.chainOnce;
+              state.chainOnce = null;
+              rec.answer = { params: [], routes: [], cues: [], chain, summary: `MOCK-AGENT-CHAIN: serve ${chain.join(' → ')}.` };
+              rec.chainAsked = chain;
+              return send(res, 200, candidate_(JSON.stringify(rec.answer)));
+            }
+            const a = agentAnswer(body, { cues: state.cuesOn !== false });
             rec.answer = a.answer;
             rec.picked = a.picked;
-            return send(res, 200, candidate(JSON.stringify(a.answer)));
+            rec.grid = a.grid;
+            rec.cueAts = a.cueKeys ? a.cueKeys.at : null;
+            rec.cueKeys = a.cueKeys ? a.cueKeys.keys : null;
+            return send(res, 200, candidate_(JSON.stringify(a.answer)));
           }
           if (role === 'optimizer') {
             const a = optimizerAnswer(body);
             rec.answer = a.answer;
             rec.picked = a.picked;
             // fenced on purpose: the server strips ```json fences
-            return send(res, 200, candidate('```json\n' + JSON.stringify(a.answer) + '\n```'));
+            return send(res, 200, candidate_('```json\n' + JSON.stringify(a.answer) + '\n```'));
           }
           rec.status = 400;
           return send(res, 400, { error: { code: 400, message: 'mock: unknown role', status: 'INVALID_ARGUMENT' } });
@@ -403,10 +518,15 @@ function startMockGemini({ port = 0, model = MODEL, goodKey = GOOD_KEY, processi
     get log() { return state.log; },
     get keyChecks() { return state.keyChecks; },
     get generate() { return state.generate; },
+    get lists() { return state.lists || 0; },
     get uploadStarts() { return state.uploadStarts; },
     get uploads() { return state.uploads; },
     get filePolls() { return state.filePolls; },
     get fileDeletes() { return state.fileDeletes; },
+    /** the next Agent answer to a 'CHAIN: open' prompt asks for this chain (once) */
+    agentChainOnce(chain) { state.chainOnce = [...chain]; },
+    /** false: the Agent never writes cues (default true: whenever the prompt says 'TIMELINE: write cues') */
+    agentCues(on) { state.cuesOn = !!on; },
     /** the next generateContent answers {status, body} instead (once) */
     failNext({ status = 400, body } = {}) {
       state.pendingFail = { status, body: body || (status === 401 ? UNAUTHENTICATED_BODY : KEY_INVALID_BODY) };
@@ -423,7 +543,7 @@ function startMockGemini({ port = 0, model = MODEL, goodKey = GOOD_KEY, processi
   });
 }
 
-module.exports = { startMockGemini, parseChainTable, contextText, KEY_INVALID_BODY, UNAUTHENTICATED_BODY, SAFETY_BLOCKED_BODY, FLOORS, MODEL, GOOD_KEY };
+module.exports = { startMockGemini, OK_MODELS, PAID_ONLY, FREE_LIMIT_ZERO_BODY, parseChainTable, contextText, KEY_INVALID_BODY, UNAUTHENTICATED_BODY, SAFETY_BLOCKED_BODY, FLOORS, MODEL, GOOD_KEY };
 
 if (require.main === module) {
   const port = Number(process.argv[2] || 4010);

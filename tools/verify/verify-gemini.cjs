@@ -1,5 +1,5 @@
 /*
- * GEMINI 3.8 — end-to-end suite for the panel, the three roles and the server.
+ * GEMINI — end-to-end suite for the panel, the three roles and the server.
  *
  * Self-contained: it starts a mock of the Gemini API (mock-gemini.cjs), then
  * the app server ITSELF (`npx tsx server.ts`, GEMINI_BASE_URL pointed at the
@@ -7,11 +7,14 @@
  * the real UI in Chromium and checks both what the operator sees and what
  * actually reached "Google" (the mock records every request body and prompt).
  *
- *   1  boot: STANDBY, rail locked, "Lab" / "GEMINI 3.8" / "Gemini 3.8" copy
+ *   1  boot: STANDBY, rail locked, "Lab" / "GEMINI" / "Gemini" copy
  *   2  a key Google rejects: error shown, still STANDBY, nothing stored; a key
  *      with a curly quote is refused in the browser (invalid characters)
  *   3  a key Google accepts: ACTIVE (green), rail unlocked, survives a reload;
- *      the ACTIVE card's ai-pick-* buttons select each role
+ *      the ACTIVE card: HYDROGEN model button + forget + AI Studio link, no
+ *      role buttons (roles open only from the rail, which toggles back to the
+ *      card); the model picker (FREE / PAID / NEW rows from models.list, the
+ *      effort slider writes syntech.geminiChoice, Done closes)
  *   4  photo on Home → Art Director: one ≤1024px JPEG + a response schema;
  *      validator filters the proposals; "Use this chain" opens the Lab,
  *      becomes the ART DIRECTION, marks its card 'In use' and lands the panel
@@ -50,6 +53,18 @@
  *      object, a SAFETY-blocked answer, the Host guard (a .local name in, any
  *      other name out with a message naming ALLOWED_HOSTS), old endpoints
  *  11  the key never reaches a log, a URL, or Google from the browser
+ *  12  model + effort: default Hydrogen/HIGH, stored choice, model list, errors
+ *  13  Agent on a video (cues on in the mock): the request carries allowChain +
+ *      wantCues + the beat grid (~120 BPM); plan.cues come back snapped to that
+ *      grid (the mock wrote two off the beat, plus a ghost cue the validator
+ *      drops); the Lab shows cue-lane + 3 cue-mark-* + the CUE AUTO chip; ONE
+ *      Undo removes the timeline and restores every plan + cue key
+ *  14  Agent chain change (mock.agentChainOnce): exactly two Agent requests, the
+ *      2nd with chainChanged + the rebuilt chain table ('CHAIN: final'), the Lab
+ *      becomes bokeh → analog, the card shows ai-agent-chain-change + the cues;
+ *      ONE Undo removes the timeline and rebuilds analog → bokeh
+ *      Steps 6-8 run with mock.agentCues(false): they test the fixed-look plan.
+ *      Run order: 1-7, 13, 14, 8, 9, 10, 12, 11 (13/14 reuse step 6's Lab and clip).
  *
  * LAB v2 (2026-10-28): the Lab is a chain of the real effect iframes (window.SynLab):
  * no ParamBus, no signal routes. Keys are '<ModuleId>.<control key>' and the suite
@@ -64,7 +79,7 @@
  *        suite starts its own server there and stops it at the end), ffmpeg,
  *        Playwright resolvable via NODE_PATH like the other suites.
  *        No real key, no network: everything Gemini answers comes from the mock.
- * Run:   node tools/verify/verify-gemini.cjs        (~3.5 min on a GPU, 15-25 min under SwiftShader: the Lab's iframes render at ~1 fps)
+ * Run:   node tools/verify/verify-gemini.cjs        (~3.5 min on a GPU, ~13 min under SwiftShader (4 cores): the Lab's iframes render at ~1 fps)
  *        PORT=3100 node tools/verify/verify-gemini.cjs   (next to a dev server)
  * Exit:  0 all PASS, 1 any FAIL.
  */
@@ -77,7 +92,7 @@ const http = require('http');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const { startMockGemini, KEY_INVALID_BODY, UNAUTHENTICATED_BODY, SAFETY_BLOCKED_BODY, MODEL } = require('./mock-gemini.cjs');
+const { startMockGemini, PAID_ONLY, KEY_INVALID_BODY, UNAUTHENTICATED_BODY, SAFETY_BLOCKED_BODY, MODEL } = require('./mock-gemini.cjs');
 
 const ROOT = path.resolve(__dirname, '../..');
 const PORT = (() => { const n = Number(process.env.PORT); return Number.isInteger(n) && n > 0 && n < 65536 ? n : 3000; })();
@@ -90,14 +105,16 @@ const SILENT_NOTE = 'This clip has no soundtrack: Gemini gets the picture only. 
 const STALE_LAB = 'Earlier run — on a Lab that has closed';
 /** contract.ts INLINE_VIDEO_FPS: the sampling rate asked for every inline clip */
 const INLINE_FPS = 12;
+/** a UI reaction the suite waits for while the Lab's iframes saturate the page (~1 fps, other jobs on the machine): generous, never a pass condition */
+const LOADED_MS = 45_000;
 const T0 = Date.now();
 
 /* ── reporting ───────────────────────────────────────────────── */
 
 const STEPS = [
-  [1, 'boot: standby, locked rail, renamed copy'],
+  [1, 'boot: standby, locked rail, GEMINI copy'],
   [2, 'bad key rejected, nothing stored; curly quote refused'],
-  [3, 'good key → ACTIVE, rail unlocked, survives reload, ai-pick-*'],
+  [3, 'good key → ACTIVE, rail unlocked, survives reload, active card + model picker'],
   [4, 'photo → Art Director → Use this chain (In use, Agent tab) → Optimizer, audio off'],
   [5, 'video → Art Director: stale read flagged, upload once, then reuse'],
   [6, 'Use this chain → Agent: auto Clip, fileUri + clip, adjusted rows, per-key Undo'],
@@ -106,6 +123,9 @@ const STEPS = [
   [9, 'key rejected mid-session → relocked'],
   [10, 'HTTP contract'],
   [11, 'the key never leaks'],
+  [12, 'model + effort: default Hydrogen/HIGH, stored choice, model list, honest errors'],
+  [13, 'Agent on a video: wantCues + beat grid + allowChain, snapped cues, lane + marks, one Undo'],
+  [14, 'Agent chain change: two requests (chainChanged), Lab rebuilt, chain-change line'],
 ];
 const stepOk = new Map(STEPS.map(([n]) => [n, true]));
 let current = 0;
@@ -381,24 +401,52 @@ const panelText = (page) => page.evaluate(() => {
   return (root ? root.innerText : '').replace(/\s+/g, ' ').trim().slice(0, 300);
 }).catch(() => '');
 
-/** clicks `tid` and returns the server's answer to `endpoint`. A role run that
- *  outlives the timeout is waited out (its busy line gone) before the step
- *  fails, so a late answer cannot leak into the next step. */
+/** clicks `tid` and returns the server's answer to `endpoint`. The Run is only
+ *  clicked once its button is enabled (a click on a disabled button is a silent
+ *  no-op: the old "no answer within 240 s" flake), and a click that produced
+ *  neither a request nor a busy line is repeated once. A run that outlives the
+ *  timeout is waited out (its busy line gone) before the step fails, so a late
+ *  answer cannot leak into the next step. The clock starts at the click: the
+ *  Agent's Run first reads the beat grid, grabs frames, records a 4s clip (all
+ *  at ~1 fps under software GL) before its request leaves. */
 async function roleCall(page, endpoint, tid, timeout = ROLE_TIMEOUT) {
+  const ready = await page.waitForFunction((s) => { const el = document.querySelector(s); return !!el && !el.disabled; }, sel(tid), { timeout: 90_000 }).then(() => true).catch(() => false);
+  if (!ready) throw new Error(`[data-testid=${tid}] never became enabled (busy / export / no Lab?); panel: ${await panelText(page)}`);
   const t = Date.now();
+  let sent = 0;
+  const onReq = (rq) => { if (rq.url().endsWith(endpoint) && rq.method() === 'POST') sent++; };
+  page.on('request', onReq);
   const resp = page.waitForResponse((r) => r.url().endsWith(endpoint) && r.request().method() === 'POST', { timeout });
-  if (!(await domClick(page, tid))) throw new Error(`no [data-testid=${tid}] to click`);
-  let r;
+  resp.catch(() => {});
   try {
-    r = await resp;
-  } catch {
-    const busy = await panelText(page);
-    await page.waitForFunction(() => !document.querySelector('.animate-spin'), null, { timeout: 60_000 }).catch(() => {});
-    throw new Error(`no answer from ${endpoint} within ${timeout / 1000}s; panel: ${busy}`);
+    if (!(await domClick(page, tid))) throw new Error(`no [data-testid=${tid}] to click`);
+    let clicks = 1;
+    let done = false;
+    void (async () => {
+      while (!done) {
+        await sleep(2000);
+        if (done || sent || clicks > 1 || Date.now() - t < 15_000) continue;
+        const spinning = await page.evaluate(() => !!document.querySelector('.animate-spin')).catch(() => true);
+        if (!spinning && !sent) { clicks++; await domClick(page, tid); }
+      }
+    })();
+    let r;
+    try {
+      r = await resp;
+    } catch {
+      done = true;
+      const busy = await panelText(page);
+      await page.waitForFunction(() => !document.querySelector('.animate-spin'), null, { timeout: 60_000 }).catch(() => {});
+      throw new Error(`no answer from ${endpoint} within ${timeout / 1000}s (request sent: ${sent > 0}, clicks: ${clicks}); panel: ${busy}`);
+    } finally {
+      done = true;
+    }
+    let json = null;
+    try { json = await r.json(); } catch { /* not JSON */ }
+    return { status: r.status(), json, sec: ((Date.now() - t) / 1000).toFixed(1), clicks };
+  } finally {
+    page.off('request', onReq);
   }
-  let json = null;
-  try { json = await r.json(); } catch { /* not JSON */ }
-  return { status: r.status(), json, sec: ((Date.now() - t) / 1000).toFixed(1) };
 }
 
 /** waits until every iframe node of the Lab reports its SynLab link 'ready' */
@@ -533,14 +581,14 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
         .map((e) => `${e.getAttribute('title') || ''} ${e.getAttribute('placeholder') || ''} ${e.getAttribute('aria-label') || ''}`).join(' ');
       return {
         lab: nav ? nav.textContent.trim() : null,
-        railCaption: [...document.querySelectorAll('nav span')].some((s) => s.textContent.trim() === 'GEMINI 3.8'),
+        railCaption: [...document.querySelectorAll('nav span')].some((s) => s.textContent.trim() === 'GEMINI'),
         panelTitle: [...document.querySelectorAll('h2')].map((h) => h.textContent.trim()).filter((t) => /gemini/i.test(t)),
         banned: [document.body.innerText, document.body.textContent, attrs, document.title].join('\n').match(/\bAI\s*Lab\b|Gemini\s*Pro/gi),
       };
     });
     check(" nav-ailab text is 'Lab'", copy.lab === 'Lab', String(copy.lab));
-    check(" rail caption 'GEMINI 3.8'", copy.railCaption);
-    check(" panel title 'Gemini 3.8'", copy.panelTitle.includes('Gemini 3.8'), JSON.stringify(copy.panelTitle));
+    check(" rail caption 'GEMINI' (no version)", copy.railCaption);
+    check(" panel title 'Gemini'", copy.panelTitle.includes('Gemini'), JSON.stringify(copy.panelTitle));
     check(" no 'AI Lab' / 'Gemini Pro' anywhere on the page", !copy.banned, JSON.stringify(copy.banned));
     check(' boot asked Google nothing (no key yet)', mock.keyChecks.length === 0 && mock.generate.length === 0, `keyChecks=${mock.keyChecks.length}`);
   });
@@ -594,24 +642,82 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' after reload: rail unlocked', (await rail(page)).every((d) => d === false));
     check(' after reload: the stored key was re-validated', mock.keyChecks.slice(n1).some((k) => k.key === GOOD && k.ok));
 
-    // the ACTIVE card repeats the rail's three roles (on a short window the
-    // rail's lower buttons sit under the meter): each one selects its mode
-    check(' ACTIVE card shows ai-pick-art_director / agent / optimizer',
-      await page.evaluate(() => ['art_director', 'agent', 'optimizer'].every((m) => !!document.querySelector(`[data-testid="ai-pick-${m}"]`))));
+    // the ACTIVE card: the key, the model, the free-key link — and NO role buttons
+    // (roles open only from the rail; clicking the open role's rail button toggles back to the card)
+    check(' ACTIVE card on screen (ai-active-card)', await visible(page, 'ai-active-card', 10_000));
+    const card = await page.evaluate(() => {
+      const c = document.querySelector('[data-testid="ai-active-card"]');
+      const link = c ? c.querySelector('a[href^="https://aistudio.google.com/apikey"]') : null;
+      return {
+        model: (document.querySelector('[data-testid="ai-model-button"]')?.innerText || '').trim(),
+        forget: !!document.querySelector('[data-testid="ai-key-forget"]'),
+        masked: (document.querySelector('[data-testid="ai-key-masked"]')?.textContent || ''),
+        link: link ? { href: link.getAttribute('href'), text: link.textContent.trim() } : null,
+        picks: document.querySelectorAll('[data-testid^="ai-pick-"]').length,
+        oldText: /is active/i.test(document.body.innerText) || /Gemini 3\.8/.test(c ? c.innerText : ''),
+      };
+    });
+    check(' the model button reads HYDROGEN (short name, uppercase)', card.model === 'HYDROGEN', card.model);
+    check(' Forget key (ai-key-forget) is there, the key is masked (last 4 only)', card.forget && card.masked.endsWith(GOOD.slice(-4)) && !card.masked.includes(GOOD), card.masked);
+    check(' the AI Studio key link is on the card', !!card.link && /aistudio\.google\.com\/apikey/.test(card.link.text), short(card.link));
+    check(" no ai-pick-* buttons, no 'Gemini 3.8 is active' text", card.picks === 0 && !card.oldText, `picks=${card.picks} oldText=${card.oldText}`);
     for (const [m, title] of [['agent', 'Agent'], ['optimizer', 'Optimizer'], ['art_director', 'Art Director']]) {
-      const clicked = await domClick(page, `ai-pick-${m}`);
-      const on = await page.waitForFunction((t) => [...document.querySelectorAll('h2')].some((h) => h.textContent.trim() === t), title, { timeout: 5000 }).then(() => true).catch(() => false);
-      const cardGone = await gone(page, `ai-pick-${m}`);
+      const clicked = await domClick(page, `nav-gemini-${m}`);
+      const on = await onTab(page, title, 5000);
+      const cardGone = await gone(page, 'ai-active-card');
       const body = m === 'art_director' ? await visible(page, 'ai-ad-run', 5000) : await visible(page, 'ai-open-lab', 5000);
-      check(` ai-pick-${m} selects ${title} (title, its tab, the card gone)`, clicked && on && cardGone && body, `clicked=${clicked} title=${on} cardGone=${cardGone} tab=${body}`);
+      check(` rail nav-gemini-${m} opens ${title} (title, its tab, the card gone)`, clicked && on && cardGone && body, `clicked=${clicked} title=${on} cardGone=${cardGone} tab=${body}`);
       if (m === 'agent') {
         check(" …on Home it is 'Open in Lab', off until the INPUT node has a source", await page.evaluate(() => document.querySelector('[data-testid="ai-open-lab"]').disabled));
       }
-      if (m !== 'art_director') {
-        await domClick(page, `nav-gemini-${m}`); // the rail toggles back to the card
-        await visible(page, 'ai-pick-art_director', 5000);
-      }
+      await domClick(page, `nav-gemini-${m}`); // the rail toggles back to the card
+      check(` …a second click on nav-gemini-${m} is back to the card`, await visible(page, 'ai-active-card', 5000));
     }
+
+    // the model picker: Google's list (FREE / PAID / NEW), the effort slider, Done
+    const l0 = mock.lists;
+    await domClick(page, 'ai-model-button');
+    check(' ai-model-button opens the picker (ai-model-picker), the card is gone', (await visible(page, 'ai-model-picker', 5000)) && (await gone(page, 'ai-active-card')));
+    const wantRows = ['gemini-4-hydrogen', 'gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-4-argon', 'gemini-5-preview-test'];
+    await page.waitForFunction((ids) => ids.every((id) => !!document.querySelector(`[data-testid="ai-model-row-${id}"]`)), wantRows, { timeout: 10_000 }).catch(() => {});
+    const pick = await page.evaluate(() => {
+      const rows = {};
+      for (const r of document.querySelectorAll('[data-testid^="ai-model-row-"]')) {
+        rows[r.getAttribute('data-testid').slice('ai-model-row-'.length)] = { text: r.innerText.replace(/\s+/g, ' ').trim(), checked: r.getAttribute('aria-checked') === 'true' };
+      }
+      return rows;
+    });
+    const ids = Object.keys(pick);
+    check(" the picker lists the mock's models (and not the decoys: embedding, imagen, 2.0, tts)",
+      wantRows.every((id) => ids.includes(id)) && !ids.some((id) => /embedding|imagen|2\.0|tts/.test(id)) && mock.lists > l0, short(ids, 300));
+    check(' hydrogen: selected, FREE', !!pick['gemini-4-hydrogen'] && pick['gemini-4-hydrogen'].checked && /free/i.test(pick['gemini-4-hydrogen'].text), short(pick['gemini-4-hydrogen']));
+    check(' 3.8 Flash: FREE · argon: PAID · gemini-5-preview-test (unknown to the build): NEW',
+      !!pick['gemini-3.8-flash'] && /free/i.test(pick['gemini-3.8-flash'].text)
+      && !!pick['gemini-4-argon'] && /paid/i.test(pick['gemini-4-argon'].text)
+      && !!pick['gemini-5-preview-test'] && /new/i.test(pick['gemini-5-preview-test'].text) && !/new/i.test(pick['gemini-4-hydrogen'].text),
+      short({ flash: pick['gemini-3.8-flash'] && pick['gemini-3.8-flash'].text, argon: pick['gemini-4-argon'] && pick['gemini-4-argon'].text, fut: pick['gemini-5-preview-test'] && pick['gemini-5-preview-test'].text }));
+    const choiceNow = () => page.evaluate(() => { try { return JSON.parse(localStorage.getItem('syntech.geminiChoice') || 'null'); } catch { return 'unparsable'; } });
+    const setSlider = (i) => page.evaluate((v) => {
+      const el = document.querySelector('[data-testid="ai-effort-slider"]');
+      if (!el) return null;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, String(v));
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return { type: el.type, max: el.max };
+    }, i);
+    const sl = await setSlider(0); // hydrogen offers low · medium · high · x-high
+    await sleep(200);
+    const c1 = await choiceNow();
+    check(' ai-effort-slider is a range input; moving it to the first stop stores syntech.geminiChoice {gemini-4-hydrogen, low}',
+      !!sl && sl.type === 'range' && sl.max === '3' && !!c1 && c1.model === 'gemini-4-hydrogen' && c1.effort === 'low', short({ sl, c1 }));
+    await setSlider(3);
+    await sleep(200);
+    const c2 = await choiceNow();
+    check(' …and the last stop stores xhigh', !!c2 && c2.model === 'gemini-4-hydrogen' && c2.effort === 'xhigh', short(c2));
+    await domClick(page, 'ai-model-done');
+    check(' ai-model-done closes the picker: the card is back, still HYDROGEN',
+      (await visible(page, 'ai-active-card', 5000)) && (await gone(page, 'ai-model-picker')) && (await text(page, 'ai-model-button')).toUpperCase() === 'HYDROGEN');
+    // the later steps assume the default choice (Hydrogen · High, nothing stored)
+    await page.evaluate(() => localStorage.removeItem('syntech.geminiChoice'));
   });
 
   /* ── 4 ── */
@@ -640,6 +746,12 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const gc = (rec && rec.body.generationConfig) || {};
     check(' a responseJsonSchema (JSON mode) was sent', gc.responseMimeType === 'application/json' && !!(gc.responseJsonSchema && gc.responseJsonSchema.properties && gc.responseJsonSchema.properties.proposals), short(Object.keys(gc)));
     check(` model ${MODEL}, key in the header`, rec.model === MODEL && rec.key === GOOD, `${rec.model} key=${rec.key ? 'header' : 'none'}`);
+    check(' default run (no stored choice): Google got thinkingLevel HIGH, nothing else in thinkingConfig', !!rec.thinkingConfig && rec.thinkingConfig.thinkingLevel === 'HIGH' && Object.keys(rec.thinkingConfig).length === 1, short(rec.thinkingConfig));
+    const mt = r.json && r.json.meta;
+    check(" the result's meta proves it: requested/model gemini-4-hydrogen, effort high, 1200 thought tokens",
+      !!mt && mt.requested === 'gemini-4-hydrogen' && mt.model === 'gemini-4-hydrogen' && mt.effort === 'high' && mt.thoughtsTokens === 1200 && typeof mt.ms === 'number', short(mt));
+    const adMeta = await text(page, 'ai-meta-art_director');
+    check(" the result card ends with its meta line: 'gemini-4-hydrogen · high · 1,200 thinking tokens'", await visible(page, 'ai-meta-art_director', 5000) && adMeta === 'gemini-4-hydrogen · high · 1,200 thinking tokens', adMeta);
     check(' context says it is a still photo', /still photo/.test(m.text));
 
     // the validator: 4 mock proposals → 3 (the all-invalid one dropped), ids cleaned, raw-source effect first
@@ -697,6 +809,14 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     // the optional request field: typed text travels as `intent` and reaches the prompt
     const ASK = 'MOCK-ASK: keep the lights readable';
     check(' the Optimizer has an optional request field (ai-opt-intent)', await visible(page, 'ai-opt-intent', 30_000));
+    // the intent fields are textareas: Shift+Enter is a new line (it does not submit), Enter submits
+    const optG = mock.generate.length;
+    await page.locator(sel('ai-opt-intent')).fill('line one');
+    await page.keyboard.press('Shift+Enter');
+    await page.keyboard.type('line two');
+    const ta = await page.evaluate(() => { const e = document.querySelector('[data-testid="ai-opt-intent"]'); return { tag: e.tagName, value: e.value }; });
+    await sleep(400);
+    check(' ai-opt-intent is a textarea; Shift+Enter inserts a newline and sends nothing', ta.tag === 'TEXTAREA' && ta.value === 'line one\nline two' && mock.generate.length === optG, short(ta));
     await page.locator(sel('ai-opt-intent')).fill(ASK);
     check(" typing a request adds 'your request' to Sends", /\+ your request$/.test(await sendsLine(page)), await sendsLine(page));
     const ro = await roleCall(page, '/api/gemini/optimizer', 'ai-opt-run', 240_000);
@@ -798,6 +918,8 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
 
   /* ── 6 ── */
   await step(6, async () => {
+    // steps 6-8 test the fixed-look plan (params, floors, clamps, Undo): no timeline here — steps 13/14 do cues
+    mock.agentCues(false);
     if (await page.locator(sel('chain-lab')).isVisible().catch(() => false)) { // still open after a failed step 5: close it first (nav-ailab toggles)
       await domClick(page, 'nav-ailab');
       await page.waitForSelector(sel('chain-lab'), { state: 'hidden', timeout: 10_000 }).catch(() => {});
@@ -833,7 +955,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(" the panel says 'music on', with no 'No music on' warning", /music on/.test(pt) && !/No music on/.test(pt), short(pt.replace(/\s+/g, ' '), 200));
     const sends = await sendsLine(page);
     check(" Sends: the uploaded clip + frame pair + 4s output clip with music + signals + chain + the art direction",
-      /^Sends: the uploaded clip \(video \+ audio, already on Google\) \+ 1 frame pair \(source \+ output\) \+ 4s output clip with music \+ 3s of live signals \+ the chain \+ the art direction$/.test(sends), sends);
+      /^Sends: the uploaded clip \(video \+ audio, already on Google\) \+ 1 frame pair \(source \+ output\) \+ 4s output clip with music \+ 3s of live signals \+ the chain \+ the beat grid \(read here, free\) \+ the art direction\. If the Agent picks other effects: a 2nd request with a new frame pair \(the clip is not uploaded again\)\.$/.test(sends), sends);
 
     const before = await labState(page);
     const g0 = mock.generate.length;
@@ -843,6 +965,8 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const r = await roleCall(page, '/api/gemini/agent', 'ai-agent-run');
     check(' server answered 200', r.status === 200, `${r.status} in ${r.sec}s ${short(r.json, 90)}`);
     check(' result card shown', await visible(page, 'ai-agent-result', 10_000));
+    const agMeta = await text(page, 'ai-meta-agent');
+    check(" the card ends with its meta line 'gemini-4-hydrogen · high · 1,200 thinking tokens'", agMeta === 'gemini-4-hydrogen · high · 1,200 thinking tokens', agMeta);
 
     // the music was already on (the INPUT did it): the Run has nothing to switch on and says nothing
     const a1 = await audioState(page);
@@ -1140,6 +1264,134 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' Agent: its card is still live (no stale banner)', await page.$(sel('ai-agent-stale')) === null);
   });
 
+  /* ── 13 ── */
+  await step(13, async () => {
+    // the Lab is still open on the 120 BPM clip (analog → bokeh, music on): the Agent now also writes the timeline
+    mock.agentCues(true);
+    check(' Agent tab on screen (Lab)', await openRole(page, 'agent', 'ai-agent-run'));
+    await sleep(1300);
+    const sends = await sendsLine(page);
+    check(" Sends names the beat grid (read here, free) and the possible 2nd request", /\+ the beat grid \(read here, free\)/.test(sends) && /If the Agent picks other effects: a 2nd request/.test(sends), sends);
+    check(' no timeline yet: no cue lane, no CUE AUTO chip', (await gone(page, 'cue-lane')) && (await gone(page, 'cue-auto')));
+    const before = await labState(page);
+    const g0 = mock.generate.length;
+    const b0 = roleBodies.length;
+    const r = await roleCall(page, '/api/gemini/agent', 'ai-agent-run');
+    check(' server answered 200', r.status === 200, `${r.status} in ${r.sec}s (${r.clicks} click) ${short(r.json, 90)}`);
+    const card = await page.waitForSelector(sel('ai-agent-result'), { state: 'visible', timeout: 60_000 }).then(() => true).catch(() => false);
+    check(' result card shown', card, await panelText(page));
+    const recs = mock.generate.slice(g0).filter((x) => x.role === 'agent');
+    check(' exactly ONE Agent request to Google (the answer has no chain)', recs.length === 1 && mock.generate.slice(g0).length === 1, mock.generate.slice(g0).map((x) => x.role).join(','));
+    const ab = roleBodies.slice(b0).filter((x) => x.url.endsWith('/api/gemini/agent')).map((x) => x.body)[0] || {};
+    const grid = ab.beatGrid || null;
+    check(' the panel sent allowChain true + wantCues true + a beat grid (no chainChanged)', ab.allowChain === true && ab.wantCues === true && !!grid && !ab.chainChanged,
+      short({ allowChain: ab.allowChain, wantCues: ab.wantCues, chainChanged: ab.chainChanged, grid: grid && { bpm: grid.bpm, firstBeat: grid.firstBeat, beatsPerBar: grid.beatsPerBar, duration: grid.duration } }));
+    check(' the grid is the clip\'s own tempo: 120 BPM (±2.5), 4 beats per bar, about 6 s long', !!grid && Math.abs(grid.bpm - 120) <= 2.5 && grid.beatsPerBar === 4 && Math.abs(grid.duration - 6) < 1, grid ? `${grid.bpm} BPM, ${grid.duration}s` : 'none');
+    const rec = recs[0] || {};
+    check(" the prompt says 'CHAIN: open' + 'TIMELINE: write cues' + the BEAT GRID, and the mock read the grid back (same BPM)",
+      /^CHAIN: open/m.test(rec.text || '') && /^TIMELINE: write cues/m.test(rec.text || '') && !!rec.grid && !!grid && Math.abs(rec.grid.bpm - grid.bpm) < 0.06,
+      short({ mockBpm: rec.grid && rec.grid.bpm, sentBpm: grid && grid.bpm }));
+    // what the validator made of the 4 cues the mock wrote: 3 kept (snapped to the grid), the ghost dropped
+    const plan = (r.json && r.json.plan) || { params: [], cues: [] };
+    const cues = plan.cues || [];
+    const beat = grid ? 60 / grid.bpm : 0.5;
+    const offGrid = (t) => { const f = ((((t - (grid ? grid.firstBeat : 0)) / beat) % 1) + 1) % 1; return Math.min(f, 1 - f) * beat; };
+    check(' plan.cues: 3 cues (INTRO, DROP, OUTRO) in time order, the ghost cue dropped', cues.length === 3 && cues.map((c) => c.label).join() === 'INTRO,DROP,OUTRO' && cues.every((c, i) => i === 0 || c.at > cues[i - 1].at),
+      short(cues.map((c) => `${c.at} ${c.label}`)));
+    check(' …every cue after the opening sits ON a beat of the grid the panel sent (the server snapped them; the opening stays at 0)',
+      cues.length === 3 && cues[0].at === 0 && cues.slice(1).every((c) => offGrid(c.at) < 0.0015), short(cues.map((c) => `${c.at} (${offGrid(c.at).toFixed(4)} off)`)));
+    const raw = rec.cueAts || [];
+    check(' …and the mock really wrote them off the beat (the snap moved the 2nd and 3rd)', raw.length === 3 && raw.slice(1).every((t, i) => offGrid(t) > 0.1 * beat && Math.abs(t - cues[i + 1].at) > 0.01), `raw ${short(raw)} → ${short(cues.map((c) => c.at))}`);
+    const cueKeys = cues.flatMap((c) => c.params.map((p) => p.key));
+    check(' each kept cue carries the valid key the mock chose (from the chain table)', cues.length === 3 && cues.every((c) => c.params.length === 1) && (rec.cueKeys || []).length > 0 && cueKeys.every((k) => before[k]), short(cueKeys));
+    check(" the dropped list names the ghost cue ('… GHOST: nothing valid to change')", ((r.json && r.json.dropped) || []).some((d) => /GHOST: nothing valid to change/.test(d)), short((r.json && r.json.dropped) || [], 240));
+    // the Lab: lane + marks + chip
+    await sleep(800);
+    const ui = await page.evaluate(() => ({
+      lane: !!document.querySelector('[data-testid="cue-lane"]'),
+      laneLabels: [...document.querySelectorAll('[data-testid="cue-lane"] > span')].map((x) => x.textContent),
+      marks: document.querySelectorAll('[data-testid^="cue-mark-"]').length,
+      chip: (document.querySelector('[data-testid="cue-auto"]')?.textContent || '').replace(/\s+/g, ' ').trim(),
+      head: (document.querySelector('[data-testid="ai-agent-cues"] > span')?.textContent || ''),
+      rows: document.querySelectorAll('[data-testid^="ai-agent-cue-"]').length,
+      change: !!document.querySelector('[data-testid="ai-agent-chain-change"]'),
+      label: (document.querySelector('[data-testid="ai-agent-result"] > div span.font-mono, [data-testid="ai-agent-result"]')?.innerText || ''),
+    }));
+    check(' the Lab shows the lane (cue-lane) with 3 marks (cue-mark-0..2) and the CUE AUTO chip', ui.lane && ui.marks === 3 && /^CUE AUTO · 3$/.test(ui.chip), short(ui));
+    check(' …the lane carries the cue labels INTRO, DROP, OUTRO', ui.laneLabels.join() === 'INTRO,DROP,OUTRO', ui.laneLabels.join());
+    const labCues = await page.evaluate(() => { const c = window.__SYN.lab.cues(); return c ? { n: c.cues.length, bpm: c.grid && c.grid.bpm } : null; });
+    check(' the Lab handle holds the 3 cues and the grid', !!labCues && labCues.n === 3 && !!grid && labCues.bpm === grid.bpm, short(labCues));
+    check(' the card: ai-agent-cues (3 rows ai-agent-cue-0..2), no chain-change line, meta line present',
+      /^Timeline · 3 cues/.test(ui.head) && ui.rows === 3 && !ui.change && (await text(page, 'ai-meta-agent')) === 'gemini-4-hydrogen · high · 1,200 thinking tokens', short({ head: ui.head, rows: ui.rows, change: ui.change }));
+    check(" the card says 'Applied N changes + a timeline of 3 cues'", /Applied \d+ changes? \+ a timeline of 3 cues/.test(await text(page, 'ai-agent-result')), short(await text(page, 'ai-agent-result'), 160));
+    // ONE Undo: plan + timeline
+    check(' ai-agent-undo is on (this run is the top of the stack)', (await disabled(page, 'ai-agent-undo')) === false, await text(page, 'ai-agent-undo'));
+    await domClick(page, 'ai-agent-undo');
+    await sleep(900);
+    const gone1 = await page.evaluate(() => ({ lane: !!document.querySelector('[data-testid="cue-lane"]'), marks: document.querySelectorAll('[data-testid^="cue-mark-"]').length, chip: !!document.querySelector('[data-testid="cue-auto"]'), cues: window.__SYN.lab.cues() }));
+    check(' Undo: the lane, the marks and the chip are gone, the Lab holds no timeline', !gone1.lane && gone1.marks === 0 && !gone1.chip && gone1.cues === null, short(gone1));
+    const after = await labState(page);
+    const keys = [...new Set([...plan.params.map((p) => p.key), ...cueKeys])];
+    const notBack = labDiff(before, after, keys);
+    check(` Undo: every plan + cue key is back to its value before the run (${keys.length} keys)`, keys.length > 0 && notBack.length === 0, notBack.map((k) => `${k}: ${short(after[k])} vs ${short(before[k])}`).join('; '));
+    check(" the card says 'Undone'", /Undone/.test(await text(page, 'ai-agent-result')));
+  });
+
+  /* ── 14 ── */
+  await step(14, async () => {
+    // the Agent asks for another chain: it answers `chain` once, the panel rebuilds the Lab and asks again
+    check(' Agent tab on screen (Lab)', await openRole(page, 'agent', 'ai-agent-run'));
+    const order0 = await labOrder(page);
+    check(' the Lab chain is analog → bokeh before the run', order0 === 'analog>bokeh', order0);
+    mock.agentCues(true);
+    mock.agentChainOnce(['bokeh', 'analog']);
+    const g0 = mock.generate.length;
+    const b0 = roleBodies.length;
+    const u0 = mock.uploads.length;
+    const r1 = await roleCall(page, '/api/gemini/agent', 'ai-agent-run');
+    check(' the 1st request answered 200 with the chain (no params, no cues)', r1.status === 200 && Array.isArray(r1.json && r1.json.chain) && r1.json.chain.join() === 'bokeh,analog'
+      && r1.json.plan.params.length === 0 && r1.json.plan.cues.length === 0, `${r1.status} in ${r1.sec}s ${short(r1.json, 160)}`);
+    // the rebuild + the second request + the result card: slow under software GL
+    const done = await page.waitForFunction(() => !!document.querySelector('[data-testid="ai-agent-chain-change"]') || !!document.querySelector('[data-testid="ai-agent-error"]'), null, { timeout: 420_000 }).then(() => true).catch(() => false);
+    check(' the run finished with the chain-change card (no error line)', done && (await gone(page, 'ai-agent-error')), `${await panelText(page)}`);
+    const recs = mock.generate.slice(g0).filter((x) => x.role === 'agent');
+    check(' EXACTLY two Agent requests reached Google', recs.length === 2 && mock.generate.slice(g0).length === 2, mock.generate.slice(g0).map((x) => x.role).join(','));
+    const bodies = roleBodies.slice(b0).filter((x) => x.url.endsWith('/api/gemini/agent')).map((x) => x.body);
+    const [a1, a2] = bodies;
+    check(' 1st browser request: allowChain + wantCues + beat grid, chain [analog, bokeh], not chainChanged', bodies.length === 2 && a1.allowChain === true && a1.wantCues === true && !!a1.beatGrid && !a1.chainChanged && a1.chain.order.join() === 'analog,bokeh',
+      short({ n: bodies.length, allowChain: a1 && a1.allowChain, wantCues: a1 && a1.wantCues, order: a1 && a1.chain && a1.chain.order }));
+    check(' 2nd browser request: chainChanged true, no allowChain, chain [bokeh, analog] with its controls, a new frame pair, same grid + same uploaded file',
+      !!a2 && a2.chainChanged === true && a2.allowChain === undefined && a2.chain.order.join() === 'bokeh,analog' && a2.chain.params.some((p) => p.key.startsWith('bokeh.'))
+      && Array.isArray(a2.media) && a2.media.length === 2 && a2.wantCues === true && a2.beatGrid && a1.beatGrid && a2.beatGrid.bpm === a1.beatGrid.bpm
+      && !!a2.source.fileUri && a2.source.fileUri === a1.source.fileUri,
+      short({ chainChanged: a2 && a2.chainChanged, allowChain: a2 && a2.allowChain, order: a2 && a2.chain && a2.chain.order, media: a2 && a2.media && a2.media.length }));
+    check(" the prompts: 1st 'CHAIN: open', 2nd 'CHAIN: final' on the new chain table (INPUT → bokeh → analog → OUTPUT)",
+      !!recs[0] && !!recs[1] && /^CHAIN: open/m.test(recs[0].text) && /^CHAIN: final/m.test(recs[1].text) && /CHAIN \(render order\): INPUT → bokeh → analog → OUTPUT/.test(recs[1].text) && /^TIMELINE: write cues/m.test(recs[1].text));
+    check(' no new upload (the clip was uploaded once, in step 5)', mock.uploads.length === u0);
+    check(' the Lab chain became bokeh → analog (Agent tab still on screen)', (await waitOrder(page, 'bokeh>analog')) === 'bokeh>analog' && !!(await page.$(sel('ai-agent-run'))), await labOrder(page));
+    check(' every node of the new chain has its SynLab link', await waitLinks(page));
+    const ui = await page.evaluate(() => ({
+      change: (document.querySelector('[data-testid="ai-agent-chain-change"]')?.textContent || '').replace(/\s+/g, ' ').trim(),
+      head: (document.querySelector('[data-testid="ai-agent-cues"] > span')?.textContent || ''),
+      rows: document.querySelectorAll('[data-testid^="ai-agent-cue-"]').length,
+      lane: !!document.querySelector('[data-testid="cue-lane"]'),
+      marks: document.querySelectorAll('[data-testid^="cue-mark-"]').length,
+      summary: document.querySelector('[data-testid="ai-agent-result"]')?.innerText || '',
+    }));
+    check(" ai-agent-chain-change: 'Chain: BOKEH → ANALOG (the Agent's choice, was ANALOG → BOKEH) · 2 requests'", /^Chain: Bokeh → Analog.*was Analog → Bokeh.* · 2 requests$/i.test(ui.change), ui.change);
+    check(" the 2nd answer's timeline is installed: 3 cue rows, lane + 3 marks", /^Timeline · 3 cues/.test(ui.head) && ui.rows === 3 && ui.lane && ui.marks === 3, short(ui));
+    check(' the card shows the 2nd answer (the summary), not the chain-only one', /MOCK-AGENT:/.test(ui.summary) && !/MOCK-AGENT-CHAIN/.test(ui.summary), short(ui.summary, 100));
+    // ONE Undo reverts the plan + the timeline AND puts the previous chain back (the Lab rebuilds it)
+    await domClick(page, 'ai-agent-undo');
+    const back = await waitOrder(page, 'analog>bokeh', 150_000);
+    check(' Undo: the Lab chain is back to analog → bokeh (rebuilt)', back === 'analog>bokeh', back);
+    check(' …with every node linked again', await waitLinks(page));
+    await sleep(900);
+    const gone2 = await page.evaluate(() => ({ lane: !!document.querySelector('[data-testid="cue-lane"]'), marks: document.querySelectorAll('[data-testid^="cue-mark-"]').length, chip: !!document.querySelector('[data-testid="cue-auto"]'), cues: window.__SYN.lab.cues() }));
+    check(" Undo: the timeline is gone (lane, marks, chip), the card says 'Undone'", !gone2.lane && gone2.marks === 0 && !gone2.chip && gone2.cues === null && /Undone/.test(await text(page, 'ai-agent-result')), short(gone2));
+    mock.agentCues(false); // step 8 goes back to the fixed-look plan
+  });
+
   /* ── 8 ── */
   await step(8, async () => {
     // a clip with no audio track on the INPUT node, then the Lab on it
@@ -1190,7 +1442,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     await sleep(1300); // the tab polls the Lab, and re-reads the upload cache
     const s1 = await sendsLine(page);
     check(" Sends now: 'the uploaded clip (video only — it has no soundtrack, already on Google)', no output clip promised",
-      s1 === 'Sends: the uploaded clip (video only — it has no soundtrack, already on Google) + 1 frame pair (source + output) + 3s of live signals + the chain + the art direction', s1);
+      s1 === 'Sends: the uploaded clip (video only — it has no soundtrack, already on Google) + 1 frame pair (source + output) + 3s of live signals + the chain + the beat grid (read here, free) + the art direction. If the Agent picks other effects: a 2nd request with a new frame pair (the clip is not uploaded again).', s1);
     const pt1 = await panelAll(page);
     check(" the context line: 'No music on: this clip has no soundtrack — the effects' music reactions wait for Track or Mic in the Lab.'",
       /No music on: this clip has no soundtrack — the effects' music reactions wait for Track or Mic in the Lab\./.test(pt1) && !/Run switches on the clip's own audio/.test(pt1), short(pt1.replace(/\s+/g, ' '), 200));
@@ -1211,8 +1463,8 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const g0 = mock.generate.length;
     const r = await roleCall(page, '/api/gemini/agent', 'ai-agent-run');
     check(' 400 API_KEY_INVALID from Google → our 401 invalid_key', r.status === 401 && r.json && r.json.error === 'invalid_key' && mock.generate.slice(g0).some((x) => x.status === 400), `${r.status} ${short(r.json)}`);
-    check(' badge back to STANDBY', await waitBadge(page, 'STANDBY', 10_000), (await badge(page)).text);
-    check(' key form back', await visible(page, 'ai-key-input', 10_000));
+    check(' badge back to STANDBY', await waitBadge(page, 'STANDBY', LOADED_MS), (await badge(page)).text);
+    check(' key form back', await visible(page, 'ai-key-input', LOADED_MS));
     check(" it says the key was rejected", /rejected/i.test(await text(page, 'ai-key-error')), await text(page, 'ai-key-error'));
     check(' rail locked again', (await rail(page)).every((d) => d === true), JSON.stringify(await rail(page)));
 
@@ -1224,8 +1476,8 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     mock.failNext({ status: 401, body: UNAUTHENTICATED_BODY });
     const r2 = await roleCall(page, '/api/gemini/art-director', 'ai-ad-run');
     check(' 401 from Google → our 401 invalid_key', r2.status === 401 && r2.json && r2.json.error === 'invalid_key', `${r2.status} ${short(r2.json)}`);
-    check(' badge back to STANDBY', await waitBadge(page, 'STANDBY', 10_000), (await badge(page)).text);
-    check(' key form back', await visible(page, 'ai-key-input', 10_000));
+    check(' badge back to STANDBY', await waitBadge(page, 'STANDBY', LOADED_MS), (await badge(page)).text);
+    check(' key form back', await visible(page, 'ai-key-input', LOADED_MS));
     check(' rail locked again', (await rail(page)).every((d) => d === true), JSON.stringify(await rail(page)));
   });
 
@@ -1301,6 +1553,92 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     }
     const src = ['server.ts', 'ai-provider.ts', 'ai-roles.ts', 'package.json'].map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
     check(' no Groq left in the server code or dependencies', !/groq/i.test(src));
+  });
+
+  /* ── 12 ── */
+  await step(12, async () => {
+    const tiny = fs.readFileSync(fx.photo).toString('base64');
+    const body = JSON.stringify({ source: { kind: 'image', name: 'x.jpg' }, media: [{ mimeType: 'image/jpeg', data: tiny, label: 'SOURCE photo' }] });
+    const hdr = (extra = {}) => ({ 'content-type': 'application/json', 'x-gemini-key': GOOD, ...extra });
+    const run = async (extra) => {
+      const g0 = mock.generate.length;
+      const r = await fetch(`${APP}/api/gemini/art-director`, { method: 'POST', headers: hdr(extra), body });
+      return { status: r.status, json: await r.json().catch(() => null), recs: mock.generate.slice(g0) };
+    };
+
+    // the panel's client (src/ai/client.ts, served by Vite) sends the stored choice
+    await page.evaluate(() => localStorage.setItem('syntech.geminiChoice', JSON.stringify({ model: 'gemini-3.8-flash', effort: 'low' })));
+    const g0 = mock.generate.length;
+    const viaClient = await page.evaluate(async ({ body, key }) => {
+      const c = await import('/src/ai/client.ts');
+      c.storeKey(key);
+      try { return { ok: true, json: await c.aiPost('/api/gemini/art-director', JSON.parse(body)), stored: c.getStoredChoice() }; }
+      catch (e) { return { ok: false, err: String(e && e.message) }; }
+    }, { body, key: GOOD });
+    const rc = mock.generate.slice(g0);
+    check(' stored choice {gemini-3.8-flash, low}: the next role run reaches Google as gemini-3.8-flash + LOW',
+      viaClient.ok && rc.length === 1 && rc[0].model === 'gemini-3.8-flash' && rc[0].thinkingConfig && rc[0].thinkingConfig.thinkingLevel === 'LOW', short(viaClient.ok ? rc.map((x) => [x.model, x.thinkingConfig]) : viaClient));
+    const m2 = viaClient.json && viaClient.json.meta;
+    check(' its meta says so (requested + model gemini-3.8-flash, effort low, 100 thought tokens)',
+      !!m2 && m2.requested === 'gemini-3.8-flash' && m2.model === 'gemini-3.8-flash' && m2.effort === 'low' && m2.thoughtsTokens === 100, short(m2));
+    const cleaned = await page.evaluate(async () => {
+      const c = await import('/src/ai/client.ts');
+      localStorage.setItem('syntech.geminiChoice', JSON.stringify({ model: 'Not A Model', effort: 'high' }));
+      const bad = c.getStoredChoice();
+      c.storeChoice({ model: 'gemini-4-hydrogen', effort: 'xhigh' });
+      const good = c.getStoredChoice();
+      c.forgetKey();
+      const kept = c.getStoredChoice();
+      c.forgetChoice();
+      return { bad, good, kept, gone: c.getStoredChoice() };
+    });
+    check(' client: an invalid stored choice reads as null; forgetKey keeps the choice; forgetChoice clears it',
+      cleaned.bad === null && cleaned.good && cleaned.good.effort === 'xhigh' && cleaned.kept && cleaned.kept.model === 'gemini-4-hydrogen' && cleaned.gone === null, short(cleaned));
+
+    // GET /api/gemini/models
+    const ml = await fetch(`${APP}/api/gemini/models`, { headers: { 'x-gemini-key': GOOD } });
+    const mj = await ml.json().catch(() => null);
+    const ids = ((mj && mj.models) || []).map((m) => m.id);
+    const fut = ((mj && mj.models) || []).find((m) => m.id === 'gemini-5-preview-test');
+    check(' GET /models → 200, source google, first row gemini-4-hydrogen, recommended gemini-4-hydrogen',
+      ml.status === 200 && mj.source === 'google' && ids[0] === 'gemini-4-hydrogen' && mj.recommended === 'gemini-4-hydrogen', `${ml.status} ${short(ids, 300)}`);
+    check(' it includes gemini-5-preview-test (unknown to the build) as known:false, free:unknown, listed:true',
+      !!fut && fut.known === false && fut.free === 'unknown' && fut.listed === true && fut.name === 'Gemini 5 Preview (test)', short(fut));
+    check(' it excludes the decoys (embedding, imagen, 2.0, tts) and keeps gemini-3.8-flash, 3.5-flash-lite, argon',
+      ['gemini-embedding-001', 'imagen-4.0-generate-001', 'gemini-2.0-flash', 'gemini-3.8-flash-preview-tts'].every((d) => !ids.includes(d))
+      && ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-4-argon'].every((d) => ids.includes(d)), short(ids, 300));
+    const nk = await fetch(`${APP}/api/gemini/models`);
+    const nkj = await nk.json().catch(() => null);
+    check(' GET /models with no key → 401 no_key', nk.status === 401 && nkj && nkj.error === 'no_key', `${nk.status} ${short(nkj)}`);
+    const bk = await fetch(`${APP}/api/gemini/models`, { headers: { 'x-gemini-key': BAD } });
+    const bkj = await bk.json().catch(() => null);
+    check(' GET /models with BADKEY → 401 invalid_key', bk.status === 401 && bkj && bkj.error === 'invalid_key', `${bk.status} ${short(bkj)}`);
+
+    // model / effort errors are ours and honest
+    const aq = await run({ 'x-gemini-model': PAID_ONLY });
+    check(' x-gemini-model gemini-4-argon (free key, limit 0) → 429 quota "no free quota … paid only"',
+      aq.status === 429 && aq.json && aq.json.error === 'quota' && /"gemini-4-argon" has no free quota for this key \(paid only\)/.test(aq.json.message) && aq.recs.length === 1, `${aq.status} ${short(aq.json)}`);
+    const me = await run({ 'x-gemini-model': 'gemini-4-hydrogen', 'x-gemini-effort': 'minimal' });
+    check(' hydrogen + effort minimal → 400 bad_request from our server (names the offered efforts), Google saw no generateContent',
+      me.status === 400 && me.json && me.json.error === 'bad_request' && /does not offer effort "minimal"\. Pick one of: low, medium, high, extra high\./.test(me.json.message) && me.recs.length === 0, `${me.status} ${short(me.json)}`);
+    const bm = await run({ 'x-gemini-model': 'not a model' });
+    check(" x-gemini-model 'not a model' → 400 bad_request, Google not called", bm.status === 400 && bm.json && bm.json.error === 'bad_request' && bm.recs.length === 0, `${bm.status} ${short(bm.json)}`);
+    const be = await run({ 'x-gemini-effort': 'ludicrous' });
+    check(" x-gemini-effort 'ludicrous' → 400 bad_request, Google not called", be.status === 400 && be.json && be.json.error === 'bad_request' && be.recs.length === 0, `${be.status} ${short(be.json)}`);
+    const nf = await run({ 'x-gemini-model': 'gemini-9-nothing' });
+    check(' an unlisted model id Google answers 404 for → model_unavailable naming THAT model',
+      nf.json && nf.json.error === 'model_unavailable' && /"gemini-9-nothing" is not available for this key/.test(nf.json.message), `${nf.status} ${short(nf.json)}`);
+    const xh = await run({ 'x-gemini-model': 'gemini-4-hydrogen', 'x-gemini-effort': 'xhigh' });
+    check(' hydrogen + xhigh → thinkingLevel XHIGH on the wire, meta 3000 thought tokens, effort xhigh',
+      xh.status === 200 && xh.recs[0] && xh.recs[0].thinkingConfig.thinkingLevel === 'XHIGH' && xh.json.meta.effort === 'xhigh' && xh.json.meta.thoughtsTokens === 3000, `${xh.status} ${short(xh.recs[0] && xh.recs[0].thinkingConfig)}`);
+    const au = await run({ 'x-gemini-model': 'gemini-3.5-flash-lite' });
+    check(' a model with no stored effort uses its default effort (3.5-flash-lite is unknown to the build → default → no thinkingConfig)',
+      au.status === 200 && au.recs[0] && au.recs[0].thinkingConfig === null && au.json.meta.effort === 'default', `${au.status} ${short(au.recs[0] && au.recs[0].thinkingConfig)}`);
+    // key check on the chosen model
+    const k0 = mock.keyChecks.length;
+    const kr = await fetch(`${APP}/api/gemini/key`, { method: 'POST', headers: hdr({ 'x-gemini-model': 'gemini-3.8-flash' }), body: '{}' });
+    const krj = await kr.json().catch(() => null);
+    check(' POST /key with x-gemini-model checks THAT model and answers it', krj && krj.active === true && krj.model === 'gemini-3.8-flash' && mock.keyChecks.slice(k0).every((k) => k.model === 'gemini-3.8-flash'), short(krj));
   });
 
   /* ── 11 ── */

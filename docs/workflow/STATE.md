@@ -61,6 +61,10 @@ video applica gli effetti' e l'AI capisce da sola che effetti mettere e quando"*
   FAIL (textarea alta 0, box doppio, focus Done→Forget, blocco su modello mancante) → corretti; revisione ECC
   typescript/security WARNING (nessun critico) → corretti i punti utili; revisione Opus finale FAIL (Lab vuoto rifiutato;
   timeline fuori dalla pila Annulla) → corretti; **revisione Opus del delta: PASS**.
+- **Verifica**: `npm run lint` pulito, `npm run build` ok; `verify-gemini` (aggiornato al pannello nuovo + cue +
+  cambio catena, mock con cue/chain) **14/14 passi, 351/351 controlli, due volte di fila** (544 s / 567 s);
+  `verify-cues` 30/30 (motore: seek, loop, CUE AUTO, export, reload, uscita di un effetto, nuova sorgente);
+  `verify-agent-cues` 16/16 ×2 (anche da Lab vuoto), `verify-agent-fail` 6/6; test server cue/catena 16/16.
 - **ECC (everything claude code)** installato come plugin (user scope, `ecc@ecc` 2.2.3) e usato per la revisione
   TypeScript/sicurezza. Sul Mac: `claude plugin marketplace add affaan-m/ECC` poi `claude plugin install ecc@ecc`.
 - **Non verificato qui**: nessuna risposta vera di Gemini 4 Hydrogen (niente chiave; ai.google.dev bloccato dalla rete
