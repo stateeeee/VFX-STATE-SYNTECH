@@ -45,6 +45,14 @@ export interface SynLabApi {
   /** frame budget (2026-11-05): 0 = paused, >0 = rAF capped at that rate, null = native.
    *  Optional: a stale cached effect page may not have it. */
   setFrameBudget?(fps: number | null): void;
+  /** layout (2026-11-19, LAB v3): 'panel' = the effect shows only its panel (full width, natural
+   *  height, its own Source section hidden); its canvas area leaves the viewport but keeps
+   *  `width × height` CSS px and keeps rendering. 'standalone' = as opened alone. Optional: a stale
+   *  cached effect page may not have it. */
+  setLayout?(mode: 'panel' | 'standalone', size?: { width: number; height: number }): { mode: string; width: number; height: number };
+  layout?(): { mode: string; width: number; height: number };
+  /** the panel's height in px in panel mode (0 otherwise) */
+  panelHeight?(): number;
 }
 
 /** The node's SynLab, once its adapter registered (null while loading, or for an
@@ -57,6 +65,10 @@ export function synLabOf(iframe: HTMLIFrameElement | null | undefined): SynLabAp
     return null;
   }
 }
+
+/** the page a Lab node loads: the standalone effect, in panel-only layout from its first paint
+ *  (?synlayout=panel, read by syn-lab.js) */
+export const labPanelSrc = (src: string): string => `${src}${src.includes('?') ? '&' : '?'}synlayout=panel`;
 
 /** localStorage key of an effect's saved panel settings (same as EffectHost, 03-SPEC §4). */
 export const effectSettingsKey = (id: ModuleId) => `syntech.effectSettings.${id}`;

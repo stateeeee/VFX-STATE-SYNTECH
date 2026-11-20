@@ -10,7 +10,6 @@ import {
   Cpu,
   Save as SaveIcon,
   Folder as FolderIcon,
-  Sparkle as AiIcon,
   ChevronRight,
   Bot,
   Lightbulb,
@@ -19,6 +18,7 @@ import {
 import { ModuleConfig, ModuleId, ActiveTab, SignalSource } from './types';
 import { EffectTelemetry, ParamSchema, ShellMessage } from './bridge/types';
 import { EFFECTS_REGISTRY, hasRealEffect } from './effects-registry';
+import LabFlaskIcon from './components/LabFlaskIcon';
 import VfxCanvas from './components/VfxCanvas';
 import EffectHost, { EffectHostHandle } from './components/EffectHost';
 import ChainLab from './components/ChainLab';
@@ -208,10 +208,7 @@ export default function App() {
   // App initialization & Stream engine active state
   const [isStreaming, setIsStreaming] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('PARAMETERS');
-  const [activeModule, setActiveModule] = useState<ModuleId>(() => {
-    const saved = readSession().activeModule;
-    return saved && saved in EFFECTS_REGISTRY ? saved : 'blob_tracker';
-  });
+  const [activeModule, setActiveModule] = useState<ModuleId | null>(null); // no effect is selected at startup (the saved session's module is not restored)
   const [signalSource, setSignalSource] = useState<SignalSource>('L_INPUT_CHANNEL_01');
   const [bufferSize, setBufferSize] = useState<number>(8192);
   const [globalSyncLocked, setGlobalSyncLocked] = useState(true);
@@ -754,7 +751,7 @@ export default function App() {
     { id: 'painting', name: 'PAINTING', description: 'Video repainted as oil, tempera, pointillism, impressionism or expressionism.', status: 'STANDBY', parameters: {} },
   ]);
 
-  const currentModule = modules.find((m) => m.id === activeModule) || modules[0];
+  const currentModule = modules.find((m) => m.id === activeModule) || modules[0]; // fallback only: nothing reads it as a selection
 
   // Handle ticking counters
   useEffect(() => {
@@ -845,7 +842,7 @@ export default function App() {
     { key: 'save', label: savedFlash ? 'Saved' : 'Save', Icon: SaveIcon, active: savedFlash, onClick: handleSaveSession, title: 'Save the current session (module, theme) to this browser' },
     { key: 'projects', label: 'Projects', Icon: FolderIcon, active: projectsOpen, onClick: () => setProjectsOpen(true), title: 'Saved effect chains' },
     // the key stays 'ailab' (nav-ailab): the verify suites address it by testid
-    { key: 'ailab', label: 'Lab', Icon: AiIcon, active: labVisible, onClick: toggleLab },
+    { key: 'ailab', label: 'Lab', Icon: LabFlaskIcon, active: labVisible, onClick: toggleLab },
   ];
 
   // where the Gemini panel is working: the Agent and the Optimizer drive the

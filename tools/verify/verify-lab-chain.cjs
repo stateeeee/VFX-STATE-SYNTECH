@@ -1,5 +1,8 @@
 /*
- * THE LAB v2 — a chain of the REAL effects (operator decision 2026-10-28, "option 1").
+ * THE LAB v2/v3 — a chain of the REAL effects (operator decision 2026-10-28, "option 1"),
+ * shown like an OPENED EFFECT (LAB v3, operator design 2026-11-19): the effects' top bar
+ * (the chain's names A→Z), the chain OUTPUT in the framed stage + transport, and a right
+ * column with SOURCE · one block per node (A→Z, collapsed; open = its real panel) · LABORATORY.
  *
  * Every Lab node is the standalone effect in an iframe; each hop is the previous
  * effect's canvas.captureStream() fed through window.SynLab as an external source.
@@ -8,26 +11,28 @@
  *             moving on the right (motion), 1280×720, 30 fps, 8 s
  *   sound   — a 110 Hz bass pulse twice a second + a 440 Hz tone
  *
- *   1. wiring: one iframe per node, each with its FULL panel (its Info section)
+ *   1. wiring: one iframe per node, each with its FULL panel (its Info section) in
+ *      panel-only layout (SynLab.setLayout: its own Source section hidden, its canvas
+ *      area out of view at the stage's size — never 0×0); no tabs; the title = the
+ *      chain's names A→Z; blocks A→Z, every node block collapsed at open
  *   2. every hop delivers frames (fps of each captureStream, measured through a
- *      <video> + requestVideoFrameCallback) while the OUTPUT tab is on top — the
- *      nodes underneath must not stall
- *   2b. frame budget (SynLab.setFrameBudget, 03 §3.1): with the FIRST tab on top
- *      node 1 renders (the only one: native, budget null) and every node after
- *      it is paused (budget 0, its hop delivers no frames); on the INPUT tab a
- *      Gemini grab / measureFps hold the chain live and see FRESH output
- *      frames; hidden (step 10) every node is paused
+ *      <video> + requestVideoFrameCallback) with EVERY node block collapsed, then with an
+ *      open panel scrolled out of view — collapsed / scrolled-away iframes must not stall;
+ *      every node at the Lab frame budget (30); opening a block shows its panel
  *   3. OUTPUT ≠ INPUT (pixels); the external source is NOT mirrored (left-bright
  *      input → left-bright in node 1)
  *   4. audio: Clip turns on by itself, the sidebar meter moves; the Clip button
  *      turns it off and on again
  *   5. transport: pause freezes the chain (no input frames, output still), play
- *      resumes, scrub moves currentTime, loop toggles
- *   6. presets: save → change a param → load restores it
+ *      resumes, scrub moves currentTime, loop toggles; LOOP = PAUSE's look, on = amber text
+ *   6. LABORATORY = four buttons (SAVE / OPEN VFX CHAIN … PROJECTS, RESET, EXPORT): save →
+ *      change a param → open restores it; RESET puts the initial value back
  *   7. Gemini LabHandle: chainState lists params from every node; applyPlan /
  *      revertPlan round-trip one value
  *   8. Master MP4: a file > 0 bytes with a video track (and audio)
- *   9. day theme reaches every Lab iframe (data-syn-theme + the effect's <html>)
+ *   9. day theme reaches every Lab iframe (data-syn-theme + the effect's <html>); the
+ *      block headers stay black + amber
+ *  10. hidden Lab: parked, every node paused, a Gemini grab holds it live (FRESH frames)
  *
  * Two targets (same as verify-audio-meter.cjs):
  *   browser: BASE=http://localhost:3103 NODE_PATH=/opt/node22/lib/node_modules \
@@ -189,6 +194,35 @@ const nodeBudgets = (page) => page.evaluate((chain) => Object.fromEntries(chain.
 })), CHAIN);
 const audioMode = (page) => page.evaluate(() => window.__synLabDebug.audio.mode);
 const clipOn = (page) => page.evaluate(() => document.querySelector('[data-testid="audio-clip"]')?.classList.contains('on'));
+const NAME = { analog: 'ANALOG', anamorphic_lab: 'ANAMORPHIC', blob_reveal: 'BLOB REVEAL', blob_tracker: 'BLOB TRACKER', bokeh: 'BOKEH', invisible: 'INVISIBLE', time_machine: 'TIME MACHINE', quadtree: 'QUADTREE', pointcloud: 'POINTCLOUD', painting: 'PAINTING' };
+const SORTED = CHAIN.slice().sort((a, b) => (NAME[a] || a).localeCompare(NAME[b] || b));
+/* the right column: every block in DOM order, with its open state and its clip's height */
+const blocks = (page) => page.evaluate(() => [...document.querySelectorAll('[data-testid^="lab-block-head-"]')].map((h) => {
+  const blk = h.closest('section');
+  const clip = blk?.querySelector('.fxl-blk-clip');
+  return { id: h.dataset.testid.replace('lab-block-head-', ''), open: h.getAttribute('aria-expanded') === 'true', link: h.dataset.link || null, clipH: clip ? Math.round(clip.getBoundingClientRect().height) : -1 };
+}));
+const setBlock = (page, id, open) => page.evaluate(({ id, open }) => {
+  const h = document.querySelector(`[data-testid="lab-block-head-${id}"]`);
+  if (!h) throw new Error('missing block ' + id);
+  if ((h.getAttribute('aria-expanded') === 'true') !== open) h.click();
+}, { id, open });
+const scrollColumn = (page, where) => page.evaluate((where) => {
+  const c = document.querySelector('[data-testid="lab-column"]');
+  c.scrollTop = where === 'end' ? c.scrollHeight : 0;
+  return { top: Math.round(c.scrollTop), max: c.scrollHeight - c.clientHeight };
+}, where);
+/* the OUTPUT <video>: frames presented in `ms` (rVFC) and how far its clock moved */
+const outputAdvance = (page, ms) => page.evaluate(async (ms) => {
+  const ov = document.querySelector('[data-testid="lab-output-video"]');
+  let n = 0, alive = true;
+  const cb = () => { if (!alive) return; n++; ov.requestVideoFrameCallback(cb); };
+  ov.requestVideoFrameCallback(cb);
+  const t0 = ov.currentTime;
+  await new Promise((r) => setTimeout(r, ms));
+  alive = false;
+  return { frames: n, clock: Math.round((ov.currentTime - t0) * 100) / 100, live: !!(ov.srcObject && ov.srcObject.getVideoTracks().some((t) => t.readyState === 'live')) };
+}, ms);
 
 (async () => {
   makeClip();
@@ -259,21 +293,84 @@ const clipOn = (page) => page.evaluate(() => document.querySelector('[data-testi
     }).catch(() => null) : null;
     step(`${id}: full panel in its iframe (Info section present)`, !!panel && panel.panel && panel.info, panel ? `${panel.titles.length} sections: ${panel.titles.join(' | ').slice(0, 160)}` : 'no frame');
   }
+  // ── 1b. LAB v3: panel-only layout, no tabs, the title + blocks A→Z, node blocks collapsed ──
+  await until(page, (n) => Object.values(window.__synLabDebug.layouts()).filter((l) => l.layout && l.layout.mode === 'panel' && l.panelHeight > 0).length === n, 30000, CHAIN.length);
+  const lay = await page.evaluate((chain) => {
+    const stage = document.querySelector('[data-testid="lab-stage"]').getBoundingClientRect();
+    return {
+      stage: [Math.round(stage.width), Math.round(stage.height)],
+      nodes: chain.map((id) => {
+        const f = document.querySelector(`[data-testid="lab-frame-${id}"]`);
+        const d = f.contentDocument;
+        const area = d.getElementById('canvas-area').getBoundingClientRect();
+        const src = [...d.querySelectorAll('#panel .sec-title')].filter((t) => /^source$/i.test(t.textContent.trim()));
+        const srcHidden = src.length > 0 && src.every((t) => t.getClientRects().length === 0);
+        const topbarOut = d.getElementById('topbar').getBoundingClientRect().right <= 0;
+        const panel = d.getElementById('panel').getBoundingClientRect();
+        return { id, mode: d.documentElement.dataset.synLayout, area: [Math.round(area.width), Math.round(area.height)], areaOut: area.right <= 0, srcHidden, topbarOut, panelW: Math.round(panel.width), frameW: Math.round(f.getBoundingClientRect().width) };
+      }),
+    };
+  }, CHAIN);
+  for (const n of lay.nodes) {
+    step(`${n.id}: panel-only layout (its Source section hidden, top bar + canvas out of view, panel at full width)`,
+      n.mode === 'panel' && n.srcHidden && n.topbarOut && n.areaOut && Math.abs(n.panelW - n.frameW) <= 1, JSON.stringify(n));
+    step(`${n.id}: its canvas area keeps the stage's size (never 0×0)`, n.area[0] === lay.stage[0] && n.area[1] === lay.stage[1] && n.area[0] >= 320, `area ${n.area.join('×')} · stage ${lay.stage.join('×')}`);
+  }
+  const tabs = await page.evaluate(() => document.querySelectorAll('[data-testid^="lab-tab-"]').length);
+  step('no tabs (LAB v3)', tabs === 0, `${tabs} lab-tab-* elements`);
+  const title = (await page.textContent(q('lab-title'))).trim();
+  const wantTitle = SORTED.map((id) => NAME[id]).join(' · ');
+  step('title = the chain\'s names A→Z (display only)', title === wantTitle, `"${title}" (processing order ${CHAIN.join(' → ')})`);
+  const bl0 = await blocks(page);
+  step('column: SOURCE · the nodes A→Z · LABORATORY', JSON.stringify(bl0.map((b) => b.id)) === JSON.stringify(['source', ...SORTED, 'laboratory']), bl0.map((b) => b.id).join(' · '));
+  step('at open every node block is collapsed (clip 0 px), SOURCE + LABORATORY open',
+    bl0.filter((b) => CHAIN.includes(b.id)).every((b) => !b.open && b.clipH === 0) && bl0.find((b) => b.id === 'source').open && bl0.find((b) => b.id === 'laboratory').open,
+    bl0.map((b) => `${b.id}:${b.open ? 'open' : 'closed'}/${b.clipH}px`).join(' '));
+  step('every node block head says its link is ready', bl0.filter((b) => CHAIN.includes(b.id)).every((b) => b.link === 'ready'), bl0.map((b) => `${b.id}:${b.link}`).join(' '));
   await until(page, () => document.querySelector('[data-testid="chain-input"]')?.classList.contains('live'), 30000);
 
-  // ── 2. every hop flows with the OUTPUT tab on top (frame budget: every node at 30) ──
-  await domClick(page, q('lab-tab-output'));
+  // ── 2. every hop flows with every node block COLLAPSED (frame budget: every node at 30) ──
   await sleep(2500);
   const budgetsAll = await nodeBudgets(page);
-  step('OUTPUT tab: every node at the Lab frame budget (30)', CHAIN.every((id) => budgetsAll[id] === 30), JSON.stringify(budgetsAll));
+  step('Lab visible: every node at the Lab frame budget (30)', CHAIN.every((id) => budgetsAll[id] === 30), JSON.stringify(budgetsAll));
   const hops = await streamFps(page);
-  info(`hop fps (OUTPUT tab on top): ${hops.map((h) => `${h.id} ${h.fps}`).join(' · ')}`);
-  step('every hop delivers frames (fps > 0) with the OUTPUT tab selected', hops.every((h) => h.fps > 0), hops.map((h) => `${h.id}=${h.fps}`).join(' '));
+  info(`hop fps (every node block collapsed): ${hops.map((h) => `${h.id} ${h.fps}`).join(' · ')}`);
+  step('every hop delivers frames (fps > 0) with every node block collapsed', hops.every((h) => h.fps > 0), hops.map((h) => `${h.id}=${h.fps}`).join(' '));
   const lastHop = hops[hops.length - 2];
-  step(`the LAST node (${lastHop.id}) keeps rendering underneath`, lastHop.fps > 0, `${lastHop.fps} fps`);
+  step(`the LAST node (${lastHop.id}) keeps rendering, collapsed`, lastHop.fps > 0, `${lastHop.fps} fps`);
+  const adv0 = await outputAdvance(page, 4000);
+  step('collapsed: the OUTPUT video advances (frames presented, stream live)', adv0.frames > 0 && adv0.live, JSON.stringify(adv0));
   const fpsPill = Number(await page.textContent(q('chain-fps')));
   step('FPS pill = the output\'s measured fps (> 0)', fpsPill > 0, `chain-fps ${fpsPill}`);
-  await snap(page, 'hops-output-tab');
+  await snap(page, 'lab-open-collapsed');
+  // every block open, then the column scrolled to its END: the first nodes' panels are out of view
+  for (const id of CHAIN) await setBlock(page, id, true);
+  await sleep(1500);
+  const blOpen = await blocks(page);
+  const ph = await page.evaluate(() => window.__synLabDebug.layouts());
+  step('opening a block shows the node\'s panel (clip = its panel height)', blOpen.filter((b) => CHAIN.includes(b.id)).every((b) => b.open && b.clipH > 100 && Math.abs(b.clipH - ph[b.id].panelHeight) <= 1),
+    blOpen.filter((b) => CHAIN.includes(b.id)).map((b) => `${b.id}:${b.clipH}px/panel ${ph[b.id].panelHeight}`).join(' '));
+  /* one panel open (the first block), the column scrolled to its end: that panel's iframe is out of view.
+     (All panels open on software GL starve the whole renderer — INPUT included — so one is enough to
+     prove an out-of-view iframe is not throttled.) */
+  for (const id of SORTED.slice(1)) await setBlock(page, id, false);
+  await until(page, (n) => [...document.querySelectorAll('.fxl-blk.fx .fxl-blk-clip')].filter((c) => c.getBoundingClientRect().height < 1).length === n, 15000, SORTED.length - 1);
+  const sc = await scrollColumn(page, 'end');
+  await sleep(800);
+  const hopsScrolled = await streamFps(page);
+  const away = await page.evaluate((id) => {
+    const c = document.querySelector('[data-testid="lab-column"]').getBoundingClientRect();
+    const b = document.querySelector(`[data-testid="lab-frame-${id}"]`).parentElement.getBoundingClientRect();
+    return { top: Math.round(document.querySelector('[data-testid="lab-column"]').scrollTop), panelBottom: Math.round(b.bottom), columnTop: Math.round(c.top), outOfView: b.bottom <= c.top };
+  }, SORTED[0]);
+  info(`hop fps (${SORTED[0]}'s panel open, column scrolled to the end ${JSON.stringify(sc)} → ${JSON.stringify(away)}): ${hopsScrolled.map((h) => `${h.id} ${h.fps}`).join(' · ')}`);
+  step(`column scrolled: ${SORTED[0]}'s open panel out of view, every hop still delivers frames`, away.outOfView && hopsScrolled.every((h) => h.fps > 0), hopsScrolled.map((h) => `${h.id}=${h.fps}`).join(' '));
+  await snap(page, 'lab-scrolled-end');
+  await scrollColumn(page, 'top');
+  for (const id of CHAIN) await setBlock(page, id, false);
+  await sleep(800)
+  const adv1 = await outputAdvance(page, 4000);
+  step('collapsed again: the OUTPUT video still advances', adv1.frames > 0 && adv1.live, JSON.stringify(adv1));
 
   // ── 3. pixels: OUTPUT ≠ INPUT, no mirror ────────────────────────────────
   const lin = await lumaOf(page, 'input');
@@ -283,43 +380,6 @@ const clipOn = (page) => page.evaluate(() => document.querySelector('[data-testi
   const n1 = await lumaOf(page, CHAIN[0]);
   step('INPUT is left-bright (sanity)', !!lin && lin.left > lin.right + 40, lin ? `L ${lin.left.toFixed(0)} R ${lin.right.toFixed(0)}` : 'none');
   step(`not mirrored: ${CHAIN[0]} (node 1) is left-bright too`, !!n1 && n1.left > n1.right + 15, n1 ? `L ${n1.left.toFixed(0)} R ${n1.right.toFixed(0)}` : 'no frame');
-
-  // ── 2b. frame budget: the FIRST tab on top → only node 1 renders ─────────
-  await domClick(page, q(`lab-tab-${CHAIN[0]}`));
-  await sleep(2500);
-  const budgetsFirst = await nodeBudgets(page);
-  step(`first tab: ${CHAIN[0]} renders native (the only node rendering: null), every node after it paused (0)`, budgetsFirst[CHAIN[0]] === null && CHAIN.slice(1).every((id) => budgetsFirst[id] === 0), JSON.stringify(budgetsFirst));
-  const hopsFirst = await streamFps(page, 4000);
-  info(`hop fps (first tab on top): ${hopsFirst.map((h) => `${h.id} ${h.fps}`).join(' · ')}`);
-  step(`first tab: ${CHAIN[0]}'s hop flows, the paused nodes' hops deliver no frames`,
-    hopsFirst[1].fps > 0 && hopsFirst.slice(2, -1).every((h) => h.fps === 0), hopsFirst.map((h) => `${h.id}=${h.fps}`).join(' '));
-  step('first tab: the FPS pill says the OUTPUT is paused (–)', (await page.textContent(q('chain-fps'))) === '–', await page.textContent(q('chain-fps')));
-
-  // ── 2c. INPUT tab (every node paused): a Gemini grab and measureFps hold the chain live ──
-  await domClick(page, q('lab-tab-input'));
-  await sleep(2500);
-  const budgetsInput = await nodeBudgets(page);
-  step('INPUT tab: every node paused (0)', CHAIN.every((id) => budgetsInput[id] === 0), JSON.stringify(budgetsInput));
-  const freshGrab = await page.evaluate(async () => {
-    const ov = document.querySelector('[data-testid="lab-output-video"]');
-    let n = 0, alive = true;
-    const cb = () => { if (!alive) return; n++; ov.requestVideoFrameCallback(cb); };
-    ov.requestVideoFrameCallback(cb);
-    const r = await window.__synLabDebug.lab.grabPair(256);
-    alive = false;
-    return { framesDuringGrab: n, o: r.output?.data.length || 0 };
-  });
-  step('INPUT tab: grabPair waits for FRESH output frames (never the paused one)', freshGrab.o > 500 && freshGrab.framesDuringGrab >= 1, JSON.stringify(freshGrab));
-  const measured = await page.evaluate(() => window.__synLabDebug.lab.measureFps());
-  const capState = await page.evaluate(() => window.__synLabDebug.lab.chainState().fpsCap);
-  step('INPUT tab: measureFps holds the chain live (> 0), chainState says the cap (30)', measured > 0 && capState === 30, `measured ${measured} fps · fpsCap ${capState}`);
-  const budgetsInputAfter = await nodeBudgets(page);
-  step('INPUT tab: after the hold every node is paused again', CHAIN.every((id) => budgetsInputAfter[id] === 0), JSON.stringify(budgetsInputAfter));
-  for (const t of ['input', 'output', ...CHAIN.slice(1)]) {
-    await domClick(page, q(`lab-tab-${t}`));
-    await sleep(700);
-    await snap(page, `tab-${t}`);
-  }
 
   // ── 4. audio: Clip on by itself, meter, button both ways ────────────────
   let mode = await audioMode(page);
@@ -348,7 +408,6 @@ const clipOn = (page) => page.evaluate(() => document.querySelector('[data-testi
 
   // ── 5. transport ────────────────────────────────────────────────────────
   step('transport bar under the stage', !!(await page.$(q('lab-transport'))) && !!(await page.$(q('lab-scrub'))));
-  await domClick(page, q('lab-tab-output'));
   await setPlaying(page, false); // pause
   await sleep(1200);
   const paused = await page.evaluate(() => window.__synLabDebug.inputVideo().paused);
@@ -388,6 +447,30 @@ const clipOn = (page) => page.evaluate(() => document.querySelector('[data-testi
   await domClick(page, q('lab-loop'));
   const loop2 = await page.evaluate(() => window.__synLabDebug.inputVideo().loop);
   step('loop toggles', loop0 !== loop1 && loop2 === loop0, `${loop0} → ${loop1} → ${loop2}`);
+  /* LOOP = PAUSE's normal look (operator): same background + border in both states, on = amber text, off = PAUSE's text */
+  const look = (sel) => page.evaluate((s) => { const c = getComputedStyle(document.querySelector(s)); return `${c.color}|${c.borderTopColor}|${c.backgroundImage}`; }, sel);
+  /* software GL starves the main thread: wait for React to show the state before reading the look */
+  const setLoop = async (want) => {
+    if ((await page.evaluate(() => window.__synLabDebug.inputVideo().loop)) !== want) await domClick(page, q('lab-loop'));
+    await until(page, (w) => document.querySelector('[data-testid="lab-loop"]').classList.contains('on') === w, 15000, want);
+    await sleep(300);
+  };
+  await page.mouse.move(2, 2); // no hover
+  await setPlaying(page, true);
+  await until(page, () => !document.querySelector('[data-testid="lab-play"]').classList.contains('lit'), 15000);
+  await setLoop(false);
+  const loopOff = await look(q('lab-loop'));
+  const pausePlaying = await look(q('lab-play'));
+  await setPlaying(page, false);
+  await until(page, () => document.querySelector('[data-testid="lab-play"]').classList.contains('lit'), 15000);
+  await setLoop(true);
+  const loopOn = await look(q('lab-loop'));
+  const pausePaused = await look(q('lab-play'));
+  await setPlaying(page, true);
+  const [onColor, onBorder, onBg] = loopOn.split('|');
+  const [pColor, pBorder, pBg] = pausePlaying.split('|');
+  step('LOOP off = PAUSE\'s normal look; LOOP on = the same look with amber text only', loopOff === pausePlaying && onBorder === pBorder && onBg === pBg && onColor === 'rgb(232, 192, 0)' && onColor !== pColor,
+    `off ${loopOff.split('|').slice(0, 2).join(' ')} · on ${onColor} ${onBorder} · pause ${pColor} ${pBorder} · pause while paused ${pausePaused.split('|').slice(0, 2).join(' ')}`);
   // loop off + the end of the clip: Chromium ENDS the element's captured tracks (the chain freezes, the
   // Clip analyser goes off). Play again must bring both back (ChainLab reviveInput).
   await page.evaluate(() => { const v = window.__synLabDebug.inputVideo(); v.loop = false; v.currentTime = Math.max(0, v.duration - 0.4); });
@@ -405,7 +488,10 @@ const clipOn = (page) => page.evaluate(() => document.querySelector('[data-testi
     return p ? { key: p.key, value: p.value, min: p.min, max: p.max, step: p.step, label: p.label } : null;
   }, CHAIN[0]);
   if (pick) {
-    await domClick(page, q('preset-toggle'));
+    const labBtns = await page.evaluate(() => [...document.querySelectorAll('[data-testid="lab-block-laboratory"] .fxl-blk-body > *')].map((e) => e.textContent.trim()));
+    step('LABORATORY: exactly the four buttons, no captions', JSON.stringify(labBtns) === JSON.stringify(['SAVE VFX CHAIN TO PROJECTS', 'OPEN VFX CHAIN FROM PROJECTS', 'RESET VFX CHAIN', 'EXPORT VFX CHAIN']), JSON.stringify(labBtns));
+    await domClick(page, q('lab-save-chain'));
+    await sleep(300);
     await page.evaluate(() => {
       const el = document.querySelector('[data-testid="preset-name"]');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, 'labtest');
@@ -416,7 +502,8 @@ const clipOn = (page) => page.evaluate(() => document.querySelector('[data-testi
     const other = pick.value === pick.max ? pick.min : pick.max;
     await page.evaluate(({ id, key, v }) => window.__synLabDebug.api(id).setParam(key, v), { id: CHAIN[0], key: pick.key, v: other });
     const changed = await page.evaluate(({ id, key }) => window.__synLabDebug.api(id).params().find((x) => x.key === key).value, { id: CHAIN[0], key: pick.key });
-    if (!(await page.$(q('preset-pop')))) await domClick(page, q('preset-toggle'));
+    await domClick(page, q('lab-open-chain'));
+    await sleep(300);
     await domClick(page, q('preset-load-labtest'));
     await sleep(800);
     const back = await page.evaluate(({ id, key }) => window.__synLabDebug.api(id).params().find((x) => x.key === key).value, { id: CHAIN[0], key: pick.key });
@@ -424,6 +511,15 @@ const clipOn = (page) => page.evaluate(() => document.querySelector('[data-testi
     const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('syntech.chainPresets') || '[]').find((p) => p.name === 'labtest'));
     step('preset v2 stores chain + every node\'s settings', stored?.v === 2 && JSON.stringify(stored.chain) === JSON.stringify(CHAIN) && CHAIN.every((id) => stored.settings?.[id] != null),
       stored ? `chain ${stored.chain.join('>')} · settings for ${Object.keys(stored.settings || {}).join(',')}` : 'missing');
+    // RESET: every effect back to its initial values (this run has no saved effect settings: initial = pick.value)
+    const other2 = pick.value === pick.max ? pick.min : pick.max;
+    await page.evaluate(({ id, key, v }) => window.__synLabDebug.api(id).setParam(key, v), { id: CHAIN[0], key: pick.key, v: other2 });
+    const moved = await page.evaluate(({ id, key }) => window.__synLabDebug.api(id).params().find((x) => x.key === key).value, { id: CHAIN[0], key: pick.key });
+    await domClick(page, q('lab-reset'));
+    await sleep(800);
+    const reset = await page.evaluate(({ id, key }) => window.__synLabDebug.api(id).params().find((x) => x.key === key).value, { id: CHAIN[0], key: pick.key });
+    const resetNote = await page.textContent(q('chain-note')).catch(() => '');
+    step(`RESET puts ${CHAIN[0]}.${pick.key} back to its initial value`, moved === other2 && Math.abs(reset - pick.value) < 1e-6, `${pick.value} → ${moved} → reset ${reset} · "${resetNote}"`);
   } else step('preset round-trip (no number param on node 1)', false);
 
   info(`audio.stop() calls so far: ${JSON.stringify(await page.evaluate(() => window.__synLabDebug.audioLog()))}`);
@@ -495,13 +591,15 @@ const clipOn = (page) => page.evaluate(() => document.querySelector('[data-testi
     return { id, attr: f?.dataset.synTheme, inner };
   }), CHAIN);
   step('day theme: every Lab iframe gets data-syn-theme="day"', day.every((x) => x.attr === 'day'), day.map((x) => `${x.id}:${x.attr}/${x.inner}`).join(' '));
-  await domClick(page, q(`lab-tab-${CHAIN[0]}`));
-  await sleep(500);
+  await setBlock(page, SORTED[0], true);
+  await sleep(1000);
+  const heads = await page.evaluate(() => [...document.querySelectorAll('[data-testid^="lab-block-head-"]')].map((h) => { const c = getComputedStyle(h); return `${c.backgroundColor}|${c.color}`; }));
+  step('day: the block headers stay black + amber', heads.length > 0 && heads.every((x) => x === 'rgb(0, 0, 0)|rgb(232, 192, 0)'), [...new Set(heads)].join(' · '));
   await snap(page, 'day');
+  await setBlock(page, SORTED[0], false);
   await domClick(page, 'button[title="Toggle day / night"]');
 
   // after the export (the clip played to its END, loop off): the chain and the Clip must come back
-  await domClick(page, q('lab-tab-output')); // the OUTPUT tab: every node renders (frame budget)
   await sleep(2500);
   const after = await page.evaluate(() => ({ mode: window.__synLabDebug.audio.mode, paused: window.__synLabDebug.inputVideo().paused, live: window.__synLabDebug.inputStream()?.getVideoTracks().some((t) => t.readyState === 'live') }));
   const hopsAfter = await streamFps(page);
@@ -516,10 +614,18 @@ const clipOn = (page) => page.evaluate(() => document.querySelector('[data-testi
   const budgetsHidden = await nodeBudgets(page);
   step('Lab hidden: every node paused (frame budget 0)', CHAIN.every((id) => budgetsHidden[id] === 0), JSON.stringify(budgetsHidden));
   const heldPair = await page.evaluate(async () => {
+    const ov = document.querySelector('[data-testid="lab-output-video"]');
+    let n = 0, alive = true;
+    const cb = () => { if (!alive) return; n++; ov.requestVideoFrameCallback(cb); };
+    ov.requestVideoFrameCallback(cb);
     const r = await window.__synLabDebug.lab.grabPair(256);
-    return { s: r.source?.data.length || 0, o: r.output?.data.length || 0 };
+    alive = false;
+    return { s: r.source?.data.length || 0, o: r.output?.data.length || 0, framesDuringGrab: n };
   });
-  step('Lab hidden: a Gemini capture holds it live and still gets SOURCE + OUTPUT', heldPair.s > 500 && heldPair.o > 500, `${heldPair.s} / ${heldPair.o}`);
+  step('Lab hidden: a Gemini capture holds it live, waits for FRESH output frames, gets SOURCE + OUTPUT', heldPair.s > 500 && heldPair.o > 500 && heldPair.framesDuringGrab >= 1, JSON.stringify(heldPair));
+  const measuredHidden = await page.evaluate(() => window.__synLabDebug.lab.measureFps());
+  const capState = await page.evaluate(() => window.__synLabDebug.lab.chainState().fpsCap);
+  step('Lab hidden: measureFps holds the chain live (> 0), chainState says the cap (30)', measuredHidden > 0 && capState === 30, `measured ${measuredHidden} fps · fpsCap ${capState}`);
   const budgetsAfterHold = await nodeBudgets(page);
   step('Lab hidden: after the capture every node is paused again', CHAIN.every((id) => budgetsAfterHold[id] === 0), JSON.stringify(budgetsAfterHold));
   await domClick(page, q('nav-ailab'));

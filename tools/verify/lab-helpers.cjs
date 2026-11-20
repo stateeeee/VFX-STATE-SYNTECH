@@ -1,18 +1,24 @@
-/* Shared Playwright helpers for the Lab (ChainLab) right panel.
+/* Shared Playwright helpers for the Lab (ChainLab).
  *
- * The Lab panel lists one collapsible section per WIRED effect, CLOSED by
- * default (`fx-head-<id>`, aria-expanded), and each effect has closed
- * sub-sections (`fx-sec-<id>-<group-slug>`, aria-expanded). Controls
- * (`param-<id>-<key>`, `mod-src-…`, `mod-amt-…`, `mod-val-…`) only exist in
- * the DOM once BOTH the effect head and its sub-section head are open.
- * Presets live in a popover opened by `preset-toggle`.
+ * LAB v3 (2026-11-19): the Lab is an opened effect with several effects
+ * chained. Its right column (`lab-column`) holds blocks, each with a header
+ * button `lab-block-head-<id>` (aria-expanded; node heads also carry
+ * data-link = loading / ready / missing):
+ *   SOURCE (`lab-block-source`, open at load) — IMAGE / VIDEO / WEBCAM, CLIP / MIC / TRACK
+ *   one block per wired effect, A→Z by name (`lab-block-<ModuleId>`, CLOSED at load) —
+ *     the effect's real panel: its iframe `lab-frame-<ModuleId>` in panel-only layout
+ *   LABORATORY (`lab-block-laboratory`, open at load) — four buttons, no captions:
+ *     lab-save-chain (→ preset-name / preset-save), lab-open-chain (→ preset-load-<name> /
+ *     preset-del-<name>), lab-reset, chain-master (+ chain-export-msg)
+ * There are no tabs any more. The helpers below for the old SynEngine panel
+ * (fx-head-*, param-*) are kept for the phase 3–8 scripts that still import them.
  *
  * Every setter here FAILS LOUDLY (throws) when the control is missing, so a
  * UI change can no longer turn a check into a silent no-op / vacuous pass.
  *
  * Usage:  const L = require('./lab-helpers.cjs');
- *         await L.openLabSections(page);            // every wired effect
- *         await L.setBool(page, 'blob_tracker', 'mirrorBg', true);
+ *         await L.openLabBlock(page, 'analog');
+ *         await L.savePreset(page, 'my chain');
  */
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -45,18 +51,60 @@ async function openLabSections(page, id) {
   return opened;
 }
 
-/* Open the chain-preset popover (preset-name / preset-save / preset-load-*). */
-async function openPresetPopover(page) {
-  const has = await page.$('[data-testid="preset-pop"]');
-  if (!has) {
-    await page.click('[data-testid="preset-toggle"]');
-    await page.waitForSelector('[data-testid="preset-pop"]', { timeout: 5000 });
-  }
+/* LAB v3: open / close a block of the right column ('source', 'laboratory' or a ModuleId).
+ * In-page clicks (a renderer busy with software-GL effects can stall Playwright's pointer clicks).
+ * Throws when the block does not exist. Returns the header's aria-expanded after the click. */
+async function setLabBlock(page, id, open = true) {
+  return page.evaluate(({ id, open }) => {
+    const head = document.querySelector(`[data-testid="lab-block-head-${id}"]`);
+    if (!head) throw new Error(`Lab block missing: lab-block-head-${id}`);
+    if ((head.getAttribute('aria-expanded') === 'true') !== open) head.click();
+    return open;
+  }, { id, open });
+}
+const openLabBlock = (page, id) => setLabBlock(page, id, true);
+const closeLabBlock = (page, id) => setLabBlock(page, id, false);
+
+/* The chain presets live in the LABORATORY block (open at load), behind two of its four buttons:
+ * SAVE VFX CHAIN TO PROJECTS (`lab-save-chain` → preset-name + preset-save) and OPEN VFX CHAIN
+ * FROM PROJECTS (`lab-open-chain` → preset-load-<name> / preset-del-<name>). `pane` = 'save' | 'open'.
+ * The old popover names are kept so older callers keep working. */
+async function openPresetPopover(page, pane = 'save') {
+  await openLabBlock(page, 'laboratory');
+  await page.evaluate((pane) => {
+    const b = document.querySelector(`[data-testid="lab-${pane}-chain"]`);
+    if (!b) throw new Error(`missing lab-${pane}-chain`);
+    if (b.getAttribute('aria-expanded') !== 'true') b.click();
+  }, pane);
+  await sleep(250);
+}
+async function closePresetPopover() { /* LAB v3: no popover */ }
+
+/* Save the current chain as preset `name` (LABORATORY → SAVE VFX CHAIN TO PROJECTS). */
+async function savePreset(page, name) {
+  await openPresetPopover(page, 'save');
+  await page.waitForSelector('[data-testid="preset-name"]', { state: 'attached', timeout: 5000 });
+  await page.evaluate((name) => {
+    const el = document.querySelector('[data-testid="preset-name"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, name);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, name);
+  await sleep(250);
+  await page.evaluate(() => {
+    const b = document.querySelector('[data-testid="preset-save"]');
+    if (!b || b.disabled) throw new Error('preset-save missing or disabled');
+    b.click();
+  });
 }
 
-async function closePresetPopover(page) {
-  const has = await page.$('[data-testid="preset-pop"]');
-  if (has) await page.click('[data-testid="preset-toggle"]');
+/* Load the saved chain preset `name` (LABORATORY → OPEN VFX CHAIN FROM PROJECTS). Throws when it is not listed. */
+async function loadPreset(page, name) {
+  await openPresetPopover(page, 'open');
+  await page.evaluate((name) => {
+    const b = document.querySelector(`[data-testid="preset-load-${name}"]`);
+    if (!b) throw new Error(`preset not listed: preset-load-${name}`);
+    b.click();
+  }, name);
 }
 
 /* Make sure `testid` is in the DOM (opening the effect's sections if needed);
@@ -149,4 +197,4 @@ async function seedComposition(page, ids) {
   await page.evaluate(({ nodes, wires }) => localStorage.setItem('syntech.composition.v3', JSON.stringify({ nodes, wires })), { nodes, wires });
 }
 
-module.exports = { sleep, waitForSource, openLabSections, openPresetPopover, closePresetPopover, requireControl, setBool, setNum, applyParams, clickControl, seedComposition };
+module.exports = { sleep, waitForSource, openLabSections, openPresetPopover, closePresetPopover, requireControl, setBool, setNum, applyParams, clickControl, seedComposition, setLabBlock, openLabBlock, closeLabBlock, savePreset, loadPreset };

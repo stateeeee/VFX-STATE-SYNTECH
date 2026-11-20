@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { ModuleConfig, ModuleId, SignalSource } from '../types';
 
 interface VfxCanvasProps {
-  activeModule: ModuleId;
+  activeModule: ModuleId | null;
   setActiveModule: (id: ModuleId) => void;
   /** Invoked on hub-node click; the shell opens the real effect if one exists */
   onModuleOpen?: (id: ModuleId) => void;
@@ -890,7 +890,7 @@ export default function VfxCanvas({
         const isSelectedActive = node.moduleId === activeModule;
         
         // Highlight active cluster satellites
-        const isSatelliteOfActive = node.id.startsWith(activeModule ?? '');
+        const isSatelliteOfActive = (!!activeModule && node.id.startsWith(activeModule));
         const flash = nodeFlashIntensity[i] || 0;
 
         // Dynamic swelling factor based on heartbeats and pulse arrivals

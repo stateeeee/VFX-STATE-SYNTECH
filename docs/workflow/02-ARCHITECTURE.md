@@ -30,7 +30,7 @@
 
 | | Single-effect mode | Lab (chain) |
 |---|---|---|
-| Surface | `EffectHost.tsx`: one iframe | `ChainLab.tsx`: one iframe per wired node, stacked in the same rect |
+| Surface | `EffectHost.tsx`: one iframe | `ChainLab.tsx`: one iframe per wired node; since LAB v3 (2026-11-19) each lives in its own collapsible block of the right column, in panel-only mode (`SynLab.setLayout('panel')`), and the stage shows the chain OUTPUT (03-SPEC §3.2) |
 | Renderer | The standalone HTML itself | The same standalone HTMLs, chained |
 | Fidelity | Ground truth | Ground truth (it IS the effect, whole interface) |
 

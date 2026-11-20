@@ -52,7 +52,16 @@ export const EFFORT_LABEL: Readonly<Record<EffortT, string>> = {
 };
 
 /** What the panel stores and sends. */
-export interface GeminiChoice { model: string; effort: EffortT }
+export interface GeminiChoice {
+  model: string;
+  effort: EffortT;
+  /** true = picked by the panel itself (the server's `recommended` model), not
+   *  by the operator. It is still sent as x-gemini-model, but the next model
+   *  list replaces it with the then-current `recommended` (free key → Hydrogen,
+   *  later a billing key → Neon). Any pick the operator makes is stored
+   *  WITHOUT this flag and is never replaced. */
+  auto?: true;
+}
 
 /** Whether a model can be used at $0 with a free AI Studio key.
  *  'yes' / 'no' come from Google's published tiers (as of 2026-11-18);
@@ -67,23 +76,62 @@ export interface KnownModel {
   efforts: readonly EffortT[];   // what the picker offers, best first is NOT implied
   defaultEffort: EffortT;
   free: FreeTierT;
+  /** strength on strengthOf()'s scale (version × 100 + tier) — the picker's order */
+  strength: number;
   /** one short line for the picker, Italian (the operator's language) */
   note: string;
 }
 
-/** The models this build knows, in the picker's order (best free first).
- *  Any other gemini-… model Google lists for the key is shown after these,
- *  with free 'unknown' and efforts ['default','low','medium','high']. */
+/** The models this build knows. The picker does NOT follow this order: it
+ *  sorts every row by strengthOf() (strongest first — operator, 2026-11-19:
+ *  "metti in ordine tutti i modelli in base alla loro forza").
+ *  `strength` = the operator's ranking (2026-11-19): Neon > Carbon >
+ *  Hydrogen > Argon (Artificial Analysis index: Neon 61, Carbon ~60), on the
+ *  same scale strengthOf() gives unknown ids (version × 100 + tier).
+ *  free 'no' = no free tier on Google's published pricing: the server PROBES
+ *  those for each key (ModelInfo.locked) — a paid key unlocks them. */
 export const KNOWN_MODELS: readonly KnownModel[] = [
-  { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', free: 'yes',
-    note: 'Il migliore gratis: vede video, foto e webcam e sente la musica.' },
-  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', efforts: ['minimal', 'low', 'medium', 'high'], defaultEffort: 'high', free: 'yes',
-    note: 'Il modello di prima. Gratis, ottimo di riserva.' },
-  { id: 'gemini-4-argon', name: 'Gemini 4 Argon', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', free: 'no',
-    note: 'Solo a pagamento.' },
-  { id: 'gemini-4-carbon', name: 'Gemini 4 Carbon', efforts: ['low', 'medium', 'high'], defaultEffort: 'high', free: 'no',
-    note: 'Solo a pagamento.' },
+  { id: 'gemini-4-neon', name: 'Gemini 4 Neon', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', free: 'no', strength: 462,
+    note: 'Il più forte (indice 61), uscito il 18-11-2026.' },
+  { id: 'gemini-4-carbon', name: 'Gemini 4 Carbon', efforts: ['low', 'medium', 'high'], defaultEffort: 'high', free: 'no', strength: 461,
+    note: 'Per i progetti più lunghi e difficili.' },
+  { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', free: 'yes', strength: 454,
+    note: 'Vede video, foto e webcam e sente la musica.' },
+  { id: 'gemini-4-argon', name: 'Gemini 4 Argon', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', free: 'no', strength: 450,
+    note: 'Più leggero dei 4 della serie Gemini 4.' },
+  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', efforts: ['minimal', 'low', 'medium', 'high'], defaultEffort: 'high', free: 'yes', strength: 385,
+    note: 'Il modello di prima, veloce.' },
+  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview', efforts: ['default', 'low', 'high'], defaultEffort: 'default', free: 'no', strength: 319,
+    note: 'Generazione precedente.' },
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', efforts: ['default'], defaultEffort: 'default', free: 'no', strength: 259,
+    note: 'Generazione precedente.' },
 ];
+
+/** How strong a model is, for the picker's order (higher = stronger). A known
+ *  model uses its KnownModel.strength; any other `gemini-<version>-…` id gets
+ *  version × 100 + a tier bonus (pro 9, a named model such as "neon" 8,
+ *  flash 5, flash-lite 2), so a newer version always ranks above an older
+ *  one and, inside one version, Pro > named > Flash > Flash-Lite. Suffixes
+ *  such as -preview-… / -exp-… / -001 do not change the tier. */
+export function strengthOf(id: string): number {
+  const known = KNOWN_MODELS.find((m) => m.id === id);
+  if (known) return known.strength;
+  const m = /^gemini-(\d+(?:\.\d+)?)-?(.*)$/.exec(id);
+  const version = m ? Number(m[1]) : NaN;
+  if (!Number.isFinite(version)) return 0;
+  const rest = m![2];
+  const tier = /(^|-)pro(-|$)/.test(rest) ? 9
+    : /(^|-)flash-lite(-|$)/.test(rest) ? 2
+      : /(^|-)flash(-|$)/.test(rest) ? 5
+        : /^[a-z]{3,}(-|$)/.test(rest) && !/^(preview|exp|latest|lite)(-|$)/.test(rest) ? 8
+          : 5;
+  return Math.round(version * 100) + tier;
+}
+
+/** Sorts picker rows strongest first (ties: by id), without mutating `rows`. */
+export function byStrength<T extends { id: string }>(rows: readonly T[]): T[] {
+  return [...rows].sort((a, b) => strengthOf(b.id) - strengthOf(a.id) || a.id.localeCompare(b.id));
+}
 
 /** Efforts offered for a model this build does not know. */
 export const UNKNOWN_MODEL_EFFORTS: readonly EffortT[] = ['default', 'low', 'medium', 'high'];
@@ -99,6 +147,12 @@ export interface ModelInfo {
   free: FreeTierT;
   note: string;                // KnownModel.note, '' for an unknown model
   known: boolean;              // in KNOWN_MODELS
+  /** THIS key cannot use the model (paid only, and the key has no billing):
+   *  the picker shows a closed lock and the row cannot be picked. Known
+   *  paid models are probed once per key (a free key gets 429 "limit: 0",
+   *  which costs nothing); any model that answered a run with "limit: 0"
+   *  is locked too. false = usable: the picker shows nothing at all. */
+  locked: boolean;
   /** Google listed it for this key (false: from KNOWN_MODELS only, the list
    *  call failed or did not include it) */
   listed: boolean;
@@ -108,8 +162,8 @@ export interface ModelInfo {
  *  'google' when models.list answered, 'catalog' when it failed and the rows
  *  are KNOWN_MODELS alone (then `warning` says why). */
 export interface ModelsResponse {
-  models: ModelInfo[];
-  recommended: string;         // the model a fresh panel picks
+  models: ModelInfo[];         // strongest first (byStrength)
+  recommended: string;         // the model a fresh panel picks: the strongest unlocked one
   source: 'google' | 'catalog';
   warning?: string;
 }

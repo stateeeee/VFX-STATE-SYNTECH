@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  Sparkle,
+  Lock,
   Bot,
   Lightbulb,
   Settings,
@@ -15,12 +15,14 @@ import {
   X,
 } from 'lucide-react';
 import type { ModuleId } from '../types';
+import GeminiMark from './GeminiMark';
 import { EFFECT_META } from './NodalComposition';
 import { buildSegments, fmtCueTime } from '../lab/cues';
 import {
   EFFORT_LABEL,
   GEMINI_MODEL_DEFAULT,
   KNOWN_MODELS,
+  byStrength,
   INTENT_MAX,
   MAX_UPLOAD_BYTES,
   MODULE_IDS,
@@ -805,6 +807,7 @@ export default function AiDirector(props: AiDirectorProps) {
   const reportError = (e: unknown): string => {
     if (e instanceof AiError) {
       if (e.kind === 'invalid_key' || e.kind === 'no_key') onAiError(e.kind);
+      if (e.kind === 'quota' && /has no free quota for this key/i.test(e.message)) window.dispatchEvent(new Event(MODELS_REFRESH_EVENT));
       return e.message && e.message !== e.kind ? e.message : kindText(e.kind, model);
     }
     return e instanceof Error && e.message ? e.message : 'Something went wrong';
@@ -826,7 +829,7 @@ export default function AiDirector(props: AiDirectorProps) {
             {mode === 'art_director' ? <Lightbulb className="w-4 h-4 text-[#8b5cf6]" /> :
              mode === 'agent' ? <Bot className="w-4 h-4 text-[#8b5cf6]" /> :
              mode === 'optimizer' ? <Settings className="w-4 h-4 text-[#8b5cf6]" /> :
-             <Sparkle className="w-4 h-4 text-[#8b5cf6]" />}
+             <GeminiMark className="w-4 h-4" />}
           </div>
           <h2 className="text-[11px] tracking-[0.22em] font-mono uppercase font-bold text-[#8b5cf6]">
             {mode ? MODE_TITLE[mode] : 'Gemini'}
@@ -1030,10 +1033,15 @@ function shortModelName(name: string | undefined, id: string): string {
 const EFFORT_STOP: Record<EffortT, string> = { default: 'Auto', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-high' };
 
 const fromKnown = (): ModelInfo[] =>
-  KNOWN_MODELS.map((m) => ({
+  byStrength(KNOWN_MODELS).map((m) => ({
     id: m.id, name: m.name, description: '', inputTokenLimit: null, efforts: [...m.efforts],
     defaultEffort: m.defaultEffort, free: m.free, note: m.note, known: true, listed: false,
+    locked: false, // a lock is a fact about the key: unknown until the server answers
   }));
+
+/** Fired when a run says the key has no quota for a model: the picker reloads its rows. */
+const MODELS_REFRESH_EVENT = 'syntech:models-refresh';
+const LOCK_TIP = 'This key cannot use this model';
 
 const SLIDER_CSS = `
 .syn-effort{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:16px;margin:0;position:relative;cursor:pointer}
@@ -1104,6 +1112,7 @@ function ActiveCard({ k, isDay, model, warning, source, onForgetKey, onChoice }:
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [choice, setChoice] = useState<GeminiChoice | null>(() => getStoredChoice());
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const rows: ModelInfo[] = resp?.models.length ? resp.models : fromKnown();
   const modelId = choice?.model ?? model;
@@ -1111,18 +1120,43 @@ function ActiveCard({ k, isDay, model, warning, source, onForgetKey, onChoice }:
   const efforts: readonly EffortT[] = info?.efforts.length ? info.efforts : UNKNOWN_MODEL_EFFORTS;
   const effort: EffortT = choice && efforts.includes(choice.effort) ? choice.effort : info?.defaultEffort ?? efforts[0];
   const fullName = info?.name || modelId;
+  const lockedLine = info?.locked ? (
+    <span data-testid="ai-model-locked" className={k.sub}>This key cannot use {info.name || modelId} — pick another model.</span>
+  ) : null;
 
+  // a run that failed with "no free quota for this key" means a lock is missing: reload the list
   useEffect(() => {
-    if (!picking) return;
+    const again = () => setRefreshTick((n) => n + 1);
+    window.addEventListener(MODELS_REFRESH_EVENT, again);
+    return () => window.removeEventListener(MODELS_REFRESH_EVENT, again);
+  }, []);
+
+  // the list loads with the card (locks and the recommended model), and again on every open of the picker
+  useEffect(() => {
     let alive = true;
     setLoading(true);
     setLoadErr(null);
     listModels()
-      .then((r) => { if (alive) setResp(r); })
+      .then((r) => {
+        if (!alive) return;
+        setResp(r);
+        // a fresh panel (nothing saved) picks the strongest model this key can use (the server's `recommended`,
+        // also when the server's .env sets GEMINI_MODEL: the automatic pick follows `recommended`). That pick is
+        // stored with auto:true and is replaced by the then-current `recommended` on every load (free key →
+        // Hydrogen, later a billing key → Neon); an operator's own pick (no auto flag) is never touched.
+        const stored = getStoredChoice();
+        if ((!stored || (stored.auto && stored.model !== r.recommended)) && r.recommended) {
+          const rec = r.models.find((m) => m.id === r.recommended);
+          if (rec && !rec.locked) {
+            const c: GeminiChoice = { model: rec.id, effort: rec.defaultEffort, auto: true };
+            setChoice(c); storeChoice(c); onChoice?.(c);
+          }
+        }
+      })
       .catch((e) => { if (alive) setLoadErr(e instanceof Error && e.message ? e.message : 'Could not load the models'); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [picking]);
+  }, [picking, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // focus: into the selected row when the picker opens, back to the model button when it closes
   useEffect(() => {
@@ -1140,7 +1174,7 @@ function ActiveCard({ k, isDay, model, warning, source, onForgetKey, onChoice }:
   // what the card shows must be what is sent: a stored effort this model does not offer is re-stored
   useEffect(() => {
     if (choice && info && choice.model === info.id && choice.effort !== effort) {
-      const fixed = { model: choice.model, effort };
+      const fixed: GeminiChoice = choice.auto ? { model: choice.model, effort, auto: true } : { model: choice.model, effort };
       setChoice(fixed);
       storeChoice(fixed);
       onChoice?.(fixed);
@@ -1214,6 +1248,7 @@ function ActiveCard({ k, isDay, model, warning, source, onForgetKey, onChoice }:
           >
             Free key: aistudio.google.com/apikey
           </a>
+          {lockedLine}
         </div>
       ) : (
         <div
@@ -1237,7 +1272,7 @@ function ActiveCard({ k, isDay, model, warning, source, onForgetKey, onChoice }:
             aria-label="Model"
             onKeyDown={(e) => {
               if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-              const btns = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('button[role=radio]') ?? []);
+              const btns = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('button[role=radio]:not(:disabled)') ?? []);
               const i = btns.indexOf(document.activeElement as HTMLButtonElement);
               if (i < 0) return;
               e.preventDefault();
@@ -1246,22 +1281,24 @@ function ActiveCard({ k, isDay, model, warning, source, onForgetKey, onChoice }:
             className="flex flex-col gap-px max-h-[4.9rem] [@media(max-height:850px)]:max-h-[3.3rem] overflow-y-auto custom-scrollbar">
             {rows.map((r) => {
               const sel = r.id === modelId;
+              const locked = r.locked === true;
               return (
                 <button
                   key={r.id}
                   type="button"
                   role="radio"
                   aria-checked={sel}
+                  aria-disabled={locked || undefined}
+                  disabled={locked}
                   data-testid={`ai-model-row-${r.id}`}
-                  title={r.note || r.description || undefined}
-                  onClick={() => save({ model: r.id, effort: r.defaultEffort })}
-                  className={`shrink-0 flex items-center gap-2 px-2 py-0.5 rounded-md text-left cursor-pointer transition-colors ${sel ? 'bg-[#8b5cf6]/15' : isDay ? 'hover:bg-neutral-100' : 'hover:bg-white/5'} ${r.free === 'no' ? 'opacity-45' : ''}`}
+                  data-locked={locked ? 'true' : undefined}
+                  title={locked ? LOCK_TIP : r.note || r.description || undefined}
+                  onClick={() => { if (!locked) save({ model: r.id, effort: r.defaultEffort }); }}
+                  className={`shrink-0 flex items-center gap-2 px-2 py-0.5 rounded-md text-left transition-colors ${locked ? 'opacity-45 cursor-not-allowed' : `cursor-pointer ${sel ? 'bg-[#8b5cf6]/15' : isDay ? 'hover:bg-neutral-100' : 'hover:bg-white/5'}`}`}
                 >
                   <span className={`w-2.5 h-2.5 rounded-full shrink-0 border ${sel ? 'bg-[#8b5cf6] border-[#8b5cf6]' : 'border-[#8b5cf6]'}`} />
                   <span className={`flex-1 min-w-0 truncate font-mono text-[10px] ${sel ? 'text-[#8b5cf6] font-bold' : isDay ? 'text-neutral-800' : 'text-neutral-200'}`}>{r.name}</span>
-                  {r.free === 'yes' && <span className={`${k.pillBase} ${k.green} !py-0 !text-[7px]`}>Free</span>}
-                  {r.free === 'no' && <span className={`${k.pillBase} ${k.grey} !py-0 !text-[7px]`}>Paid</span>}
-                  {!r.known && <span className={`${k.pillBase} border border-[#8b5cf6]/60 text-[#8b5cf6] !py-0 !text-[7px]`}>New</span>}
+                  {locked && <Lock data-testid={`ai-model-lock-${r.id}`} aria-label="Locked" className={`w-3 h-3 shrink-0 ${isDay ? 'text-neutral-500' : 'text-neutral-400'}`} />}
                 </button>
               );
             })}
@@ -1269,7 +1306,7 @@ function ActiveCard({ k, isDay, model, warning, source, onForgetKey, onChoice }:
           {resp?.warning && <span className={k.sub}>{resp.warning}</span>}
           <span className={k.label}>Effort</span>
           <EffortSlider k={k} isDay={isDay} efforts={efforts} value={effort} onChange={(e) => save({ model: modelId, effort: e })} />
-          {info?.free === 'no' && <span className={k.amber}>Paid model: a free key cannot use it.</span>}
+          {lockedLine}
         </div>
       )}
     </div>
@@ -1287,9 +1324,6 @@ function NeedsLab({ k, what, openEffectId, hasSource, onOpenLab }: { k: Ink; wha
         The {what} works in the Lab, on the INPUT node's source.
         {fx ? ` ${fx} opens there as the chain — the clip and settings loaded inside ${fx} stay in the effect.` : ''}
       </p>
-      {!hasSource && (
-        <span className={k.amber}>Load a clip or photo on the INPUT node first — or open the Lab from the rail to use the webcam.</span>
-      )}
       <button type="button" data-testid="ai-open-lab" onClick={onOpenLab} disabled={!hasSource} className={`${k.secondary} self-start`}>
         <ChevronRight className="w-3 h-3" /> Open in Lab
       </button>
@@ -1496,8 +1530,8 @@ function ArtDirectorTab({ k, visible, surface, labRef, compSource, graphChain, o
             {meta && <span className={`${k.sub} opacity-70`}>{RETENTION_TEXT}</span>}
           </div>
         ) : (
-          <span className={k.amber}>
-            Load a clip or photo on the INPUT node{surface === 'lab' ? ', or start the webcam' : ' — or start the webcam in the Lab'}.
+          <span data-testid="ai-ad-hint" className={k.sub}>
+            Load a clip or photo on the INPUT node{surface === 'lab' ? ' or start the webcam' : ' or start the webcam in the Lab'}.
           </span>
         )}
 

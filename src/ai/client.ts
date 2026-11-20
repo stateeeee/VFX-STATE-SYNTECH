@@ -101,14 +101,14 @@ export function getStoredChoice(): GeminiChoice | null {
          400: fall back on that model's default instead */
       const known = KNOWN_MODELS.find((k) => k.id === raw.model);
       const effort = known && !known.efforts.includes(raw.effort as EffortT) ? known.defaultEffort : (raw.effort as EffortT);
-      return { model: raw.model, effort };
+      return raw.auto === true ? { model: raw.model, effort, auto: true } : { model: raw.model, effort };
     }
   } catch { /* private mode / malformed */ }
   return null;
 }
 
 export function storeChoice(c: GeminiChoice): void {
-  try { localStorage.setItem(GEMINI_CHOICE_STORAGE, JSON.stringify({ model: c.model, effort: c.effort })); } catch { /* private mode */ }
+  try { localStorage.setItem(GEMINI_CHOICE_STORAGE, JSON.stringify(c.auto ? { model: c.model, effort: c.effort, auto: true } : { model: c.model, effort: c.effort })); } catch { /* private mode */ }
 }
 
 export function forgetChoice(): void {

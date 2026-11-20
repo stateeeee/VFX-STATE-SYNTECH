@@ -70,6 +70,10 @@ code differs, THIS SPEC WINS. Anything not covered here: keep current behavior.
 
 ### 3.1 LAB v2 — a chain of the real effects (operator decision 2026-10-28)
 
+> **Layout superseded by §3.2 (LAB v3, 2026-11-19)**: no tabs, no command bar,
+> the iframes live in the right column. The chain plumbing, link status,
+> bypass and presets below still hold.
+
 Every Lab node **is** the standalone effect page (`/effects/<id>/index.html`,
 `labFrameSrc(id)` in `src/effects-registry.ts`) in a same-origin iframe, with
 its whole interface — top bar, frame, every panel section — identical to
@@ -164,6 +168,61 @@ effect side.
 - Projects → a saved chain opens the Lab and loads that preset, whether the
   Lab was never opened, is hidden, or is on screen.
 - `?labdebug` exposes `window.__synLabDebug` (tests only).
+
+### 3.2 LAB v3 — the Lab IS an effect screen, with several effects (operator, 2026-11-19)
+
+Operator: *"se seleziono la modalità LAB … devo avere la stessa identica
+schermata che vedo se seleziono un effetto … la sezione LAB serve per avere
+nella stessa schermata due effetti in contemporanea"*. Approved on three
+mockup rounds (screenshots before any code). Supersedes the §3.1 layout.
+
+- **Removed**: the Lab command bar (VIDEO / PHOTO / WEBCAM / MIC / TRACK /
+  CLIP / PRESET / MASTER, INPUT and AUDIO pills, meters, BPM, FPS) and the
+  tabs `INPUT · <effects> · OUTPUT`.
+- **Top bar** (shell-rendered, the effects' syn-chrome look): `.logo`
+  (`lab-title`) = the chain's display names in **alphabetical order** joined
+  by " · " (e.g. "ANALOG · ANAMORPHIC") · INPUT pill (source name / NONE) ·
+  ENGINE pill · work timer · FPS (0 with no source).
+- **Stage** (`lab-stage`): the chain OUTPUT in the effects' animated frame;
+  with no source the effects' drop overlay (SOURCE · IMAGE — VIDEO — WEBCAM),
+  drag & drop or click loads the chain input. Under it the transport
+  (`lab-transport`: PAUSE · time · scrub · Gemini cue lane · CUE AUTO · LOOP).
+  **LOOP is identical to PAUSE** (no outline); ON only changes the text
+  colour (night `#e8c000`, day the effects' day accent) — same rule in the
+  effects' own timeline (`syn-extras.js`).
+- **Right column** (296 px, one scroll), top to bottom:
+  1. **SOURCE** (`lab-block-source`): only 6 buttons, no text — IMAGE ·
+     VIDEO · WEBCAM / CLIP · MIC · TRACK. It feeds the whole chain.
+  2. **One block per node, alphabetical** (display only — the image runs in
+     the node graph's order, operator decision): header = the name only (no
+     number), yellow (`--syn-fx-amber`) on **black**, an animated **LED
+     outline** cycling `--syn-led-1..4` (violet → cyan → pink → amber); all
+     node blocks **collapsed** when the Lab opens. Open → the node's REAL
+     effect panel (its iframe in panel-only mode, §5.2 `setLayout`), every
+     section working as standalone, **its own Source section removed**.
+  3. **LABORATORY** (`lab-block-laboratory`): exactly 4 buttons, no
+     captions: SAVE VFX CHAIN TO PROJECTS · OPEN VFX CHAIN FROM PROJECTS ·
+     RESET VFX CHAIN (`lab-reset`: every node back to the settings it booted
+     with; removes the cue timeline) · EXPORT VFX CHAIN (`chain-master`, the
+     Master export of the whole chain; no dot).
+  SOURCE and LABORATORY start open.
+- **Collapse** = a 0-px `overflow:hidden` clip; a node iframe is never
+  `display:none` and never moved in the DOM (blocks render A→Z, so a
+  re-order only re-plumbs). Each iframe's viewport is ≥ 2400 px (800-px
+  steps) and the clip follows the panel height the effect posts
+  (`syn:lab-panel`), so opening a section never resizes the effect's window.
+  The off-screen canvas area keeps the stage's size (the Master export
+  enlarges it through `setLayout`).
+- **Frame budget**: there is only one view (the OUTPUT): Lab visible → every
+  node at 30 fps (native with a single node), hidden → paused, export /
+  Gemini capture → as before.
+- Test ids: `lab-title`, `lab-block-<source|laboratory|<id>>`,
+  `lab-block-head-<…>` (node heads carry `data-link` loading / ready /
+  missing), `lab-reset`; kept: `chain-file`, `lab-webcam`, `audio-clip`,
+  `audio-toggle` (MIC), `audio-file-btn` (TRACK), `preset-*`, `chain-master`,
+  `chain-export-msg`, `chain-input`, `lab-stage`, `lab-output-video`,
+  `lab-transport`, `lab-play`, `lab-scrub`, `lab-loop`, `cue-*`,
+  `chain-empty`, `lab-frame-<id>`.
 
 ## 4. Save semantics (operator decision: settings/presets only)
 
@@ -312,6 +371,16 @@ same origin) is specified in 02-ARCHITECTURE "One rendering world". Rules:
   cancels a held one. `kit.compositor` follows it (paused, it neither redraws nor copies). Not gated: `setInterval` /
   `setTimeout` loops (the effects' motion meters, UI refreshes) and
   `requestVideoFrameCallback` counters. `state().budget` reports it.
+- `setLayout('panel'|'standalone', {width, height})` (LAB v3, 2026-11-19),
+  `layout()`, `panelHeight()`: panel mode = one injected stylesheet +
+  `html[data-syn-layout="panel"]`; only `#panel` shows, full width, natural
+  height; topbar / own timelines / `#canvas-area` move off-screen but stay laid
+  out (`#canvas-area` at the explicit size, so the render size never drops);
+  the `.section` whose `.sec-title` is "Source" is hidden (all 10 match). A
+  layout change dispatches `resize`. `?synlayout=panel` applies it before the
+  first paint. In panel mode a ResizeObserver posts `{type:'syn:lab-panel',
+  payload:{id,h}}` to the parent. Standalone / EffectHost: nothing runs
+  without the flag or a call.
 
 ## 6. Node graph spec (INPUT → effects → OUTPUT)
 
@@ -679,12 +748,26 @@ the music through its own reactive controls, which are ordinary parameters.
   (LOW · MEDIUM · HIGH · X-HIGH for Hydrogen).
 - The rows come from `GET /api/gemini/models`: every `gemini-…` model the key
   can call with generateContent, version ≥ 2.5, minus embedding / image /
-  TTS / live / Gemma models. Known models first (`KNOWN_MODELS`: Hydrogen,
-  3.8 Flash, Argon, Carbon), then any other by version. Tags: **FREE**,
-  **PAID** (row greyed, still selectable — "Paid model: a free key cannot
-  use it."), **NEW** (a model this build does not know: a new Google release
-  shows up by itself, no code change). If the list call fails, the rows are
-  `KNOWN_MODELS` and a one-line warning.
+  TTS / live / Gemma models, **strongest first** (operator, 2026-11-19):
+  `strengthOf()` — known models by the operator's ranking (Neon 462 > Carbon
+  461 > Hydrogen 454 > Argon 450 > 3.8 Flash 385 > 3.1 Pro Preview > 2.5
+  Pro), any other by version × 100 + tier (Pro 9, named 8, Flash 5,
+  Flash-Lite 2).
+- **No Free / Paid / New text anywhere** (not even tooltips). A row shows
+  only its name, plus a **closed lock** (`ai-model-lock-<id>`, row disabled)
+  when THIS key cannot use the model; never an open lock. The server probes
+  the known paid-only models once per key (one minimal generateContent;
+  429 "limit: 0", 403 or 404 = locked; cached 6 h; "could not tell" = not locked, 2 min),
+  never probes free / unknown models (it would spend their daily quota),
+  dedupes concurrent probes, and learns from runs (a run answered "limit: 0"
+  locks that model for the key; a successful one unlocks it). A key with
+  billing sees no lock. Until the list arrives nothing is locked.
+- **Auto pick**: with nothing chosen, the panel picks the strongest KNOWN
+  unlocked model (`recommended`: a free key → Hydrogen, a billing key → Neon)
+  and stores it with `auto: true`; an auto pick follows `recommended` on
+  every load. Any pick by the operator (row, effort) has no `auto` and is
+  never replaced. A model unknown to the build is never auto-picked.
+  If the list call fails, the rows are `KNOWN_MODELS` and a one-line warning.
 - The choice (`syntech.geminiChoice` = `{ model, effort }`) is stored at once
   and sent with every call (`x-gemini-model`, `x-gemini-effort`). Effort =
   Gemini's thinking level, sent as `thinkingConfig.thinkingLevel` (LOW,

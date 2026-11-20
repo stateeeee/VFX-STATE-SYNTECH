@@ -40,6 +40,20 @@
    (setInterval / setTimeout) and requestVideoFrameCallback are NOT gated.
    state().budget reports the current budget.
 
+   Layout (added 2026-11-19, LAB v3 — the Lab shows each node as its PANEL only):
+     SynLab.setLayout('panel', {width, height})   the effect shows only its #panel, at the
+                                  iframe's full width and its natural height; its own Source
+                                  section is hidden (the Lab's SOURCE feeds the chain); the top
+                                  bar, the canvas area and the effect's own timeline leave the
+                                  viewport but stay laid out, the canvas area at width × height
+                                  CSS px (it keeps rendering at that size — never 0×0).
+     SynLab.setLayout('standalone')   back to the effect as it was (the default).
+     SynLab.layout()          → {mode, width, height}
+     SynLab.panelHeight()     → the panel's height in px (0 outside panel mode)
+   A page loaded with ?synlayout=panel starts in panel mode before its first paint. In panel
+   mode a panel resize is posted to the parent as {type:'syn:lab-panel', payload:{id, h}}.
+   Nothing here touches the effect's markup or code: one <style> + attributes on <html>.
+
    SynLab.kit (helpers for adapters, optional):
      kit.led(key, el|id, {label, group, onClass, get, set})       → boolean descriptor (click toggles)
      kit.seg(key, buttons|selector|fn, {label, group, options})    → enum descriptor (click option i)
@@ -326,6 +340,105 @@
     return false;
   }
 
+  /* ── layout: 'standalone' (the effect as it is) or 'panel' (LAB v3) ─── */
+  var LAYOUT_CSS=
+    'html[data-syn-layout="panel"],html[data-syn-layout="panel"] body{height:auto!important;min-height:0!important;max-height:none!important;overflow:hidden!important}'+
+    'html[data-syn-layout="panel"] body{display:block!important;background:transparent!important}'+
+    /* out of the viewport but laid out (never display:none: the effects read their sizes, and the
+       canvas must keep rendering + feeding the chain) */
+    'html[data-syn-layout="panel"] #topbar,html[data-syn-layout="panel"] #syn-transport,html[data-syn-layout="panel"] #transport,'+
+    'html[data-syn-layout="panel"] #tl-bar,html[data-syn-layout="panel"] #tlb,html[data-syn-layout="panel"] #bottombar'+
+      '{position:fixed!important;left:-40000px!important;top:0!important;width:1200px!important;pointer-events:none!important}'+
+    'html[data-syn-layout="panel"] #main{display:block!important;height:auto!important;min-height:0!important;overflow:visible!important}'+
+    'html[data-syn-layout="panel"] #canvas-area{position:fixed!important;left:-40000px!important;top:0!important;'+
+      'width:var(--syn-lab-area-w,1280px)!important;height:var(--syn-lab-area-h,720px)!important;'+
+      'min-width:0!important;max-width:none!important;flex:none!important;pointer-events:none!important}'+
+    'html[data-syn-layout="panel"] #panel{width:100%!important;height:auto!important;min-height:0!important;max-height:none!important;'+
+      'overflow:hidden!important;border-left:0!important}'+
+    'html[data-syn-layout="panel"] [data-syn-lab-hidden]{display:none!important}';
+  var layoutMode='standalone', areaW=1280, areaH=720, panelRO=null, lastPanelH=-1;
+  function ensureLayoutStyle(){
+    if(document.getElementById('syn-lab-layout')) return;
+    var st=document.createElement('style');
+    st.id='syn-lab-layout';
+    st.textContent=LAYOUT_CSS;
+    (document.head||document.documentElement).appendChild(st);
+  }
+  /* the effect's own Source section (the Lab's SOURCE replaces it): the .section whose
+     .sec-title reads "Source" — the markup all ten share; a bare head + body pair as fallback */
+  function hideSourceSection(){
+    var panel=document.getElementById('panel'); if(!panel) return 0;
+    var n=0;
+    panel.querySelectorAll('.sec-title').forEach(function(t){
+      if(!/^source$/i.test(clean(t.textContent))) return;
+      var head=t.closest('.sec-head');
+      var sec=t.closest('.section');
+      if(sec && sec!==panel){ sec.setAttribute('data-syn-lab-hidden','source'); n++; return; }
+      if(head){
+        head.setAttribute('data-syn-lab-hidden','source');
+        var body=head.nextElementSibling;
+        if(body && body.classList.contains('sec-body')) body.setAttribute('data-syn-lab-hidden','source');
+        n++;
+      }
+    });
+    return n;
+  }
+  function panelHeight(){
+    if(layoutMode!=='panel') return 0;
+    var p=document.getElementById('panel');
+    return p ? Math.ceil(p.getBoundingClientRect().height) : 0;
+  }
+  function postPanelHeight(){
+    var h=panelHeight();
+    if(h===lastPanelH) return;
+    lastPanelH=h;
+    try{ if(window.parent!==window) window.parent.postMessage({type:'syn:lab-panel',payload:{id:FX_ID,h:h}},'*'); }catch(e){}
+  }
+  function watchPanel(){
+    var p=document.getElementById('panel');
+    if(!p||panelRO||typeof ResizeObserver!=='function') return;
+    panelRO=new ResizeObserver(postPanelHeight);
+    panelRO.observe(p);
+  }
+  function setLayout(mode,opts){
+    mode = mode==='panel' ? 'panel' : 'standalone';
+    var root=document.documentElement;
+    var w=opts&&Number(opts.width), h=opts&&Number(opts.height);
+    var sized=false;
+    if(w>0 && h>0){
+      w=Math.round(w); h=Math.round(h);
+      if(w!==areaW||h!==areaH){ areaW=w; areaH=h; sized=true; }
+    }
+    var changed = mode!==layoutMode;
+    layoutMode=mode;
+    if(mode==='panel'){
+      ensureLayoutStyle();
+      root.style.setProperty('--syn-lab-area-w',areaW+'px');
+      root.style.setProperty('--syn-lab-area-h',areaH+'px');
+      root.setAttribute('data-syn-layout','panel');
+      hideSourceSection();
+      watchPanel();
+    }else{
+      root.removeAttribute('data-syn-layout');
+      root.style.removeProperty('--syn-lab-area-w');
+      root.style.removeProperty('--syn-lab-area-h');
+      var hid=document.querySelectorAll('[data-syn-lab-hidden]');
+      for(var i=0;i<hid.length;i++) hid[i].removeAttribute('data-syn-lab-hidden');
+    }
+    /* the effects fit their frame on window resize (some on a ResizeObserver too) */
+    if(changed||sized){ try{ window.dispatchEvent(new Event('resize')); }catch(e){} }
+    lastPanelH=-1;
+    if(mode==='panel') postPanelHeight();
+    return {mode:layoutMode,width:areaW,height:areaH};
+  }
+  /* ?synlayout=panel: panel mode from the first paint (this file runs at the end of <body>) */
+  try{
+    if(/[?&]synlayout=panel(&|$)/.test(location.search)){
+      setLayout('panel');
+      if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',function(){ hideSourceSection(); watchPanel(); postPanelHeight(); });
+    }
+  }catch(e){}
+
   function liveFps(){
     var el=document.getElementById('fps-val');
     var v=el?parseFloat(el.textContent):0;
@@ -398,7 +511,11 @@
       return out;
     },
     /* null = native (default), 0 = paused, > 0 = cap (fps) — see the header */
-    setFrameBudget:setFrameBudget
+    setFrameBudget:setFrameBudget,
+    /* 'panel' | 'standalone' (+ the canvas area's size in panel mode) — see the header */
+    setLayout:setLayout,
+    layout:function(){ return {mode:layoutMode,width:areaW,height:areaH}; },
+    panelHeight:panelHeight
   };
   window.SynLab=api;
 })();

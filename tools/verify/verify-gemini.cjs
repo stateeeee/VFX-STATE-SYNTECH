@@ -92,7 +92,7 @@ const http = require('http');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const { startMockGemini, PAID_ONLY, KEY_INVALID_BODY, UNAUTHENTICATED_BODY, SAFETY_BLOCKED_BODY, MODEL } = require('./mock-gemini.cjs');
+const { startMockGemini, PAID_ONLY, PAID_KEY_PREFIX, KEY_INVALID_BODY, UNAUTHENTICATED_BODY, SAFETY_BLOCKED_BODY, MODEL } = require('./mock-gemini.cjs');
 
 const ROOT = path.resolve(__dirname, '../..');
 const PORT = (() => { const n = Number(process.env.PORT); return Number.isInteger(n) && n > 0 && n < 65536 ? n : 3000; })();
@@ -449,9 +449,9 @@ async function roleCall(page, endpoint, tid, timeout = ROLE_TIMEOUT) {
   }
 }
 
-/** waits until every iframe node of the Lab reports its SynLab link 'ready' */
+/** waits until every iframe node of the Lab reports its SynLab link 'ready' (LAB v3: on the node block heads) */
 const waitLinks = (page, ms = 150_000) => page.waitForFunction(
-  () => { const t = [...document.querySelectorAll('[data-testid^="lab-tab-"]')].filter((e) => !/lab-tab-(input|output)$/.test(e.getAttribute('data-testid'))); return t.length > 0 && t.every((e) => e.getAttribute('data-link') === 'ready'); },
+  () => { const t = [...document.querySelectorAll('[data-testid^="lab-block-head-"]')].filter((e) => !/lab-block-head-(source|laboratory)$/.test(e.getAttribute('data-testid'))); return t.length > 0 && t.every((e) => e.getAttribute('data-link') === 'ready'); },
   null, { timeout: ms },
 ).then(() => true).catch(() => false);
 
@@ -674,28 +674,38 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
       check(` …a second click on nav-gemini-${m} is back to the card`, await visible(page, 'ai-active-card', 5000));
     }
 
-    // the model picker: Google's list (FREE / PAID / NEW), the effort slider, Done
-    const l0 = mock.lists;
+    // the model picker: Google's list (strongest first, a lock on locked rows only), the effort slider, Done
+    // the card already loaded Google's list on mount (the server keeps it 10 min): the picker's rows came from models.list
     await domClick(page, 'ai-model-button');
     check(' ai-model-button opens the picker (ai-model-picker), the card is gone', (await visible(page, 'ai-model-picker', 5000)) && (await gone(page, 'ai-active-card')));
     const wantRows = ['gemini-4-hydrogen', 'gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-4-argon', 'gemini-5-preview-test'];
+    const versionRank = (id) => { const m = /^gemini-(\d+(?:\.\d+)?)/.exec(id); return m ? Number(m[1]) : 0; }; // coarse: version first
     await page.waitForFunction((ids) => ids.every((id) => !!document.querySelector(`[data-testid="ai-model-row-${id}"]`)), wantRows, { timeout: 10_000 }).catch(() => {});
     const pick = await page.evaluate(() => {
       const rows = {};
       for (const r of document.querySelectorAll('[data-testid^="ai-model-row-"]')) {
-        rows[r.getAttribute('data-testid').slice('ai-model-row-'.length)] = { text: r.innerText.replace(/\s+/g, ' ').trim(), checked: r.getAttribute('aria-checked') === 'true' };
+        rows[r.getAttribute('data-testid').slice('ai-model-row-'.length)] = {
+          text: r.innerText.replace(/\s+/g, ' ').trim(), checked: r.getAttribute('aria-checked') === 'true',
+          lock: !!r.querySelector('svg'), disabled: r.disabled && r.getAttribute('aria-disabled') === 'true',
+        };
       }
       return rows;
     });
     const ids = Object.keys(pick);
     check(" the picker lists the mock's models (and not the decoys: embedding, imagen, 2.0, tts)",
-      wantRows.every((id) => ids.includes(id)) && !ids.some((id) => /embedding|imagen|2\.0|tts/.test(id)) && mock.lists > l0, short(ids, 300));
-    check(' hydrogen: selected, FREE', !!pick['gemini-4-hydrogen'] && pick['gemini-4-hydrogen'].checked && /free/i.test(pick['gemini-4-hydrogen'].text), short(pick['gemini-4-hydrogen']));
-    check(' 3.8 Flash: FREE · argon: PAID · gemini-5-preview-test (unknown to the build): NEW',
-      !!pick['gemini-3.8-flash'] && /free/i.test(pick['gemini-3.8-flash'].text)
-      && !!pick['gemini-4-argon'] && /paid/i.test(pick['gemini-4-argon'].text)
-      && !!pick['gemini-5-preview-test'] && /new/i.test(pick['gemini-5-preview-test'].text) && !/new/i.test(pick['gemini-4-hydrogen'].text),
-      short({ flash: pick['gemini-3.8-flash'] && pick['gemini-3.8-flash'].text, argon: pick['gemini-4-argon'] && pick['gemini-4-argon'].text, fut: pick['gemini-5-preview-test'] && pick['gemini-5-preview-test'].text }));
+      wantRows.every((id) => ids.includes(id)) && !ids.some((id) => /embedding|imagen|2\.0|tts/.test(id)) && mock.lists > 0, short(ids, 300));
+    check(' hydrogen: selected, usable (no lock icon, not disabled)', !!pick['gemini-4-hydrogen'] && pick['gemini-4-hydrogen'].checked && !pick['gemini-4-hydrogen'].lock && !pick['gemini-4-hydrogen'].disabled, short(pick['gemini-4-hydrogen']));
+    check(' no Free / Paid / New pills anywhere: a row says only its model name',
+      Object.values(pick).every((r) => !/\b(free|paid|new)\b/i.test(r.text)), short(Object.values(pick).map((r) => r.text), 300));
+    check(' a closed lock (and a disabled row) only on a locked model: argon (free key) locked, 3.8 Flash and hydrogen open',
+      !!pick['gemini-4-argon'] && pick['gemini-4-argon'].lock && pick['gemini-4-argon'].disabled
+      && !pick['gemini-3.8-flash'].lock && !pick['gemini-3.8-flash'].disabled && !pick['gemini-4-hydrogen'].lock,
+      short({ argon: pick['gemini-4-argon'], flash: pick['gemini-3.8-flash'] }));
+    const at = (id) => ids.indexOf(id);
+    check(' rows run strongest first (newer version above older; Neon > Carbon > Hydrogen > Argon; 2.5 Pro > 2.5 Flash > 2.5 Flash-Lite)',
+      ids.every((id, i) => i === 0 || versionRank(ids[i - 1]) >= versionRank(id))
+      && ['gemini-4-neon', 'gemini-4-carbon', 'gemini-4-hydrogen', 'gemini-4-argon'].every((id, i, a) => at(id) >= 0 && (i === 0 || at(a[i - 1]) < at(id)))
+      && ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'].every((id, i, a) => at(id) >= 0 && (i === 0 || at(a[i - 1]) < at(id))), short(ids, 300));
     const choiceNow = () => page.evaluate(() => { try { return JSON.parse(localStorage.getItem('syntech.geminiChoice') || 'null'); } catch { return 'unparsable'; } });
     const setSlider = (i) => page.evaluate((v) => {
       const el = document.querySelector('[data-testid="ai-effort-slider"]');
@@ -731,7 +741,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const g0 = mock.generate.length;
     const r = await roleCall(page, '/api/gemini/art-director', 'ai-ad-run');
     check(' server answered 200', r.status === 200, `${r.status} in ${r.sec}s ${short(r.json, 90)}`);
-    check(' result card shown', await visible(page, 'ai-ad-result', 10_000));
+    check(' result card shown', await visible(page, 'ai-ad-result', LOADED_MS));
     const recs = mock.generate.slice(g0);
     check(' Google got exactly one generateContent, role Art Director', recs.length === 1 && recs[0].role === 'art_director', recs.map((x) => x.role).join(','));
     const rec = recs[0];
@@ -770,7 +780,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     if (opened) {
       const order = await waitOrder(page, 'analog>bokeh');
       check(' Lab chain = analog → bokeh', order === 'analog>bokeh', order);
-      check(' every node of the chain has its SynLab link (lab-tab-* data-link ready)', await waitLinks(page));
+      check(' every node of the chain has its SynLab link (lab-block-head-* data-link ready)', await waitLinks(page));
       const ready = await page.evaluate(() => window.__SYN.lab.whenReady(60_000));
       const kind = await page.evaluate(() => window.__SYN.lab.sourceKind());
       check(' the Lab renders the photo', ready === true && kind === 'image', `ready=${ready} kind=${kind}`);
@@ -942,7 +952,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' a video INPUT turns the Clip audio on by itself (AudioEngine mode clip)', a0.active && a0.mode === 'clip', JSON.stringify(a0));
     check(" the Clip button shows it (class 'on')", await page.evaluate(() => /(^|\s)on(\s|$)/.test(document.querySelector('[data-testid="audio-clip"]')?.className || '')),
       await page.evaluate(() => document.querySelector('[data-testid="audio-clip"]')?.className || ''));
-    check(' Clip audio button present (not pressed by the suite)', await visible(page, 'audio-clip', 10_000));
+    check(' Clip audio button present (not pressed by the suite)', await visible(page, 'audio-clip', LOADED_MS));
 
     check(" the panel landed on the Agent tab by itself (no rail click)", (await onTab(page, 'Agent', 30_000)) && await page.locator(sel('ai-agent-run')).isVisible().catch(() => false));
     const marks = await proposalMarks(page);
@@ -964,7 +974,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const p0 = uploadCalls();
     const r = await roleCall(page, '/api/gemini/agent', 'ai-agent-run');
     check(' server answered 200', r.status === 200, `${r.status} in ${r.sec}s ${short(r.json, 90)}`);
-    check(' result card shown', await visible(page, 'ai-agent-result', 10_000));
+    check(' result card shown', await visible(page, 'ai-agent-result', LOADED_MS));
     const agMeta = await text(page, 'ai-meta-agent');
     check(" the card ends with its meta line 'gemini-4-hydrogen · high · 1,200 thinking tokens'", agMeta === 'gemini-4-hydrogen · high · 1,200 thinking tokens', agMeta);
 
@@ -1125,7 +1135,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const g0 = mock.generate.length;
     const r = await roleCall(page, '/api/gemini/optimizer', 'ai-opt-run', 120_000);
     check(' server answered 200', r.status === 200, `${r.status} in ${r.sec}s ${short(r.json, 90)}`);
-    check(' result card shown', await visible(page, 'ai-opt-result', 10_000));
+    check(' result card shown', await visible(page, 'ai-opt-result', LOADED_MS));
     check(' music already on: no clip note', await gone(page, 'ai-opt-note'));
     const recs = mock.generate.slice(g0);
     check(' Google got exactly one generateContent, role Optimizer', recs.length === 1 && recs[0].role === 'optimizer', recs.map((x) => x.role).join(','));
@@ -1600,8 +1610,9 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const mj = await ml.json().catch(() => null);
     const ids = ((mj && mj.models) || []).map((m) => m.id);
     const fut = ((mj && mj.models) || []).find((m) => m.id === 'gemini-5-preview-test');
-    check(' GET /models → 200, source google, first row gemini-4-hydrogen, recommended gemini-4-hydrogen',
-      ml.status === 200 && mj.source === 'google' && ids[0] === 'gemini-4-hydrogen' && mj.recommended === 'gemini-4-hydrogen', `${ml.status} ${short(ids, 300)}`);
+    const firstOpen = ((mj && mj.models) || []).find((m) => m.known && !m.locked); // an unknown model (gemini-5-preview-test) is never auto-picked
+    check(' GET /models → 200, source google, rows strongest first, recommended = the strongest KNOWN unlocked row (free key: hydrogen), every row has a boolean locked',
+      ml.status === 200 && mj.source === 'google' && ids.length > 0 && mj.models.every((m) => typeof m.locked === 'boolean') && !!firstOpen && mj.recommended === firstOpen.id && mj.recommended === 'gemini-4-hydrogen', `${ml.status} ${short(ids, 300)} rec=${mj && mj.recommended}`);
     check(' it includes gemini-5-preview-test (unknown to the build) as known:false, free:unknown, listed:true',
       !!fut && fut.known === false && fut.free === 'unknown' && fut.listed === true && fut.name === 'Gemini 5 Preview (test)', short(fut));
     check(' it excludes the decoys (embedding, imagen, 2.0, tts) and keeps gemini-3.8-flash, 3.5-flash-lite, argon',
@@ -1639,6 +1650,68 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     const kr = await fetch(`${APP}/api/gemini/key`, { method: 'POST', headers: hdr({ 'x-gemini-model': 'gemini-3.8-flash' }), body: '{}' });
     const krj = await kr.json().catch(() => null);
     check(' POST /key with x-gemini-model checks THAT model and answers it', krj && krj.active === true && krj.model === 'gemini-3.8-flash' && mock.keyChecks.slice(k0).every((k) => k.model === 'gemini-3.8-flash'), short(krj));
+
+    // a billing key (mock prefix AIzaPAID): no locks, recommended = Carbon; probes deduped across concurrent first calls
+    const PAIDK = `${PAID_KEY_PREFIX}9`;
+    const probes0 = mock.log.filter((l) => l.key === PAIDK && /:generateContent/.test(l.url)).length;
+    const [pa, pb] = await Promise.all([1, 2].map(() => fetch(`${APP}/api/gemini/models`, { headers: { 'x-gemini-key': PAIDK } }).then((r) => r.json())));
+    const probes = mock.log.filter((l) => l.key === PAIDK && /:generateContent/.test(l.url)).length - probes0;
+    const paidRows = pa.models.filter((m) => m.free === 'no').length;
+    check(' billing key: GET /models has no locked row, recommended = gemini-4-neon',
+      pa.models.length > 0 && pa.models.every((m) => m.locked === false) && pa.recommended === 'gemini-4-neon' && pb.recommended === 'gemini-4-neon', short({ rec: pa.recommended, locked: pa.models.filter((m) => m.locked).map((m) => m.id) }));
+    check(' two concurrent first GET /models for one key probe each paid model once (deduped)', paidRows > 0 && probes === paidRows, `probes=${probes} paidRows=${paidRows}`);
+    check(' no Free / Paid wording in any row note', pa.models.every((m) => !/\b(free|paid|gratis|pagamento)\b/i.test(m.note || '')), short(pa.models.map((m) => m.note)));
+
+    // the panel on a billing key: auto Neon (auto:true), no lock icon; key → free key: auto Hydrogen; an explicit pick survives
+    const ctx2 = await browser.newContext({ viewport: { width: 1600, height: 953 } });
+    await ctx2.routeWebSocket(/:24678\//, () => {});
+    const p2 = await ctx2.newPage();
+    try {
+      const keyed = (k) => p2.evaluate((v) => { localStorage.setItem('syntech.geminiKey', v); }, k);
+      const choiceOf = () => p2.evaluate(() => { try { return JSON.parse(localStorage.getItem('syntech.geminiChoice') || 'null'); } catch { return 'bad'; } });
+      const waitChoice = (model) => p2.waitForFunction((m) => { try { return JSON.parse(localStorage.getItem('syntech.geminiChoice') || 'null')?.model === m; } catch { return false; } }, model, { timeout: 30_000 }).catch(() => {});
+      await p2.goto(APP, { waitUntil: 'load', timeout: 90_000 });
+      await keyed(PAIDK);
+      await p2.reload({ waitUntil: 'load', timeout: 90_000 });
+      await visible(p2, 'ai-active-card', 30_000);
+      await waitChoice('gemini-4-neon');
+      const c1 = await choiceOf();
+      check(' billing key in the panel: the automatic pick is gemini-4-neon, stored with auto:true', !!c1 && c1.model === 'gemini-4-neon' && c1.auto === true, short(c1));
+      await domClick(p2, 'ai-model-button');
+      await visible(p2, 'ai-model-picker', 10_000);
+      await sleep(600);
+      const locks = await p2.evaluate(() => [...document.querySelectorAll('[data-testid^="ai-model-row-"]')].filter((r) => r.querySelector('svg') || r.disabled).length);
+      check(' billing key: no row with a lock icon / disabled', locks === 0, `locked rows=${locks}`);
+      await keyed(GOOD);
+      await p2.reload({ waitUntil: 'load', timeout: 90_000 });
+      await visible(p2, 'ai-active-card', 30_000);
+      await waitChoice('gemini-4-hydrogen');
+      const c2 = await choiceOf();
+      check(' switching to a free key: the auto pick follows recommended → gemini-4-hydrogen (auto:true)', !!c2 && c2.model === 'gemini-4-hydrogen' && c2.auto === true, short(c2));
+      await keyed(PAIDK);
+      await p2.reload({ waitUntil: 'load', timeout: 90_000 });
+      await visible(p2, 'ai-active-card', 30_000);
+      await waitChoice('gemini-4-neon');
+      const c3 = await choiceOf();
+      check(' …and back to the billing key: auto pick → gemini-4-neon', !!c3 && c3.model === 'gemini-4-neon' && c3.auto === true, short(c3));
+      // an explicit pick (the effort slider) drops the auto flag and survives reloads and a key change
+      await domClick(p2, 'ai-model-button');
+      await visible(p2, 'ai-model-picker', 10_000);
+      await p2.evaluate(() => {
+        const el = document.querySelector('[data-testid="ai-effort-slider"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '0');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await sleep(300);
+      const c4 = await choiceOf();
+      check(' an effort change stores the choice WITHOUT auto', !!c4 && c4.model === 'gemini-4-neon' && c4.effort === 'low' && !('auto' in c4), short(c4));
+      await keyed(GOOD);
+      await p2.reload({ waitUntil: 'load', timeout: 90_000 });
+      await visible(p2, 'ai-active-card', 30_000);
+      await sleep(2500);
+      const c5 = await choiceOf();
+      check(' the explicit pick survives a reload (even on a key that cannot use it): same model + effort, no auto', !!c5 && c5.model === 'gemini-4-neon' && c5.effort === 'low' && !('auto' in c5), short(c5));
+    } finally { await ctx2.close().catch(() => {}); }
   });
 
   /* ── 11 ── */
@@ -1649,7 +1722,7 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
     check(' the server logged the key failures (classified, keyless)', /\[gemini\] invalid_key:/.test(serverOut));
     const urlLeak = mock.log.filter((l) => l.url.includes(GOOD) || l.url.includes(BAD) || /[?&]key=/.test(l.url));
     check(' Google never saw the key in a URL', urlLeak.length === 0, short(urlLeak));
-    check(' Google got the key in x-goog-api-key on every call', mock.log.filter((l) => !l.url.startsWith('/__mock')).every((l) => l.key === GOOD || l.key === BAD || l.url.startsWith('/upload-session/')),
+    check(' Google got the key in x-goog-api-key on every call', mock.log.filter((l) => !l.url.startsWith('/__mock')).every((l) => l.key === GOOD || l.key === BAD || String(l.key).startsWith(PAID_KEY_PREFIX) || l.url.startsWith('/upload-session/')),
       short(mock.log.filter((l) => !l.key).map((l) => l.url)));
     const off = pageReqs.filter((x) => !x.url.startsWith(APP) && !x.url.startsWith(`http://localhost:${PORT}`));
     check(' the browser never called Google (only our server)', !off.some((x) => /googleapis|generativelanguage/.test(x.url)), short(off.map((x) => x.url).slice(0, 5)));

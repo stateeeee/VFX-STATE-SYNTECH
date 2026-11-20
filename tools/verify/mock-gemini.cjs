@@ -62,6 +62,12 @@ const MODEL = 'gemini-4-hydrogen';
 const OK_MODELS = ['gemini-4-hydrogen', 'gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-5-preview-test'];
 /** Exists, but a free key gets Google's real 429 with a limit of 0. */
 const PAID_ONLY = 'gemini-4-argon';
+/** Every paid-only model: a FREE key (MOCKKEY, anything not starting with
+ *  PAID_KEY_PREFIX) gets Google's 429 "limit: 0" on generateContent, a PAID key
+ *  (PAID_KEY_PREFIX + anything, e.g. 'AIzaPAID1') is served normally. */
+const PAID_MODELS = ['gemini-4-neon', 'gemini-4-carbon', 'gemini-4-argon', 'gemini-2.5-pro', 'gemini-3.1-pro-preview'];
+const PAID_KEY_PREFIX = 'AIzaPAID';
+const isPaidKey = (k) => String(k || '').startsWith(PAID_KEY_PREFIX);
 const THOUGHTS = { MINIMAL: 20, LOW: 100, MEDIUM: 400, HIGH: 1200, XHIGH: 3000 };
 
 /** What Google answers on a paid-only model with a free key. */
@@ -79,6 +85,11 @@ const FREE_LIMIT_ZERO_BODY = {
 
 /** models.list rows (REST shape). The last four are decoys the server must drop. */
 const LIST_ROWS = [
+  ['gemini-4-neon', 'Gemini 4 Neon', ['generateContent', 'countTokens']],
+  ['gemini-4-carbon', 'Gemini 4 Carbon', ['generateContent', 'countTokens']],
+  ['gemini-2.5-flash-lite', 'Gemini 2.5 Flash-Lite', ['generateContent', 'countTokens']],
+  ['gemini-2.5-pro', 'Gemini 2.5 Pro', ['generateContent', 'countTokens']],
+  ['gemini-2.5-flash', 'Gemini 2.5 Flash', ['generateContent', 'countTokens']],
   ['gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite', ['generateContent', 'countTokens']],
   ['gemini-5-preview-test', 'Gemini 5 Preview (test)', ['generateContent']],
   ['gemini-4-argon', 'Gemini 4 Argon', ['generateContent']],
@@ -336,7 +347,7 @@ function startMockGemini({ port = 0, goodKey = GOOD_KEY, processingPolls = 1 } =
     res.writeHead(code, { 'content-type': 'application/json; charset=UTF-8', ...headers });
     res.end(JSON.stringify(body));
   };
-  const keyOk = (k) => k === goodKey;
+  const keyOk = (k) => k === goodKey || isPaidKey(k);
   const notFound = (what) => ({ error: { code: 404, message: `models/${what} is not found for API version v1beta, or is not supported for generateContent.`, status: 'NOT_FOUND' } });
 
   const server = http.createServer((req, res) => {
@@ -379,7 +390,7 @@ function startMockGemini({ port = 0, goodKey = GOOD_KEY, processingPolls = 1 } =
           const ok = keyOk(key);
           state.keyChecks.push({ model: m[1], key, ok });
           if (!ok) return send(res, 400, KEY_INVALID_BODY);
-          if (m[1] !== PAID_ONLY && !OK_MODELS.includes(m[1])) return send(res, 404, notFound(m[1]));
+          if (!PAID_MODELS.includes(m[1]) && !OK_MODELS.includes(m[1])) return send(res, 404, notFound(m[1]));
           return send(res, 200, {
             name: `models/${m[1]}`, version: '4', displayName: `${m[1]} (mock)`,
             inputTokenLimit: 1048576, outputTokenLimit: 65536,
@@ -394,15 +405,15 @@ function startMockGemini({ port = 0, goodKey = GOOD_KEY, processingPolls = 1 } =
           const role = roleOf(body);
           const rec = { role, model: m[1], thinkingConfig: null, key, body, text: contextText(body), answer: null, picked: null, status: 200 };
           state.generate.push(rec);
-          if (state.pendingFail) {
+          if (state.pendingFail && body.systemInstruction) { // a model-lock probe (no systemInstruction) must not eat a queued failure
             const f = state.pendingFail;
             state.pendingFail = null;
             rec.status = f.status;
             return send(res, f.status, f.body);
           }
           if (!keyOk(key)) { rec.status = 400; return send(res, 400, KEY_INVALID_BODY); }
-          if (m[1] === PAID_ONLY) { rec.status = 429; return send(res, 429, FREE_LIMIT_ZERO_BODY); }
-          if (!OK_MODELS.includes(m[1])) { rec.status = 404; return send(res, 404, notFound(m[1])); }
+          if (PAID_MODELS.includes(m[1]) && !isPaidKey(key)) { rec.status = 429; return send(res, 429, FREE_LIMIT_ZERO_BODY); }
+          if (!OK_MODELS.includes(m[1]) && !PAID_MODELS.includes(m[1])) { rec.status = 404; return send(res, 404, notFound(m[1])); }
           const tc = body?.generationConfig?.thinkingConfig || null;
           rec.thinkingConfig = tc;
           const level = tc && tc.thinkingLevel ? String(tc.thinkingLevel) : '';
@@ -543,7 +554,7 @@ function startMockGemini({ port = 0, goodKey = GOOD_KEY, processingPolls = 1 } =
   });
 }
 
-module.exports = { startMockGemini, OK_MODELS, PAID_ONLY, FREE_LIMIT_ZERO_BODY, parseChainTable, contextText, KEY_INVALID_BODY, UNAUTHENTICATED_BODY, SAFETY_BLOCKED_BODY, FLOORS, MODEL, GOOD_KEY };
+module.exports = { startMockGemini, OK_MODELS, PAID_ONLY, PAID_MODELS, PAID_KEY_PREFIX, FREE_LIMIT_ZERO_BODY, parseChainTable, contextText, KEY_INVALID_BODY, UNAUTHENTICATED_BODY, SAFETY_BLOCKED_BODY, FLOORS, MODEL, GOOD_KEY };
 
 if (require.main === module) {
   const port = Number(process.argv[2] || 4010);

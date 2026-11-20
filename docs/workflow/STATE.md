@@ -29,6 +29,43 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-11-19/20 — v0.14.0: pannello Gemini per forza con lucchetto, logo Gemini LED, LAB v3 (il LAB è la
+schermata di un effetto, con più effetti), logo LAB ampolla. FATTO.**
+Operatore: *"metti in ordine tutti i modelli in base alla loro forza … non scrivere paid free new, metti solo un
+lucchetto chiuso se il modello è a pagamento … se un utente ha un abbonamento non deve avere il lucchetto … il logo
+Gemini … la forma outline deve essere uguale … nessun effetto deve essere selezionato quando apro l'app … nella
+sezione LAB devo avere la stessa identica schermata che vedo se seleziono un effetto … mandami screenshot prima"*.
+- **Decisioni dell'operatore** (3 giri di mockup con gli effetti veri prima del codice, AskUserQuestion): ordine
+  Neon (indice AA 61) > Carbon > Hydrogen > Argon > 3.8 Flash > … > 2.5 Pro > 2.5 Flash > 2.5 Flash-Lite; logo Gemini
+  = sagoma vera, colori Google verde → giallo → rosso → blu in senso orario; LAB: blocchi in ordine ALFABETICO (solo
+  visualizzazione, l'elaborazione segue i nodi), nomi gialli su nero senza numeri con contorno LED, SOURCE della catena
+  in alto (solo 6 bottoni), Source degli effetti tolta, LABORATORY in fondo con 4 bottoni senza scritte (SAVE VFX
+  CHAIN TO PROJECTS · OPEN VFX CHAIN FROM PROJECTS · RESET VFX CHAIN · EXPORT VFX CHAIN); LOOP identico a PAUSE
+  (anche negli effetti, `syn-extras.js`), acceso = solo il colore della scritta; logo LAB = ampolla n.6 "Pozione".
+- **Gemini** (03-SPEC §9.14): `strengthOf`/`byStrength` (contract.ts); niente Free/Paid/New nemmeno nei tooltip;
+  lucchetto chiuso solo se QUESTA chiave non può usare il modello: il server prova una volta per chiave i modelli
+  noti a pagamento (429 limit 0 / 403 / 404 = chiuso, 6 h; "non so" = aperto, 2 min; deduplica; impara dai run);
+  scelta automatica `auto:true` = il più forte noto e aperto (chiave gratis → Hydrogen, a pagamento → Neon), mai
+  sopra una scelta dell'operatore. Testo Art Director grigio senza trattino; riga gialla dell'Agent (e dell'Optimizer,
+  stesso riquadro) tolta; all'avvio nessun effetto selezionato (App `activeModule` null).
+- **LAB v3** (03-SPEC §3.2, §5.2 `setLayout`): barra comandi e schede tolte; top bar degli effetti con i nomi A→Z;
+  stage = OUTPUT della catena; colonna destra = SOURCE · blocchi effetto (iframe veri in modalità pannello, chiusi
+  all'apertura) · LABORATORY. Nessun HTML di effetto toccato.
+- **Processo**: Haiku (screenshot prima), Sonnet ×5 (server lucchetti; pannello/logo/testi/avvio; LOOP effetti;
+  correzioni revisione), Opus architect (LAB v3), orchestratore (contratto/classifica, mockup, logo conico, ampolla,
+  documenti). Revisione Opus 1 sul Gemini: FAIL (lucchetti durante il caricamento con chiave a pagamento, scelta
+  automatica salvata per sempre, probe doppi, parole gratis/pagamento nei tooltip, lucchetto senza scadenza, reduced
+  motion) → corretti. **Revisione Opus finale sul diff completo: PASS** (interrotta due volte dai limiti d'uso e
+  ripresa). Corretti dopo il PASS i due LOW banali (reduced motion sui bordi LED, doc 403/404).
+- **Verifica**: lint pulito, build ok; `verify-lab-chain` 61/61; `verify-gemini` 373/376 e 374/376 (i fallimenti
+  diversi a ogni giro, tutti attese di 10 s col renderer software a 0,5 fps: portate a 45 s, suite intera NON
+  rigirata dopo questa modifica); 10 effetti standalone invariati; modalità pannello ok su tutti e 10.
+- **Aperti** (LOW): animazione box-shadow dei bordi LED costa ridisegni sul thread della shell (animare solo
+  border-color); `applyLayouts` a ogni resize dello stage → debounce ~150 ms (PAINTING rialloca); `panelH` /
+  `frameRefCbs` non potati alla rimozione di un nodo; prestazioni con più pannelli aperti da misurare sul Mac (GPU
+  vera); popup dei knob di Bokeh/PAINTING potrebbero essere tagliati al bordo del blocco.
+- `version` 0.13.0 → **0.14.0**. Su richiesta dell'operatore: push sul branch e poi su `main`.
+
 **SESSIONE 2026-11-18/19 — v0.13.0: Gemini 4 Hydrogen, scelta modello + effort, pannello nuovo, AI più sveglia,
 timeline di cue sul beat. FATTO (verifica finale: vedi sotto).**
 Operatore: *"sostituisci Gemini 3.8 Flash con Gemini 4 Hydrogen … voglio scegliere il modello dall'app … se scelgo

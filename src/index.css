@@ -28,6 +28,17 @@
   /* violet secondary (AI / gradient tail) */
   --syn-violet: #8b5cf6;
   --syn-violet-rgb: 139, 92, 246;
+  /* LED palette (operator, 2026-11-19): the Gemini mark's turning stroke and the
+     Lab's block outlines cycle through these four, in this order */
+  --syn-led-1: #8b5cf6;
+  --syn-led-2: #22d3ee;
+  --syn-led-3: #ec4899;
+  --syn-led-4: #e8c000;
+  /* Google's four Gemini colours (GeminiMark's cycling outline) */
+  --syn-gemini-green: #34a853;
+  --syn-gemini-yellow: #fbbc04;
+  --syn-gemini-red: #ea4335;
+  --syn-gemini-blue: #4285f4;
 
   /* Night surfaces — FULLY OPAQUE black (operator direction 2026-07-25): the
      sections are solid, and the animated gel slab (.syn-bg-layer) shows only in
@@ -462,3 +473,18 @@ body {
   border-radius: 0;
   border-width: 0;
 }
+
+/* GeminiMark (src/components/GeminiMark.tsx): Google's Gemini colours turning
+   clockwise around the spark outline. The stops run against the turn
+   (green, blue, red, yellow) so a fixed point of the outline sees
+   green → yellow → red → blue → green (operator, 2026-11-19). */
+@property --syn-gm-a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.syn-gemini-mark {
+  display: inline-block;
+  background: conic-gradient(from var(--syn-gm-a), var(--syn-gemini-green), var(--syn-gemini-blue), var(--syn-gemini-red), var(--syn-gemini-yellow), var(--syn-gemini-green));
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
+  animation: syn-gm-turn 4s linear infinite;
+}
+@keyframes syn-gm-turn { to { --syn-gm-a: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .syn-gemini-mark { animation: none; } }

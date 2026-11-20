@@ -1,6 +1,6 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Pause, Play as PlayIcon, Repeat, Trash2, Upload } from 'lucide-react';
-import { AudioEngine, AudioMode, FileTransport } from '../engine/AudioEngine';
+import { Trash2 } from 'lucide-react';
+import { AudioEngine, AudioMode } from '../engine/AudioEngine';
 import { VideoAnalyzer } from '../engine/VideoAnalyzer';
 import { ModuleId } from '../types';
 import {
@@ -10,12 +10,12 @@ import {
 import { elementToJpeg } from '../ai/capture';
 import { labFrameSrc } from '../effects-registry';
 import { EFFECT_META } from './NodalComposition';
-import { SynLabApi, SynLabParam, readEffectSettings, synLabOf } from '../lab/synlab';
+import { SynLabApi, SynLabParam, labPanelSrc, readEffectSettings, synLabOf } from '../lab/synlab';
 import { ChainPresetV2, StoredPreset, isV2, presetChain, readPresets, writePresets } from '../lab/presets';
 import { MasterRecorder, recordVideoClip } from '../lab/record';
 import { analyzeBeatGrid, withDuration } from '../lab/beatgrid';
 import { CUE_EPS, CueSegment, activeCueIndex, barLines, buildSegments, fmtCueTime, sanitizeGrid, stateAtIndex } from '../lab/cues';
-// the opened-effect look (LAB strip, stage, transport, status line), scoped under .syn-fxlab
+// the opened-effect look (top bar, framed stage, transport, the right column of blocks), scoped under .syn-fxlab
 import './chainLab.css';
 
 export interface ChainLabProps {
@@ -45,19 +45,28 @@ export interface ChainLabProps {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   LAB v2 — a chain of the REAL effects (operator decision 2026-10-28,
-   "option 1"). Every node is the standalone effect (public/effects/<id>) in a
-   same-origin iframe with its whole interface; the shell only plumbs streams:
+   LAB v3 (operator design 2026-11-19) — the Lab looks and works like an
+   OPENED EFFECT, with several effects chained. Every node is still the
+   standalone effect (public/effects/<id>) in a same-origin iframe (LAB v2,
+   "option 1"); the shell only plumbs streams:
 
        INPUT ──stream──▶ node 1 ──captureStream──▶ node 2 ──▶ … ──▶ OUTPUT
 
    through each effect's window.SynLab (public/effects/shared/syn-lab.js):
    setVideoStream (an external source — not the webcam path, no mirror),
    captureStream (its output canvas), setAudioStream (the Lab's audio, for its
-   own reactivity). All iframes sit in the same rect; the selected tab is on
-   top, the others keep rendering underneath (never display:none). An iframe
-   is made when its node is wired and kept across re-orders (only the streams
-   are re-plumbed); it goes when the node leaves the chain.
+   own reactivity), setLayout('panel') (the effect shows ONLY its panel; its
+   canvas keeps rendering out of view at the stage's size).
+
+   Screen: the effects' top bar (logo = the chain's names A→Z · INPUT ·
+   ENGINE · timer · FPS); the stage = the chain OUTPUT in the effects' frame
+   (no source: their drop overlay), the transport + Gemini cue lane under it;
+   the right column (296 px, one scroll) = SOURCE · one block per node (A→Z,
+   collapsed; open = that effect's real panel) · LABORATORY (presets, reset,
+   Master export). Alphabetical is display only: the processing order is the
+   node graph's. A collapsed block is a zero-height clip around its iframe —
+   never display:none (Chromium freezes those iframes) — so every node keeps
+   rendering and feeding the chain, collapsed or scrolled away.
 
    The INPUT is shell-owned: a <video> (file), a canvas (photo) or the webcam
    stream. AudioEngine stays the Lab's audio owner (clip / track / mic, the
@@ -78,6 +87,18 @@ const PHOTO_MAX_SIDE = 1920;
 /** Master export of a photo / webcam INPUT (no timeline): a fixed take */
 const STILL_TAKE_SEC = 10;
 const MASTER_WIDTH = 1920;
+/** a node's iframe viewport is taller than its panel and grows in steps (its wrapper clips it to the
+ *  panel's height): opening a section of the effect's panel then does not resize the effect's window
+ *  (PAINTING re-allocates its engine on every window resize) */
+const PANEL_VIEWPORT_MIN = 2400;
+const PANEL_VIEWPORT_STEP = 800;
+/** the offscreen canvas area of a node never goes below this (its effect keeps a real render size) */
+const AREA_MIN_W = 320;
+const AREA_MIN_H = 180;
+/** the stage's frame inset (the effects' #canvas-wrap: area − 24 px) */
+const FRAME_PAD = 24;
+/** the Lab's own work timer (the effects' top-bar timer, 03 §5.1): sessionStorage key */
+const LAB_TIMER_KEY = 'syntech.timer.fx.lab';
 
 const VIDEO_FRAME_GAP_MS = 500;
 const WEBCAM_SPAN_MS = 2000;
@@ -180,9 +201,12 @@ interface NodeRec {
   out: MediaStream | null;
   /** last SynLab.setFrameBudget sent to this node's link (null = native; undefined = never sent) */
   budget: number | null | undefined;
+  /** last SynLab.setLayout sent ('panel WxH'; '' = never) */
+  layout: string;
 }
 type LinkState = 'loading' | 'ready' | 'missing';
-type Tab = 'input' | 'output' | ModuleId;
+/** a block of the right column: SOURCE, LABORATORY or a node */
+type BlockId = 'source' | 'laboratory' | ModuleId;
 
 interface TransportView { playing: boolean; t: number; dur: number; loop: boolean }
 
@@ -213,7 +237,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
 
   /* ── INPUT elements (all shell-owned) ── */
   const inputVideoRef = useRef<HTMLVideoElement | null>(null);   // a video file; the element Clip audio taps
-  const camVideoRef = useRef<HTMLVideoElement | null>(null);     // the webcam, shown clean on the INPUT tab
+  const camVideoRef = useRef<HTMLVideoElement | null>(null);     // the webcam (its stream feeds node 1)
   const photoCanvasRef = useRef<HTMLCanvasElement | null>(null); // a photo, redrawn so its track keeps going
   const photoImgRef = useRef<HTMLImageElement | null>(null);
   const photoTimerRef = useRef(0);
@@ -233,14 +257,27 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
 
   /* ── nodes ── */
   const nodesRef = useRef(new Map<ModuleId, NodeRec>());
-  // iframes in a STABLE DOM order (moving an iframe in the DOM reloads it): new nodes append,
-  // a node leaving the chain is removed, a re-order only re-plumbs
-  const [frameIds, setFrameIds] = useState<ModuleId[]>(() => chain.slice());
   const [links, setLinks] = useState<Partial<Record<ModuleId, LinkState>>>({});
   const pendingSettingsRef = useRef(new Map<ModuleId, unknown>());
-  const [tab, setTab] = useState<Tab>(() => chain[0] ?? 'input');
-  const tabRef = useRef<Tab>(tab);
-  tabRef.current = tab;
+  /** each node's panel as it booted, before any saved / preset settings: what RESET puts back */
+  const defaultsRef = useRef(new Map<ModuleId, unknown>());
+  /** the right column: which blocks are open (SOURCE and LABORATORY open, every node collapsed) */
+  const [openBlocks, setOpenBlocks] = useState<ReadonlySet<BlockId>>(() => new Set<BlockId>(['source', 'laboratory']));
+  const openBlocksRef = useRef(openBlocks);
+  openBlocksRef.current = openBlocks;
+  /** each node's panel height (px) as its SynLab reports it */
+  const [panelH, setPanelH] = useState<Partial<Record<ModuleId, number>>>({});
+  const columnRef = useRef<HTMLDivElement | null>(null);
+  /** the stage's size: the frame fits in it, and every node's offscreen canvas area takes it */
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [stageBox, setStageBox] = useState({ w: 0, h: 0 });
+  const stageBoxRef = useRef(stageBox);
+  stageBoxRef.current = stageBox;
+  /** the OUTPUT picture's aspect (w / h; 0 = none yet): the frame follows it */
+  const [outAspect, setOutAspect] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  /** the Lab's work timer, seconds */
+  const [workSec, setWorkSec] = useState(0);
 
   const [fps, setFps] = useState(0);
   const fpsRef = useRef(0);
@@ -251,20 +288,20 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   const raisedAtFrameRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [audioOn, setAudioOn] = useState(false);
   const [audioMode, setAudioMode] = useState<AudioMode>('off');
-  const [track, setTrack] = useState<FileTransport | null>(null);
   const [tp, setTp] = useState<TransportView>({ playing: false, t: 0, dur: 0, loop: true });
-  const [signals, setSignals] = useState({ bass: 0, loud: 0, treble: 0, beat: 0, bpm: null as number | null });
   const [presets, setPresets] = useState<StoredPreset[]>(readPresets);
   const [presetName, setPresetName] = useState('');
-  const [presetOpen, setPresetOpen] = useState(false);
+  /** LABORATORY: what opens under SAVE (the name field) or OPEN (the saved chains) */
+  const [labPane, setLabPane] = useState<'save' | 'open' | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState('');
   const exportingRef = useRef(false);
   const exportStopRef = useRef(false);
-  /** > 1 while a Master export renders the effects in an enlarged (scaled-down) frame */
+  /** > 1 while a Master export gives every node's (offscreen) canvas area an enlarged size */
   const [exportScale, setExportScale] = useState(1);
+  const exportScaleRef = useRef(1);
+  exportScaleRef.current = exportScale;
   const audioLogRef = useRef<string[]>([]);
   const lastExportRef = useRef<{ name: string; size: number; type: string; width: number; height: number; audio: boolean; url: string } | null>(null);
   /* the cue timeline (the CUE TIMELINE section) and the INPUT's beat grid */
@@ -321,7 +358,33 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       ov.srcObject = up;
       if (up) void ov.play().catch(() => {});
     }
+    applyLayouts();
     applyBudgets();
+  };
+
+  /* ═══ LAYOUT: every node shows its PANEL only (SynLab.setLayout) ══════
+     Its canvas area leaves the iframe's viewport but keeps a real size: the
+     stage's (what the operator sees), times the Master's enlargement while an
+     export runs. Identity-checked per node (cheap: called from replumb). */
+  const areaSize = () => {
+    const b = stageBoxRef.current;
+    const f = exportScaleRef.current;
+    return {
+      width: Math.round(Math.max(AREA_MIN_W, b.w) * f),
+      height: Math.round(Math.max(AREA_MIN_H, b.h) * f),
+    };
+  };
+  const applyLayouts = () => {
+    const size = areaSize();
+    const key = `panel ${size.width}x${size.height}`;
+    nodesRef.current.forEach((rec) => {
+      const api = rec.api;
+      if (!api || typeof api.setLayout !== 'function' || rec.layout === key) return;
+      try {
+        api.setLayout('panel', size);
+        rec.layout = key;
+      } catch { /* a torn-down frame: the poll will see it */ }
+    });
   };
 
   /** first contact with a node's SynLab: its saved panel (or the preset's), then plumb */
@@ -333,6 +396,14 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     rec.video = undefined;
     rec.audio = undefined;
     rec.budget = undefined;
+    rec.layout = '';
+    // the panel as the effect booted: RESET puts it back (taken once per node, before any saved settings)
+    if (!defaultsRef.current.has(rec.id)) {
+      try {
+        const d = api.getSettings();
+        if (d != null) defaultsRef.current.set(rec.id, d);
+      } catch { /* no bridge: RESET skips this node */ }
+    }
     const pending = pendingSettingsRef.current;
     const s = pending.has(rec.id) ? pending.get(rec.id) : readEffectSettings(rec.id);
     pending.delete(rec.id);
@@ -375,6 +446,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         if (!external) { rec.video = undefined; rec.refed = true; changed = true; }
       }
       next[rec.id] = rec.api ? 'ready' : rec.loadedAt && now - rec.loadedAt > LINK_TIMEOUT_MS ? 'missing' : 'loading';
+      if (rec.api) notePanelHeight(rec.id, readPanelHeight(rec.api)); // the message may have been missed
     });
     setLinks((prev) => {
       const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
@@ -382,6 +454,15 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       return prev;
     });
     if (changed) replumb();
+  };
+
+  /** a node's panel height (its SynLab, in panel mode; 0 = unknown) */
+  const readPanelHeight = (api: SynLabApi): number => {
+    try { return typeof api.panelHeight === 'function' ? api.panelHeight() || 0 : 0; } catch { return 0; }
+  };
+  const notePanelHeight = (id: ModuleId, h: number) => {
+    if (!(h > 0)) return;
+    setPanelH((prev) => (prev[id] === h ? prev : { ...prev, [id]: h }));
   };
 
   const postTheme = (iframe: HTMLIFrameElement | null) => {
@@ -398,7 +479,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         if (el) {
           const rec = map.get(id);
           if (rec && rec.iframe === el) return;
-          map.set(id, { id, iframe: el, win: null, loadedAt: 0, api: null, inited: false, readyAt: 0, refed: false, video: undefined, audio: undefined, out: null, budget: undefined });
+          map.set(id, { id, iframe: el, win: null, loadedAt: 0, api: null, inited: false, readyAt: 0, refed: false, video: undefined, audio: undefined, out: null, budget: undefined, layout: '' });
         } else {
           map.delete(id);
         }
@@ -415,18 +496,15 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     rec.api = null;
     rec.inited = false;
     rec.video = rec.audio = undefined;
+    rec.layout = '';
     postTheme(el);
     pollLinks();
   };
 
-  // the wired chain changed: mount new nodes (append), drop the ones that left, re-plumb
+  /* the wired chain changed: the blocks follow (A→Z, so a re-order moves no iframe — moving one in the
+     DOM would reload it; a new node's block is inserted, a node that left goes with its iframe), re-plumb */
   useEffect(() => {
-    setFrameIds((prev) => {
-      const kept = prev.filter((id) => chain.includes(id));
-      const added = chain.filter((id) => !kept.includes(id));
-      return added.length || kept.length !== prev.length ? [...kept, ...added] : prev;
-    });
-    setTab((t) => (t === 'input' || t === 'output' || chain.includes(t) ? t : chain[0] ?? 'output'));
+    defaultsRef.current.forEach((_v, id) => { if (!chain.includes(id)) defaultsRef.current.delete(id); });
     const run = cueRef.current;
     const gone = run ? [...run.ids].filter((id) => !chain.includes(id)) : [];
     if (gone.length) dropCues(`${gone.map(fxName).join(', ')} left the chain`);
@@ -438,7 +516,16 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   useEffect(() => {
     const t = window.setInterval(pollLinks, 400);
     const onMsg = (ev: MessageEvent) => {
-      if (ev.data && typeof ev.data === 'object' && ev.data.type === 'syn:lab-ready') pollLinks();
+      if (!ev.data || typeof ev.data !== 'object') return;
+      if (ev.data.type === 'syn:lab-ready') pollLinks();
+      else if (ev.data.type === 'syn:lab-panel') {
+        // a node's panel changed height (a section opened / closed): its block follows
+        nodesRef.current.forEach((rec) => {
+          let win: Window | null = null;
+          try { win = rec.iframe?.contentWindow ?? null; } catch { win = null; }
+          if (win && ev.source === win) notePanelHeight(rec.id, Number(ev.data.payload?.h) || 0);
+        });
+      }
     };
     window.addEventListener('message', onMsg);
     return () => { window.clearInterval(t); window.removeEventListener('message', onMsg); };
@@ -524,7 +611,6 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     const audio = audioRef.current!;
     if (audio.mode !== 'clip') return;
     audio.stop();
-    setAudioOn(false);
     setAudioMode('off');
   };
   /** Clip audio on for the INPUT video — the Clip button, the auto-start and the Gemini panel all go
@@ -533,7 +619,6 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   const startClipOn = async (video: HTMLVideoElement): Promise<void> => {
     await audioRef.current!.startClip(video);
     clipWantedRef.current = true;
-    setAudioOn(true);
     setAudioMode('clip');
     setError(null);
     replumb(); // the effects get the Lab audio
@@ -743,14 +828,13 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   const liveRef = useRef(false);
   const rafRef = useRef(0);
 
-  /* ═══ FRAME BUDGET: only the nodes that feed the screen render ════════
+  /* ═══ FRAME BUDGET: the nodes render only when someone watches ═══════
      Every node is a same-origin iframe: all their render loops share the
-     shell's main thread. So (SynLab.setFrameBudget, 03 §3.1):
+     shell's main thread. The stage always shows the OUTPUT (LAB v3: no tabs),
+     so (SynLab.setFrameBudget, 03 §3.1):
        a Master export or a Gemini capture hold  → every node at LAB_FPS
        Lab hidden                               → every node paused (0)
-       OUTPUT tab (or the last node's tab)      → every node at LAB_FPS
-       effect tab k                             → nodes 0..k at LAB_FPS, the rest 0
-       INPUT tab                                → every node 0 (INPUT shows the source only)
+       Lab visible                              → every node at LAB_FPS
      When exactly ONE node renders and nothing holds the Lab (no export, no
      capture) it runs native (null): a single effect keeps its v0.12.0
      smoothness. Identity-checked per node, so it is called freely: from
@@ -759,23 +843,13 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
      fresh frames went through the chain (awaitFreshOutput). */
   const applyBudgets = () => {
     const ids = chainRef.current;
-    const t = tabRef.current;
-    let upto: number; // nodes with chain index <= upto render
     const held = holdRef.current > 0 || exportingRef.current;
-    if (held) upto = ids.length - 1;
-    else if (!visibleRef.current || t === 'input') upto = -1;
-    else if (t === 'output') upto = ids.length - 1;
-    else {
-      const k = ids.indexOf(t);
-      upto = k >= 0 ? k : ids.length - 1; // a tab that just left the chain: keep everything live
-    }
-    const rendering = Math.min(upto + 1, ids.length);
-    const run: number | null = !held && rendering === 1 ? null : LAB_FPS;
+    const live = held || visibleRef.current;
+    const run: number | null = !held && ids.length === 1 ? null : LAB_FPS;
     nodesRef.current.forEach((rec) => {
       const api = rec.api;
       if (!api || typeof api.setFrameBudget !== 'function') return;
-      const i = ids.indexOf(rec.id);
-      const want = i >= 0 && i <= upto ? run : 0;
+      const want = live && ids.includes(rec.id) ? run : 0;
       if (rec.budget === want) return;
       try {
         api.setFrameBudget(want);
@@ -797,7 +871,6 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     if (kindRef.current === 'webcam') stopWebcam(); // camera released; back to the loaded file, if any
     if (audio.mode === 'mic') {
       audio.stop();
-      setAudioOn(false);
       setAudioMode('off');
       replumb();
     }
@@ -846,7 +919,6 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   useEffect(() => {
     syncLoop();
     if (visible) publishTaps();
-    else setPresetOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
@@ -899,11 +971,6 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   /* ═══ UI mirror (meters, transport, audio state, output fps) ═══════════ */
   const mirror = () => {
     const audio = audioRef.current!;
-    const lv = audio.levels;
-    setSignals((s) => (s.bass === lv.bass && s.loud === lv.loud && s.treble === lv.treble && s.beat === lv.beat && s.bpm === lv.bpm
-      ? s : { bass: lv.bass, loud: lv.loud, treble: lv.treble, beat: lv.beat, bpm: lv.bpm }));
-    setTrack(audio.transport ? { ...audio.transport } : null);
-    setAudioOn(audio.active);
     setAudioMode(audio.mode);
     const v = inputVideoRef.current;
     if (v) {
@@ -985,6 +1052,24 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       setError('Audio file: ' + (e as Error).message);
     }
   };
+  /** TRACK: off → pick a music file (it loops, it drives the meter and the effects); on → off */
+  const toggleTrack = () => {
+    const audio = audioRef.current!;
+    if (audio.mode === 'file') {
+      audio.stop();
+      mirror();
+      replumb();
+      return;
+    }
+    audioFileRef.current?.click();
+  };
+  /** the chain's file picker, narrowed to images / videos (the drop overlay's SOURCE takes both) */
+  const pickSource = (accept: string) => {
+    const el = fileRef.current;
+    if (!el) return;
+    el.accept = accept;
+    el.click();
+  };
   const toggleClipAudio = async () => {
     const audio = audioRef.current!;
     if (audio.mode === 'clip') {
@@ -1019,7 +1104,8 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     setPresets(next);
     writePresets(next);
     setPresetName('');
-    setNote(`preset "${name}" saved (${p.chain.length} effects)`);
+    setLabPane(null);
+    setNote(`"${name}" saved to Projects (${p.chain.length} effects)`);
   };
   const loadPreset = (p: StoredPreset) => {
     const list = presetChain(p);
@@ -1041,6 +1127,24 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       }
     });
     cueResync(); // a running timeline keeps driving its own controls over the loaded panels
+  };
+  /** RESET: every node of the chain back to its panel as it booted (before any saved settings / preset).
+   *  A cue timeline would put its values back at its next cue: it goes too. */
+  const resetChain = () => {
+    if (exportingRef.current) { setNote('reset: a Master export is running'); return; }
+    const done: string[] = [];
+    const skipped: string[] = [];
+    if (cueRef.current) dropCues();
+    chainRef.current.forEach((id) => {
+      pendingSettingsRef.current.delete(id);
+      const api = nodesRef.current.get(id)?.api ?? null;
+      const d = defaultsRef.current.get(id);
+      if (!api || d == null) { skipped.push(fxName(id)); return; }
+      try { api.applySettings(d); done.push(fxName(id)); } catch { skipped.push(fxName(id)); }
+    });
+    setNote(done.length
+      ? `reset: ${done.join(', ')} back to the initial values${skipped.length ? ` · not ready: ${skipped.join(', ')}` : ''}`
+      : chainRef.current.length ? `reset: no effect ready yet (${skipped.join(', ')})` : 'reset: the chain is empty');
   };
   const deletePreset = (name: string) => {
     const next = presets.filter((p) => p.name !== name);
@@ -1215,7 +1319,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     const ov = outputVideoRef.current;
     return !!ov && ov.readyState >= 2 && ov.videoWidth > 0;
   };
-  /** After a frame-budget raise (a capture / export on a Lab showing an earlier tab, or hidden) the
+  /** After a frame-budget raise (a capture / export on a hidden Lab) the
    *  OUTPUT <video> still holds a frame from before: wait until chain.length + 1 frames were presented
    *  since the raise (each hop adds a frame of latency). Bounded by `timeoutMs`; past it, when not even
    *  ONE new frame arrived (software GL renders at ~1 fps), up to FRESH_FALLBACK_MS more for that one. */
@@ -1610,7 +1714,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         const s = Number.isFinite(sec) && sec > 0 ? sec : 4;
         const what = !stream ? ' (no audio)' : audio.mode === 'mic' ? ' with mic audio' : ' with music';
         return withLiveLoop(async () => {
-          /* the hold raised the budgets: a paused chain (an earlier tab, hidden) may not have put a
+          /* the hold raised the budgets: a paused chain (the Lab hidden) may not have put a
              single frame on the OUTPUT yet — wait for one, then for fresh ones */
           const deadline = performance.now() + FIRST_FRAME_WAIT_MS;
           while (!outputHasFrame()) {
@@ -1934,6 +2038,15 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         outputStream: () => outputStreamRef.current,
         inputVideo: () => inputVideoRef.current,
         lastExport: () => lastExportRef.current,
+        /** the right column: open a node's block and scroll to it; which blocks are open */
+        openBlock: (id: ModuleId) => focusNodeRef.current(id),
+        openBlocks: () => [...openBlocksRef.current],
+        /** every node's SynLab layout + reported panel height */
+        layouts: () => Object.fromEntries([...nodesRef.current.values()].map((r) => {
+          let l: unknown = null;
+          try { l = r.api?.layout?.() ?? null; } catch { l = null; }
+          return [r.id, { layout: l, panelHeight: r.api ? readPanelHeight(r.api) : 0 }];
+        })),
         /** the cue engine: the index it last applied, at what INPUT time, how it follows the clock, its log */
         cueEngine: () => {
           const run = cueRef.current;
@@ -1956,28 +2069,93 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   };
   useEffect(() => { publishTaps(); }); // cheap; keeps the taps on the live refs
 
-  // the preset popover closes on a click anywhere else
-  const presetWrapRef = useRef<HTMLDivElement | null>(null);
+  /* the stage's size: the frame fits in it and every node's canvas area takes it (applyLayouts) */
   useEffect(() => {
-    if (!presetOpen) return;
-    const away = (e: PointerEvent) => {
-      if (presetWrapRef.current && !presetWrapRef.current.contains(e.target as Node)) setPresetOpen(false);
+    const el = stageRef.current;
+    if (!el) return;
+    const measure = () => {
+      const w = Math.round(el.clientWidth);
+      const h = Math.round(el.clientHeight);
+      setStageBox((b) => (b.w === w && b.h === h ? b : { w, h }));
     };
-    document.addEventListener('pointerdown', away);
-    return () => document.removeEventListener('pointerdown', away);
-  }, [presetOpen]);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // the OUTPUT picture's aspect: the frame follows it
+  useEffect(() => {
+    const ov = outputVideoRef.current;
+    if (!ov) return;
+    const on = () => setOutAspect(ov.videoWidth > 0 && ov.videoHeight > 0 ? ov.videoWidth / ov.videoHeight : 0);
+    ov.addEventListener('loadedmetadata', on);
+    ov.addEventListener('resize', on);
+    return () => { ov.removeEventListener('loadedmetadata', on); ov.removeEventListener('resize', on); };
+  }, []);
+  /* the Lab's work timer (the effects' top-bar timer, 03 §5.1): counts while the Lab is on screen and the
+     app window is visible and focused (focus inside a node's iframe counts); kept for the tab's session */
+  useEffect(() => {
+    let sec = 0;
+    try { sec = Number(sessionStorage.getItem(LAB_TIMER_KEY)) || 0; } catch { sec = 0; }
+    setWorkSec(sec);
+    const t = window.setInterval(() => {
+      if (!visibleRef.current || document.visibilityState !== 'visible' || !document.hasFocus()) return;
+      sec++;
+      setWorkSec(sec);
+      try { sessionStorage.setItem(LAB_TIMER_KEY, String(sec)); } catch { /* private mode */ }
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  /** open / close a block of the right column (several may be open: the column scrolls as one) */
+  const toggleBlock = (b: BlockId) => setOpenBlocks((prev) => {
+    const next = new Set(prev);
+    if (next.has(b)) next.delete(b); else next.add(b);
+    return next;
+  });
+  /** a node's block, opened and scrolled into view (the column is the only scroller that moves) */
+  const focusNode = (id: ModuleId) => {
+    setOpenBlocks((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    window.setTimeout(() => {
+      const col = columnRef.current;
+      const blk = col?.querySelector<HTMLElement>(`[data-testid="lab-block-${id}"]`);
+      if (col && blk) col.scrollTo({ top: Math.max(0, blk.offsetTop - 4), behavior: 'smooth' });
+    }, 60);
+  };
+  const focusNodeRef = useRef(focusNode);
+  focusNodeRef.current = focusNode;
+
+  /* drag & drop of a video / photo on the stage: the chain's INPUT */
+  const onStageDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const f = [...(e.dataTransfer?.files ?? [])].find((x) => /^(video|image)\//.test(x.type) || /\.(mp4|webm|mov|m4v|mkv|jpe?g|png|webp|gif|bmp|avif)$/i.test(x.name));
+    if (f) void loadSourceFile(f);
+  };
 
   /* ═══ render ══════════════════════════════════════════════════════════ */
   const inputLabel = kind === 'none' ? 'NONE' : (kind === 'webcam' ? 'WEBCAM' : sourceName || kind).toUpperCase();
-  const audioLabel = audioMode === 'off' ? 'OFF' : audioMode === 'file' ? 'TRACK' : audioMode.toUpperCase();
-  const pct = (v: number) => `${Math.min(100, Math.round(v * 100))}%`;
-  const layerCls = (t: Tab) => `fxl-layer${tab === t ? ' top' : ''}`;
   const linkOf = (id: ModuleId): LinkState => links[id] ?? 'loading';
   const theme = isDayMode ? 'day' : 'night';
-  const layersStyle: React.CSSProperties | undefined = exportScale > 1
-    ? { width: `${exportScale * 100}%`, height: `${exportScale * 100}%`, transform: `scale(${1 / exportScale})`, transformOrigin: '0 0' }
-    : undefined;
   const missing = chain.filter((id) => linkOf(id) === 'missing');
+  /** DISPLAY order of the blocks and the title: A→Z by name (the processing order is the node graph's) */
+  const sorted = useMemo(() => [...chain].sort((a, b) => fxName(a).localeCompare(fxName(b))), [chainKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const title = sorted.length ? sorted.map(fxName).join(' · ') : 'LAB';
+  const engine = exporting ? 'REC' : chain.length === 0 ? 'IDLE' : chain.some((id) => linkOf(id) === 'loading') ? 'LOADING' : 'READY';
+  const p2 = (n: number) => String(Math.floor(n)).padStart(2, '0');
+  const timecode = `${p2(workSec / 86400)}:${p2((workSec % 86400) / 3600)}:${p2((workSec % 3600) / 60)}:${p2(workSec % 60)}`;
+
+  /* the frame: the OUTPUT's aspect (16:9 with no picture yet), fitted in the stage − 24 px like the effects' */
+  const inAspect = (() => {
+    const el = kind === 'video' ? inputVideoRef.current : kind === 'webcam' ? camVideoRef.current : null;
+    if (el && el.videoWidth > 0 && el.videoHeight > 0) return el.videoWidth / el.videoHeight;
+    const c = photoCanvasRef.current;
+    return kind === 'image' && c && c.width > 0 && c.height > 0 ? c.width / c.height : 0;
+  })();
+  const aspect = kind === 'none' ? 16 / 9 : outAspect || inAspect || 16 / 9;
+  const aw = Math.max(16, stageBox.w - FRAME_PAD);
+  const ah = Math.max(16, stageBox.h - FRAME_PAD);
+  const frame = aw / ah > aspect ? { w: Math.round(ah * aspect), h: ah } : { w: aw, h: Math.round(aw / aspect) };
 
   /* the cue lane: bar lines of the beat grid (the timeline's, else the analysed one), the section blocks,
      a diamond per cue — all placed in % of the scrub track's travel (the rail is inset by the thumb's half) */
@@ -2003,329 +2181,332 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     tip.style.visibility = 'visible';
   }, [cueTip, tipMark]);
 
-  /** the OUTPUT is paused by the frame budget (an earlier tab is on top): the pill says so instead of 0 */
-  const tabIndex = tab === 'input' || tab === 'output' ? -1 : chain.indexOf(tab);
-  const outputIdle = !exporting && (tab === 'input' || (tabIndex >= 0 && tabIndex < chain.length - 1));
+  /** a block's header: name, chevron, the LED outline (black + amber in both themes) */
+  const blockHead = (b: BlockId, label: string, extra?: { link?: LinkState; title?: string }) => {
+    const open = openBlocks.has(b);
+    return (
+      <button
+        type="button"
+        className={`fxl-blk-head${open ? ' open' : ''}`}
+        data-testid={`lab-block-head-${b}`}
+        data-link={extra?.link}
+        aria-expanded={open}
+        title={extra?.title}
+        onClick={() => toggleBlock(b)}
+      >
+        <span className="fxl-blk-name">{label}</span>
+        {extra?.link && extra.link !== 'ready' && <span className={`fxl-blk-state ${extra.link}`}>{extra.link === 'missing' ? 'NO LINK' : '…'}</span>}
+        <span className="fxl-blk-chev" aria-hidden>▼</span>
+      </button>
+    );
+  };
+  const exportTitle = exporting ? 'Stop the export (nothing is saved)'
+    : kind === 'video' ? 'Record the chain output from the start of the video to its end (realtime), with the Lab audio'
+    : kind === 'none' ? 'The export needs a source'
+    : `Record ${STILL_TAKE_SEC} s of the chain output (realtime), with the Lab audio`;
 
   return (
     <div className="syn-fxlab" data-testid="chain-lab" data-theme={theme}>
-      {/* ── the LAB strip: logo · tabs · commands · pills ── */}
-      <div className="fxl-labbar">
-        <div className="fxl-logo">LAB</div>
-        <div className="fxl-tabs" role="tablist" aria-label="Lab chain">
-          <button type="button" role="tab" aria-selected={tab === 'input'} data-testid="lab-tab-input" className={`fxl-tab${tab === 'input' ? ' on' : ''}`} onClick={() => setTab('input')}>
-            Input
-          </button>
-          {chain.map((id, i) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={tab === id}
-              data-testid={`lab-tab-${id}`}
-              data-link={linkOf(id)}
-              className={`fxl-tab fx${tab === id ? ' on' : ''}`}
-              onClick={() => setTab(id)}
-              title={linkOf(id) === 'missing' ? `${fxName(id)}: Lab link not available — bypassed` : `${i + 1}. ${fxName(id)}`}
-            >
-              <span className="fxl-tab-sep">›</span>
-              <i className="fxl-tab-dot" style={{ background: EFFECT_META[id]?.color }} />
-              {fxName(id)}
-              {linkOf(id) !== 'ready' && <span className={`fxl-tab-state ${linkOf(id)}`}>{linkOf(id) === 'missing' ? '!' : '…'}</span>}
-            </button>
-          ))}
-          <button type="button" role="tab" aria-selected={tab === 'output'} data-testid="lab-tab-output" className={`fxl-tab${tab === 'output' ? ' on' : ''}`} onClick={() => setTab('output')}>
-            <span className="fxl-tab-sep">›</span>Output
-          </button>
-        </div>
+      {/* ── the effects' top bar: the chain's names · INPUT · ENGINE · timer · FPS ── */}
+      <div className="fxl-topbar">
+        <div className="fxl-logo" data-testid="lab-title" title={chain.length ? `Processing order: ${chain.map(fxName).join(' → ')}` : undefined}>{title}</div>
         <div className="fxl-sep" />
-        <div className="fxl-cmds">
-          <button type="button" className="fxl-btn" onClick={() => fileRef.current?.click()} title="Load a video or a photo as the INPUT">
-            Video / Photo
-          </button>
-          <button
-            type="button"
-            className={`fxl-btn${kind === 'webcam' ? ' on' : ''}`}
-            data-testid="lab-webcam"
-            onClick={toggleWebcam}
-            title={kind === 'webcam' ? 'Stop the webcam' : 'Use the webcam as the INPUT'}
+        <div className={`fxl-pill${kind !== 'none' ? ' live' : ''}`} data-testid="chain-input" title={sourceName || undefined}>
+          <span className="fxl-dot" />
+          <span className="fxl-pill-pre">INPUT</span>
+          <span className="fxl-pill-val">{inputLabel}</span>
+        </div>
+        <div className={`fxl-pill ${exporting ? 'rec' : 'engine'}`} data-testid="lab-engine">
+          <span className="fxl-dot" />
+          <span className="fxl-pill-pre">ENGINE</span>
+          <span className="fxl-pill-val">{engine}</span>
+        </div>
+        <div className="fxl-timecode" data-testid="lab-timecode" title="Time spent in the Lab (this session)">{timecode}</div>
+        <div className="fxl-fps" title="Frames per second of the chain OUTPUT (0 with no source, like the effects)">
+          FPS <b data-testid="chain-fps">{kind === 'none' ? 0 : fps}</b>
+        </div>
+      </div>
+
+      <div className="fxl-main">
+        {/* ── left: the chain OUTPUT in the effects' frame, the transport under it ── */}
+        <div className="fxl-area">
+          <div
+            ref={stageRef}
+            className="fxl-stage"
+            data-testid="lab-stage"
+            onDragOver={(e) => { e.preventDefault(); if (!dragOver) setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onStageDrop}
           >
-            <span className="fxl-led" /> {kind === 'webcam' ? 'Stop cam' : 'Webcam'}
-          </button>
-          <input ref={fileRef} type="file" accept="video/*,image/*" data-testid="chain-file" className="hidden" onChange={(e) => { void loadSourceFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
-          <span className="fxl-gap" />
-          {/* the active audio buttons also carry `border-amber-400`: verify-gemini.cjs reads it as "on" */}
-          <button type="button" onClick={toggleMic} data-testid="audio-toggle" title="React to the microphone" className={`fxl-btn${audioMode === 'mic' ? ' on border-amber-400' : ''}`}>
-            <span className="fxl-led" /> {audioMode === 'mic' ? 'Live' : 'Mic'}
-          </button>
-          <button type="button" onClick={() => audioFileRef.current?.click()} data-testid="audio-file-btn" title="React to a music track" className={`fxl-btn${audioMode === 'file' ? ' on border-amber-400' : ''}`}>
-            <span className="fxl-led" /> Track
-          </button>
-          <button
-            type="button"
-            onClick={toggleClipAudio}
-            data-testid="audio-clip"
-            disabled={kind !== 'video'}
-            title={kind === 'video' ? (audioMode === 'clip' ? "Turn the video's own sound off" : "Hear the video's own sound (it drives the meter and the effects)") : 'Needs a video INPUT'}
-            className={`fxl-btn${audioMode === 'clip' ? ' on border-amber-400' : ''}`}
-          >
-            <span className="fxl-led" /> Clip
-          </button>
-          <input ref={audioFileRef} type="file" accept="audio/*" data-testid="audio-file" className="hidden" onChange={(e) => { void loadAudioFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
-          <span className="fxl-gap" />
-          <div className="fxl-pop-wrap" ref={presetWrapRef}>
-            <button type="button" className={`fxl-btn${presetOpen ? ' on' : ''}`} data-testid="preset-toggle" onClick={() => setPresetOpen((o) => !o)} title="Save or load a chain preset">
-              Preset
-            </button>
-            {presetOpen && (
-              <div className="fxl-pop" data-testid="preset-pop">
-                <div className="fxl-pop-title">CHAIN PRESETS</div>
-                <div className="fxl-pop-row">
-                  <input
-                    type="text"
-                    className="fxl-input"
-                    data-testid="preset-name"
-                    value={presetName}
-                    onChange={(e) => setPresetName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') savePreset(); }}
-                    placeholder="preset name"
-                    autoFocus
-                  />
-                  <button type="button" className="fxl-btn" onClick={savePreset} data-testid="preset-save" disabled={!presetName.trim()}>
-                    Save
-                  </button>
+            <div className="fxl-wrap" style={{ width: frame.w, height: frame.h }}>
+              <div className="fxl-frame-outline" />
+              {/* INPUT elements: laid out under the OUTPUT (they feed node 1, the analyser, Gemini) */}
+              <div className="fxl-layer fxl-media" data-testid="lab-layer-input">
+                <video ref={(el) => { inputVideoRef.current = el; if (el && !el.dataset.init) { el.dataset.init = '1'; el.muted = true; } }} data-testid="lab-input-video" playsInline preload="auto" className={kind === 'video' ? '' : 'fxl-gone'} />
+                <canvas ref={photoCanvasRef} data-testid="lab-input-photo" className={kind === 'image' ? '' : 'fxl-gone'} />
+                <video ref={(el) => { camVideoRef.current = el; if (el) el.muted = true; }} data-testid="lab-input-cam" playsInline className={kind === 'webcam' ? '' : 'fxl-gone'} />
+              </div>
+              <div className="fxl-layer fxl-media top" data-testid="lab-layer-output">
+                <video ref={(el) => { outputVideoRef.current = el; if (el) el.muted = true; }} data-testid="lab-output-video" playsInline autoPlay />
+              </div>
+              {kind === 'none' && (
+                /* the effects' drop overlay: drop a file anywhere on the stage, or click */
+                <div className={`fxl-drop${dragOver ? ' drag-over' : ''}`} data-testid="lab-drop" onClick={() => pickSource('video/*,image/*')}>
+                  <div className="fxl-drop-ico" aria-hidden>
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                  </div>
+                  <div className="fxl-drop-title">LAB</div>
+                  <div className="fxl-drop-sub">IMAGE — VIDEO — WEBCAM</div>
+                  <button type="button" className="fxl-drop-btn" data-testid="lab-drop-source" onClick={(e) => { e.stopPropagation(); pickSource('video/*,image/*'); }}>SOURCE</button>
                 </div>
-                {presets.length === 0 ? (
-                  <p className="fxl-pop-note">No saved chains yet — the chain order and every effect's panel settings are stored.</p>
+              )}
+              {chain.length === 0 && (
+                <div className="fxl-hint" data-testid="chain-empty">
+                  No effects in the chain — add them with <b>+ Add Node</b> in the node graph and wire INPUT → … → OUTPUT.
+                </div>
+              )}
+            </div>
+            {(missing.length > 0 || note || error) && (
+              <div className="fxl-status">
+                {missing.length > 0 && (
+                  <span className="fxl-err" data-testid="chain-link-missing">
+                    {missing.map((id) => `${fxName(id)}: Lab link not available`).join(' · ')}
+                  </span>
+                )}
+                {note && <span className="fxl-note" data-testid="chain-note">{note}</span>}
+                {error && <span className="fxl-err" data-testid="chain-error">{error}</span>}
+              </div>
+            )}
+          </div>
+
+          {/* ── transport (video INPUT): the effects' timeline + the Gemini cue lane ── */}
+          {kind === 'video' && (
+            <div className={`fxl-transport${cueView ? ' has-cues' : ''}`} data-testid="lab-transport" ref={transportRef}>
+              <button type="button" data-testid="lab-play" className={`fxl-tl-btn${tp.playing ? '' : ' lit'}`} onClick={togglePlay} title={tp.playing ? 'Pause the INPUT (the whole chain and the sound)' : 'Play'}>
+                {tp.playing ? '▮▮ PAUSE' : '▶ PLAY'}
+              </button>
+              <span className="fxl-tl-cur" data-testid="lab-time">{fmtTC(tp.t)}</span>
+              <div className="fxl-tl-wrap">
+                <input
+                  type="range"
+                  className="fxl-tl-track"
+                  data-testid="lab-scrub"
+                  min={0}
+                  max={tp.dur || 0}
+                  step={0.01}
+                  value={Math.min(tp.t, tp.dur || 0)}
+                  style={{ '--p': `${tp.dur ? (tp.t / tp.dur) * 100 : 0}%` } as React.CSSProperties}
+                  onChange={(e) => scrub(parseFloat(e.target.value))}
+                  aria-label="Scrub the INPUT video"
+                />
+                {laneOn && (
+                  <div className="fxl-cue-rail">
+                    {bars.map((t) => <i key={t} className="fxl-cue-bar" data-testid="cue-bar" style={{ left: lanePct(t) }} />)}
+                    {cueView && (
+                      <div className="fxl-cue-lane" data-testid="cue-lane">
+                        {cueView.segments.map((g) => (
+                          <span
+                            key={`${g.first}-${g.start}`}
+                            className={`fxl-cue-sec${g.hot ? ' hot' : ''}`}
+                            style={{
+                              left: `calc(${lanePct(g.start)} + 1px)`,
+                              width: `calc(${clamp((g.end - g.start) / laneDur, 0, 1) * 100}% - 2px)`,
+                              '--cue-mix': `${Math.round(18 + 26 * (g.energy ?? 0.4))}%`,
+                            } as React.CSSProperties}
+                            title={`${g.label} · ${fmtCueTime(g.start)}–${fmtCueTime(g.end)}`}
+                          >
+                            {g.label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {cueView?.marks.map((m, i) => (
+                      <button
+                        key={`${i}-${m.at}`}
+                        type="button"
+                        className={`fxl-cue-mark${m.hot ? ' hot' : ''}${i === cueIdx ? ' on' : ''}`}
+                        data-testid={`cue-mark-${i}`}
+                        style={{ left: lanePct(m.at) }}
+                        aria-label={`${fmtCueTime(m.at)} · ${m.label} — go to this cue`}
+                        onMouseEnter={(e) => showCueTip(i, e.currentTarget)}
+                        onMouseLeave={() => setCueTip(null)}
+                        onFocus={(e) => showCueTip(i, e.currentTarget)}
+                        onBlur={() => setCueTip(null)}
+                        onClick={() => scrub(m.at)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+              <span className="fxl-tl-dur">{fmtTC(tp.dur)}</span>
+              {cueView && (
+                <button
+                  type="button"
+                  className={`fxl-cue-chip${cueView.enabled ? ' on' : ''}`}
+                  data-testid="cue-auto"
+                  data-on={cueView.enabled ? '1' : '0'}
+                  aria-pressed={cueView.enabled}
+                  onClick={() => labRef.current?.setCuesEnabled(!cueView.enabled)}
+                  title={cueView.enabled
+                    ? `The ${cueView.count} cues play with the video — click to hold the controls where they are`
+                    : 'Cue automation is off: the controls hold their values — click to play the cues again'}
+                >
+                  <span className="fxl-cue-chip-dot" />CUE AUTO · {cueView.count}
+                </button>
+              )}
+              {/* LOOP = PAUSE's normal look; on/off is only its text colour (operator) */}
+              <button type="button" data-testid="lab-loop" className={`fxl-tl-btn fxl-tl-loop${tp.loop ? ' on' : ''}`} onClick={toggleLoop} title={tp.loop ? 'Loop on — click to play once' : 'Loop off — click to loop'}>⟳ LOOP</button>
+              {tipMark && (
+                <div ref={cueTipRef} className={`fxl-cue-tip${tipMark.hot ? ' hot' : ''}`} data-testid="cue-tip" role="tooltip" key={cueTip!.i}>
+                  <div className="fxl-cue-tip-head">{fmtCueTime(tipMark.at)} · {tipMark.label}</div>
+                  {tipMark.lines.map((l, j) => <div key={j}>{l}</div>)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── right: one column, one scroll — SOURCE · the nodes A→Z · LABORATORY ── */}
+        <div className="fxl-col" ref={columnRef} data-testid="lab-column">
+          <input ref={fileRef} type="file" accept="video/*,image/*" data-testid="chain-file" className="fxl-file" onChange={(e) => { void loadSourceFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+          <input ref={audioFileRef} type="file" accept="audio/*" data-testid="audio-file" className="fxl-file" onChange={(e) => { void loadAudioFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+
+          <section className={`fxl-blk${openBlocks.has('source') ? ' open' : ''}`} data-testid="lab-block-source">
+            {blockHead('source', 'SOURCE', { title: 'The chain\'s source: it feeds the whole chain' })}
+            <div className="fxl-blk-clip" style={{ height: openBlocks.has('source') ? 'auto' : 0 }}>
+              <div className="fxl-blk-body">
+                <div className="fxl-seg-row">
+                  <button type="button" className={`fxl-seg${kind === 'image' ? ' on' : ''}`} data-testid="lab-src-image" onClick={() => pickSource('image/*')} title="Load a photo as the chain's source">IMAGE</button>
+                  <button type="button" className={`fxl-seg${kind === 'video' ? ' on' : ''}`} data-testid="lab-src-video" onClick={() => pickSource('video/*')} title="Load a video as the chain's source">VIDEO</button>
+                  <button type="button" className={`fxl-seg${kind === 'webcam' ? ' on' : ''}`} data-testid="lab-webcam" onClick={toggleWebcam} title={kind === 'webcam' ? 'Stop the webcam' : 'Use the webcam as the chain\'s source'}>WEBCAM</button>
+                </div>
+                <div className="fxl-seg-row">
+                  <button
+                    type="button"
+                    className={`fxl-seg${audioMode === 'clip' ? ' on' : ''}`}
+                    data-testid="audio-clip"
+                    onClick={toggleClipAudio}
+                    disabled={kind !== 'video'}
+                    title={kind === 'video' ? (audioMode === 'clip' ? "Turn the video's own sound off" : "Hear the video's own sound (it drives the meter and the effects)") : 'Needs a video source'}
+                  >
+                    CLIP
+                  </button>
+                  <button type="button" className={`fxl-seg${audioMode === 'mic' ? ' on' : ''}`} data-testid="audio-toggle" onClick={toggleMic} title={audioMode === 'mic' ? 'Stop the microphone' : 'React to the microphone'}>MIC</button>
+                  <button type="button" className={`fxl-seg${audioMode === 'file' ? ' on' : ''}`} data-testid="audio-file-btn" onClick={toggleTrack} title={audioMode === 'file' ? 'Stop the music track' : 'React to a music track'}>TRACK</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {sorted.map((id) => {
+            const open = openBlocks.has(id);
+            const h = panelH[id] ?? 0;
+            const viewport = Math.max(PANEL_VIEWPORT_MIN, Math.ceil((h + PANEL_VIEWPORT_STEP / 2) / PANEL_VIEWPORT_STEP) * PANEL_VIEWPORT_STEP);
+            return (
+              <section key={id} className={`fxl-blk fx${open ? ' open' : ''}`} data-testid={`lab-block-${id}`}>
+                {blockHead(id, fxName(id), {
+                  link: linkOf(id),
+                  title: linkOf(id) === 'missing' ? `${fxName(id)}: Lab link not available — bypassed` : `${fxName(id)} — node ${chain.indexOf(id) + 1} of ${chain.length} in the chain`,
+                })}
+                {/* collapsed = a zero-height clip: the iframe stays laid out and keeps rendering (never display:none) */}
+                <div className="fxl-blk-clip" style={{ height: open ? (h > 0 ? h : 120) : 0 }}>
+                  {open && h === 0 && <div className="fxl-blk-wait">LOADING…</div>}
+                  <iframe
+                    ref={frameRefOf(id)}
+                    src={labPanelSrc(labFrameSrc(id))}
+                    title={`${fxName(id)} (Lab node)`}
+                    data-testid={`lab-frame-${id}`}
+                    data-syn-theme={theme}
+                    className="fxl-frame"
+                    style={{ height: viewport }}
+                    allow="camera; microphone; autoplay; fullscreen"
+                    onLoad={(e) => onFrameLoad(id, e.currentTarget)}
+                  />
+                </div>
+              </section>
+            );
+          })}
+
+          <section className={`fxl-blk${openBlocks.has('laboratory') ? ' open' : ''}`} data-testid="lab-block-laboratory">
+            {blockHead('laboratory', 'LABORATORY')}
+            <div className="fxl-blk-clip" style={{ height: openBlocks.has('laboratory') ? 'auto' : 0 }}>
+              <div className="fxl-blk-body">
+                {/* four buttons, no captions (operator); a name field / the saved chains open under their button */}
+                <button
+                  type="button"
+                  className={`fxl-seg fxl-lab-btn${labPane === 'save' ? ' on' : ''}`}
+                  data-testid="lab-save-chain"
+                  aria-expanded={labPane === 'save'}
+                  onClick={() => setLabPane((v) => (v === 'save' ? null : 'save'))}
+                  disabled={chain.length === 0}
+                  title="Save the chain and every effect's settings — it is listed in Projects"
+                >
+                  SAVE VFX CHAIN TO PROJECTS
+                </button>
+                {labPane === 'save' && (
+                  <div className="fxl-seg-row">
+                    <input
+                      type="text"
+                      className="fxl-input"
+                      data-testid="preset-name"
+                      value={presetName}
+                      onChange={(e) => setPresetName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') savePreset(); if (e.key === 'Escape') setLabPane(null); }}
+                      placeholder="name"
+                      aria-label="Name of the chain"
+                      autoFocus
+                    />
+                    <button type="button" className="fxl-seg fxl-seg-fit" onClick={savePreset} data-testid="preset-save" disabled={!presetName.trim() || chain.length === 0} title="Save">SAVE</button>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={`fxl-seg fxl-lab-btn${labPane === 'open' ? ' on' : ''}`}
+                  data-testid="lab-open-chain"
+                  aria-expanded={labPane === 'open'}
+                  onClick={() => { setPresets(readPresets()); setLabPane((v) => (v === 'open' ? null : 'open')); }}
+                  title="Load a chain saved in Projects"
+                >
+                  OPEN VFX CHAIN FROM PROJECTS
+                </button>
+                {labPane === 'open' && (presets.length === 0 ? (
+                  <p className="fxl-lab-note" data-testid="preset-none">No saved chains yet.</p>
                 ) : (
-                  <div className="fxl-pop-list">
+                  <div className="fxl-preset-list" data-testid="preset-list">
                     {presets.map((p) => (
-                      <div key={p.name} className="fxl-pop-item">
-                        <span title={isV2(p) ? p.name : `${p.name} (old preset: chain order only)`}>{p.name}{isV2(p) ? '' : ' ·v1'}</span>
-                        <button type="button" className="fxl-btn" onClick={() => { loadPreset(p); setPresetOpen(false); }} data-testid={`preset-load-${p.name}`}>
-                          Load
+                      <div key={p.name} className="fxl-preset-item">
+                        <button type="button" className="fxl-seg fxl-preset-load" onClick={() => { loadPreset(p); setLabPane(null); }} data-testid={`preset-load-${p.name}`} title={isV2(p) ? `Load "${p.name}" (${presetChain(p).length} effects)` : `${p.name} (old preset: chain order only)`}>
+                          {p.name}{isV2(p) ? '' : ' ·v1'}
                         </button>
-                        <button type="button" className="fxl-btn" onClick={() => deletePreset(p.name)} data-testid={`preset-del-${p.name}`} title="Delete preset">
+                        <button type="button" className="fxl-seg fxl-seg-fit" onClick={() => deletePreset(p.name)} data-testid={`preset-del-${p.name}`} title="Delete" aria-label={`Delete ${p.name}`}>
                           <Trash2 className="w-2.5 h-2.5" />
                         </button>
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-            data-testid="chain-master"
-            onClick={runMaster}
-            disabled={kind === 'none' && !exporting}
-            title={exporting ? 'Stop the export (nothing is saved)'
-              : kind === 'video' ? 'Record the chain output from the start of the video to its end (realtime), with the Lab audio'
-              : kind === 'none' ? 'Master export needs a source'
-              : `Record ${STILL_TAKE_SEC} s of the chain output (realtime), with the Lab audio`}
-            className={`fxl-btn primary${exporting ? ' on' : ''}`}
-          >
-            {exporting ? '■ Stop' : '◆ Master MP4'}
-          </button>
-          {exportMsg && (
-            <span data-testid="chain-export-msg" className={`fxl-msg${exportMsg.startsWith('✗') ? ' err' : ''}`} title={exportMsg}>
-              {exportMsg}
-            </span>
-          )}
-        </div>
-        <div className="fxl-pills">
-          <div className={`fxl-pill${kind !== 'none' ? ' live' : ''}`} data-testid="chain-input" title={sourceName || undefined}>
-            <span className="fxl-dot" />
-            <span className="fxl-pill-pre">INPUT</span>
-            <span className="fxl-pill-val">{inputLabel}</span>
-          </div>
-          <div className={`fxl-pill${audioOn ? ' amber' : ''}`} data-testid="chain-audio">
-            <span className="fxl-dot" />
-            <span className="fxl-pill-pre">AUDIO</span>
-            <span className="fxl-pill-val">{audioLabel}</span>
-          </div>
-          {exporting && (
-            <div className="fxl-pill rec">
-              <span className="fxl-dot" />
-              <span className="fxl-pill-val">MASTER</span>
-            </div>
-          )}
-          <div className="fxl-fps" title={outputIdle ? 'The chain OUTPUT is paused while an earlier tab is shown (only the nodes up to the selected one render)' : 'Frames per second of the chain OUTPUT'}>
-            <span>FPS <b data-testid="chain-fps">{outputIdle ? '–' : fps}</b></span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── the stage: INPUT, every node's iframe and OUTPUT, all in the same rect ── */}
-      <div className="fxl-stage" data-testid="lab-stage">
-        <div className="fxl-layers" style={layersStyle}>
-          <div className={`${layerCls('input')} fxl-media`} data-testid="lab-layer-input">
-            <video ref={(el) => { inputVideoRef.current = el; if (el && !el.dataset.init) { el.dataset.init = '1'; el.muted = true; } }} data-testid="lab-input-video" playsInline preload="auto" className={kind === 'video' ? '' : 'fxl-gone'} />
-            <canvas ref={photoCanvasRef} data-testid="lab-input-photo" className={kind === 'image' ? '' : 'fxl-gone'} />
-            <video ref={(el) => { camVideoRef.current = el; if (el) el.muted = true; }} data-testid="lab-input-cam" playsInline className={kind === 'webcam' ? '' : 'fxl-gone'} />
-            {kind === 'none' && (
-              <div className="fxl-nosignal">
-                <Upload className="fxl-nosignal-icon w-7 h-7" strokeWidth={1.4} />
-                <div className="fxl-nosignal-title">NO SIGNAL</div>
-                <div className="fxl-nosignal-sub">VIDEO — IMAGE — WEBCAM</div>
-                <button type="button" className="fxl-btn" onClick={() => fileRef.current?.click()}>Source</button>
-              </div>
-            )}
-          </div>
-          {frameIds.map((id) => (
-            <iframe
-              key={id}
-              ref={frameRefOf(id)}
-              src={labFrameSrc(id)}
-              title={`${fxName(id)} (Lab node)`}
-              data-testid={`lab-frame-${id}`}
-              data-syn-theme={theme}
-              className={`${layerCls(id)} fxl-frame`}
-              allow="camera; microphone; autoplay; fullscreen"
-              onLoad={(e) => onFrameLoad(id, e.currentTarget)}
-            />
-          ))}
-          <div className={`${layerCls('output')} fxl-media`} data-testid="lab-layer-output">
-            <video ref={(el) => { outputVideoRef.current = el; if (el) el.muted = true; }} data-testid="lab-output-video" playsInline autoPlay />
-            {kind === 'none' && <div className="fxl-empty-out">NO OUTPUT — load a source</div>}
-          </div>
-          {chain.length === 0 && (tab === 'output' || tab === 'input') && (
-            <div className="fxl-hint" data-testid="chain-empty">
-              No effects in the chain — add them with <b>+ Add Node</b> in the node graph and wire INPUT → … → OUTPUT.
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── transport (video INPUT): BLOB REVEAL's bar ── */}
-      {kind === 'video' && (
-        <div className={`fxl-transport${cueView ? ' has-cues' : ''}`} data-testid="lab-transport" ref={transportRef}>
-          <button type="button" data-testid="lab-play" className={`fxl-tl-pause${tp.playing ? '' : ' paused'}`} onClick={togglePlay} title={tp.playing ? 'Pause the INPUT (the whole chain and the sound)' : 'Play'}>
-            {tp.playing ? '▮▮ PAUSE' : '▶ PLAY'}
-          </button>
-          <span className="fxl-tl-cur" data-testid="lab-time">{fmtTC(tp.t)}</span>
-          <div className="fxl-tl-wrap">
-            <input
-              type="range"
-              className="fxl-tl-track"
-              data-testid="lab-scrub"
-              min={0}
-              max={tp.dur || 0}
-              step={0.01}
-              value={Math.min(tp.t, tp.dur || 0)}
-              style={{ '--p': `${tp.dur ? (tp.t / tp.dur) * 100 : 0}%` } as React.CSSProperties}
-              onChange={(e) => scrub(parseFloat(e.target.value))}
-              aria-label="Scrub the INPUT video"
-            />
-            {laneOn && (
-              <div className="fxl-cue-rail">
-                {bars.map((t) => <i key={t} className="fxl-cue-bar" data-testid="cue-bar" style={{ left: lanePct(t) }} />)}
-                {cueView && (
-                  <div className="fxl-cue-lane" data-testid="cue-lane">
-                    {cueView.segments.map((g) => (
-                      <span
-                        key={`${g.first}-${g.start}`}
-                        className={`fxl-cue-sec${g.hot ? ' hot' : ''}`}
-                        style={{
-                          left: `calc(${lanePct(g.start)} + 1px)`,
-                          width: `calc(${clamp((g.end - g.start) / laneDur, 0, 1) * 100}% - 2px)`,
-                          '--cue-mix': `${Math.round(18 + 26 * (g.energy ?? 0.4))}%`,
-                        } as React.CSSProperties}
-                        title={`${g.label} · ${fmtCueTime(g.start)}–${fmtCueTime(g.end)}`}
-                      >
-                        {g.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {cueView?.marks.map((m, i) => (
-                  <button
-                    key={`${i}-${m.at}`}
-                    type="button"
-                    className={`fxl-cue-mark${m.hot ? ' hot' : ''}${i === cueIdx ? ' on' : ''}`}
-                    data-testid={`cue-mark-${i}`}
-                    style={{ left: lanePct(m.at) }}
-                    aria-label={`${fmtCueTime(m.at)} · ${m.label} — go to this cue`}
-                    onMouseEnter={(e) => showCueTip(i, e.currentTarget)}
-                    onMouseLeave={() => setCueTip(null)}
-                    onFocus={(e) => showCueTip(i, e.currentTarget)}
-                    onBlur={() => setCueTip(null)}
-                    onClick={() => scrub(m.at)}
-                  />
                 ))}
+                <button type="button" className="fxl-seg fxl-lab-btn" data-testid="lab-reset" onClick={resetChain} disabled={chain.length === 0 || exporting} title="Every effect of the chain back to its initial values">
+                  RESET VFX CHAIN
+                </button>
+                <button
+                  type="button"
+                  data-testid="chain-master"
+                  onClick={runMaster}
+                  disabled={kind === 'none' && !exporting}
+                  title={exportTitle}
+                  className={`fxl-seg fxl-lab-btn fxl-export${exporting ? ' on rec' : ''}`}
+                >
+                  {exporting ? '■ STOP EXPORT' : 'EXPORT VFX CHAIN'}
+                </button>
+                {exportMsg && (
+                  <p data-testid="chain-export-msg" className={`fxl-lab-msg${exportMsg.startsWith('✗') ? ' err' : ''}`} title={exportMsg}>
+                    {exportMsg}
+                  </p>
+                )}
               </div>
-            )}
-          </div>
-          <span className="fxl-tl-dur">{fmtTC(tp.dur)}</span>
-          <button type="button" data-testid="lab-loop" className={`fxl-tl-loop${tp.loop ? ' on' : ''}`} onClick={toggleLoop} title="Loop">⟳ LOOP</button>
-          {tipMark && (
-            <div ref={cueTipRef} className={`fxl-cue-tip${tipMark.hot ? ' hot' : ''}`} data-testid="cue-tip" role="tooltip" key={cueTip!.i}>
-              <div className="fxl-cue-tip-head">{fmtCueTime(tipMark.at)} · {tipMark.label}</div>
-              {tipMark.lines.map((l, j) => <div key={j}>{l}</div>)}
             </div>
-          )}
+          </section>
         </div>
-      )}
-
-      {/* ── status line: route + link states · track · audio meters · errors ── */}
-      <div className={`fxl-strip${cueView ? ' has-cues' : ''}`}>
-        <span className="fxl-route" data-testid="chain-route">
-          SOURCE →{' '}
-          {chain.map((id) => (
-            <React.Fragment key={id}>
-              <b className={`fxl-link ${linkOf(id)}`} data-testid={`chain-link-${id}`}>{fxName(id)}{linkOf(id) === 'loading' ? ' …' : linkOf(id) === 'missing' ? ' ✕' : ''}</b>{' → '}
-            </React.Fragment>
-          ))}
-          OUT
-        </span>
-        {cueView && (
-          <button
-            type="button"
-            className={`fxl-cue-chip${cueView.enabled ? ' on' : ''}`}
-            data-testid="cue-auto"
-            data-on={cueView.enabled ? '1' : '0'}
-            aria-pressed={cueView.enabled}
-            onClick={() => labRef.current?.setCuesEnabled(!cueView.enabled)}
-            title={cueView.enabled
-              ? `The ${cueView.count} cues play with the video — click to hold the controls where they are`
-              : 'Cue automation is off: the controls hold their values — click to play the cues again'}
-          >
-            <span className="fxl-cue-chip-dot" />CUE AUTO · {cueView.count}
-          </button>
-        )}
-        {track && (
-          <span className="fxl-group">
-            <button type="button" className="fxl-icon-btn on" onClick={() => { audioRef.current!.togglePlay(); mirror(); }} data-testid="audio-playpause" title={track.playing ? 'Pause the track' : 'Play the track'}>
-              {track.playing ? <Pause /> : <PlayIcon />}
-            </button>
-            <span data-testid="audio-track-name" className="fxl-track-name" title={track.name}>{track.name}</span>
-            <input type="range" className="fxl-mini" data-testid="audio-seek" min={0} max={track.duration || 0} step={0.1} value={track.currentTime} onChange={(e) => audioRef.current!.seek(parseFloat(e.target.value))} />
-            <button type="button" className={`fxl-icon-btn${track.loop ? ' on' : ''}`} onClick={() => { audioRef.current!.setLoop(!track.loop); mirror(); }} title="Loop the track">
-              <Repeat />
-            </button>
-          </span>
-        )}
-        {audioOn && (
-          <span className="fxl-group">
-            {(['bass', 'loud', 'treble'] as const).map((band) => (
-              <span key={band} className="fxl-meter" title={band}>
-                {band.slice(0, 1)}
-                <span className="fxl-meter-bar"><i style={{ width: pct(signals[band]) }} /></span>
-                <b data-testid={`audio-${band}`}>{Math.round(signals[band] * 100)}</b>
-              </span>
-            ))}
-            <span className="fxl-beat" style={{ opacity: 0.15 + signals.beat * 0.85 }} title="beat" />
-            <span>BPM <b data-testid="audio-bpm" className="fxl-bpm">{signals.bpm ?? '--'}</b></span>
-          </span>
-        )}
-        {missing.length > 0 && (
-          <span className="fxl-err" data-testid="chain-link-missing">
-            {missing.map((id) => `${fxName(id)}: Lab link not available`).join(' · ')}
-          </span>
-        )}
-        {note && <span className="fxl-note" data-testid="chain-note">{note}</span>}
-        {error && <span className="fxl-err" data-testid="chain-error">{error}</span>}
       </div>
     </div>
   );

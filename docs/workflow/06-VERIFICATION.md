@@ -42,12 +42,13 @@ Useful checks (the shell already ships `data-testid`s — keep them working):
 - `effect-card-<id>` — right sidebar cards
 - `nodal-add`, `nodal-add-<id>`, `nodal-input`, `nodal-output`,
   `nodal-node-<id>`, `port-*`, `nodal-svg` — node graph
-- `chain-lab`, `lab-stage`, `lab-tab-input` / `lab-tab-<id>` (`data-link`
-  loading / ready / missing) / `lab-tab-output`, `lab-frame-<id>`,
-  `lab-output-video`, `lab-transport`, `lab-play`, `lab-scrub`, `lab-loop`,
-  `lab-time`, `lab-webcam`, `chain-fps`, `chain-link-<id>`, `audio-*` (incl.
-  `audio-clip`, the source video's own soundtrack) — Lab (LAB v2, 03-SPEC
-  §3.1; `?labdebug` exposes `window.__synLabDebug`)
+- `chain-lab`, `lab-stage`, `lab-title`, `lab-block-<source|laboratory|<id>>`,
+  `lab-block-head-<…>` (node heads: `data-link` loading / ready / missing),
+  `lab-frame-<id>`, `lab-output-video`, `lab-transport`, `lab-play`,
+  `lab-scrub`, `lab-loop`, `lab-time`, `lab-webcam`, `lab-reset`,
+  `chain-master`, `preset-*`, `audio-clip` / `audio-toggle` (MIC) /
+  `audio-file-btn` (TRACK) — Lab (LAB v3, 03-SPEC §3.2; no tabs since
+  2026-11-19; `?labdebug` exposes `window.__synLabDebug`)
 - `source-file`, `chain-file`, `hero-video`, `hero-image` (a still photo on
   Home) — source loading
 - Gemini panel: `ai-status` (STANDBY / ACTIVE pill), `ai-key-input`,

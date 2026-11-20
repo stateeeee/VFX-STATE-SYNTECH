@@ -43,6 +43,7 @@ import {
   GEMINI_MODEL_DEFAULT,
   GEMINI_MODEL_HEADER,
   KNOWN_MODELS,
+  byStrength,
   MODEL_ID_PATTERN,
   UNKNOWN_MODEL_EFFORTS,
   type AiErrorKind,
@@ -468,7 +469,9 @@ const declined = (why: string) => new GeminiFailure('bad_request', `Gemini decli
  *  No temperature override — Google tunes Gemini 3 for its default. */
 export async function generateJson<T>(req: GenerateJsonRequest): Promise<{ value: T; meta: RunMeta }> {
   const t0 = Date.now();
-  const response = await getClient(req.apiKey).models.generateContent({
+  let response;
+  try {
+    response = await getClient(req.apiKey).models.generateContent({
     model: req.model,
     contents: [{ role: 'user', parts: req.parts }],
     config: {
@@ -484,7 +487,13 @@ export async function generateJson<T>(req: GenerateJsonRequest): Promise<{ value
       ...(req.signal ? { abortSignal: req.signal } : {}),
       httpOptions: { timeout: GENERATE_TIMEOUT_MS },
     },
-  });
+    });
+  } catch (err) {
+    /* learn from the run: "limit: 0" = paid-only model on a free key */
+    if (isNoFreeQuota(err)) noteLock(req.apiKey, req.model, true, true);
+    throw err;
+  }
+  noteLock(req.apiKey, req.model, false, true);
 
   /* A safety stop on the prompt (blockReason) or on the answer (the
      candidate's finishReason) is a refusal of this media, not a glitch. */
@@ -532,8 +541,109 @@ const versionOf = (id: string): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-function rowFor(id: string, google?: { displayName?: string; description?: string; inputTokenLimit?: number }): ModelInfo {
+/* ── per-key model locks ─────────────────────────────────────────
+   A model is "locked" for a key when Google says that key has no quota on it
+   at all (429 "limit: 0" — paid only, the key has no billing). Known paid
+   models are probed once per key with a 1-token call (never a free model: it
+   would spend its daily free quota); a real run that gets "limit: 0" locks
+   the model, a run that succeeds unlocks it. Definite answers are kept 6 h,
+   "could not tell" answers ~2 min. Never logged, the key is only a Map key. */
+const PROBE_TIMEOUT_MS = 10_000;
+const LOCK_DEFINITE_MS = 6 * 3_600_000;
+const LOCK_UNKNOWN_MS = 2 * 60_000;
+const lockCache = new Map<string, Map<string, { at: number; locked: boolean; definite: boolean }>>();
+
+/** Google's 429 for a model the key has no quota on (same test classifyError uses). */
+function isNoFreeQuota(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 429) return false;
+  const g = readGoogleError(err);
+  return /limit:\s*0\b/i.test(g.message) || /limit:\s*0\b/i.test(err.message);
+}
+
+/** Records (key, model) as locked/unlocked; drops the key's list cache so the
+ *  next GET /api/gemini/models shows it. */
+export function noteLock(apiKey: string, model: string, locked: boolean, definite: boolean): void {
+  let per = lockCache.get(apiKey);
+  if (!per) {
+    if (lockCache.size >= MAX_CLIENTS) lockCache.delete(lockCache.keys().next().value as string);
+    per = new Map();
+    lockCache.set(apiKey, per);
+  }
+  const prev = per.get(model);
+  per.set(model, { at: Date.now(), locked, definite });
+  if (!prev || prev.locked !== locked) listCache.delete(apiKey);
+}
+
+/** Test hook: forget everything cached for a key (or all keys). */
+export function clearModelCaches(apiKey?: string): void {
+  if (apiKey) { lockCache.delete(apiKey); listCache.delete(apiKey); } else { lockCache.clear(); listCache.clear(); }
+}
+
+/** One minimal generateContent on a paid-only model: true = locked, false =
+ *  usable, null = could not tell. */
+async function probeLocked(apiKey: string, model: string): Promise<boolean | null> {
+  try {
+    await getClient(apiKey).models.generateContent({
+      model,
+      contents: '1',
+      config: { maxOutputTokens: 16, httpOptions: { timeout: PROBE_TIMEOUT_MS } },
+    });
+    return false;
+  } catch (err) {
+    if (err instanceof ApiError) {
+      if (err.status === 429) return isNoFreeQuota(err);
+      if (err.status === 403 || err.status === 404) return true;
+      if (err.status >= 500 || err.status === 408) return null;
+      return false; // 400 & co.: the model answered, the call was the problem
+    }
+    return null;
+  }
+}
+
+/** This key's definite, unexpired lock answer for a model (no probe), else false. */
+function knownLock(apiKey: string, id: string): boolean {
+  const hit = lockCache.get(apiKey)?.get(id);
+  return !!hit && hit.definite && hit.locked && Date.now() - hit.at < LOCK_DEFINITE_MS;
+}
+
+const probeFlight = new Map<string, Promise<boolean | null>>();
+
+/** probeLocked, one call at a time per (key, model); bounded, removed when settled. */
+function probeOnce(apiKey: string, model: string): Promise<boolean | null> {
+  const k = `${apiKey}\u0000${model}`;
+  const run = probeFlight.get(k);
+  if (run) return run;
+  if (probeFlight.size >= MAX_CLIENTS * 16) probeFlight.delete(probeFlight.keys().next().value as string);
+  const p = probeLocked(apiKey, model).finally(() => { if (probeFlight.get(k) === p) probeFlight.delete(k); });
+  probeFlight.set(k, p);
+  return p;
+}
+
+/** locked per row for this key: a cached answer inside its age (definite 6 h,
+ *  "could not tell" 2 min), else a probe (known paid rows only). A probe that
+ *  could not tell counts as NOT locked (shown usable, re-probed after 2 min);
+ *  an expired answer is not a lock. */
+async function lockedFor(apiKey: string, rows: ModelInfo[]): Promise<boolean[]> {
+  return Promise.all(rows.map(async (r) => {
+    const hit = lockCache.get(apiKey)?.get(r.id);
+    if (hit && Date.now() - hit.at < (hit.definite ? LOCK_DEFINITE_MS : LOCK_UNKNOWN_MS)) return hit.locked;
+    if (r.free !== 'no') return false;
+    const res = await probeOnce(apiKey, r.id);
+    let p = lockCache.get(apiKey);
+    if (!p) {
+      if (lockCache.size >= MAX_CLIENTS) lockCache.delete(lockCache.keys().next().value as string);
+      p = new Map();
+      lockCache.set(apiKey, p);
+    }
+    if (res === null) { p.set(r.id, { at: Date.now(), locked: false, definite: false }); return false; }
+    p.set(r.id, { at: Date.now(), locked: res, definite: true });
+    return res;
+  }));
+}
+
+function rowFor(id: string, google?: { displayName?: string; description?: string; inputTokenLimit?: number }, apiKey?: string): ModelInfo {
   const p = modelProfile(id);
+  const free = p.known?.free ?? 'unknown';
   return {
     id,
     name: google?.displayName || p.known?.name || id,
@@ -541,21 +651,56 @@ function rowFor(id: string, google?: { displayName?: string; description?: strin
     inputTokenLimit: google?.inputTokenLimit ?? null,
     efforts: [...p.efforts],
     defaultEffort: p.defaultEffort,
-    free: p.known?.free ?? 'unknown',
+    free,
     note: p.known?.note ?? '',
     known: !!p.known,
+    /* a lock is a fact about the KEY, never about the catalog: only a definite
+       answer already learned for this key counts (no probe here) */
+    locked: apiKey ? knownLock(apiKey, id) : false,
     listed: !!google,
   };
 }
 
-const pickRecommended = (rows: ModelInfo[]): string => (rows.find((r) => r.free === 'yes') ?? rows[0])?.id ?? GEMINI_MODEL_DEFAULT;
+/** The model a fresh panel picks: the strongest one this build KNOWS and this
+ *  key can use (a billing key → Neon, a free key → Hydrogen). A model unknown to
+ *  the build is never auto-picked — its tier is not proven until a run — but
+ *  it stays listed and selectable. */
+const pickRecommended = (rows: ModelInfo[]): string =>
+  (rows.find((r) => r.known && !r.locked) ?? rows.find((r) => !r.locked) ?? rows[0])?.id ?? GEMINI_MODEL_DEFAULT;
+
+/** Re-applies this key's locks to rows (probing what is not cached). */
+async function withLocks(apiKey: string, value: ModelsResponse): Promise<ModelsResponse> {
+  const locks = await lockedFor(apiKey, value.models);
+  const rows = value.models.map((r, i) => ({ ...r, locked: locks[i] }));
+  return { ...value, models: rows, recommended: pickRecommended(rows) };
+}
 
 /** The gemini-… text models Google lists for this key (>= 2.5, no embedding,
- *  image, audio or live models), the models this build knows first. A wrong
- *  key throws; any other failure falls back on KNOWN_MODELS with a warning. */
-export async function listModels(apiKey: string): Promise<ModelsResponse> {
+ *  image, audio or live models), strongest first, each with its per-key lock.
+ *  A wrong key throws; any other failure falls back on KNOWN_MODELS with a warning. */
+const listFlight = new Map<string, Promise<ModelsResponse>>();
+
+/** listModels, deduped: concurrent first calls for one key share one run (and
+ *  so one set of probes). Bounded; removed when settled. */
+export function listModels(apiKey: string): Promise<ModelsResponse> {
+  const run = listFlight.get(apiKey);
+  if (run) return run;
+  if (listFlight.size >= MAX_CLIENTS) listFlight.delete(listFlight.keys().next().value as string);
+  const p = listModelsRun(apiKey).finally(() => { if (listFlight.get(apiKey) === p) listFlight.delete(apiKey); });
+  listFlight.set(apiKey, p);
+  return p;
+}
+
+async function listModelsRun(apiKey: string): Promise<ModelsResponse> {
   const cached = listCache.get(apiKey);
-  if (cached && Date.now() - cached.at < LIST_CACHE_MS) return cached.value;
+  if (cached && Date.now() - cached.at < LIST_CACHE_MS) {
+    if (cached.value.source !== 'google') return cached.value;
+    /* the probe cache may have refreshed since: re-apply (cheap when cached) */
+    const fresh = await withLocks(apiKey, cached.value);
+    const again = listCache.get(apiKey);
+    if (again) listCache.set(apiKey, { at: again.at, value: fresh });
+    return fresh;
+  }
 
   let value: ModelsResponse;
   try {
@@ -570,20 +715,16 @@ export async function listModels(apiKey: string): Promise<ModelsResponse> {
       if (LIST_EXCLUDE.test(id) || versionOf(id) < 2.5) continue;
       found.set(id, { displayName: m.displayName, description: m.description, inputTokenLimit: m.inputTokenLimit });
     }
-    const rows: ModelInfo[] = [];
-    for (const k of KNOWN_MODELS) if (found.has(k.id)) rows.push(rowFor(k.id, found.get(k.id)));
-    const others = [...found.keys()].filter((id) => !KNOWN_MODELS.some((k) => k.id === id))
-      .sort((a, b) => versionOf(b) - versionOf(a) || a.localeCompare(b));
-    for (const id of others) rows.push(rowFor(id, found.get(id)));
-    value = { models: rows, recommended: pickRecommended(rows), source: 'google' };
+    const rows = byStrength([...found.keys()].map((id) => rowFor(id, found.get(id), apiKey)));
+    value = await withLocks(apiKey, { models: rows, recommended: GEMINI_MODEL_DEFAULT, source: 'google' });
   } catch (err) {
     const f = classifyError(err);
     if (f.kind === 'invalid_key') throw err;
     console.warn(`[gemini] model list unavailable (${f.kind}): ${f.message}`);
-    const rows = KNOWN_MODELS.map((k) => rowFor(k.id));
+    const rows = byStrength(KNOWN_MODELS.map((k) => rowFor(k.id, undefined, apiKey)));
     const fallback: ModelsResponse = {
       models: rows,
-      recommended: GEMINI_MODEL_DEFAULT,
+      recommended: pickRecommended(rows),
       source: 'catalog',
       warning: `Could not read Google's model list (${f.kind}); showing the models this app knows.`,
     };
