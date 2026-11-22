@@ -383,7 +383,7 @@
 .syn-fxlab .fxl-file { display: none; }
 
 .syn-fxlab .fxl-blk { position: relative; }
-/* the header: black, amber name, a LED outline that keeps changing colour, chevron right (open: down) */
+/* the header: black + amber name by night (white + violet by day, see DAY below), a LED outline that keeps changing colour, chevron right (open: down) */
 .syn-fxlab .fxl-blk-head {
   display: flex; align-items: center; gap: 8px;
   width: calc(100% - 12px); margin: 6px 6px 0; padding: 12px 14px;
@@ -465,7 +465,7 @@
 /* ═══ DAY — the top bar, stage surround, transport and column follow the shell's day
    theme, matching the effects' day chrome (shared/syn-chrome.css html[data-syn-theme="day"]:
    cream / white, dark text, violet accent). The picture is never recoloured; the block
-   headers stay black + amber (operator). */
+   headers are black + amber by night, white + accent by day (operator). */
 .syn-fxlab[data-theme="day"] {
   --syn-fx-day-bar-hi: #ffffff;
   --syn-fx-day-bar-lo: #f6f3ec;
@@ -490,6 +490,8 @@
   --syn-fx-day-panel: #fbfaf7;
   --syn-fx-day-track: #f1eee7;
 }
+/* block headers, day (operator, 2026-11-22): white inside, the name in the day accent; the LED outline stays */
+.syn-fxlab[data-theme="day"] { --syn-fx-blk-bg: var(--syn-fx-day-bar-hi); --syn-fx-blk-ink: var(--syn-fx-day-accent); }
 /* top bar, day */
 .syn-fxlab[data-theme="day"] .fxl-topbar {
   background: linear-gradient(180deg, var(--syn-fx-day-bar-hi) 0%, var(--syn-fx-day-bar-lo) 100%);

@@ -488,3 +488,35 @@ body {
 }
 @keyframes syn-gm-turn { to { --syn-gm-a: 360deg; } }
 @media (prefers-reduced-motion: reduce) { .syn-gemini-mark { animation: none; } }
+
+/* The Gemini panel's model button (HYDROGEN…): a white (night: dark) face with a violet LED
+   running round its outline — a bright arc sweeping the ring over a soft glow (operator,
+   2026-11-22). The button itself is transparent: ::before paints the face (padding-box) and the
+   ring (border-box conic gradient, 2px) and ::after is the glow behind it, so the glow only
+   shows OUTSIDE the face — never a violet cloud inside it. */
+@property --syn-led-a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.syn-led-btn {
+  position: relative; isolation: isolate;
+  background: transparent; color: #1c1917;
+  border-radius: 8px;
+  --syn-led-face: #ffffff;
+}
+.syn-led-btn.syn-led-night { color: #ffffff; --syn-led-face: #0e0e0e; }
+.syn-led-btn::before, .syn-led-btn::after {
+  content: ''; position: absolute; border-radius: inherit; pointer-events: none;
+  animation: syn-led-turn 2.4s linear infinite;
+}
+.syn-led-btn::before {
+  inset: 0; z-index: -1; border: 2px solid transparent;
+  background:
+    linear-gradient(var(--syn-led-face), var(--syn-led-face)) padding-box,
+    conic-gradient(from var(--syn-led-a), rgba(var(--syn-accent-rgb), .18) 0deg, var(--syn-accent) 70deg, var(--syn-accent-200) 110deg, var(--syn-accent) 150deg, rgba(var(--syn-accent-rgb), .18) 230deg, rgba(var(--syn-accent-rgb), .18) 360deg) border-box;
+}
+.syn-led-btn::after {
+  inset: -1px; z-index: -2; filter: blur(5px); opacity: .65;
+  background: conic-gradient(from var(--syn-led-a), transparent 0deg, var(--syn-accent) 90deg, transparent 180deg);
+}
+.syn-led-btn:hover { color: var(--syn-accent-700); }
+.syn-led-btn.syn-led-night:hover { color: var(--syn-accent-300); }
+@keyframes syn-led-turn { to { --syn-led-a: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .syn-led-btn::before, .syn-led-btn::after { animation: none; } }

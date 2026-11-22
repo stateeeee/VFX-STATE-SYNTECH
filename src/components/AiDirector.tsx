@@ -1235,7 +1235,7 @@ function ActiveCard({ k, isDay, model, warning, source, onForgetKey, onChoice }:
               ref={modelBtn}
               title={`${fullName} · ${EFFORT_LABEL[effort]}`}
               onClick={() => setPicking(true)}
-              className={k.primary}
+              className={`syn-led-btn ${isDay ? '' : 'syn-led-night'} px-3 py-2 shrink-0 font-extrabold text-[10px] tracking-wider uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer`}
             >
               {shortModelName(info?.name, modelId)} <ChevronDown className="w-3 h-3" />
             </button>

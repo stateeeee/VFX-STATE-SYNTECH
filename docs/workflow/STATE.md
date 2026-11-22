@@ -29,6 +29,19 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-11-22 — ritocco: intestazioni LAB bianche di giorno, bottone HYDROGEN con LED viola. FATTO.**
+Operatore: *"in modalità giorno le sezioni del lab devono essere bianche non nere all'interno. hydrogen togli il
+viola interno, metti il bianco e contorna il riquadro con un led viola animato. manda screen prima di modificare"*.
+- Screenshot prima/dopo mandato all'operatore PRIMA del codice (anteprima con il CSS iniettato nell'app vera).
+- **LAB, giorno** (`chainLab.css`): `--syn-fx-blk-bg` = bianco, `--syn-fx-blk-ink` = accento viola del giorno
+  (`--syn-fx-day-accent`, come l'"amber" degli effetti di giorno); il contorno LED che cambia colore resta. Di notte
+  invariato: nero + giallo (decisione 2026-11-19 intatta).
+- **HYDROGEN** (`AiDirector.tsx` ActiveCard + `index.css` `.syn-led-btn`): niente più riempimento viola; faccia
+  bianca di giorno (scura `#0e0e0e` di notte — scelta mia, l'operatore ha mostrato solo il giorno), anello LED viola
+  (arco luminoso che gira, `@property --syn-led-a`, 2.4 s) + alone sfumato. `prefers-reduced-motion` = fermo. Gli altri
+  bottoni viola del pannello (`k.primary`) non cambiano.
+- Verificato: `npm run lint` pulito; Playwright su dev server con mock Gemini, giorno e notte (screenshot).
+
 **SESSIONE 2026-11-19/20 — v0.14.0: pannello Gemini per forza con lucchetto, logo Gemini LED, LAB v3 (il LAB è la
 schermata di un effetto, con più effetti), logo LAB ampolla. FATTO.**
 Operatore: *"metti in ordine tutti i modelli in base alla loro forza … non scrivere paid free new, metti solo un
