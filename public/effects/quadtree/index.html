@@ -1150,14 +1150,22 @@ body {
       </div>
       <div class="sec-body hidden" id="sec-record">
         <div class="info-grid">
-          <div class="info-cell"><div class="ic-lbl">Codec</div><div class="ic-val dim">VP9/WebM</div></div>
+          <div class="info-cell"><div class="ic-lbl">Codec</div><div class="ic-val dim">H.264/MP4</div></div><!-- SYNTECH-EXPORT: MP4 only (was VP9/WebM) -->
           <div class="info-cell"><div class="ic-lbl">Status</div><div class="ic-val dim" id="rec-status">IDLE</div></div>
         </div>
         <button class="rec-btn" id="rec-btn" onclick="toggleRecord()">
           <div class="rec-dot"></div><span id="rec-label">REC FROM START</span>
         </button>
         <div id="rec-time">00:00:00</div>
-        <div style="font-size:7px;letter-spacing:.5px;color:var(--t2);line-height:1.7">Seeks to 00:00:00 · canvas → WebM · Audio preserved</div>
+        <div style="font-size:7px;letter-spacing:.5px;color:var(--t2);line-height:1.7">Video file: every frame · source fps · native size · audio → MP4. Live: canvas → MP4</div><!-- SYNTECH-EXPORT: was "Seeks to 00:00:00 · canvas → WebM · Audio preserved" -->
+        <!-- SYNTECH-EXPORT: offline RENDER MP4 (docs/workflow/10-EXPORT-MASTER.md) — quality, button, status; wired in the SYNTECH-EXPORT block -->
+        <div class="seg-row" id="sel-render-q" style="margin-top:10px">
+          <div class="seg-btn on" data-q="master" title="H.264 High ~1 bit/pixel — visually lossless delivery master">MASTER</div>
+          <div class="seg-btn" data-q="high" title="H.264 High ~0.35 bit/pixel — lighter file">HIGH</div>
+        </div>
+        <button class="rec-btn" id="btn-render" style="margin-top:4px">RENDER MP4</button>
+        <div id="render-status" style="font-size:7px;letter-spacing:.5px;color:var(--t2);line-height:1.7">Video file: every frame, source fps, full resolution</div>
+        <!-- /SYNTECH-EXPORT -->
       </div>
     </div>
 
@@ -1590,7 +1598,7 @@ function drawQuad(){
   gl.uniform1f(UQ.u_mix, P.qMix);
   gl.uniform1f(UQ.u_falloff, P.qFalloff);
   gl.uniform1f(UQ.u_sampleLod, Math.round(P.qAcuity));
-  gl.uniform1f(UQ.u_borderWidth, P.qBorderWidth);
+  gl.uniform1f(UQ.u_borderWidth, P.qBorderWidth*(window.__synExpCtl?window.__synExpCtl.bw:1)); /* SYNTECH-EXPORT: border px scaled to the native render height (×H/1080) so it keeps the preview's proportion (was P.qBorderWidth) */
   gl.uniform1f(UQ.u_borderOpacity, bop);
   gl.uniform3f(UQ.u_borderColor, bc[0], bc[1], bc[2]);
   gl.uniform2f(UQ.u_grid, P.qSquare?16:1, P.qSquare?9:1);
@@ -1849,10 +1857,11 @@ document.getElementById('play-overlay').addEventListener('click',()=>{video.play
 let lastFPS=0,fpsF=0,lastNow=0;
 
 function render(now){
-  requestAnimationFrame(render);
+  if(window.__synExpCtl&&!window.__synExpCtl.inside){requestAnimationFrame(render);return;} /* SYNTECH-EXPORT: an offline render owns the canvas — the live loop only idles */
+  if(!window.__synExpCtl)requestAnimationFrame(render); /* SYNTECH-EXPORT: a draw driven by the offline render does not re-schedule (was unconditional) */
   STATE.frameCount++;
   if(STATE.startTime===0)STATE.startTime=now;
-  const dt=Math.min((now-(lastNow||now))/1000,0.1);
+  const dt=window.__synExpCtl?window.__synExpCtl.dt:Math.min((now-(lastNow||now))/1000,0.1); /* SYNTECH-EXPORT: media-time step during an offline render (was Math.min((now-(lastNow||now))/1000,0.1)) */
   lastNow=now;
 
   fpsF++;
@@ -2717,6 +2726,153 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 </script>
 <!-- SYNTECH-LAB-END -->
+<!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
+<script src="../shared/syn-export.js"></script>
+<script>
+/* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
+   VIDEO FILE : RENDER MP4 and REC both run the OFFLINE render: every source frame → one output frame, source
+                fps, NATIVE source size and aspect (the 1920×1080 CONFIG frame, the canvas and the full-frame
+                FBOs quadFBO + smFBO[2] are re-sized to the video for the render, then put back; the 1024² mip
+                pyramid is the detail analysis, part of the look, and stays), the file's own audio. The frame is
+                drawn by the effect's own render() (hooks marked SYNTECH-EXPORT): while window.__synExpCtl is set
+                the live rAF loop idles and the Reactive engine steps on media time; the cell border width (px)
+                is scaled ×H/1080 so it keeps the proportion it has in the 1920×1080 preview.
+   TEMPORAL   : the SMOOTH feedback, the pseudo-auto Reactive engine (per-call attack/release, bursts) and the
+                motion meter that lowers the threshold (every 2nd draw, per-call smoothing) evolve PER DRAWN FRAME,
+                not per dt. The preview draws ≈60 times a second, so each output frame gets k = max(1,
+                round(60/fps)) passes of render() on the same source frame (Reactive dt 1/(fps·k)); the last
+                pass is the encoded one. At render start the feedback is cleared and the Reactive / motion /
+                frame-count state reset: the file is clean and repeatable.
+   AUDIO      : the Reactive engine does not listen to the file (pseudo-auto; real audio only from a Lab stream),
+                so no analyser swap is needed: it simply runs on media time.
+   LIVE       : REC on webcam / camera / image / Lab stream = realtime MP4 (SynExport.recordLive) of #glcanvas at
+                its full 1920×1080. startRec (the old WebM/MediaRecorder path) is no longer reached: the REC click
+                is intercepted in the capture phase and the R key now clicks the REC button.
+   Nothing here runs until RENDER / REC is clicked. */
+(function(){
+  'use strict';
+  if(!window.SynExport) return;
+  function $(id){ return document.getElementById(id); }
+  var LIVE_W=CONFIG.W, LIVE_H=CONFIG.H;                    /* the effect's own frame: 1920×1080 */
+  var saved=null, fileP=null, fullW=0, fullH=0, recTimer=0, recT0=0, bbT=0;
+
+  function fbos(){ return [quadFBO,smFBO[0],smFBO[1]]; }
+  function limits(){
+    var vp=gl.getParameter(gl.MAX_VIEWPORT_DIMS)||[0,0];
+    return 'GPU limits: MAX_TEXTURE_SIZE '+gl.getParameter(gl.MAX_TEXTURE_SIZE)+', MAX_RENDERBUFFER_SIZE '+gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)+', MAX_VIEWPORT_DIMS '+vp[0]+'×'+vp[1];
+  }
+  /* CONFIG frame + canvas + every CONFIG-sized FBO to w×h (same textures / framebuffers, re-specified). */
+  function sizeTo(w,h){
+    CONFIG.W=w; CONFIG.H=h;
+    canvas.width=w; canvas.height=h;
+    fbos().forEach(function(f){
+      gl.bindTexture(gl.TEXTURE_2D,f.tex);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+      f.w=w; f.h=h;
+    });
+    gl.bindTexture(gl.TEXTURE_2D,null);
+    smR=0; smW=1;
+    clearFeedback();
+    fitCanvas();                                            /* the preview box follows the frame's aspect */
+  }
+  /* Native size or a clear error — never a smaller picture. */
+  function nativeSize(w,h){
+    var maxTex=gl.getParameter(gl.MAX_TEXTURE_SIZE), maxRb=gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), vp=gl.getParameter(gl.MAX_VIEWPORT_DIMS)||[0,0];
+    if(w>maxTex||h>maxTex||w>maxRb||h>maxRb||w>vp[0]||h>vp[1]) throw new Error('the GPU cannot draw '+w+'×'+h+'. '+limits());
+    while(gl.getError()!==gl.NO_ERROR){ /* drain */ }
+    sizeTo(w,h);
+    var err=gl.getError(), bad=fbos().some(function(f){
+      gl.bindFramebuffer(gl.FRAMEBUFFER,f.fb);
+      return gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE;
+    });
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    if(err===gl.OUT_OF_MEMORY||bad||gl.drawingBufferWidth!==w||gl.drawingBufferHeight!==h)
+      throw new Error('the GPU cannot hold '+w+'×'+h+' buffers'+(err===gl.OUT_OF_MEMORY?' (out of memory)':'')+'. '+limits());
+  }
+  function setRecUi(on,kind){
+    var b=$('rec-btn'), l=$('rec-label'), s=$('rec-status'), m=$('rec-mark'), p=$('pill-rec'), rt=$('rec-time');
+    if(b) b.classList.toggle('recording',on);
+    if(l) l.textContent=on?(kind==='render'?'STOP RENDER':'STOP REC'):'REC FROM START';
+    if(s) s.textContent=on?(kind==='render'?'RENDERING':'RECORDING'):'IDLE';
+    if(m) m.classList.toggle('on',on);
+    if(p) p.style.display=on?'flex':'none';
+    if(rt){ rt.classList.toggle('active',on); rt.textContent=on&&kind==='render'?'RENDER 0%':'00:00:00'; }
+    clearInterval(recTimer);
+  }
+  function hms(s){ s=Math.max(0,Math.floor(s)); return String(Math.floor(s/3600)).padStart(2,'0')+':'+String(Math.floor((s%3600)/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
+  function trackFps(){
+    var st=webcamStream||cameraStream||video.srcObject, tr=st&&st.getVideoTracks?st.getVideoTracks()[0]:null;
+    var f=tr&&tr.getSettings?tr.getSettings().frameRate:0;
+    return f>0?Math.round(f):60;
+  }
+
+  /* the R shortcut called toggleRecord() (old WebM path) directly: it now goes through the REC button */
+  toggleRecord=function(){ var b=$('rec-btn'); if(b) b.click(); };
+
+  SynExport.attach({
+    label:'QUADTREE',
+    recBtnId:'rec-btn', renderBtnId:'btn-render', qualityId:'sel-render-q', statusId:'render-status',
+    toast:function(m,ms){ var el=$('bb-warn'); if(!el) return; el.textContent=m; clearTimeout(bbT); bbT=setTimeout(function(){ el.textContent=''; },ms||2500); },   /* = the effect's own #bb-warn toast (private to its preset IIFE) */
+    hasVideoFile:function(){ return STATE.srcMode==='video'&&!!currentURL&&video.readyState>=1; },
+    hasLiveSource:function(){ return !!STATE.hasVideo&&STATE.srcMode!=='none'; },
+    getVideo:function(){ return video; },
+    getFile:function(){ fileP=fetch(currentURL).then(function(r){ return r.blob(); }); return fileP; },
+    sourceName:function(){ var f=$('info-file'); return f?f.textContent:'video'; },
+
+    beforeRender:async function(){
+      var w=video.videoWidth, h=video.videoHeight;
+      saved={t:video.currentTime, paused:video.paused};
+      var ctl=window.__synExpCtl={t:0, dt:0, inside:false, fps0:30, bw:1};   /* live loop idles from its next tick */
+      video.pause();
+      if(!(w>0&&h>0)) throw new Error('the video has no picture size');
+      nativeSize(w,h); fullW=w; fullH=h; ctl.bw=h/LIVE_H;
+      STATE.frameCount=0;                                    /* clean, repeatable temporal state */
+      _rs=0;
+      ['bass','mid','high'].forEach(function(k){ var b=REACT._b[k]; b.s=0; b.bt=0; b.t=0; REACT[k]=0; });
+      prevMotionFrame=null; motionEnergy=0; rawMotionEnergy=0;
+      try{ var r=await SynExport.probeFps(await fileP,null); if(r&&r.fps>0) ctl.fps0=r.fps; }catch(e){ /* frame 0 only */ }
+    },
+    getFrame:async function(i,t){
+      var ctl=window.__synExpCtl;
+      if(STATE.srcMode!=='video'||!ctl) throw new Error('the source changed during the render');
+      for(var w0=performance.now();(video.seeking||video.readyState<2)&&performance.now()-w0<60000;)   /* a slow seek (4K, busy machine) outlasting the engine's guard: */
+        await new Promise(function(r){ setTimeout(r,20); });                                           /* render() would paint its black no-source frame */
+      if(video.seeking||video.readyState<2) throw new Error('source frame '+i+' could not be decoded');
+      if(STATE.srcMode!=='video'||window.__synExpCtl!==ctl) throw new Error('the render was interrupted');
+      if(canvas.width!==fullW||canvas.height!==fullH||CONFIG.W!==fullW) throw new Error('the frame size changed during the render');
+      var fps=i>0?i/t:ctl.fps0, k=Math.max(1,Math.round(60/fps)), step=1/(fps*k);
+      for(var j=0;j<k;j++){                                  /* k preview-rate passes, the last one at t */
+        ctl.t=t-(k-1-j)*step; ctl.dt=step; ctl.inside=true;
+        try{ render(performance.now()); }finally{ ctl.inside=false; }
+      }
+      return {canvas:canvas};
+    },
+    afterRender:function(){
+      window.__synExpCtl=null;                               /* live loop draws again from its next tick */
+      sizeTo(LIVE_W,LIVE_H);                                 /* 1920×1080 frame, canvas, FBOs; feedback cleared */
+      prevMotionFrame=null;
+      if(saved&&STATE.srcMode==='video'){
+        try{ video.currentTime=saved.t; }catch(e){}
+        if(!saved.paused){ var p=video.play(); if(p&&p.catch) p.catch(function(){}); }
+      }
+      saved=null; fileP=null;
+    },
+
+    getLiveCanvas:function(){ return canvas; },
+    getLiveAudio:function(){ return null; },                 /* live sources here are silent (getUserMedia audio:false) */
+    liveFps:trackFps,
+    recUi:{
+      start:function(kind){
+        setRecUi(true,kind);
+        if(kind==='live'){ recT0=Date.now(); recTimer=setInterval(function(){ var rt=$('rec-time'); if(rt) rt.textContent=hms((Date.now()-recT0)/1000); },500); }
+      },
+      progress:function(kind,v){ if(kind==='render'){ var rt=$('rec-time'); if(rt) rt.textContent='RENDER '+v+'%'; } },
+      stop:function(){ setRecUi(false); }
+    }
+  });
+})();
+</script>
+<!-- SYNTECH-EXPORT-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

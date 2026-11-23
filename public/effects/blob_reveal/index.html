@@ -953,6 +953,14 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
         <button class="fs-btn" id="btn-fs">⛶&nbsp;&nbsp;FULLSCREEN</button>
         <button class="rec-btn" id="rec-btn"><div class="rec-dot"></div><span>REC</span></button>
         <div id="rec-time">00:00:00</div>
+        <!-- SYNTECH-EXPORT: offline RENDER MP4 (docs/workflow/10-EXPORT-MASTER.md) — quality, button, status; wired in the SYNTECH-EXPORT block -->
+        <div class="seg-row" id="sel-render-q" style="margin-top:10px">
+          <button class="seg-btn on" data-q="master" title="H.264 High ~1 bit/pixel — visually lossless delivery master">MASTER</button>
+          <button class="seg-btn" data-q="high" title="H.264 High ~0.35 bit/pixel — lighter file">HIGH</button>
+        </div>
+        <button class="fs-btn" id="btn-render" style="margin-top:4px">RENDER MP4</button>
+        <div id="render-status" style="font-size:8px;color:var(--t2);letter-spacing:1px;min-height:12px">Video file: every frame, source fps, full resolution</div>
+        <!-- /SYNTECH-EXPORT -->
       </div>
     </div>
 
@@ -1277,7 +1285,7 @@ function detectAndDrawBlobs() {
 
   // Draw blob layer — audio reactive: expand each blob by beatExpand * audioExp px
   const scX=dc.width/PW, scY=dc.height/PH;
-  const expand = beatExpand * P.audioExp; // pixels to grow each side
+  const expand = beatExpand * P.audioExp * (window.__synExpPx||1); // pixels to grow each side — SYNTECH-EXPORT: × output/preview scale while the canvas is at source size (export), else ×1
   blobCtx.clearRect(0,0,dc.width,dc.height);
   top.forEach(b=>{
     const rx=Math.round(b.x*scX - expand);
@@ -1437,6 +1445,7 @@ function tickAudio(now){
 /* ─── MAIN LOOP ──────────────────────────────────────────────── */
 async function frame(){
   const g=loopGen; // SYNTECH-SOURCE: loop generation this call belongs to
+  if(window.__synExpCtl&&!window.__synExpCtl.inside){animId=requestAnimationFrame(frame);return;} /* SYNTECH-EXPORT: an offline render owns the canvas — the live loop only idles */
   if(paused){animId=requestAnimationFrame(frame);return;}
   if(vid.readyState<2&&!srcImg){animId=requestAnimationFrame(frame);return;} // SYNTECH-SOURCE: a still image needs no video frame
 
@@ -1456,10 +1465,10 @@ async function frame(){
   }
 
   // Audio
-  tickAudio(now);
+  if(!window.__synExpCtl)tickAudio(now); /* SYNTECH-EXPORT: during an offline render the render ticks the audio itself at 60 Hz media time (was unconditional) */
 
   // Segmentation — send every N frames
-  if(segEnabled&&segReady&&segObj){
+  if(segEnabled&&segReady&&segObj&&!window.__synExpCtl){ /* SYNTECH-EXPORT: an offline render awaits its own mask of the exact frame (was without &&!window.__synExpCtl) */
     segN++;
     /* SYNTECH-SOURCE: a still image only needs (re)segmenting while it has no mask yet
        (new image, seg re-enabled, model switch) — video keeps segmenting every N frames. */
@@ -1487,7 +1496,7 @@ async function frame(){
   drawSubject();
   // ───────────────────────────────────────────────────────────
 
-  animId=requestAnimationFrame(frame);
+  if(!window.__synExpCtl)animId=requestAnimationFrame(frame); /* SYNTECH-EXPORT: a draw driven by the offline render does not re-schedule (was unconditional) */
 }
 
 /* ─── PLAYBACK ───────────────────────────────────────────────── */
@@ -1993,7 +2002,7 @@ function updateMotionUI(){
   document.getElementById('vu-motion').style.width=pct+'%';
   document.getElementById('vu-mv').textContent=pct+'%';
 }
-setInterval(()=>{computeMotion();updateMotionUI();},33);
+setInterval(()=>{if(window.__synExpCtl)return;computeMotion();updateMotionUI();},33); /* SYNTECH-EXPORT: muted during an offline render (it calls them at 33 ms media cadence) */
 /* SYNTECH-SOURCE-END */
 
 /* ─── COLLAPSIBLES ───────────────────────────────────────────── */
@@ -2198,6 +2207,217 @@ syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on,
 })();
 </script>
 <!-- SYNTECH-LAB-END -->
+<!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
+<script src="../shared/syn-export.js"></script>
+<script>
+/* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
+   VIDEO FILE : RENDER MP4 and REC both run the OFFLINE render: every source frame → one output frame,
+                source fps, SOURCE resolution (a 4K file → a 4K file; the preview is sized to the display
+                box, so for the render #dc and every dc-sized helper canvas — c-blob / c-mask / c-sub /
+                c-erode — are set to the source size; c-proc 320×180 is the blob analysis, part of the look).
+                The frame is drawn by the effect's own frame() (hooks marked SYNTECH-EXPORT): while
+                window.__synExpCtl is set the live rAF loop idles; the render awaits the segmentation mask
+                of THIS frame, then ticks the audio analysis at 60 Hz in MEDIA time (beat decay / loudness
+                history are per tick, as in the 60 Hz preview) with SynExport.offlineAnalyser fed by the
+                file's own audio, and runs the MOTION meter at its 33 ms cadence in media time.
+                Pixel-sized parameters (Erode, Feather, Audio Exp, Min Area) are scaled by output/preview
+                width so the file looks like the preview at full resolution (window.__synExpPx).
+   LIVE       : REC on webcam / image / Lab stream = realtime MP4 (SynExport.recordLive) at the SOURCE
+                resolution (same canvas sizing + pixel scaling), with the audio the old REC tapped
+                (analyser / video element). The old MediaRecorder REC (WebM fallback) is no longer
+                reached: the REC click is intercepted in the capture phase.
+   Nothing here runs until RENDER / REC is clicked. */
+(function(){
+  'use strict';
+  if(!window.SynExport) return;
+  function $(id){ return document.getElementById(id); }
+  var CAN=[dc,cBlob,cMask,cSub,cErode];
+  var full=null;                 /* {w,h} while the canvases are at source size (render or live REC) */
+  var saved=null, fileP=null, snap=null, liveAn=null, offAn=null, lastTick=-1, lastMo=-1, recTimer=0, recT0=0, liveDst=null, liveTap=null;
+  var MAX_SIDE=32767, MAX_AREA=268435456;   /* Chromium's 2D canvas limits */
+  var sleep=function(ms){ return new Promise(function(r){ setTimeout(r,ms); }); };
+
+  /* Pixel-sized parameters follow the output/preview scale (k = 1 → untouched). Erode / Feather are px
+     of the mask on #dc; Min Area is px² of #dc (k²); Audio Exp is scaled at its use (hook in
+     detectAndDrawBlobs) because the same value also drives the 320×180 dilate, which must not change. */
+  var _drawSubject=drawSubject;
+  drawSubject=function(){
+    var k=window.__synExpPx; if(!k||k===1) return _drawSubject.apply(this,arguments);
+    var e=P.erode, f=P.feather; P.erode=e*k; P.feather=f*k;
+    try{ return _drawSubject.apply(this,arguments); }finally{ P.erode=e; P.feather=f; }
+  };
+  var _detect=detectAndDrawBlobs;
+  detectAndDrawBlobs=function(){
+    var k=window.__synExpPx; if(!k||k===1) return _detect.apply(this,arguments);
+    var a=P.minArea; P.minArea=a*k*k;
+    try{ return _detect.apply(this,arguments); }finally{ P.minArea=a; }
+  };
+
+  /* Source size or a clear error — never a smaller picture. */
+  function goFull(w,h){
+    w=Math.max(2,Math.round(w)); h=Math.max(2,Math.round(h));
+    if(w>MAX_SIDE||h>MAX_SIDE||w*h>MAX_AREA) throw new Error('the browser cannot draw a '+w+'×'+h+' canvas (2D canvas limit '+MAX_SIDE+' px per side, '+MAX_AREA+' px²)');
+    var pw=dc.width;
+    window.__synExpPx=pw>=16?w/pw:1;    /* preview → output scale for the pixel-sized parameters */
+    full={w:w,h:h};
+    applyFull();
+    if(dc.width!==w||dc.height!==h) throw new Error('the browser refused a '+w+'×'+h+' canvas');
+  }
+  function applyFull(){
+    if(!full) return;
+    CAN.forEach(function(c){ if(c.width!==full.w||c.height!==full.h){ c.width=full.w; c.height=full.h; } });
+    dc.style.width='100%'; dc.style.height='100%';  /* #canvas-wrap keeps the display box; the backing store is the source size */
+  }
+  function endFull(){
+    full=null; window.__synExpPx=undefined;
+    dc.style.width=''; dc.style.height='';
+    fit();                                         /* back to the display box, exactly like a window resize */
+  }
+  window.addEventListener('resize',function(){ if(full) applyFull(); });   /* runs after the effect's own fit() listener */
+
+  function setRecUi(on){
+    var b=$('rec-btn'), rt=$('rec-time');
+    if(b){ b.classList.toggle('recording',on); var sp=b.querySelector('span'); if(sp) sp.textContent=on?'■ STOP':'REC'; }
+    if(rt){ rt.classList.toggle('active',on); if(!on) rt.textContent='00:00:00'; }
+    clearInterval(recTimer);
+  }
+  function hms(s){ s=Math.max(0,Math.floor(s)); return String(Math.floor(s/3600)).padStart(2,'0')+':'+String(Math.floor((s%3600)/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
+  function trackFps(){
+    var st=vid.srcObject, tr=st&&st.getVideoTracks?st.getVideoTracks()[0]:null;
+    var f=tr&&tr.getSettings?tr.getSettings().frameRate:0;
+    return f>0?Math.round(f):60;
+  }
+  function silentAnalyser(n){
+    return { fftSize:n, frequencyBinCount:n/2, setTime:function(){}, connect:function(){}, disconnect:function(){},
+      getByteFrequencyData:function(a){ a.fill(0); }, getFloatFrequencyData:function(a){ a.fill(-Infinity); },
+      getByteTimeDomainData:function(a){ a.fill(128); }, getFloatTimeDomainData:function(a){ a.fill(0); } };
+  }
+  /* the mask of THIS frame: send it, then wait for onResults' ImageBitmap (it lands a few ms after send resolves) */
+  async function segNow(){
+    if(!segEnabled) return;
+    if(!segReady||!segObj){
+      var t0=performance.now();
+      while(segEnabled&&(!segReady||!segObj)&&performance.now()-t0<60000) await sleep(100);
+      if(!segEnabled) return;
+      if(!segReady||!segObj) throw new Error('the segmentation model is not ready');
+    }
+    var before=lastMaskBitmap, to=0;
+    segSendGen=segGen; segBusy=true;
+    try{
+      await Promise.race([segObj.send({image:vid}), new Promise(function(_,rej){ to=setTimeout(function(){ rej(new Error('the segmentation did not answer')); },20000); })]);
+    }finally{ clearTimeout(to); segBusy=false; }
+    var t1=performance.now();
+    while(lastMaskBitmap===before&&performance.now()-t1<5000) await sleep(1);
+    if(lastMaskBitmap===before) throw new Error('the segmentation mask of frame did not arrive');
+  }
+
+  SynExport.attach({
+    label:'BLOB_REVEAL',
+    recBtnId:'rec-btn', renderBtnId:'btn-render', qualityId:'sel-render-q', statusId:'render-status',
+    toast:function(m){ if(/^●/.test(m)) return; var s=$('render-status'); if(s) s.textContent=m; },  /* no toast in this effect: the status line */
+    hasVideoFile:function(){ return srcMode==='video'&&!!vidURL&&vid.readyState>=1; },
+    hasLiveSource:function(){ return srcMode!=='none'; },
+    passThroughRec:function(){ return !!mediaRec; },          /* an old REC still running: let it stop */
+    getVideo:function(){ return vid; },
+    getFile:function(){ fileP=fetch(vidURL).then(function(r){ return r.blob(); }); return fileP; },
+    sourceName:function(){ var f=$('info-file'); return f?f.textContent:'video'; },
+
+    beforeRender:async function(){
+      saved={t:vid.currentTime, paused:vid.paused, loop:vid.loop};
+      snap=document.createElement('canvas'); snap.width=dc.width; snap.height=dc.height;   /* the preview as it is (a paused frame comes back as it was) */
+      try{ snap.getContext('2d').drawImage(dc,0,0); }catch(e){ snap=null; }
+      window.__synExpCtl={inside:false};                       /* live loop idles from its next tick */
+      loopGen++;                                               /* a live frame() parked on seg.send() exits instead of drawing */
+      vid.pause();
+      var t0=performance.now();
+      while(segBusy&&performance.now()-t0<5000) await sleep(20);
+      goFull(vid.videoWidth,vid.videoHeight);
+      /* temporal state from a clean start: audio history / beat envelope, motion meter */
+      loudHist=[]; beatIntervals=[]; beatExpand=0; bassV=loudV=trebleV=0; lastBeatT=-1e6;
+      resetMotion(); lastTick=-1; lastMo=-1;
+      /* audio reactivity: the file's own soundtrack (the real analyser is silent while the video is seeked) */
+      liveAn=null; offAn=null;
+      if(micEnabled&&analyser){
+        liveAn=analyser;
+        if(typeof SynExport.offlineAnalyser==='function'){
+          offAn=await SynExport.offlineAnalyser({ file:fileP, fftSize:liveAn.fftSize, smoothingTimeConstant:liveAn.smoothingTimeConstant,
+            minDecibels:liveAn.minDecibels, maxDecibels:liveAn.maxDecibels, sampleRate:audioCtx?audioCtx.sampleRate:48000 });
+        }else{ offAn=silentAnalyser(liveAn.fftSize); console.warn('BLOB REVEAL render: SynExport.offlineAnalyser missing — audio reactivity off'); }
+        analyser=offAn; freqBuf=new Uint8Array(offAn.frequencyBinCount); waveBuf=new Uint8Array(offAn.fftSize);
+      }
+      if(segEnabled&&!segReady){
+        var t1=performance.now();
+        while(segEnabled&&!segReady&&performance.now()-t1<60000) await sleep(100);
+        if(segEnabled&&!segReady) throw new Error('the segmentation model did not load');
+      }
+    },
+    getFrame:async function(i,t){
+      var ctl=window.__synExpCtl;
+      if(srcMode!=='video'||!ctl) throw new Error('the source changed during the render');
+      if(dc.width!==full.w||dc.height!==full.h) applyFull();  /* a fit() (window resize) re-sized the canvases to the display box */
+      await segNow();                                          /* this frame's subject mask (every frame: SEG every N is a realtime knob) */
+      if(srcMode!=='video'||window.__synExpCtl!==ctl) throw new Error('the source changed during the render');
+      ctl.inside=true;
+      try{
+        var tk=Math.floor(t*60+1e-6);                          /* 60 Hz analysis ticks up to this frame, media time */
+        for(var k=(i===0?tk:lastTick+1);k<=tk;k++){ if(offAn) offAn.setTime(k/60); tickAudio(k*1000/60); }
+        lastTick=tk;
+        var mo=Math.floor(t/0.033+1e-9);                       /* MOTION meter: live setInterval 33 ms, in media time */
+        if(mo!==lastMo){ lastMo=mo; computeMotion(); updateMotionUI(); }
+      }finally{ ctl.inside=false; }
+      var wasPaused=paused; paused=false;                      /* the operator's PAUSE freezes the preview, not the render */
+      ctl.inside=true;
+      try{ frame(); }finally{ ctl.inside=false; paused=wasPaused; }
+      return {canvas:dc};
+    },
+    afterRender:function(){
+      window.__synExpCtl=null;                                 /* live loop draws again */
+      if(offAn&&analyser===offAn&&liveAn){ analyser=liveAn; freqBuf=new Uint8Array(liveAn.frequencyBinCount); waveBuf=new Uint8Array(liveAn.fftSize); }
+      liveAn=offAn=null; fileP=null;
+      if(full) endFull();
+      if(paused&&snap){ try{ dCtx.drawImage(snap,0,0,dc.width,dc.height); }catch(e){} }
+      snap=null;
+      if(animId) cancelAnimationFrame(animId);                 /* one live loop again (the idle chain / a parked one is dropped) */
+      loopGen++; frame();
+      resetMotion();
+      if(srcMode==='video'&&saved){
+        vid.loop=saved.loop;
+        try{ vid.currentTime=saved.t; }catch(e){}
+        if(!saved.paused){ var p=vid.play(); if(p&&p.catch) p.catch(function(){}); }
+      }
+      saved=null;
+    },
+
+    getLiveCanvas:function(){ return dc; },
+    getLiveAudio:function(){                                   /* the old REC's audio: analyser (video + mic / Lab) or the video element */
+      var tap=analyser||vidAudioSrc;
+      if(!audioCtx||!tap) return null;
+      try{ liveDst=audioCtx.createMediaStreamDestination(); tap.connect(liveDst); liveTap=tap; return liveDst.stream; }catch(e){ liveDst=liveTap=null; return null; }
+    },
+    liveFps:trackFps,
+    beforeLive:function(){                                     /* record the source resolution, not the display box */
+      var s=srcSize();
+      try{ if(s.w&&s.h) goFull(s.w,s.h); }catch(e){ if(full) endFull(); var st=$('render-status'); if(st) st.textContent='⚠ '+e.message+' — REC at preview size'; }
+    },
+    afterLive:function(){
+      if(full) endFull();
+      if(liveTap&&liveDst){ try{ liveTap.disconnect(liveDst); }catch(e){} }
+      if(liveDst){ liveDst.stream.getTracks().forEach(function(t){ t.stop(); }); }
+      liveDst=liveTap=null;
+    },
+    recUi:{
+      start:function(kind){
+        setRecUi(true);
+        if(kind==='live'){ recT0=Date.now(); recTimer=setInterval(function(){ var rt=$('rec-time'); if(rt) rt.textContent=hms((Date.now()-recT0)/1000); },1000); }
+        else { var rt=$('rec-time'); if(rt) rt.textContent='RENDER 0%'; }
+      },
+      progress:function(kind,v){ if(kind==='render'){ var rt=$('rec-time'); if(rt) rt.textContent='RENDER '+v+'%'; } },
+      stop:function(){ setRecUi(false); }
+    }
+  });
+})();
+</script>
+<!-- SYNTECH-EXPORT-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

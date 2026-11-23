@@ -1153,14 +1153,22 @@ body {
       </div>
       <div class="sec-body hidden" id="sec-record">
         <div class="info-grid">
-          <div class="info-cell"><div class="ic-lbl">Codec</div><div class="ic-val dim">VP9/WebM</div></div>
+          <div class="info-cell"><div class="ic-lbl">Codec</div><div class="ic-val dim">H.264/MP4</div></div><!-- SYNTECH-EXPORT: was VP9/WebM — every export is MP4 now -->
           <div class="info-cell"><div class="ic-lbl">Status</div><div class="ic-val dim" id="rec-status">IDLE</div></div>
         </div>
         <button class="rec-btn" id="rec-btn" onclick="toggleRecord()">
           <div class="rec-dot"></div><span id="rec-label">REC FROM START</span>
         </button>
         <div id="rec-time">00:00:00</div>
-        <div style="font-size:7px;letter-spacing:.5px;color:var(--t2);line-height:1.7">Seeks to 00:00:00 · canvas → WebM · Audio preserved</div>
+        <div style="font-size:7px;letter-spacing:.5px;color:var(--t2);line-height:1.7">Video file: every frame from 00:00:00 · source fps · full resolution · Audio preserved</div><!-- SYNTECH-EXPORT: was "Seeks to 00:00:00 · canvas → WebM · Audio preserved" -->
+        <!-- SYNTECH-EXPORT: offline RENDER MP4 (docs/workflow/10-EXPORT-MASTER.md) — quality, button, status; wired in the SYNTECH-EXPORT block -->
+        <div class="seg-row" id="sel-render-q" style="margin-top:10px">
+          <button class="seg-btn on" data-q="master" title="H.264 High ~1 bit/pixel — visually lossless delivery master">MASTER</button>
+          <button class="seg-btn" data-q="high" title="H.264 High ~0.35 bit/pixel — lighter file">HIGH</button>
+        </div>
+        <button class="fs-btn" id="btn-render" style="margin-top:4px">RENDER MP4</button>
+        <div id="render-status" style="font-size:7px;letter-spacing:.5px;color:var(--t2);line-height:1.7">Video file: every frame, source fps, full resolution</div>
+        <!-- /SYNTECH-EXPORT -->
       </div>
     </div>
 
@@ -1644,8 +1652,8 @@ function drawDisplace(){
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D_ARRAY,cacheTex); gl.uniform1i(UD.u_cache,0);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,mapFBO.tex);     gl.uniform1i(UD.u_map,1);
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,videoTex);       gl.uniform1i(UD.u_src,2);
-  gl.uniform1f(UD.u_black,M.black);
-  gl.uniform1f(UD.u_white,P.tWhite);
+  gl.uniform1f(UD.u_black,M.black*(window.__synExpCtl?window.__synExpCtl.lps:1)); /* SYNTECH-EXPORT: offsets are 1/60 s frames; an offline render writes one cache layer per SOURCE frame → ×fps/60, same delay in seconds (was M.black) */
+  gl.uniform1f(UD.u_white,P.tWhite*(window.__synExpCtl?window.__synExpCtl.lps:1)); /* SYNTECH-EXPORT: same scaling (was P.tWhite) */
   gl.uniform1f(UD.u_count,CN);
   gl.uniform1f(UD.u_write,writeIdx);
   gl.uniform1f(UD.u_filled,Math.max(1,filled));
@@ -1892,7 +1900,7 @@ document.getElementById('play-overlay').addEventListener('click',()=>{video.play
 let lastFPS=0,fpsF=0,lastNow=0;
 
 function render(now){
-  requestAnimationFrame(render);
+  if(window.__synExpCtl){if(!window.__synExpCtl.inside){requestAnimationFrame(render);return;}}else requestAnimationFrame(render); /* SYNTECH-EXPORT: an offline render owns the canvas — the live loop only idles, and a draw driven by the render does not re-schedule (was: requestAnimationFrame(render);) */
   STATE.frameCount++;
   if(STATE.startTime===0)STATE.startTime=now;
   const dt=Math.min((now-(lastNow||now))/1000,0.1);
@@ -1910,8 +1918,7 @@ function render(now){
   if(STATE.isRecording)
     document.getElementById('rec-time').textContent=fmtDur((Date.now()-STATE.recStartTime)/1000);
 
-  updateReactive(dt);
-  if(STATE.frameCount%2===0){updateVU();computeMotion(currentFrameSource());updateMotionUI();}
+  if(!window.__synExpCtl){updateReactive(dt);if(STATE.frameCount%2===0){updateVU();computeMotion(currentFrameSource());updateMotionUI();}} /* SYNTECH-EXPORT: during an offline render the SYNTECH-EXPORT block runs these at their live 60 Hz cadence in MEDIA time (was the same two lines, unguarded) */
 
   if(PAD.animating){
     PAD.x+=(PAD.targetX-PAD.x)*0.12;
@@ -2793,6 +2800,203 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 </script>
 <!-- SYNTECH-LAB-END -->
+<!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
+<script src="../shared/syn-export.js"></script>
+<script>
+/* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
+   VIDEO FILE : RENDER MP4 and REC both run the OFFLINE render: every source frame → one output frame,
+                source fps, full source resolution (canvas, viewport and the FRAME CACHE all at the
+                source size for the duration of the render; restored after). The frame is drawn by the
+                effect's own render() (hooks marked SYNTECH-EXPORT): while window.__synExpCtl is set the
+                live rAF loop idles; the pseudo-reactive engine and the motion meter run here at their live
+                60 Hz cadence in MEDIA time.
+   FRAME CACHE: in the preview one layer is written per displayed frame (~60 Hz), so BLACK / WHITE
+                offsets and CACHE SIZE are in 1/60 s (Info shows CACHE SIZE/60 s). The render writes one
+                layer per SOURCE frame (24 … 240 fps: every frame, nothing repeated or skipped) and scales
+                the offsets by fps/60 → the same delay in SECONDS. Layers = what the operator's cache spans
+                in time at the source rate, at the source resolution, within RENDER_VRAM and
+                MAX_ARRAY_TEXTURE_LAYERS; when it cannot fit (e.g. 8K) the longest delay is shortened (said
+                in the status line) — never a smaller picture, never fewer cache frames per second.
+                The cache starts empty at frame 0 and fills as it does when the video plays from the start.
+   LIVE       : REC on webcam / camera / image / Lab stream = realtime MP4 (SynExport.recordLive) of the
+                full 1920×1080 canvas. toggleRecord (the old WebM recorder) is no longer reached: the REC
+                click is intercepted in the capture phase and the R key clicks REC.
+   Nothing here runs until RENDER / REC is clicked. */
+(function(){
+  'use strict';
+  if(!window.SynExport) return;
+  var RATE=60;                          /* preview cache layers per second (one per displayed frame) */
+  var RENDER_VRAM=1536*1048576;         /* frame-cache budget during a render (bytes) */
+  function $(id){ return document.getElementById(id); }
+  var saved=null, plan=null, lastTick=-1, fileP=null, origRealloc=null, recTimer=0, recT0=0;
+
+  function hasVideoFile(){ return STATE.srcMode==='video'&&!!currentURL&&!video.srcObject&&video.readyState>=1; }
+  function glLimits(){
+    var vp=gl.getParameter(gl.MAX_VIEWPORT_DIMS)||[0,0];
+    return {tex:gl.getParameter(gl.MAX_TEXTURE_SIZE), rb:gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), vw:vp[0], vh:vp[1],
+      layers:gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS)};
+  }
+  function limitsMsg(L){ return 'GPU limits: MAX_TEXTURE_SIZE '+L.tex+', MAX_RENDERBUFFER_SIZE '+L.rb+', MAX_VIEWPORT_DIMS '+L.vw+'×'+L.vh+', MAX_ARRAY_TEXTURE_LAYERS '+L.layers; }
+  /* How many native-size layers the render cache gets (see the header). */
+  function planCache(w,h,fps,L){
+    var win=Math.max(2,Math.min(120,Math.round(P.tCacheSize)));   /* the operator's cache, in 1/60 s */
+    var need=Math.ceil((win-1)*fps/RATE-1e-9)+1;                    /* same span in seconds at the source rate */
+    var fit=Math.floor(RENDER_VRAM/(w*h*4));
+    var n=Math.max(2,Math.min(need,fit,L.layers));
+    return {w:w, h:h, n:n, need:need, fps:fps, lps:fps/RATE, wantSec:(win-1)/RATE, maxSec:(n-1)/fps,
+      mb:Math.round(w*h*4*n/1048576)};
+  }
+  /* allocCache()'s steps at the native size (allocCache itself reads the 720p/540p/360p preview table). */
+  function allocRenderCache(pl){
+    clearTimeout(_reallocT);
+    if(cacheTex){ gl.deleteTexture(cacheTex); cacheTex=null; }
+    /* the driver may refuse a texture below the budget (per-texture caps): fewer layers = a shorter longest
+       delay (reported), never a smaller picture */
+    for(;;){
+      while(gl.getError()!==gl.NO_ERROR){}
+      CW=pl.w; CH=pl.h; CN=pl.n;
+      cacheTex=gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY,cacheTex);
+      gl.texStorage3D(gl.TEXTURE_2D_ARRAY,1,gl.RGBA8,CW,CH,CN);
+      var err=gl.getError();
+      if(err===gl.NO_ERROR) break;
+      gl.deleteTexture(cacheTex); cacheTex=null;
+      if(pl.n<=2) throw new Error('the GPU could not allocate a '+CW+'×'+CH+' frame cache (GL error 0x'+err.toString(16)+')');
+      pl.n=Math.max(2,Math.floor(pl.n*0.75)); pl.maxSec=(pl.n-1)/pl.fps; pl.mb=Math.round(pl.w*pl.h*4*pl.n/1048576);
+    }
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,cacheFB);
+    gl.viewport(0,0,CW,CH);
+    gl.clearColor(0,0,0,1);
+    for(var i=0;i<CN;i++){ gl.framebufferTextureLayer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,cacheTex,0,i); gl.clear(gl.COLOR_BUFFER_BIT); }
+    var st=gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    if(st!==gl.FRAMEBUFFER_COMPLETE) throw new Error('the '+CW+'×'+CH+' frame cache is not renderable on this GPU');
+    writeIdx=0; filled=0;
+  }
+  /* the seeked frame must be decoded before render() reads it (render() clears to black below HAVE_CURRENT_DATA) */
+  function frameDecoded(){
+    if(video.readyState>=2) return Promise.resolve();
+    return new Promise(function(res,rej){
+      var t0=performance.now();
+      (function poll(){
+        if(video.readyState>=2) return res();
+        if(performance.now()-t0>20000) return rej(new Error('the video frame did not decode (readyState '+video.readyState+')'));
+        setTimeout(poll,10);
+      })();
+    });
+  }
+  function resetTemporal(){
+    clearFBO(prevFBO);                                            /* MOTION map: no previous frame yet */
+    prevMotionFrame=null; motionEnergy=0; rawMotionEnergy=0;
+    _rs=0; REACT.bass=REACT.mid=REACT.high=0;                      /* pseudo-auto engine from its start: repeatable */
+    ['bass','mid','high'].forEach(function(k){ var b=REACT._b[k]; b.s=0; b.bt=0; b.t=0; });
+    lastTick=-1;
+  }
+  function setRecUi(on,label,st){
+    var b=$('rec-btn'), pr=$('pill-rec'), rt=$('rec-time');
+    if(b) b.classList.toggle('recording',on);
+    if($('rec-label')) $('rec-label').textContent=on?label:'REC FROM START';
+    if($('rec-status')) $('rec-status').textContent=st;
+    if($('rec-mark')) $('rec-mark').classList.toggle('on',on);
+    if(pr) pr.style.display=on?'flex':'none';
+    if(rt){ rt.classList.toggle('active',on); if(!on) rt.textContent='00:00:00'; }
+    clearInterval(recTimer);
+  }
+  function trackFps(){
+    var st=webcamStream||cameraStream||video.srcObject, tr=st&&st.getVideoTracks?st.getVideoTracks()[0]:null;
+    var f=tr&&tr.getSettings?tr.getSettings().frameRate:0;
+    return f>0?Math.round(f):60;
+  }
+
+  SynExport.attach({
+    label:'TIME_MACHINE',
+    recBtnId:'rec-btn', renderBtnId:'btn-render', qualityId:'sel-render-q', statusId:'render-status',
+    toast:function(m,d){ warn(m,d); },
+    hasVideoFile:hasVideoFile,
+    hasLiveSource:function(){ return !!STATE.hasVideo&&sourceReady(); },
+    getVideo:function(){ return video; },
+    getFile:function(){ fileP=fetch(currentURL).then(function(r){ return r.blob(); }); return fileP; },
+    sourceName:function(){ var f=$('info-file'); return f?f.textContent:'video'; },
+
+    beforeRender:async function(){
+      saved={t:video.currentTime, paused:video.paused, loop:video.loop, W:CONFIG.W, H:CONFIG.H, cw:canvas.width, ch:canvas.height, cache:false};
+      window.__synExpCtl={inside:false, lps:1};                  /* live loop idles from its next tick */
+      video.pause();
+      if(PAD.animating){ PAD.x=PAD.targetX; PAD.y=PAD.targetY; PAD.animating=false; applyPadToParams(); updatePadCursor(); }   /* the preset's final values */
+      origRealloc=window.requestCacheRealloc;                    /* a CACHE knob touched during the render waits for afterRender */
+      window.requestCacheRealloc=function(){};
+      clearTimeout(_reallocT);
+      var file=fileP?await fileP:null;
+      var rate=await SynExport.probeFps(file,video);
+      var w=video.videoWidth, h=video.videoHeight, L=glLimits();
+      if(!w||!h) throw new Error('the video has no picture size yet');
+      if(w>L.tex||h>L.tex||w>L.vw||h>L.vh||w>L.rb||h>L.rb) throw new Error('the GPU cannot draw '+w+'×'+h+'. '+limitsMsg(L));
+      canvas.width=w; canvas.height=h; CONFIG.W=w; CONFIG.H=h;
+      if(gl.drawingBufferWidth!==w||gl.drawingBufferHeight!==h) throw new Error('the GPU gave a '+gl.drawingBufferWidth+'×'+gl.drawingBufferHeight+' canvas instead of '+w+'×'+h+'. '+limitsMsg(L));
+      plan=planCache(w,h,rate.fps,L);
+      saved.cache=true; allocRenderCache(plan);
+      window.__synExpCtl.lps=plan.lps;
+      resetTemporal();
+      var short=plan.n<plan.need;
+      var note='cache '+plan.n+' × '+w+'×'+h+' ('+plan.mb+' MB) · max delay '+plan.maxSec.toFixed(2)+' s'+(short?' (of '+plan.wantSec.toFixed(2)+' s — GPU memory limit at this size)':'');
+      console.info('[TIME MACHINE export] '+note+', '+rate.fps+' fps, offsets ×'+plan.lps.toFixed(4));
+      if(short) warn('RENDER: '+note,8000);
+    },
+    getFrame:async function(i,t){
+      await frameDecoded();
+      var ctl=window.__synExpCtl;
+      if(!ctl||!plan||!hasVideoFile()) throw new Error('the source changed during the render');
+      if(canvas.width!==plan.w||canvas.height!==plan.h||CW!==plan.w||CH!==plan.h||CN!==plan.n||!cacheTex) throw new Error('the frame cache was re-sized during the render');
+      /* the live loop's per-frame analysers, at their 60 Hz cadence in media time (render(): updateReactive every
+         frame, VU + motion every 2nd) — before the draw, as in render() */
+      var tick=Math.floor(t*RATE+1e-6);
+      while(lastTick<tick){
+        lastTick++;
+        updateReactive(1/RATE);
+        if(lastTick%2===0){ updateVU(); computeMotion(currentFrameSource()); updateMotionUI(); }
+      }
+      ctl.inside=true;
+      try{ render(performance.now()); }finally{ ctl.inside=false; }
+      return {canvas:canvas};
+    },
+    afterRender:function(){
+      window.__synExpCtl=null;                                    /* live loop draws again from its next tick */
+      if(origRealloc){ window.requestCacheRealloc=origRealloc; origRealloc=null; }
+      if(saved){
+        canvas.width=saved.cw; canvas.height=saved.ch; CONFIG.W=saved.W; CONFIG.H=saved.H;
+        if(saved.cache) allocCache();                             /* the operator's preview cache (resolution × CACHE SIZE), refilled from the next frame */
+        prevMotionFrame=null;
+        fitCanvas();
+        if(STATE.srcMode==='video'){
+          video.loop=saved.loop;
+          try{ video.currentTime=saved.t; }catch(e){}
+          if(!saved.paused){ var p=video.play(); if(p&&p.catch) p.catch(function(){}); }
+        }
+      }
+      saved=null; plan=null; fileP=null;
+    },
+
+    getLiveCanvas:function(){ return canvas; },                   /* #glcanvas, full 1920×1080, preserveDrawingBuffer */
+    getLiveAudio:function(){ return null; },                      /* live sources here are silent (webcam / camera audio:false, images) */
+    liveFps:trackFps,
+    recUi:{
+      start:function(kind){
+        if(kind==='live'){ setRecUi(true,'STOP REC','RECORDING'); recT0=Date.now(); recTimer=setInterval(function(){ var rt=$('rec-time'); if(rt) rt.textContent=fmtDur((Date.now()-recT0)/1000)||'00:00'; },1000); }
+        else { setRecUi(true,'STOP RENDER','RENDERING'); var rt=$('rec-time'); if(rt) rt.textContent='RENDER 0%'; }
+      },
+      progress:function(kind,v){ if(kind==='render'){ var rt=$('rec-time'); if(rt) rt.textContent='RENDER '+v+'%'; } },
+      stop:function(){ setRecUi(false,'','IDLE'); }
+    }
+  });
+  /* R key (keyboard handler calls toggleRecord): the REC button, i.e. the MP4 engine above — never the old WebM recorder */
+  window.toggleRecord=function(){ var b=$('rec-btn'); if(b) b.click(); };
+})();
+</script>
+<!-- SYNTECH-EXPORT-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

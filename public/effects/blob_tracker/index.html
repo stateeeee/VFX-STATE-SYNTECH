@@ -1780,6 +1780,14 @@ svg#svg-lines { position:absolute; inset:0; width:100%; height:100%; pointer-eve
         <button class="fs-btn" id="btn-fs">⛶&nbsp;&nbsp;FULLSCREEN</button>
         <button class="rec-btn" id="btn-rec"><div class="rec-dot"></div>REC</button>
         <div id="rec-time">00:00:00</div>
+        <!-- SYNTECH-EXPORT: offline RENDER MP4 (docs/workflow/10-EXPORT-MASTER.md) — quality, button, status; wired in the SYNTECH-EXPORT block -->
+        <div class="seg-row" id="sel-render-q" style="margin-top:10px">
+          <button class="seg-btn on" data-q="master" title="H.264 High ~1 bit/pixel — visually lossless delivery master">MASTER</button>
+          <button class="seg-btn" data-q="high" title="H.264 High ~0.35 bit/pixel — lighter file">HIGH</button>
+        </div>
+        <button class="fs-btn" id="btn-render" style="margin-top:4px">RENDER MP4</button>
+        <div class="det-hint" id="render-status">Video file: every frame, source fps, full resolution</div>
+        <!-- /SYNTECH-EXPORT -->
       </div>
     </div>
 
@@ -2441,6 +2449,7 @@ function _applyFxBg(dW,dH){
 }
 
 function trackerFrame(){
+  if(window.__synExpCtl&&!window.__synExpCtl.inside){trackerRafId=requestAnimationFrame(trackerFrame);return;} /* SYNTECH-EXPORT: an offline render drives this frame itself — the live loop only idles */
   if(paused){trackerRafId=requestAnimationFrame(trackerFrame);return;}
   if(arOn||autoMode){audioReactiveFrame();}
   const src=(srcMode==='image'&&activeImg)?activeImg:vidEl;
@@ -2534,6 +2543,7 @@ function updateMotionUI(){motionEnergy+=(rawEnergy-motionEnergy)*(rawEnergy>moti
 function rSrcLoop(){
   if(!rippleOn){rSrcRafId=null;return;}
   rSrcRafId=requestAnimationFrame(rSrcLoop);
+  if(window.__synExpCtl&&!window.__synExpCtl.inside)return; /* SYNTECH-EXPORT: idle during an offline render */
   if(rSrcCv.width!==dc.width||rSrcCv.height!==dc.height){rSrcCv.width=dc.width;rSrcCv.height=dc.height;}
   try{rSrcCtx.drawImage(dc,0,0);}catch(e){}
   // In panels mode: panels float ABOVE ripple — don't include in distortion source
@@ -2570,6 +2580,7 @@ function initRipple(){
 
 function rippleTick(){
   if(!rippleOn){rRafId=null;return;}rRafId=requestAnimationFrame(rippleTick);
+  if(window.__synExpCtl&&!window.__synExpCtl.inside)return; /* SYNTECH-EXPORT: idle during an offline render */
   rForce+=(rTargetForce-rForce)*0.28;rTargetForce*=0.78;
   // rSceneTex.needsUpdate set by rSrcLoop
   rSimUni.uSt.value=rRtA.texture;rSimUni.uMs.value.set(rMx,rMy);rSimUni.uFo.value=rForce;
@@ -2654,6 +2665,7 @@ const camT={x:0,y:0},camC={x:0,y:0};let pansFc=0;
 function svgDash(){switch(connStyle){case 'dashed':return ' stroke-dasharray="12,6"';case 'dashdot':return ' stroke-dasharray="12,4,2,4"';default:return '';}}
 
 function panelsAnimate(){
+  if(window.__synExpCtl&&!window.__synExpCtl.inside){panelsRafId=requestAnimationFrame(panelsAnimate);return;} /* SYNTECH-EXPORT: idle during an offline render */
   panelsRafId=requestAnimationFrame(panelsAnimate);pansFc++;
   if(arOn||autoMode){audioReactiveFrame();}
   if(pansFc%3===0){const src=srcMode==='webcam'?webcamVid:srcMode==='camera'?nikonVid:srcMode==='video'?vidEl:null;if(src&&src.readyState>=2){computeMotion(src);updateMotionUI();if(vrOn||autoMode)videoReactiveFrame(src);}}
@@ -2978,6 +2990,7 @@ function _panelsBlobFxPass(){
 
 function panelsBgLoop(){
   panelsBgRafId=requestAnimationFrame(panelsBgLoop);
+  if(window.__synExpCtl&&!window.__synExpCtl.inside)return; /* SYNTECH-EXPORT: idle during an offline render */
   const dW=dc.width,dH=dc.height;
   dCtx.fillStyle='#050302';dCtx.fillRect(0,0,dW,dH);
   if(panelsBgOpacity>0&&srcMode!=='none'){
@@ -3157,6 +3170,7 @@ setPad(0.5,0);
 function capLoop(){if(!capRafId)return;capRafId=requestAnimationFrame(capLoop);capCtx.drawImage(dc,0,0);if(panelsCv.style.display!=='none')try{capCtx.drawImage(panelsCv,0,0);}catch(e){} if(fxOvCv.style.display!=='none')try{capCtx.drawImage(fxOvCv,0,0);}catch(e){} if(rippleOn&&glC.style.display!=='none')try{capCtx.drawImage(glC,0,0);}catch(e){}}
 function getBestMime(){const c=['video/mp4;codecs=avc1.640028','video/mp4;codecs=avc1.42E01E','video/mp4','video/webm;codecs=vp9','video/webm'];for(const m of c)if(MediaRecorder.isTypeSupported(m))return m;return'';}
 function toggleRec(){
+  if(window.__synExpRecKey&&!mediaRec){window.__synExpRecKey();return;} /* SYNTECH-EXPORT: the R key goes through the MP4 engine, like the REC button */
   const btn=document.getElementById('btn-rec');
   if(!mediaRec){
     capCv.width=dc.width;capCv.height=dc.height;const stream=capCv.captureStream(30);
@@ -6026,6 +6040,7 @@ function _synFitWrap(){
 }
 /* SYNTECH-UNIFORM-END */
 function resize(){
+  if(window.__synExpHold)return; /* SYNTECH-EXPORT: a native-resolution export owns the canvas sizes; it refits on exit */
   const _box=_synFitWrap();const w=_box.w,h=_box.h; // SYNTECH-UNIFORM: the 16:9 frame (was #canvas-area clientWidth/Height)
   dc.width=w;dc.height=h;dCtx.fillStyle='#000';dCtx.fillRect(0,0,w,h);
   fxOvCv.width=w;fxOvCv.height=h;
@@ -6389,6 +6404,7 @@ function _proStart(){
   const panelW=document.getElementById('panel')?.offsetWidth||284;
   capCv.width=dc.width+panelW;capCv.height=dc.height;
   capCtx.fillStyle='#060503';capCtx.fillRect(dc.width,0,panelW,dc.height);
+  if(window.__synExpPro){window.__synExpPro.start();_proRunBoot();return;} /* SYNTECH-EXPORT: PRO REC → realtime MP4 (SynExport.recordLive), never WebM */
   if(!mediaRec){
     const stream=capCv.captureStream(30);recChunks=[];const mime=getBestMime();
     try{mediaRec=new MediaRecorder(stream,{mimeType:mime||undefined,videoBitsPerSecond:20000000});}catch(e){try{mediaRec=new MediaRecorder(stream);}catch(e2){toast('REC not supported');return;}}
@@ -6404,6 +6420,7 @@ function _proStop(){
   _proActive=false;_proRevealCount=-1;
   _proTimers.forEach(t=>{if(t.cancel)t.cancel();else clearTimeout(t);});_proTimers=[];
   if(_proTypeTmr)clearTimeout(_proTypeTmr);if(_proRecInt)clearInterval(_proRecInt);
+  if(window.__synExpPro)window.__synExpPro.stop(); /* SYNTECH-EXPORT */
   if(mediaRec&&mediaRec.state!=='inactive')mediaRec.stop();
   _proUpdateBtn(false);
   document.getElementById('pro-takeover').classList.remove('active');
@@ -7130,10 +7147,11 @@ function camToggleRec() {
     toast('■ REC stop — download in corso…');
   } else {
     camRecChunks=[];
-    const mimes=['video/mp4','video/webm;codecs=h264','video/webm'];
+    const mimes=['video/mp4;codecs=avc1.640033','video/mp4;codecs=avc1.640028','video/mp4']; /* SYNTECH-EXPORT: MP4 only (was 'video/mp4','video/webm;codecs=h264','video/webm') */
     const mime = mimes.find(m=>{
       try { return MediaRecorder.isTypeSupported(m); } catch(e) { return false; }
     })||'';
+    if (!mime) { toast('REC: questo browser non registra MP4', 3000); return; } /* SYNTECH-EXPORT: never fall back to WebM */
     try {
       camRecMR = mime
         ? new MediaRecorder(nikonStream,{mimeType:mime, videoBitsPerSecond:80_000_000})
@@ -7735,6 +7753,328 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 </script>
 <!-- SYNTECH-LAB-END -->
+<!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
+<script src="../shared/syn-export.js"></script>
+<script>
+/* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
+   VIDEO FILE : RENDER MP4 and REC (button + R key) run the OFFLINE render: every source frame → one
+                output frame, source fps, NATIVE source resolution and aspect (no 16:9 box, no bars).
+                For the render every picture surface is sized to the source — #dc, #fx-ov-cv, the REC /
+                ripple source canvases, the ripple renderer (#glC) and the Panels renderer (#panels-canvas,
+                pixel ratio 1) — and restored afterwards; the 320×180 detection canvas and the 512² ripple
+                simulation are analysis sizes and stay. The frame is drawn by the effect's own loops
+                (trackerFrame / panelsBgLoop / panelsAnimate / rSrcLoop / rippleTick, hooks marked
+                SYNTECH-EXPORT): while window.__synExpCtl is set they idle, and getFrame calls them itself
+                with a media-time clock (performance.now() reads i/fps inside those calls only), then
+                composites the visible layers in z-order (the same layers its own REC captured).
+                Temporal state (motion / flow / tracks / body landmarks / ripple sim / audio analysis) is
+                reset at the start; per-rendered-frame state is evolved with k = round(60/fps) passes per
+                output frame, so a 24 fps file evolves like the ≈60 Hz preview the operator saw.
+                Audio reactivity reads the file's own audio (SynExport.offlineAnalyser) during a render.
+   LIVE       : REC on webcam / camera / image / Lab stream = realtime MP4 (SynExport.recordLive) at the
+                source's native resolution; PRO REC = realtime MP4 too (its typewriter show runs on wall
+                time). toggleRec / _proStart's MediaRecorder (WebM fallback) are no longer reached.
+   Nothing here runs until RENDER / REC / PRO REC is clicked. */
+(function(){
+  'use strict';
+  if(!window.SynExport) return;
+  function $(id){ return document.getElementById(id); }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+  var LAYERS=[[dc,1],[panelsCv,2],[fxOvCv,3],[glC,4]];
+  var AE=AudioEngine;
+  var expCv=document.createElement('canvas'), expCtx=expCv.getContext('2d');
+  var liveCv=document.createElement('canvas'), liveCtx=liveCv.getContext('2d');
+  var rSnap=document.createElement('canvas'), rSnapCtx=rSnap.getContext('2d'), snapOk=false, snapOn=false;
+  var srcName='', filePromise=null, ctl=null, nat=null, recTimer=0, recT0=0, proCtl=null, proDst=null;
+
+  /* the file name (info-file is truncated) */
+  $('fi-v').addEventListener('change',function(e){ var f=e.target.files&&e.target.files[0]; if(f) srcName=f.name; },true);
+  $('canvas-area').addEventListener('drop',function(e){ var f=e.dataTransfer&&e.dataTransfer.files[0]; if(f&&/^video\//.test(f.type)) srcName=f.name; },true);
+
+  /* ── composite of the visible layers, in z-order (as on screen / as its REC captured) ── */
+  function hookRipple(){            /* #glC has no preserveDrawingBuffer: keep a copy of each screen pass for the live recorder */
+    if(typeof rRenderer==='undefined'||!rRenderer||rRenderer.__synExp) return;
+    var r=rRenderer, rend=r.render; r.__synExp=true;
+    r.render=function(){
+      var out=rend.apply(this,arguments);
+      if(snapOn&&r.getRenderTarget()===null){
+        try{ if(rSnap.width!==glC.width) rSnap.width=glC.width; if(rSnap.height!==glC.height) rSnap.height=glC.height; rSnapCtx.drawImage(glC,0,0); snapOk=true; }catch(e){}
+      }
+      return out;
+    };
+  }
+  function compose(ctx,w,h,useSnap){
+    ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over'; ctx.fillStyle='#000'; ctx.fillRect(0,0,w,h);
+    LAYERS.filter(function(l){ return getComputedStyle(l[0]).display!=='none'&&(l[0]!==glC||rippleOn); })
+      .map(function(l){ return [l[0],parseInt(l[0].style.zIndex,10)||l[1]]; })
+      .sort(function(a,b){ return a[1]-b[1]; })
+      .forEach(function(l){
+        var c=l[0];
+        if(c===glC&&useSnap){ hookRipple(); if(!snapOk) return; c=rSnap; }
+        try{ ctx.drawImage(c,0,0,w,h); }catch(e){}
+      });
+  }
+
+  /* ── native resolution: every picture surface sized to the source (or a clear error) ── */
+  function fitBox(bw,bh,sw,sh){ var a=sw/sh,w=bw,h=bw/a; if(h>bh){ h=bh; w=bh*a; } return {x:(bw-w)/2,y:(bh-h)/2,w:w,h:h}; }
+  function glCheck(r,name,w,h){
+    var gl=r.getContext(), mt=gl.getParameter(gl.MAX_TEXTURE_SIZE), rb=gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), vp=gl.getParameter(gl.MAX_VIEWPORT_DIMS)||[0,0];
+    if(w>mt||h>mt||w>vp[0]||h>vp[1]||gl.drawingBufferWidth!==w||gl.drawingBufferHeight!==h)
+      throw new Error('the GPU cannot draw '+w+'×'+h+' ('+name+'). GPU limits: MAX_TEXTURE_SIZE '+mt+', MAX_RENDERBUFFER_SIZE '+rb+', MAX_VIEWPORT_DIMS '+vp[0]+'×'+vp[1]);
+  }
+  function canAlloc(ctx,cv){
+    try{ ctx.save(); ctx.fillStyle='#fff'; ctx.fillRect(cv.width-1,cv.height-1,1,1); var d=ctx.getImageData(cv.width-1,cv.height-1,1,1).data; ctx.restore(); return d[0]===255&&d[3]===255; }
+    catch(e){ return false; }
+  }
+  function enterNative(w,h){
+    if(nat) return;
+    var bw=dc.width,bh=dc.height;
+    nat={w:w,h:h,bw:bw,bh:bh,pr:panelsRenderer?panelsRenderer.getPixelRatio():0};
+    window.__synExpHold=true;                                  /* resize() keeps its hands off until exitNative */
+    var B=fitBox(bw,bh,w,h);                                   /* fixed points were clicked on the letterboxed picture of the box */
+    fixedPoints.forEach(function(p){ p.x=(p.x-B.x)/B.w*w; p.y=(p.y-B.y)/B.h*h; });
+    dc.width=w; dc.height=h; dCtx.fillStyle='#000'; dCtx.fillRect(0,0,w,h);
+    fxOvCv.width=w; fxOvCv.height=h; capCv.width=w; capCv.height=h; rSrcCv.width=w; rSrcCv.height=h;
+    if(rRenderer) rRenderer.setSize(w,h,false);
+    if(panelsRenderer){ panelsRenderer.setPixelRatio(1); panelsRenderer.setSize(w,h,false); panelsCamera.aspect=w/h; panelsCamera.updateProjectionMatrix(); }
+    LAYERS.forEach(function(l){ l[0].style.objectFit='contain'; });   /* the preview keeps the source aspect inside the 16:9 frame */
+    if(!canAlloc(dCtx,dc)) throw new Error('the browser cannot allocate a '+w+'×'+h+' canvas');
+    if(rippleOn&&rRenderer) glCheck(rRenderer,'water ripple',w,h);
+    if(panelsRafId&&panelsRenderer) glCheck(panelsRenderer,'panels',w,h);
+  }
+  function exitNative(){
+    if(!nat) return;
+    var n=nat; nat=null;
+    var B=fitBox(n.bw,n.bh,n.w,n.h);
+    fixedPoints.forEach(function(p){ p.x=B.x+p.x/n.w*B.w; p.y=B.y+p.y/n.h*B.h; });
+    LAYERS.forEach(function(l){ l[0].style.objectFit=''; });
+    if(panelsRenderer&&n.pr) panelsRenderer.setPixelRatio(n.pr);
+    window.__synExpHold=false;
+    resize();                                                  /* back to the 16:9 box (dc, overlay, REC/ripple canvases, both renderers) */
+  }
+
+  /* ── clean temporal state at the start of a render (repeatable file) ── */
+  function resetTemporal(T0){
+    prevMotionFrame=null; motionEnergy=0; rawEnergy=0;
+    _flowTrails=[]; _flowVel=[]; _flowPrevGray=null; _flowCurrGray=null;
+    _vrPrevData=null; _vrFlowPrev=null; _vrFrame=0; _vrPFFrame=0; _vrLastCut=-9999; _vrLastFrame=-1; _arLastFrame=-1;
+    _ctSmartMask=null; _ctSmartTs=-1; _ctContours=[]; _ctSmartDirty=false;
+    _BODY_KINDS.forEach(function(k){ var st=_body[k]; st.sets=[]; st.n=0; st.last=-99; st.vt=-1; st.img=null; st.vrList=null; });
+    _bodyNextAt=0; _bodyCutPrev=null; _bodyCutSrc='syn-export';   /* ≠ the source key → one blank frame resets the landmarkers' tracking */
+    _motionReset(); _trkReset();
+    panelsT=0; camC.x=camC.y=0; camT.x=camT.y=0; pansFc=0;
+    rForce=0; rTargetForce=0; rMx=-5; rMy=-5;
+    if(rRenderer&&rRtA&&rRtB){ rRenderer.setRenderTarget(rRtA); rRenderer.clear(); rRenderer.setRenderTarget(rRtB); rRenderer.clear(); rRenderer.setRenderTarget(null); }
+    if(AE.inited){
+      for(var k in AE.bands){ AE.bands[k]=0; AE._rawBands[k]=0; }
+      AE.energy=0; AE.spectralCentroid=0; AE.spectralFlux=0; AE.onsetStrength=0; AE.isOnset=false;
+      if(AE._prevLinBuf) AE._prevLinBuf.fill(0); if(AE._fluxBuf) AE._fluxBuf.fill(0); if(AE._ioiBuf) AE._ioiBuf.fill(0);
+      AE._fluxPtr=0; AE._fluxFull=false; AE._ioiPtr=0; AE._lastOnsetFrame=-9999; AE._frameCount=0; AE._silenceFrames=0;
+      if(AE._rMax) for(var m in AE._rMax) AE._rMax[m]=0.001;
+      AE._enMax=0.001; AE._fluxMax=0.001; AE._kickEnv=0; AE._snareEnv=0; AE._hatEnv=0; AE._onsetTimes=[];
+      AE.bpm=120; AE._beatPeriod=0.5; AE._lastBeatT=T0;
+    }
+  }
+
+  /* ── ML models the frame needs must be loaded before frame 0 (inference itself is synchronous per pass) ── */
+  async function waitModels(){
+    if(ctMode==='smart'&&!_mpReady&&!_mpLoading) _loadMediaPipe();
+    var t0=performance.now();
+    var busy=function(){ return (ctMode==='smart'&&_mpLoading)||_vrPoseLoading||_vrFaceLoading||_BODY_KINDS.some(function(k){ return _body[k].on&&_body[k].state==='loading'; }); };
+    while(busy()){
+      if(performance.now()-t0>90000) throw new Error('the detection models did not load (90 s)');
+      await sleep(100);
+    }
+  }
+
+  /* ── one draw of the effect at media time tp (seconds), exactly as its rAF loops would ── */
+  function setNow(ms){ Object.defineProperty(performance,'now',{value:function(){ return ms; },configurable:true,writable:true}); }
+  function pass(tp){
+    var c=ctl;
+    if(c.oa) c.oa.setTime(Math.max(0,tp));
+    c.aeT=c.C0+tp; c.t=tp;
+    paused=false;                                              /* the preview may be paused: the render still draws every frame */
+    rMx=-5; rMy=-5;                                            /* no mouse waves in a render */
+    setNow(c.T0+tp*1000); c.inside=true;
+    try{
+      if(panelsBgRafId){ cancelAnimationFrame(panelsBgRafId); panelsBgLoop(); }   /* each call re-schedules its own (idle) rAF */
+      if(trackerRafId){ cancelAnimationFrame(trackerRafId); trackerFrame(); }
+      if(panelsRafId){ cancelAnimationFrame(panelsRafId); panelsAnimate(); }
+      if(rSrcRafId){ cancelAnimationFrame(rSrcRafId); rSrcLoop(); }
+      if(rRafId){ cancelAnimationFrame(rRafId); rippleTick(); }
+    }finally{ c.inside=false; delete performance.now; }
+  }
+
+  function setRecUi(on){
+    var b=$('btn-rec'), pr=$('pill-rec'), rt=$('rec-time');
+    if(b) b.classList.toggle('on',on);
+    if(pr){ pr.style.display=on?'flex':'none'; pr.classList.toggle('rec-on',on); }
+    if(rt){ rt.classList.toggle('on',on); if(!on) rt.textContent='00:00:00'; }
+    clearInterval(recTimer);
+  }
+  function hms(s){ s=Math.max(0,Math.floor(s)); return String(Math.floor(s/3600)).padStart(2,'0')+':'+String(Math.floor((s%3600)/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
+  function liveStream(){ return srcMode==='webcam'?webcamStream:srcMode==='camera'?nikonStream:vidEl.srcObject; }
+  function trackFps(){
+    var st=liveStream(), tr=st&&st.getVideoTracks?st.getVideoTracks()[0]:null, f=tr&&tr.getSettings?tr.getSettings().frameRate:0;
+    return f>0?Math.round(f):60;
+  }
+  function liveSrcSize(){
+    if(srcMode==='image'&&activeImg) return [activeImg.naturalWidth,activeImg.naturalHeight];
+    var el=srcMode==='webcam'?(webcamVid||vidEl):srcMode==='camera'?nikonVid:vidEl;
+    return el&&el.videoWidth?[el.videoWidth,el.videoHeight]:null;
+  }
+  function liveNative(){                                       /* live REC at the source's native size; if impossible, the box size + a warning */
+    var s=liveSrcSize(); if(!s) return;
+    try{ enterNative(s[0],s[1]); }
+    catch(e){ exitNative(); toast('⚠ REC: '+e.message+' — recording the preview size',5000); }
+  }
+  function liveComposite(){
+    var w=dc.width,h=dc.height;
+    if(liveCv.width!==w) liveCv.width=w;
+    if(liveCv.height!==h) liveCv.height=h;
+    compose(liveCtx,w,h,true);
+    return liveCv;
+  }
+  function q(){ var on=document.querySelector('#sel-render-q [data-q].on'); return on&&on.getAttribute('data-q')==='high'?'high':'master'; }
+
+  var api=SynExport.attach({
+    label:'BLOBTRACKER',
+    recBtnId:'btn-rec', renderBtnId:'btn-render', qualityId:'sel-render-q', statusId:'render-status',
+    toast:function(m,d){ toast(m,d); },
+    hasVideoFile:function(){ return srcMode==='video'&&!vidEl.srcObject&&/^(blob:|https?:)/.test(vidEl.currentSrc||vidEl.src||'')&&vidEl.readyState>=1; },
+    hasLiveSource:function(){ return srcMode!=='none'; },
+    passThroughRec:function(){ return !!mediaRec||!!proCtl; }, /* an old REC still running, or PRO REC (toggleRec's hook answers) */
+    getVideo:function(){ return vidEl; },
+    getFile:function(){ filePromise=fetch(vidEl.currentSrc||vidEl.src).then(function(r){ return r.blob(); }); return filePromise; },
+    sourceName:function(){ var f=$('info-file'); return srcMode!=='video'||vidEl.srcObject?(vidEl.srcObject&&srcMode==='video'?'lab':srcMode):(srcName||(f?f.textContent:'video')); },
+
+    beforeRender:async function(){
+      var file=await filePromise;
+      var W=vidEl.videoWidth, H=vidEl.videoHeight;
+      if(!(W>0&&H>0)) throw new Error('the video has no picture yet');
+      var rate=await SynExport.probeFps(file,vidEl), fps=rate.num/rate.den;
+      var c={t:0,inside:false,W:W,H:H,fps:fps,k:Math.max(1,Math.round(60/fps)),T0:0,C0:0,aeT:0,oa:null,
+        saved:{t:vidEl.currentTime,elPaused:vidEl.paused,loop:vidEl.loop,paused:paused,an:null,ctxProps:null}};
+      ctl=c;
+      vidEl.pause();
+      await waitModels();
+      if((arOn||autoMode)&&!AE.inited) AE.init();            /* AUTO inits the engine on its first frame: do it before the swap */
+      if((arOn||autoMode)&&AE.inited&&AE.analyser&&AE.ctx){   /* the paused/seeked <video> is silent: analyse the file's own audio */
+        var a=AE.analyser;
+        c.oa=await SynExport.offlineAnalyser({file:file,fftSize:a.fftSize,smoothingTimeConstant:a.smoothingTimeConstant,minDecibels:a.minDecibels,maxDecibels:a.maxDecibels,sampleRate:AE.ctx.sampleRate}); /* same bins as the live analyser */
+      }
+      if(ctl!==c) throw new Error('the render was interrupted');
+      /* from here on the live loops idle */
+      c.T0=performance.now()+1000;
+      window.__synExpCtl=c;
+      if(appMode==='tracker'&&!trackerRafId) startTracker();
+      if(appMode==='panels'){ if(!panelsBgRafId) startPanelsBg(); if(!panelsRafId) startPanels(); }
+      if(c.oa){
+        c.saved.an=AE.analyser; AE.analyser=c.oa;
+        c.C0=AE.ctx.currentTime+1;
+        Object.defineProperty(AE.ctx,'currentTime',{get:function(){ return c.aeT; },configurable:true});
+        c.saved.ctxProps=AE.ctx;
+      }
+      enterNative(W,H);
+      expCv.width=W; expCv.height=H;
+      if(!canAlloc(expCtx,expCv)) throw new Error('the browser cannot allocate a '+W+'×'+H+' canvas');
+      resetTemporal(c.T0);
+    },
+    getFrame:async function(i,t){
+      var c=ctl;
+      if(!c||window.__synExpCtl!==c||srcMode!=='video'||vidEl.srcObject) throw new Error('the source changed during the render');
+      if(dc.width!==c.W||dc.height!==c.H){ exitNative(); enterNative(c.W,c.H); }
+      /* the engine's seek gives up after 5 s; a slow (e.g. 4K software) decode can still be seeking → wait, never draw the previous frame again */
+      for(var w0=performance.now();(vidEl.seeking||vidEl.readyState<2)&&performance.now()-w0<60000;)
+        await new Promise(function(r){ var to=setTimeout(r,250); vidEl.addEventListener('seeked',function(){ clearTimeout(to); setTimeout(r,30); },{once:true}); });
+      if(vidEl.seeking||vidEl.readyState<2) throw new Error('the video frame '+i+' is not decoded (60 s)');
+      /* k passes on this source frame, clock stepping 1/(fps·k): per-frame state evolves as at ≈60 Hz; the last lands on t */
+      for(var p=0;p<c.k;p++) pass(t-(c.k-1-p)/(c.fps*c.k));
+      compose(expCtx,c.W,c.H,false);                          /* same task as the draw: #glC is still readable */
+      return {canvas:expCv};
+    },
+    afterRender:function(){
+      var c=ctl; ctl=null;
+      window.__synExpCtl=null;                                 /* live loops draw again from their next tick */
+      if(!c) return;
+      if(c.saved.an) AE.analyser=c.saved.an;
+      if(c.saved.ctxProps) delete c.saved.ctxProps.currentTime;
+      exitNative();
+      paused=c.saved.paused;
+      _ctSmartTs=-1; _arLastFrame=-1; _vrLastFrame=-1; _bodyNextAt=0; lastFpsT=performance.now(); fc=0;   /* the clock is wall time again */
+      _BODY_KINDS.forEach(function(k){ _body[k].sets=[]; });
+      prevMotionFrame=null;
+      if(srcMode==='video'&&!vidEl.srcObject){
+        vidEl.loop=c.saved.loop;
+        try{ vidEl.currentTime=c.saved.t; }catch(e){}
+        if(!c.saved.elPaused){ var pp=vidEl.play(); if(pp&&pp.catch) pp.catch(function(){}); }
+      }
+    },
+
+    getLiveCanvas:liveComposite,
+    getLiveAudio:function(){ return null; },                   /* webcam is opened without audio; the Lab records its own sound */
+    liveFps:trackFps,
+    beforeLive:function(){ snapOn=true; snapOk=false; hookRipple(); liveNative(); },
+    afterLive:function(){ snapOn=!!proCtl; exitNative(); },
+    recUi:{
+      start:function(kind){
+        setRecUi(true);
+        if(kind==='live'){ recT0=Date.now(); recTimer=setInterval(function(){ var rt=$('rec-time'); if(rt) rt.textContent=hms((Date.now()-recT0)/1000); },1000); }
+        else { var rt=$('rec-time'); if(rt) rt.textContent='RENDER 0%'; }
+      },
+      progress:function(kind,v){ if(kind==='render'){ var rt=$('rec-time'); if(rt) rt.textContent='RENDER '+v+'%'; } },
+      stop:function(){ setRecUi(false); }
+    }
+  });
+
+  /* the R shortcut calls toggleRec() directly: send it through the REC button (→ engine) */
+  window.__synExpRecKey=function(){
+    if(proCtl){ toast('● PRO REC in corso — fermalo dal pannello PRO',2400); return; }
+    $('btn-rec').click();
+  };
+
+  /* PRO REC: its typewriter show runs on wall time → realtime MP4 of the composite + the (blank) panel strip, as before */
+  function proAudio(){
+    if(srcMode!=='video'||vidEl.srcObject||vidEl.muted) return null;
+    try{
+      if(AE.inited&&AE.ctx&&AE.source){ var d=AE.ctx.createMediaStreamDestination(); AE.source.connect(d); proDst={src:AE.source,dst:d}; return d.stream; }
+      if(vidEl.captureStream){ var at=vidEl.captureStream().getAudioTracks(); return at.length?new MediaStream(at):null; }
+    }catch(e){}
+    return null;
+  }
+  var proCv=document.createElement('canvas'), proCtx=proCv.getContext('2d');
+  window.__synExpPro={
+    start:function(){
+      if(proCtl||api.busy()){ toast('◯ An export is already running',2000); setTimeout(function(){ if(_proActive) _proStop(); },0); return; }
+      snapOn=true; snapOk=false; hookRipple(); liveNative();
+      var boxW=_synBoxW||dc.width, strip=Math.round((($('panel')&&$('panel').offsetWidth)||284)*dc.width/Math.max(1,nat?nat.bw:boxW));
+      proCv.width=dc.width+strip; proCv.height=dc.height;
+      var ctlP=SynExport.recordLive({
+        getCanvas:function(){
+          proCtx.fillStyle='#060503'; proCtx.fillRect(0,0,proCv.width,proCv.height);
+          proCtx.drawImage(liveComposite(),0,0,dc.width,dc.height);
+          return proCv;
+        },
+        fps:srcMode==='video'&&!vidEl.srcObject?60:trackFps(), audioStream:proAudio(), quality:q(),
+        useFilePicker:window.__synExportNoPicker!==true, filename:'blob_pro_'+Date.now()+'.mp4',
+        onProgress:function(sec,info){ var s=$('render-status'); if(s) s.textContent='● PRO REC '+hms(sec)+' · '+info.width+'×'+info.height+' · '+info.frames+' fr'; }
+      });
+      proCtl=ctlP;
+      ctlP.done.then(function(r){
+        proCtl=null; snapOn=false;
+        if(proDst){ try{ proDst.src.disconnect(proDst.dst); }catch(e){} proDst=null; }
+        exitNative();
+        var s=$('render-status');
+        if(r&&r.error){ if(s) s.textContent='✕ '+r.error; toast('⚠ PRO REC: '+r.error,6000); }
+        else if(r&&!r.stopped){ var m=r.width+'×'+r.height+' · '+r.frames+' fr · '+String(r.codec).split(' (')[0]+' · '+(r.bytes/1048576).toFixed(1)+' MB'; if(s) s.textContent='✓ PRO REC '+m; toast('⬇ PRO REC MP4 — '+m,5000); }
+        if(_proActive) _proStop();
+      });
+    },
+    stop:function(){ if(proCtl) proCtl.stop(); }
+  };
+})();
+</script>
+<!-- SYNTECH-EXPORT-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

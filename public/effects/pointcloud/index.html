@@ -167,6 +167,16 @@
         <div class="row"><div class="lbl">Export</div><div class="led-btn dis" id="btn-export"><div class="led"></div><div class="led-txt" id="export-label">EXPORT MP4</div></div></div>
         <div id="export-bar"><div id="export-fill"></div></div>
         <div id="export-status"></div>
+        <!-- SYNTECH-EXPORT (render): offline RENDER MP4 (docs/workflow/10-EXPORT-MASTER.md) — quality, button, status; wired in
+             the SYNTECH-EXPORT-START (offline MP4 render) block. EXPORT MP4 above does the same for a video file and records
+             live sources (MP4 only). -->
+        <div class="row"><div class="lbl">Quality</div><div class="seg-row" id="sel-render-q" style="flex:1">
+          <button class="seg-btn on" data-q="master" title="H.264 High ~1 bit/pixel — visually lossless delivery master">MASTER</button>
+          <button class="seg-btn" data-q="high" title="H.264 High ~0.35 bit/pixel — lighter file">HIGH</button>
+        </div></div>
+        <div class="row"><div class="lbl">Render</div><div class="seg-row" style="flex:1"><button class="seg-btn" id="btn-render">RENDER MP4</button></div></div>
+        <div id="render-status" style="font-size:7.5px;letter-spacing:1px;color:var(--t3);line-height:1.7">Video file: every frame, source fps, full resolution</div>
+        <!-- /SYNTECH-EXPORT (render) -->
       </div>
     </div>
 
@@ -723,6 +733,7 @@ function updateExportUI() {
   const ok = srcMode === 'video' && !!EX_MIME;   // startExport checks the readiness itself (readyState dips during the post-export rewind)
   if (!exporting) $('btn-export').classList.toggle('dis', !ok);
   $('export-label').textContent = exporting ? 'STOP EXPORT' : (EX_IS_MP4 || !EX_MIME ? 'EXPORT MP4' : 'EXPORT WEBM');
+  if (window.__synExpUi) window.__synExpUi();   /* SYNTECH-EXPORT (render): MP4-only labels + native size (the offline-render block) */
 }
 $('ex-format').textContent = !EX_MIME ? 'NOT SUPPORTED' : EX_MIME.includes('avc1') ? 'MP4 · H.264' : EX_IS_MP4 ? 'MP4 · AUTO' : 'WEBM · NO MP4';
 ['loadeddata', 'emptied'].forEach(ev => vid.addEventListener(ev, updateExportUI));
@@ -885,8 +896,9 @@ let lastT = 0, fpsAcc = 0, fpsN = 0;
 document.getElementById('ic-pts').textContent = N.toLocaleString(); // SYNTECH-UNIFORM: was #hPts (HUD) → Info "PTS"
 
 function animate(ts) {
-  requestAnimationFrame(animate);
-  const t  = ts * 0.001;
+  if (window.__synExpCtl && !window.__synExpCtl.inside) { requestAnimationFrame(animate); return; } /* SYNTECH-EXPORT (render): an offline render owns the canvas — the live loop only idles */
+  if (!window.__synExpCtl) requestAnimationFrame(animate); /* SYNTECH-EXPORT (render): a draw driven by the offline render does not re-schedule (was unconditional) */
+  const t  = window.__synExpCtl ? window.__synExpCtl.t : ts * 0.001; /* SYNTECH-EXPORT (render): media-time clock during an offline render (was ts * 0.001) */
   const rawDt = t - lastT;                // SYNTECH-UNIFORM: the FPS reading uses the real frame time …
   const dt = Math.min(rawDt, 0.05);       // … the clamped dt still drives the morph, as in the original
   lastT = t;
@@ -974,7 +986,7 @@ document.body.addEventListener('drop', e => {
    frame, resized by fitCanvas and by the timeline appearing under the video) — was a window
    'resize' listener on innerWidth / innerHeight. Same four calls as the original. */
 function fitRenderer() {
-  if (exporting) return;    // SYNTECH-EXPORT: the engine is held at 1920×1080 until the export ends
+  if (exporting || window.__synExpHold) return;    // SYNTECH-EXPORT: the engine is held at 1920×1080 until the export ends (SYNTECH-EXPORT (render): or at the source size while a render / live REC runs — was "if (exporting)")
   const w = Math.max(1, wrapEl.clientWidth), h = Math.max(1, wrapEl.clientHeight);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -1024,6 +1036,24 @@ window.__synLabPointcloud = {
   srcMode: () => srcMode,
 };
 /* ═══ SYNTECH-LAB-END ═══ */
+/* ═══ SYNTECH-EXPORT-START (offline MP4 render): handle for the offline-render block at the end of the page
+   (docs/workflow/10-EXPORT-MASTER.md). This module's state is not reachable from a classic script: it exposes what a
+   native-size render needs. Nothing here runs on its own. ═══ */
+window.__synPointExp = {
+  canvas, renderer, composer, bloom, camera, uniforms, wrapEl,
+  draw: animate,                          // one frame of the live code (window.__synExpCtl.inside = true)
+  fit: fitRenderer,
+  srcMode: () => srcMode,
+  oldBusy: () => !!exporting,             // the old MediaRecorder export (no longer reachable from the button)
+  srcSize: () => (srcMode === 'image'
+    ? (imgTex && imgTex.image && imgTex.image.naturalWidth ? { w: imgTex.image.naturalWidth, h: imgTex.image.naturalHeight } : null)
+    : (vid.videoWidth > 0 ? { w: vid.videoWidth, h: vid.videoHeight } : null)),
+  /* lastT = the clock origin; clean = start of a render: the intro morph is finished (as in the steady preview) */
+  reset(lt, clean) { lastT = lt; if (clean && playing) transition = 1; },
+  limits() { const gl = renderer.getContext(), vp = gl.getParameter(gl.MAX_VIEWPORT_DIMS) || [0, 0];
+    return { tex: gl.getParameter(gl.MAX_TEXTURE_SIZE), rb: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), vpw: vp[0], vph: vp[1], dbw: gl.drawingBufferWidth, dbh: gl.drawingBufferHeight }; },
+};
+/* ═══ SYNTECH-EXPORT-END (offline MP4 render) ═══ */
 syncSourceUI();
 
 animate(0);
@@ -1113,6 +1143,144 @@ animate(0);
 })();
 </script>
 <!-- SYNTECH-LAB-END -->
+<!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
+<script src="../shared/syn-export.js"></script>
+<script>
+/* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js. (The module's older
+   "SYNTECH-EXPORT" section is the 1920×1080 MediaRecorder export: kept, no longer reached from the button.)
+   VIDEO FILE : EXPORT MP4 and RENDER MP4 both run the OFFLINE render: every source frame → one output frame, source
+                fps, the SOURCE's resolution and aspect (not the old fixed 1920×1080). For the render the renderer and
+                the bloom composer are driven at exactly W×H (pixel ratio 1), camera aspect = source aspect; the points
+                keep their preview size relative to the frame (uPixelRatio = H ÷ frame height, as the old export did)
+                and the bloom runs at the preview's density (same glow radius). Restored afterwards. The frame is
+                drawn by the module's own animate() (hooks marked SYNTECH-EXPORT (render)): the live loop idles, the
+                clock is i/fps (noise, camera drift and the dt-based morph follow media time; no per-frame state).
+   LIVE       : EXPORT MP4 on webcam / image / Lab stream = realtime MP4 (SynExport.recordLive) at the source's size.
+   Nothing here runs until EXPORT / RENDER is clicked. */
+(function(){
+  'use strict';
+  if(!window.SynExport) return;
+  function $(id){ return document.getElementById(id); }
+  function E(){ return window.__synPointExp||null; }
+  var vidEl=$('vid'), cEl=$('c'), saved=null, live=null, srcUrl='', fullW=0, fullH=0, liveT0=0;
+  function mode(){ var e=E(); return e?e.srcMode():'none'; }
+  function hasPic(){ var m=mode(); return m==='image' ? !!(E()&&E().srcSize()) : (m!=='none' && vidEl.readyState>=2); }
+  function fmt(s){ s=Math.max(0,Math.floor(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+  function setExStatus(m){ var el=$('export-status'); el.textContent=m||''; el.classList.remove('err'); }
+
+  /* called at the end of the module's updateExportUI(): MP4-only labels + the size the file will have */
+  window.__synExpUi=function(){
+    if(window.__synExportBusy) return;
+    var e=E(), old=e&&e.oldBusy();
+    if(!old){ $('btn-export').classList.toggle('dis', !(mode()==='video'||hasPic())); $('export-label').textContent='EXPORT MP4'; }   /* a video's readyState dips while it seeks */
+    var z=e&&mode()!=='none'?e.srcSize():null;
+    $('ex-size').textContent=z?z.w+'×'+z.h:'--';
+    $('ex-format').textContent=SynExport.isSupported()?'MP4 · H.264':'MP4 · MEDIARECORDER';
+  };
+  vidEl.addEventListener('resize',function(){ if(window.__synExpUi) window.__synExpUi(); });
+
+  /* renderer + composer at exactly w×h (pixel ratio 1), or a clear error — never a smaller picture */
+  function enterSize(w,h){
+    var e=E(), L=e.limits();
+    if(w>L.tex||h>L.tex||w>L.rb||h>L.rb||w>L.vpw||h>L.vph)
+      throw new Error('the GPU cannot draw '+w+'×'+h+' (MAX_TEXTURE_SIZE '+L.tex+', MAX_RENDERBUFFER_SIZE '+L.rb+', MAX_VIEWPORT_DIMS '+L.vpw+'×'+L.vph+')');
+    var fh=Math.max(1,e.wrapEl.clientHeight), pr=e.renderer.getPixelRatio();
+    var st={pr:pr, upr:e.uniforms.uPixelRatio.value};
+    window.__synExpHold=true;                                  /* fitRenderer leaves the size alone */
+    e.renderer.setPixelRatio(1); e.composer.setPixelRatio(1);
+    e.renderer.setSize(w,h,false);                             /* false: the CSS size stays the frame's (.exporting) */
+    e.composer.setSize(w,h);
+    var bh=Math.max(1,Math.round(fh*pr)), bw=Math.max(1,Math.round(bh*w/h));
+    e.bloom.setSize(bw,bh);                                    /* the preview's bloom density (composer.setSize gave it frame × ratio) */
+    e.camera.aspect=w/h; e.camera.updateProjectionMatrix();
+    e.uniforms.uPixelRatio.value=h/fh;                         /* same point size, relative to the frame, as the preview */
+    e.wrapEl.classList.add('exporting'); cEl.style.objectFit='contain';
+    var L2=e.limits();
+    if(cEl.width!==w||cEl.height!==h||L2.dbw!==w||L2.dbh!==h){
+      var got=cEl.width+'×'+cEl.height+' (drawing buffer '+L2.dbw+'×'+L2.dbh+')';
+      leaveSize(st);
+      throw new Error('the GPU could not allocate '+w+'×'+h+': got '+got);
+    }
+    return st;
+  }
+  function leaveSize(st){
+    var e=E();
+    window.__synExpHold=false;
+    if(!e||!st) return;
+    e.wrapEl.classList.remove('exporting'); cEl.style.objectFit='';
+    var fw=Math.max(1,e.wrapEl.clientWidth), fh=Math.max(1,e.wrapEl.clientHeight);
+    e.renderer.setSize(fw,fh,false); e.composer.setSize(fw,fh);   /* shrink at ratio 1 BEFORE restoring the ratio */
+    e.renderer.setPixelRatio(st.pr); e.composer.setPixelRatio(st.pr);
+    e.uniforms.uPixelRatio.value=st.upr;
+    e.fit();                                                   /* camera, renderer, composer + bloom back to the frame */
+  }
+  function trackFps(){
+    if(mode()==='image') return 60;                            /* a still: the cloud animates at display rate */
+    var st=vidEl.srcObject, tr=st&&st.getVideoTracks?st.getVideoTracks()[0]:null, f=tr&&tr.getSettings?tr.getSettings().frameRate:0;
+    return f>0?Math.round(f):60;
+  }
+  function ui(on,txt){
+    $('btn-export').classList.toggle('busy',on); $('export-mark').classList.toggle('on',on);
+    if(txt!=null) $('export-label').textContent=txt;
+  }
+
+  SynExport.attach({
+    label:'POINTCLOUD',
+    recBtnId:'btn-export', renderBtnId:'btn-render', qualityId:'sel-render-q', statusId:'render-status',
+    toast:function(m){ if(!window.__synExportBusy){ var s=$('render-status'); if(s) s.textContent=m; } },
+    hasVideoFile:function(){ return mode()==='video'&&!vidEl.srcObject&&/^blob:/.test(vidEl.src)&&vidEl.readyState>=1; },
+    hasLiveSource:function(){ return !!E()&&mode()!=='video'&&hasPic(); },
+    passThroughRec:function(){ var e=E(); return !!(e&&e.oldBusy()); },
+    getVideo:function(){ return vidEl; },
+    getFile:function(){ return fetch(vidEl.src).then(function(r){ return r.blob(); }); },
+    sourceName:function(){ var f=$('info-file'); var n=f?f.textContent:''; return n&&n!=='--'?n:'video'; },
+
+    beforeRender:async function(){
+      var e=E(); if(!e) throw new Error('the pointcloud engine is not running (WebGL unavailable)');
+      var z=e.srcSize(); if(!z) throw new Error('the video has no picture yet');
+      srcUrl=vidEl.src;
+      saved={t:vidEl.currentTime, paused:vidEl.paused};
+      window.__synExpCtl={t:0, inside:false};                  /* live loop idles from its next tick */
+      vidEl.pause();
+      saved.size=enterSize(z.w,z.h); fullW=cEl.width; fullH=cEl.height;
+      e.reset(0,true);
+    },
+    getFrame:function(i,t){
+      var e=E(), ctl=window.__synExpCtl;
+      if(!e||!ctl||mode()!=='video'||vidEl.src!==srcUrl) throw new Error('the source changed during the render');
+      if(cEl.width!==fullW||cEl.height!==fullH) throw new Error('the canvas was resized during the render');
+      ctl.t=t; ctl.inside=true;
+      try{ e.draw(0); }finally{ ctl.inside=false; }
+      return {canvas:cEl};                                      /* read in this task: the canvas has no preserveDrawingBuffer */
+    },
+    afterRender:function(){
+      window.__synExpCtl=null;                                  /* live loop draws again from its next tick */
+      if(saved){ leaveSize(saved.size); if(E()) E().reset(performance.now()/1000,false); }
+      else window.__synExpHold=false;
+      if(saved&&mode()==='video'&&vidEl.src===srcUrl){
+        try{ vidEl.currentTime=saved.t; }catch(e){}
+        if(!saved.paused){ var p=vidEl.play(); if(p&&p.catch) p.catch(function(){}); }
+      }
+      saved=null;
+    },
+
+    getLiveCanvas:function(){ return {canvas:cEl}; },
+    getLiveAudio:function(){ return null; },                    /* webcam (muted) / image / Lab stream: no audio here */
+    liveFps:trackFps,
+    beforeLive:function(){ var z=E().srcSize()||{w:1920,h:1080}; live=enterSize(z.w,z.h); },   /* the source's size, not the preview's */
+    afterLive:function(){ leaveSize(live); live=null; },
+    recUi:{
+      start:function(kind){ liveT0=Date.now(); $('export-fill').style.width='0%'; setExStatus(''); ui(true, kind==='live'?'■ STOP REC · 0:00':'■ STOP · RENDER 0%'); },
+      progress:function(kind,v){
+        if(kind==='render'){ $('export-fill').style.width=v+'%'; $('export-label').textContent='■ STOP · RENDER '+v+'%'; }
+        else $('export-label').textContent='■ STOP REC · '+fmt((Date.now()-liveT0)/1000);
+      },
+      stop:function(){ ui(false,'EXPORT MP4'); $('export-fill').style.width='0%'; if(window.__synExpUi) window.__synExpUi(); }
+    }
+  });
+})();
+</script>
+<!-- SYNTECH-EXPORT-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

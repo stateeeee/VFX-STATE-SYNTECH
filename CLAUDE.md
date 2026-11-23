@@ -27,6 +27,7 @@ done, what is next, and every decision made so far. Then follow
 | `07-SESSION-PROTOCOL.md` | How every work session must start, run, and end |
 | `08-PROMPTS.md` | The prompts the operator pastes to drive each session |
 | `09-MODEL-ROUTING.md` | **Which model does which task** (Haiku / Sonnet / Opus) + the mandatory Opus review gate |
+| `10-EXPORT-MASTER.md` | Offline frame-by-frame MP4 render (RENDER MP4): why realtime REC loses quality/fps, the SynExport design |
 | `DESKTOP.md` | The double-click desktop app (Electron): how it is built, tested, delivered |
 
 ## Commands
@@ -79,7 +80,8 @@ src/engine/PersonMask.ts        ★ STUB — MediaPipe selfie segmentation servi
 src/effects-registry.ts         ModuleId → iframe src mapping
 public/effects/<id>/index.html  The 10 standalone effect apps (SOURCE OF TRUTH for effect look)
 public/effects/shared/          syn-chrome.css/.js — Bokeh's chrome + day theme, shared by all 10 (§5.1); syn-extras.js — work timer + timeline;
-                                syn-lab.js — the Lab chain link (window.SynLab, §5.2)
+                                syn-lab.js — the Lab chain link (window.SynLab, §5.2);
+                                syn-export.js — offline MP4 render engine (window.SynExport, §5.3)
 ```
 
 ## Hard rules
@@ -90,7 +92,9 @@ public/effects/shared/          syn-chrome.css/.js — Bokeh's chrome + day them
    delimited `SYNTECH-UNIFORM` edits (shared-chrome link, markup, ids, frame
    sizing) that put Bokeh's top bar / frame / panel on every effect (§5.1,
    `public/effects/shared/syn-chrome.css`), plus the delimited `SYNTECH-LAB`
-   adapter block that links the effect into the Lab chain (§5.2).
+   adapter block that links the effect into the Lab chain (§5.2), plus the
+   delimited `SYNTECH-EXPORT` block + `/* SYNTECH-EXPORT */` hooks for the
+   offline RENDER MP4 (§5.3, `10-EXPORT-MASTER.md`).
 2. **The Lab runs the real effects** (LAB v2, operator decision 2026-10-28 —
    "option 1"): each Lab node is the standalone effect in an iframe with its
    whole interface, fed the previous node's `canvas.captureStream()` as an

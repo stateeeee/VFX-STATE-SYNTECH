@@ -1212,6 +1212,14 @@ body {
         <button class="rec-btn" id="btn-rec-anam"><div class="rec-dot"></div>ANAMORPHIC EXPORT</button>
         <div id="rec-anam-time">00:00:00</div>
         <div id="rec-anam-hint">Exports at the true widescreen frame (no canvas bars) — current ratio <span id="rec-anam-ratio">2.39</span> : 1</div>
+        <!-- SYNTECH-EXPORT: offline RENDER MP4 (docs/workflow/10-EXPORT-MASTER.md) — quality, button, status; wired in the SYNTECH-EXPORT block. REC and ANAMORPHIC EXPORT write MP4 too (video file = the same offline render) -->
+        <div class="seg-row" id="sel-render-q" style="margin-top:10px">
+          <button class="seg-btn on" data-q="master" title="H.264 High ~1 bit/pixel — visually lossless delivery master">MASTER</button>
+          <button class="seg-btn" data-q="high" title="H.264 High ~0.35 bit/pixel — lighter file">HIGH</button>
+        </div>
+        <button class="fs-btn" id="btn-render" style="margin-top:4px">RENDER MP4</button>
+        <div id="render-status" style="font-size:7px;letter-spacing:.6px;color:var(--t2);text-transform:uppercase;text-align:center;line-height:1.5;margin-top:2px">Video file: every frame, source fps, full resolution</div>
+        <!-- /SYNTECH-EXPORT -->
       </div>
     </div>
 
@@ -2266,7 +2274,7 @@ function drawMaskBlur(){
   gl.viewport(0,0,CONFIG.W,CONFIG.H);
   gl.useProgram(PMB);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,maskTemporalFBO[maskTR].tex); gl.uniform1i(UMB.u_mask,0);
-  gl.uniform2f(UMB.u_px, 1.0/CONFIG.W, 1.0/CONFIG.H);
+  gl.uniform2f(UMB.u_px, 1.0/(window.__synExpCtl?window.__synExpCtl.pw:CONFIG.W), 1.0/(window.__synExpCtl?window.__synExpCtl.ph:CONFIG.H)); /* SYNTECH-EXPORT: kernel in PREVIEW pixels at the native render size → same look (was 1.0/CONFIG.W, 1.0/CONFIG.H) */
   bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 }
 
@@ -2280,8 +2288,8 @@ function drawBokeh(srcTex){
   gl.uniform1f(UB.u_bloom,  P.bokehBloom);
   gl.uniform1i(UB.u_style,  P.bokehStyle);
   gl.uniform2f(UB.u_bshapeXY, BSHAPE.x, BSHAPE.y);
-  gl.uniform2f(UB.u_px, 1.0/CONFIG.W, 1.0/CONFIG.H);
-  gl.uniform1f(UB.u_time, (performance.now()*0.001)%1000.0);
+  gl.uniform2f(UB.u_px, 1.0/(window.__synExpCtl?window.__synExpCtl.pw:CONFIG.W), 1.0/(window.__synExpCtl?window.__synExpCtl.ph:CONFIG.H)); /* SYNTECH-EXPORT: bokeh radius in PREVIEW pixels at the native render size → same look (was 1.0/CONFIG.W, 1.0/CONFIG.H) */
+  gl.uniform1f(UB.u_time, window.__synExpCtl?window.__synExpCtl.t%1000.0:(performance.now()*0.001)%1000.0); /* SYNTECH-EXPORT: media time during an offline render (was (performance.now()*0.001)%1000.0) */
   bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 }
 
@@ -2333,7 +2341,7 @@ function drawBgFx(t, srcTex){
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,keyframeFBO.tex); gl.uniform1i(UDM.u_prev,1);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,read.tex);        gl.uniform1i(UDM.u_feedback,2);
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D,maskBlurFBO.tex); gl.uniform1i(UDM.u_mask,3);
-    gl.uniform2f(UDM.u_res,    CONFIG.W, CONFIG.H);
+    gl.uniform2f(UDM.u_res,    (window.__synExpCtl?window.__synExpCtl.pw:CONFIG.W), (window.__synExpCtl?window.__synExpCtl.ph:CONFIG.H)); /* SYNTECH-EXPORT: datamosh blocks in PREVIEW pixels at the native render size (was CONFIG.W, CONFIG.H) */
     gl.uniform1f(UDM.u_time,   t);
     gl.uniform1f(UDM.u_drift,  P.dmDrift);
     gl.uniform1f(UDM.u_isiframe, DM.isIframe);
@@ -2386,7 +2394,7 @@ function drawBgFx(t, srcTex){
     gl.uniform1f(ULV.u_speed,      P.lvSpeed);
     gl.uniform1f(ULV.u_viscosity,  P.lvViscosity);
     gl.uniform1f(ULV.u_time,       t);
-    gl.uniform2f(ULV.u_px, 1.0/CONFIG.W, 1.0/CONFIG.H);
+    gl.uniform2f(ULV.u_px, 1.0/(window.__synExpCtl?window.__synExpCtl.pw:CONFIG.W), 1.0/(window.__synExpCtl?window.__synExpCtl.ph:CONFIG.H)); /* SYNTECH-EXPORT: lava drip in PREVIEW pixels at the native render size (was 1.0/CONFIG.W, 1.0/CONFIG.H) */
   }
 
   bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
@@ -2758,7 +2766,7 @@ CA.addEventListener('drop',e=>{e.preventDefault();DO.classList.remove('drag-over
 let lastFPS=0,fpsF=0,lastNow=0;
 
 function render(now){
-  requestAnimationFrame(render);
+  if(window.__synExpCtl){if(!window.__synExpCtl.inside){requestAnimationFrame(render);return;}}else requestAnimationFrame(render); /* SYNTECH-EXPORT: an offline render owns the canvas — the live loop only idles, and a draw driven by the render does not re-schedule (was: requestAnimationFrame(render);) */
   STATE.frameCount++;
   if(STATE.startTime===0)STATE.startTime=now;
   const dt=Math.min((now-(lastNow||now))/1000,0.1);
@@ -2804,7 +2812,7 @@ function render(now){
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
 
   /* Feed current frame to segmenter (async — onSegResults fires separately) */
-  maybeSendToSegmenter();
+  if(!window.__synExpCtl)maybeSendToSegmenter(); /* SYNTECH-EXPORT: an offline render awaits its own send of THIS frame (was unconditional) */
   /* CPU pixel sort — runs async at ~30fps when bgfxStyle===2 */
   runPixelSort();
 
@@ -2813,7 +2821,7 @@ function render(now){
     return;
   }
 
-  const t=(performance.now()-STATE.startTime)/1000;
+  const t=window.__synExpCtl?window.__synExpCtl.t:(performance.now()-STATE.startTime)/1000; /* SYNTECH-EXPORT: media-time clock during an offline render (was (performance.now()-STATE.startTime)/1000) */
 
   /* STAGE 1: BOKEH BLUR guided by spatially-smoothed mask */
   drawBokeh(videoTex);
@@ -3947,6 +3955,202 @@ requestAnimationFrame(syncSectionTitleGradients);
 })();
 </script>
 <!-- SYNTECH-LAB-END -->
+<!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
+<script src="../shared/syn-export.js"></script>
+<script>
+/* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
+   Two recorders, both through the engine, both MP4 only (the old MediaRecorder code — mp4 first,
+   WebM fallback — is no longer reached: the clicks are intercepted in the capture phase):
+     REC (#btn-rec) / RENDER MP4 : the whole canvas, as REC recorded it (Letterbox bars included).
+     ANAMORPHIC EXPORT           : the effect's own anamCapLoop() crop of that canvas into anamCv
+                                   (native width × width/ratio), as the anamorphic REC recorded it.
+   VIDEO FILE : offline render — every source frame → one output frame, source fps, the canvas and every
+                full-frame FBO (bokeh, distort, BG FX ping-pong + I-frame, mask EMA + blur) at the SOURCE
+                size for the duration of the render, restored after. Pixel-sized shader constants (bokeh
+                radius, mask blur, datamosh blocks, lava drip) stay in PREVIEW pixels (hooks marked
+                SYNTECH-EXPORT), so the native file has the look of the preview, finer.
+                Clock = media time. The temporal state (mask EMA, datamosh / morph / lava feedback, I-frame
+                timer, pixel sort) evolves PER DRAWN FRAME at the preview's ~60 Hz: each output frame runs
+                k = max(1, round(60/fps)) passes of render() on the same source frame (clock +1/(fps·k))
+                and the last one is encoded. The subject mask of THIS frame is awaited from MediaPipe at
+                the live 30 Hz mask cadence in media time (render() sends every 2nd frame at 60 Hz); frame
+                0 gets 10 sends so the mask's temporal blend starts settled.
+   LIVE       : webcam / Lab stream = realtime MP4 (SynExport.recordLive) at the full canvas size.
+   Nothing here runs until REC / RENDER / ANAMORPHIC EXPORT is clicked. */
+(function(){
+  'use strict';
+  if(!window.SynExport) return;
+  function $(id){ return document.getElementById(id); }
+  var FBOS=[bokehFBO,distortFBO,bgfxFBO[0],bgfxFBO[1],keyframeFBO,maskTemporalFBO[0],maskTemporalFBO[1],maskBlurFBO];  /* compFBO is never drawn */
+  var saved=null, job=null, owner=null, fileP=null, lastSegTick=-1, recTimer=0, recT0=0;
+
+  function hasVideoFile(){ return !!STATE.hasVideo&&!STATE.webcamActive&&!video.srcObject&&!!currentURL&&video.readyState>=1&&video.videoWidth>0; }
+  function status(m){ var s=$('render-status'); if(s) s.textContent=m; }
+  function toast(m){ if(/needs|No active source|Stop the running/.test(m)) status(m); }   /* BOKEH has no toast: the status line says it */
+  function glLimits(){
+    var vp=gl.getParameter(gl.MAX_VIEWPORT_DIMS)||[0,0];
+    return {tex:gl.getParameter(gl.MAX_TEXTURE_SIZE), rb:gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), vw:vp[0], vh:vp[1]};
+  }
+  function limitsMsg(L){ return 'GPU limits: MAX_TEXTURE_SIZE '+L.tex+', MAX_RENDERBUFFER_SIZE '+L.rb+', MAX_VIEWPORT_DIMS '+L.vw+'×'+L.vh; }
+  /* Re-specify every full-frame FBO texture at w×h (same objects: the const references stay valid). */
+  function sizeFBOs(w,h,strict){
+    while(gl.getError()!==gl.NO_ERROR){}
+    FBOS.forEach(function(f){ gl.bindTexture(gl.TEXTURE_2D,f.tex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null); });
+    var err=gl.getError();
+    if(strict&&err!==gl.NO_ERROR) throw new Error('the GPU could not allocate '+FBOS.length+' render buffers of '+w+'×'+h+' (GL error 0x'+err.toString(16)+')');
+    if(strict) FBOS.forEach(function(f){
+      gl.bindFramebuffer(gl.FRAMEBUFFER,f.fb);
+      var st=gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+      if(st!==gl.FRAMEBUFFER_COMPLETE) throw new Error('a '+w+'×'+h+' render buffer is not renderable on this GPU');
+    });
+  }
+  /* the seeked frame must be decoded before render() reads it (render() clears to black below HAVE_CURRENT_DATA) */
+  function frameDecoded(){
+    if(video.readyState>=2) return Promise.resolve();
+    return new Promise(function(res,rej){
+      var t0=performance.now();
+      (function poll(){
+        if(video.readyState>=2) return res();
+        if(performance.now()-t0>20000) return rej(new Error('the video frame did not decode (readyState '+video.readyState+')'));
+        setTimeout(poll,10);
+      })();
+    });
+  }
+  /* page-load state of the temporal pipeline (repeatable files) */
+  function resetTemporal(){
+    clearBgFx(); clearMaskFBO(maskTemporalFBO[0]); clearMaskFBO(maskTemporalFBO[1]); clearMaskFBO(maskBlurFBO);
+    maskTR=0; maskTW=1; maskReady=false; _sortTick=0;
+    gl.bindTexture(gl.TEXTURE_2D,sortedTex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255]));
+  }
+  function sizeAnamCv(){                                           /* toggleAnamRec's sizing, on the current canvas */
+    var targetAR=P.anamRatio||CONFIG.W/CONFIG.H;
+    anamCv.width=canvas.width;
+    anamCv.height=Math.max(2,Math.round(canvas.width/targetAR/2)*2);
+  }
+  function anamCrop(){ anamCv._active=true; try{ anamCapLoop(); }finally{ anamCv._active=false; } }   /* the effect's own crop, once (its re-scheduled rAF returns at once) */
+  function sendSeg(ms){
+    return new Promise(function(resolve,reject){
+      var to=setTimeout(function(){ reject(new Error('the subject detector (MediaPipe) did not answer in '+Math.round(ms/1000)+' s')); },ms);
+      segmenter.send({image:getSegmenterInput()}).then(function(){ clearTimeout(to); resolve(); },function(e){ clearTimeout(to); reject(new Error('the subject detector failed: '+((e&&e.message)||e))); });
+    });
+  }
+  function trackFps(){
+    var tr=webcamStream?webcamStream.getVideoTracks()[0]:(video.srcObject&&video.srcObject.getVideoTracks?video.srcObject.getVideoTracks()[0]:null);
+    var f=tr&&tr.getSettings?tr.getSettings().frameRate:0;
+    return f>0?Math.round(f):60;
+  }
+  function hms(s){ s=Math.max(0,Math.floor(s)); return String(Math.floor(s/3600)).padStart(2,'0')+':'+String(Math.floor((s%3600)/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
+
+  /* one export at a time: a click on the other recorder while one runs is refused (registered before attach) */
+  document.addEventListener('click',function(e){
+    var b=e.target&&e.target.closest?e.target.closest('#btn-rec,#btn-render,#btn-rec-anam'):null;
+    if(!b||!owner) return;
+    if((b.id==='btn-rec-anam')!==(owner==='anam')){ e.stopImmediatePropagation(); e.preventDefault(); status('Stop the running export first'); }
+  },true);
+
+  function make(kind){
+    var anam=kind==='anam', btnId=anam?'btn-rec-anam':'btn-rec', timeId=anam?'rec-anam-time':'rec-time';
+    function setUi(on){
+      var b=$(btnId), pr=$('pill-rec'), rt=$(timeId);
+      if(b) b.classList.toggle('on',on);
+      if($('rec-mark')) $('rec-mark').classList.toggle('on',on);
+      if(pr){ pr.style.display=on?'flex':'none'; pr.classList.toggle('rec',on); }
+      if(rt){ rt.classList.toggle('on',on); if(!on) rt.textContent='00:00:00'; }
+      clearInterval(recTimer);
+    }
+    return {
+      label:anam?'BOKEH_ANAMORPHIC':'BOKEH',
+      recBtnId:btnId, renderBtnId:anam?null:'btn-render', qualityId:'sel-render-q', statusId:'render-status',
+      toast:toast,
+      hasVideoFile:hasVideoFile,
+      hasLiveSource:function(){ return !!STATE.hasVideo&&video.readyState>=2; },
+      getVideo:function(){ return video; },
+      getFile:function(){ fileP=fetch(currentURL).then(function(r){ return r.blob(); }); return fileP; },
+      sourceName:function(){ var f=$('info-file'); return f?f.textContent:'video'; },
+
+      beforeRender:async function(){
+        saved={t:video.currentTime, paused:video.paused, loop:video.loop, W:CONFIG.W, H:CONFIG.H, cw:canvas.width, ch:canvas.height, fbos:false};
+        var ctl={inside:false, t:0, pw:CONFIG.W, ph:CONFIG.H, k:1, fps:30, w:0, h:0, anam:anam};
+        window.__synExpCtl=ctl;                                    /* live loop idles from its next tick */
+        video.pause();
+        if(PAD.animating){ PAD.x=PAD.targetX; PAD.y=PAD.targetY; PAD.animating=false; applyPadToParams(); updatePadCursor(); }   /* the preset's final values */
+        if(!segmenter) throw new Error('the subject detector (MediaPipe) is not loaded — BOKEH cannot separate subject and background');
+        var t0=performance.now();
+        while(_segBusy&&performance.now()-t0<5000) await new Promise(function(r){ setTimeout(r,20); });   /* a live send still in flight lands before the reset */
+        var file=fileP?await fileP:null;
+        var rate=await SynExport.probeFps(file,video);
+        ctl.fps=rate.fps; ctl.k=Math.max(1,Math.round(60/rate.fps));
+        var w=video.videoWidth, h=video.videoHeight, L=glLimits();
+        if(!w||!h) throw new Error('the video has no picture size yet');
+        if(w>L.tex||h>L.tex||w>L.vw||h>L.vh||w>L.rb||h>L.rb) throw new Error('the GPU cannot draw '+w+'×'+h+'. '+limitsMsg(L));
+        canvas.width=w; canvas.height=h; CONFIG.W=w; CONFIG.H=h; ctl.w=w; ctl.h=h;
+        if(gl.drawingBufferWidth!==w||gl.drawingBufferHeight!==h) throw new Error('the GPU gave a '+gl.drawingBufferWidth+'×'+gl.drawingBufferHeight+' canvas instead of '+w+'×'+h+'. '+limitsMsg(L));
+        saved.fbos=true; sizeFBOs(w,h,true);
+        resetTemporal();
+        if(anam) sizeAnamCv();
+        lastSegTick=-1;
+        console.info('[BOKEH export] '+w+'×'+h+' @ '+rate.fps+' fps, '+ctl.k+' pass(es) per frame'+(anam?', anamorphic '+anamCv.width+'×'+anamCv.height:''));
+      },
+      getFrame:async function(i,t){
+        var ctl=window.__synExpCtl;
+        if(!ctl||!hasVideoFile()) throw new Error('the source changed during the render');
+        if(canvas.width!==ctl.w||canvas.height!==ctl.h||CONFIG.W!==ctl.w) throw new Error('the canvas was re-sized during the render');
+        /* this frame's subject mask, at the live 30 Hz mask cadence in media time (frame 0: settle the EMA) */
+        var segTick=Math.floor(t*30+1e-6), sends=i===0?10:Math.min(2,segTick-lastSegTick);
+        if(sends>0){
+          lastSegTick=segTick; _segInputFrameTag=-1;
+          for(var s=0;s<sends;s++) await sendSeg(i===0&&s===0?60000:20000);
+          if(!hasVideoFile()) throw new Error('the source changed during the render');
+        }
+        await frameDecoded();
+        for(var p=0;p<ctl.k;p++){
+          ctl.t=t+p/(ctl.fps*ctl.k); ctl.inside=true;
+          try{ render(performance.now()); }finally{ ctl.inside=false; }
+        }
+        if(anam){ anamCrop(); return {canvas:anamCv}; }
+        return {canvas:canvas};
+      },
+      afterRender:function(){
+        window.__synExpCtl=null;                                    /* live loop draws again from its next tick */
+        if(saved){
+          canvas.width=saved.cw; canvas.height=saved.ch; CONFIG.W=saved.W; CONFIG.H=saved.H;
+          if(saved.fbos){ sizeFBOs(saved.W,saved.H,false); resetTemporal(); }   /* preview buffers back; the mask is re-made from the next frame */
+          fitCanvas();
+          if(hasVideoFile()){
+            video.loop=saved.loop;
+            try{ video.currentTime=saved.t; }catch(e){}
+            if(!saved.paused){ var pl=video.play(); if(pl&&pl.catch) pl.catch(function(){}); }
+          }
+        }
+        saved=null; fileP=null;
+      },
+
+      getLiveCanvas:function(){ return anam?anamCv:canvas; },
+      getLiveAudio:function(){ return null; },                      /* webcam audio:false; the Lab plays its own sound */
+      liveFps:trackFps,
+      beforeLive:function(){ if(anam){ sizeAnamCv(); anamCv._active=true; anamCapLoop(); } },   /* the anamorphic REC's own copy loop */
+      afterLive:function(){ if(anam) anamCv._active=false; },
+      recUi:{
+        start:function(k){
+          owner=kind; setUi(true);
+          var rt=$(timeId);
+          if(k==='live'){ recT0=Date.now(); recTimer=setInterval(function(){ var r=$(timeId); if(r) r.textContent=hms((Date.now()-recT0)/1000); },1000); }
+          else if(rt) rt.textContent='RENDER 0%';
+        },
+        progress:function(k,v){ if(k==='render'){ var rt=$(timeId); if(rt) rt.textContent='RENDER '+v+'%'; } },
+        stop:function(){ owner=null; setUi(false); }
+      }
+    };
+  }
+  SynExport.attach(make('main'));
+  SynExport.attach(make('anam'));
+  /* R key (toggleRecord / toggleExport → toggleRec): the REC button, i.e. the MP4 engine above */
+  window.toggleRecord=window.toggleExport=function(){ var b=$('btn-rec'); if(b) b.click(); };
+})();
+</script>
+<!-- SYNTECH-EXPORT-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

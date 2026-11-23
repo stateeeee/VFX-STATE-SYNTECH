@@ -382,6 +382,46 @@ same origin) is specified in 02-ARCHITECTURE "One rendering world". Rules:
   payload:{id,h}}` to the parent. Standalone / EffectHost: nothing runs
   without the flag or a call.
 
+### 5.3 Offline MP4 render — `SYNTECH-EXPORT` (operator request 2026-11-22 — fourth permitted edit)
+
+*"Un export mp4 il più lossless possibile, come Premiere … se carico un video da 30 fps,
+da 24 fps sembra che scenda a 15."* Design and reasons: `10-EXPORT-MASTER.md`. An effect
+that supports it carries one more delimited block, right after `SYNTECH-LAB-END`:
+
+```
+<!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
+<script src="../shared/syn-export.js"></script>
+<script> …adapter: getFrame(i, t) + the RENDER MP4 control… </script>
+<!-- SYNTECH-EXPORT-END -->
+```
+
+plus its controls inside the effect's own Export section (wrapped in `<!-- SYNTECH-EXPORT -->`
+comments) and one-line hooks marked `/* SYNTECH-EXPORT */` where the render loop must learn
+about the export (deterministic clock `t = i/fps`, live loop paused, full source resolution).
+Rules:
+
+- **RENDER MP4** works on a loaded video file only: the source is read frame by frame
+  (seek → effect draws that frame → WebCodecs encode), so the file has exactly the
+  source's frame count, frame rate (read from the MP4/MOV container) and resolution
+  (desqueeze / letterbox crop applied), never fewer frames because the machine is slow.
+- Quality MASTER (default, H.264 High ≈ 1 bit/pixel/frame, ≤ 240 Mbps, keyframe every
+  second) or HIGH (≈ 0.35 bpp). Codec fallback H.264 → HEVC → AV1 → VP9, reported.
+  Audio = the source file's own AAC packets copied losslessly (MP4/MOV); otherwise decoded and
+  re-encoded AAC 320 kbps (Opus fallback, reported). Colour: BT.709 limited range, tagged.
+- Saved through the browser's "Save as" stream when available (no RAM ceiling), else a
+  download. STOP saves nothing. The live preview, REC (still the realtime recorder for
+  webcam / camera / image), the Lab adapter and the bridge are unchanged.
+- Engine: `public/effects/shared/syn-export.js` (`window.SynExport`), shared by every
+  effect that adopts it. **All ten effects carry the block** (2026-11-23). REC with a
+  video file runs the offline render; REC with a live source records MP4 through
+  `SynExport.recordLive`; no WebM path is reachable in any effect. Pixel-sized look values
+  (stroke widths, kernels, bloom radii, dot sizes) keep their preview footprint at native
+  resolution, so the file looks like the preview, only sharper. Per-frame temporal state
+  (feedback, datamosh, trails) runs k = max(1, round(60/fps)) passes per output frame so it
+  matches the ≈60 Hz preview; TIME MACHINE instead caches one native layer per source frame
+  and scales its offsets by fps/60. Audio-reactive effects read `SynExport.offlineAnalyser`
+  (the file's music) during a render.
+
 ## 6. Node graph spec (INPUT → effects → OUTPUT)
 
 - **Nodes**: INPUT (the loaded source video, with audio — or a still photo,

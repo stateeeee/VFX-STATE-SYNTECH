@@ -19,3 +19,4 @@ the mandatory Opus review gate) lives in `09-MODEL-ROUTING.md`.
 | `07-SESSION-PROTOCOL.md` | How sessions start, run, and end |
 | `08-PROMPTS.md` | Copy-paste prompts for the operator |
 | `09-MODEL-ROUTING.md` | Haiku / Sonnet / Opus routing + Opus review gate |
+| `10-EXPORT-MASTER.md` | Offline MP4 render (RENDER MP4): diagnosis, design, acceptance |

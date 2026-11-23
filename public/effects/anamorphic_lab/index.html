@@ -1188,6 +1188,14 @@ video { display:none; }
         <button class="fs-btn" id="btn-fs">⛶&nbsp;&nbsp;FULLSCREEN</button>
         <button class="rec-btn" id="btn-rec"><div class="rec-dot"></div>REC</button>
         <div id="rec-time">00:00:00</div>
+        <!-- SYNTECH-EXPORT: offline RENDER MP4 (docs/workflow/10-EXPORT-MASTER.md) — quality, button, status; wired in the SYNTECH-EXPORT block -->
+        <div class="seg-row" id="sel-render-q" style="margin-top:10px">
+          <button class="seg-btn on" data-q="master" title="H.264 High ~1 bit/pixel — visually lossless delivery master">Master</button>
+          <button class="seg-btn" data-q="high" title="H.264 High ~0.35 bit/pixel — lighter file">High</button>
+        </div>
+        <button class="fs-btn" id="btn-render" style="margin-top:4px">RENDER MP4</button>
+        <div class="flare-status" id="render-status">Video file: every frame, source fps, full resolution</div>
+        <!-- /SYNTECH-EXPORT -->
       </div>
     </div>
 
@@ -2321,6 +2329,7 @@ let autoFlareX=0.5,autoFlareActive=0,flarePhase=0,targetFlareX=0.5,flareJitter=0
 let frameN=0;
 
 function detectFlare(){
+  if(window.__synExpCtl&&!window.__synExpCtl.inside)return; /* SYNTECH-EXPORT: during an offline render the render calls it at media cadence */
   const srcEl=getSrcEl(); const sw=getSrcW();
   if(!sw)return;
   if(!flareCanvas){flareCanvas=document.createElement('canvas');flareCanvas.width=80;flareCanvas.height=45;flareCtx=flareCanvas.getContext('2d',{willReadFrequently:true});}
@@ -2366,6 +2375,7 @@ const motionCv=Object.assign(document.createElement('canvas'),{width:64,height:3
 const motionCtx=motionCv.getContext('2d',{willReadFrequently:true});
 let prevMotionFrame=null,motionEnergy=0,rawEnergy=0;
 function computeMotion(){
+  if(window.__synExpCtl&&!window.__synExpCtl.inside)return; /* SYNTECH-EXPORT: during an offline render the render calls it at media cadence */
   if(!srcReady())return;
   const srcEl=getSrcEl();
   try{
@@ -2430,8 +2440,9 @@ function updateTbTime(){
   if(du&&du.textContent!==dur)du.textContent=dur;
 }
 function render(){
+  if(window.__synExpCtl&&!window.__synExpCtl.inside){requestAnimationFrame(render);return;} /* SYNTECH-EXPORT: an offline render owns the canvas — the live loop only idles */
   if(tex)uploadFrame();
-  const t=(Date.now()-t0)/1000;
+  const t=window.__synExpCtl?window.__synExpCtl.t:(Date.now()-t0)/1000; /* SYNTECH-EXPORT: media-time clock i/fps during an offline render (was (Date.now()-t0)/1000) */
   const sw=getSrcW(),sh=getSrcH();
   if(sw>0&&sh>0)lastValidAR=sw/sh;
   const ar=lastValidAR;
@@ -2465,7 +2476,7 @@ function render(){
   let mainTex=tex;
   if(P.bokehMM>0&&srcReady()){
     if(!bkSegmenter&&!bkSegmenterLoading)ensureBkSegmenter();
-    if(bkSegmenterReady&&frameN%2===0)bkSegmenter.send({image:getSrcEl()}).catch(()=>{});
+    if(bkSegmenterReady&&frameN%2===0&&!window.__synExpCtl)bkSegmenter.send({image:getSrcEl()}).catch(()=>{}); /* SYNTECH-EXPORT: an offline render awaits its own send per frame */
     if(bkMaskReady&&tex){
       bkDrawBlur(t);
       bkDrawComposite();
@@ -2491,7 +2502,7 @@ function render(){
   gl.uniform1f(U.uFlareLength,P.flareLength);gl.uniform1f(U.uFlareColor,P.flareColor);gl.uniform1f(U.uFlareHeight,P.flareHeight);
   gl.uniform1f(U.uCompare,P.compare);gl.uniform1f(U.uLutMix,P.lutMix);gl.uniform1f(U.uLutSize,16);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
-  requestAnimationFrame(render);
+  if(!window.__synExpCtl)requestAnimationFrame(render); /* SYNTECH-EXPORT: a draw driven by the offline render does not re-schedule (was unconditional) */
 }
 render();
 
@@ -3112,8 +3123,9 @@ function camToggleRec(){
     toast('■ RAW REC stop — downloading…');
   }else{
     camRecChunks=[];
-    const mimes=['video/mp4','video/webm;codecs=h264','video/webm'];
+    const mimes=['video/mp4;codecs=avc1.640033','video/mp4;codecs=avc1.640028','video/mp4']; /* SYNTECH-EXPORT: MP4 only (was 'video/mp4','video/webm;codecs=h264','video/webm') */
     const mime=mimes.find(m=>{try{return MediaRecorder.isTypeSupported(m);}catch(e){return false;}})||'';
+    if(!mime){toast('REC: this browser cannot record MP4',3000);return;} /* SYNTECH-EXPORT: never fall back to WebM */
     try{camRecMR=mime?new MediaRecorder(nikonStream,{mimeType:mime,videoBitsPerSecond:80_000_000}):new MediaRecorder(nikonStream);}
     catch(e){toast('REC not supported: '+e.message,3000);return;}
     camRecMR.ondataavailable=e=>{if(e.data&&e.data.size>0)camRecChunks.push(e.data);};
@@ -3347,6 +3359,152 @@ document.querySelector('.chip').classList.add('on');
 })();
 </script>
 <!-- SYNTECH-LAB-END -->
+<!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
+<script src="../shared/syn-export.js"></script>
+<script>
+/* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
+   VIDEO FILE : RENDER MP4 and REC both run the OFFLINE render: every source frame → one output frame,
+                source fps, full source resolution (desqueeze honoured), letterbox crop like REC.
+                The frame is drawn by the effect's own render() (hooks marked SYNTECH-EXPORT): while
+                window.__synExpCtl is set the live rAF loop idles, the clock is i/fps, and flare /
+                motion analysers run here at their live cadence in MEDIA time.
+   LIVE       : REC on webcam / camera / image / Lab stream = realtime MP4 (SynExport.recordLive)
+                at full canvas resolution. toggleRec (the old WebM/MediaRecorder path) is no longer
+                reached: the REC click is intercepted in the capture phase. Nikon RAW REC unchanged.
+   Nothing here runs until RENDER / REC is clicked. */
+(function(){
+  'use strict';
+  if(!window.SynExport) return;
+  function $(id){ return document.getElementById(id); }
+  var saved=null, lastFl=-1, lastMo=-1, recTimer=0, recT0=0, fullW=0, fullH=0, liveFull=false;
+
+  /* BOKEH / Ghost works through the fixed BK_W×BK_H blur + composite buffers; for an export they follow the
+     canvas so the picture is never routed through a 1280×720 bottleneck. The mask FBOs stay (analysis
+     input, sampled in UV). The blur kernel is in UV units (u_px = 1/BK_W,1/BK_H) so its look = the preview's. */
+  function bkFit(w,h){
+    var grew=false;
+    while(gl.getError()!==gl.NO_ERROR){} /* drain stale errors */
+    [bkBlurFBO,bkCompositeFBO].forEach(function(f){
+      if(f.w===w&&f.h===h) return;
+      gl.bindTexture(gl.TEXTURE_2D,f.tex);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+      f.w=w; f.h=h; if(w!==BK_W||h!==BK_H) grew=true;
+    });
+    /* never a silent black Bokeh pass: out of GPU memory at the native size → clear error (the restore path never throws) */
+    if(grew&&gl.getError()===gl.OUT_OF_MEMORY) throw new Error('the GPU has no memory for the Bokeh buffers at '+w+'×'+h+' — turn Bokeh off for this export; the size is never reduced');
+  }
+  /* L10: while a live REC runs, a desqueeze / preset click or a resize must not shrink the canvas to the preview size */
+  var _rcv=resizeCanvasToVideo;
+  window.resizeCanvasToVideo=function(ff){
+    _rcv(ff||liveFull);
+    if(liveFull) bkFit(cv.width,cv.height);
+  };
+
+  function glLimitsMsg(){
+    var vp=gl.getParameter(gl.MAX_VIEWPORT_DIMS)||[0,0];
+    return 'GPU limits: MAX_TEXTURE_SIZE '+gl.getParameter(gl.MAX_TEXTURE_SIZE)+', MAX_RENDERBUFFER_SIZE '+gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)+', MAX_VIEWPORT_DIMS '+vp[0]+'×'+vp[1];
+  }
+  /* Full source resolution or a clear error — never a smaller picture. */
+  function fullSize(){
+    resizeCanvasToVideo(true);
+    var maxTex=gl.getParameter(gl.MAX_TEXTURE_SIZE), vp=gl.getParameter(gl.MAX_VIEWPORT_DIMS)||[0,0];
+    var sw=getSrcW(), sh=getSrcH();
+    if(sw>maxTex||sh>maxTex||cv.width>vp[0]||cv.height>vp[1]||gl.drawingBufferWidth!==cv.width||gl.drawingBufferHeight!==cv.height){
+      var want=cv.width+'×'+cv.height;
+      throw new Error('the GPU cannot draw '+want+(P.desqueeze&&P.squeeze>1?' (source '+sw+'×'+sh+' desqueezed ×'+P.squeeze.toFixed(2)+' — turn Desqueeze off to render the squeezed frame at its native size)':'')+'. '+glLimitsMsg());
+    }
+  }
+  function fullFit(){ fullSize(); bkFit(cv.width,cv.height); }
+  function setRecUi(on){
+    var b=$('btn-rec'), pr=$('pill-rec'), rt=$('rec-time');
+    if(b) b.classList.toggle('on',on);
+    if(pr){ pr.style.display=on?'flex':'none'; pr.classList.toggle('rec-on',on); }
+    if(rt){ rt.classList.toggle('on',on); if(!on) rt.textContent='00:00:00'; }
+    clearInterval(recTimer);
+  }
+  function hms(s){ s=Math.max(0,Math.floor(s)); return String(Math.floor(s/3600)).padStart(2,'0')+':'+String(Math.floor((s%3600)/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
+  function trackFps(){
+    var st=webcamStream||nikonStream||vid.srcObject, tr=st&&st.getVideoTracks?st.getVideoTracks()[0]:null;
+    var f=tr&&tr.getSettings?tr.getSettings().frameRate:0;
+    return f>0?Math.round(f):60;
+  }
+
+  SynExport.attach({
+    label:'ANAMORPHIC',
+    recBtnId:'btn-rec', renderBtnId:'btn-render', qualityId:'sel-render-q', statusId:'render-status',
+    toast:function(m,d){ toast(m,d); },
+    hasVideoFile:function(){ return srcMode==='video'&&!!vid._objUrl&&vid.readyState>=1; },
+    hasLiveSource:function(){ return srcMode!=='none'&&!!_expComputeCrop(); },
+    passThroughRec:function(){ return !!mediaRec; },          /* an old REC still running: let it stop */
+    getVideo:function(){ return vid; },
+    getFile:function(){ return fetch(vid._objUrl).then(function(r){ return r.blob(); }); },
+    sourceName:function(){ var f=$('info-file'); return f?f.textContent:'video'; },
+
+    beforeRender:async function(){
+      saved={t:vid.currentTime, paused:vid.paused, loop:vid.loop};
+      window.__synExpCtl={t:0, inside:false};                  /* live loop idles from its next tick */
+      vid.pause();
+      fullFit(); fullW=cv.width; fullH=cv.height;
+      prevMotionFrame=null; bkRadiusSmoothed=null; lastFl=-1; lastMo=-1;
+      if(P.bokehMM>0){                                          /* the subject mask must be there for every frame */
+        ensureBkSegmenter();
+        var t0=performance.now();
+        while(!bkSegmenterReady&&performance.now()-t0<60000){
+          if(!bkSegmenter&&!bkSegmenterLoading) throw new Error('the Bokeh subject detector is unavailable');
+          await new Promise(function(r){ setTimeout(r,100); });
+        }
+        if(!bkSegmenterReady) throw new Error('the Bokeh subject detector did not load');
+      }
+    },
+    getFrame:async function(i,t){
+      var ctl=window.__synExpCtl;
+      if(srcMode!=='video'||!ctl) throw new Error('the source changed during the render');
+      if(cv.width!==fullW||cv.height!==fullH) fullFit();      /* a preset / desqueeze click re-sized the canvas to the 1280 preview */
+      var fl=Math.floor(t/0.16+1e-9), mo=Math.floor(t/0.12+1e-9);   /* live cadence (setInterval 160 / 120 ms), in media time */
+      ctl.inside=true;
+      try{
+        if(fl!==lastFl){ lastFl=fl; detectFlare(); }
+        if(mo!==lastMo){ lastMo=mo; computeMotion(); updateMotionUI(); }
+      }finally{ ctl.inside=false; }
+      if(P.bokehMM>0&&bkSegmenterReady){                        /* this frame's mask (6 sends on frame 0 settle the temporal blend) */
+        for(var k=0;k<(i===0?6:1);k++) await bkSegmenter.send({image:vid});
+      }
+      ctl.t=t; ctl.inside=true;
+      try{ render(); }finally{ ctl.inside=false; }
+      var c=_expComputeCrop();
+      return c?{canvas:cv, sx:0, sy:c.sy, sw:c.ew, sh:c.eh}:{canvas:cv};
+    },
+    afterRender:function(){
+      window.__synExpCtl=null;                                  /* live loop draws again from its next tick */
+      bkFit(BK_W,BK_H);                                         /* bokeh buffers back to the preview size */
+      prevMotionFrame=null; bkRadiusSmoothed=null;
+      if(srcMode==='video'&&saved){
+        resizeCanvasToVideo();
+        vid.loop=saved.loop;
+        try{ vid.currentTime=saved.t; }catch(e){}
+        if(!saved.paused){ var p=vid.play(); if(p&&p.catch) p.catch(function(){}); }
+      }
+      saved=null;
+    },
+
+    getLiveCanvas:function(){ var c=_expComputeCrop(); return c?{canvas:cv, sx:0, sy:c.sy, sw:c.ew, sh:c.eh}:{canvas:cv}; },
+    getLiveAudio:function(){ return null; },                    /* live sources here are silent (webcam audio:false) */
+    liveFps:trackFps,
+    beforeLive:function(){ liveFull=true; resizeCanvasToVideo(true); bkFit(cv.width,cv.height); },  /* record the full canvas resolution, not the 1280 preview */
+    afterLive:function(){ liveFull=false; resizeCanvasToVideo(); bkFit(BK_W,BK_H); },
+    recUi:{
+      start:function(kind){
+        setRecUi(true);
+        if(kind==='live'){ recT0=Date.now(); recTimer=setInterval(function(){ var rt=$('rec-time'); if(rt) rt.textContent=hms((Date.now()-recT0)/1000); },1000); }
+        else { var rt=$('rec-time'); if(rt) rt.textContent='RENDER 0%'; }
+      },
+      progress:function(kind,v){ if(kind==='render'){ var rt=$('rec-time'); if(rt) rt.textContent='RENDER '+v+'%'; } },
+      stop:function(){ setRecUi(false); }
+    }
+  });
+})();
+</script>
+<!-- SYNTECH-EXPORT-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

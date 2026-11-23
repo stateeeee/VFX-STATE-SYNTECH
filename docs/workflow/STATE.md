@@ -29,6 +29,62 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-11-22/23 — EXPORT MASTER: RENDER MP4 offline, fotogramma per fotogramma, in TUTTI e 10 gli effetti. FATTO.**
+Operatore: *"ho usato l'effetto anamorphic … la qualità si abbassa enormemente. Va tutto a scatti … deve essere come
+Premiere … un export mp4 il più lossless possibile … se carico un video da 30 fps, da 24 fps sembra che scenda a 15"*;
+poi: *"tutti gli effetti … MP4 e basta … stessi fps del video, 60, 240 … se carico un 8K deve uscire un 8K, non 480p …
+pusha su main"*. Diagnosi, design e criteri: **`10-EXPORT-MASTER.md`**; regola: 03-SPEC **§5.3** (quarta modifica
+permessa agli HTML degli effetti: blocco `SYNTECH-EXPORT` + hook `/* SYNTECH-EXPORT */`).
+- **Cause trovate** (prima del codice): il REC era una registrazione in TEMPO REALE (`captureStream(30)` + MediaRecorder:
+  il file ha solo i fotogrammi che il computer disegna mentre il video suona → 13–21 fotogrammi diversi al secondo
+  misurati su un 24 fps), canvas limitati (ANAMORPHIC 1280 px; ANALOG/BOKEH/QUADTREE/TIME MACHINE fissi 1920×1080;
+  INVISIBLE ≤1080p; PAINTING/POINTCLOUD export 1920×1080; BLOB REVEAL/TRACKER alla dimensione della finestra), orologio
+  di parete, WebM in ANALOG/QUADTREE/TIME MACHINE (solo WebM) e come riserva negli altri.
+- **Motore condiviso `public/effects/shared/syn-export.js` (`window.SynExport`)**: render OFFLINE come Premiere — fps
+  e numero di fotogrammi letti dal contenitore MP4/MOV (stts + edit list, moov anche in fondo; 23,976…240 esatti,
+  timescale = num), seek al centro di ogni fotogramma + attesa decodifica (rVFC/mediaTime, seeked, readyState),
+  `getFrame(i, t)` dell'effetto con orologio = tempo del video, WebCodecs alla risoluzione NATIVA (H.264 High fino al
+  livello 6.2 → HEVC → AV1 → VP9; mai ridotta: se nessun encoder regge, errore chiaro e nessun file), MASTER ≈1 bpp
+  (tetto 240 Mbps) / HIGH ≈0,35 bpp, keyframe ogni secondo, **colore BT.709 limited range** taggato (Premiere),
+  **audio AAC del file COPIATO identico** (altrimenti AAC 320k / Opus con avviso; audio non includibile → avviso),
+  salvataggio in streaming con "Salva con nome" (File System Access) o download, STOP immediato senza file.
+  `recordLive` = REC delle fonti live (webcam/camera/immagine/Lab) sempre MP4. `attach()` = cablaggio per effetto
+  (REC con un file video → render offline; REC live → MP4; bottone RENDER MP4 + MASTER/HIGH + riga di stato).
+  `offlineAnalyser` = AnalyserNode calcolato dall'audio del file, per gli effetti audio-reattivi durante il render.
+- **Tutti e 10 gli effetti** hanno il blocco: risoluzione nativa (canvas + ogni FBO/render target pieno ridimensionati
+  per il render e ripristinati), valori del look in pixel (tratti, kernel, bloom, punti) tenuti all'impronta
+  dell'anteprima, stato temporale azzerato a inizio render e fatto evolvere a cadenza 60 Hz (k = round(60/fps)
+  passaggi per fotogramma dove lo stato è per-fotogramma; TIME MACHINE: un layer nativo per fotogramma sorgente,
+  offset × fps/60, cache entro 1,5 GB), analizzatori a intervallo e MediaPipe in tempo-video, tasto R reindirizzato.
+  Nessun percorso WebM raggiungibile (anche RAW REC camera ANAMORPHIC/BLOB TRACKER, PRO REC, ANAMORPHIC EXPORT di BOKEH).
+- **Processo**: Haiku (clip di prova con il numero del fotogramma come codice a barre; mappa dei 9 effetti; verifiche
+  mancanti), Sonnet (test `tools/verify/verify-export-master.cjs`; correzioni della revisione al motore e ad ANAMORPHIC),
+  Opus ×6 (motore + ANAMORPHIC; analog+quadtree; time_machine+bokeh; blob_tracker; blob_reveal+invisible;
+  painting+pointcloud), orchestratore (diagnosi, piano, brief, attese di decodifica nel motore, documenti).
+  Tre interruzioni per limiti d'uso + due riavvii del worker: lavoro ripreso ogni volta dai file.
+  **Revisione Opus 1: FAIL** (H1 BOKEH di ANAMORPHIC passava da un buffer 1280×720; M1 file tagliati con edit list →
+  fotogrammi fermi in coda; M2 audio non-AAC perso senza avviso; M3 RAW REC camera ANAMORPHIC ancora WebM; LOW vari)
+  → tutti corretti (Sonnet ×2 + orchestratore). **Revisione Opus del delta: PASS.** Dopo il PASS: il LOW banale
+  "bkFit senza controllo memoria GPU" corretto (errore chiaro invece di un Bokeh nero a 8K; regressione f25/stop rifatta).
+- **Verifica** (Chromium headless, GL software — lento: 0,1–3 fotogrammi/s): `verify-export-master.cjs` 66/66 su
+  ANAMORPHIC (24, 30, 29,97 MOV moov-in-fondo, 25 senza audio, letterbox 2.39 → 1920×802, stop, high); per ogni effetto
+  ffprobe fps/fotogrammi/dimensione esatti + codice a barre 0…N-1 senza doppioni/buchi (o fotogrammi tutti diversi dove
+  il look cancella il codice): 24 / 29,97 / 240 fps; **4K 3840×2160** provato su anamorphic, analog, blob_tracker,
+  pointcloud, time_machine, bokeh (+ verifiche di Haiku sugli altri); 1080p60; audio `aac (copy)` con beep a 1,0000 s;
+  colore tv/bt709; file tagliato 26/26 fotogrammi; AC-3 → avviso; stop; REC live MP4; anteprima invariata (diff 0–3
+  livelli); `npm run lint` pulito, `npm run build` ok. Prima/dopo: REC di f24 → 1280×536 con 21 fotogrammi diversi
+  in 1,5 s (≈14 fps) prima; ora 1920×1080, 24/1, 96/96 fotogrammi.
+- **Non verificato qui**: velocità reale e 8K su una GPU vera (il Mac dell'operatore); AAC encoder (assente in Chromium
+  headless: lì l'audio ricodificato è Opus — con sorgenti AAC si copia comunque); finestra "Salva con nome" (provato
+  lo streaming via OPFS); HE-AAC copiato (nessun file di prova).
+- **Aperti** (LOW): REC live di una foto molto grande a 60 fps può perdere fotogrammi (realtime); clean plate di
+  INVISIBLE a metà risoluzione (design dell'effetto); senza File System Access (Firefox/Safari) un master 4K lungo resta
+  in RAM; overlay di BLOB TRACKER disegnati in pixel fissi → più sottili a 4K (decisione dell'operatore se scalarli);
+  pixel sort di ANALOG percorre metà distanza relativa a 4K; il **Lab** registra ancora in tempo reale (vedi prossimo passo).
+- **PROSSIMO PASSO**: Lab offline — `SynLab.renderFrame(i, t)` per nodo (riusa getFrame/beforeRender/afterRender dei
+  blocchi `SYNTECH-EXPORT`), la catena resa fotogramma per fotogramma; poi sostituire `MasterRecorder` (src/lab/record.ts)
+  con `SynExport.render` / `recordLive`. Sul Mac: provare RENDER MP4 su un 4K/8K vero e aprire il file in Premiere.
+
 **SESSIONE 2026-11-22 — ritocco: intestazioni LAB bianche di giorno, bottone HYDROGEN con LED viola. FATTO.**
 Operatore: *"in modalità giorno le sezioni del lab devono essere bianche non nere all'interno. hydrogen togli il
 viola interno, metti il bianco e contorna il riquadro con un led viola animato. manda screen prima di modificare"*.
