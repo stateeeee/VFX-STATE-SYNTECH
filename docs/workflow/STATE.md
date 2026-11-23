@@ -70,8 +70,12 @@ permessa agli HTML degli effetti: blocco `SYNTECH-EXPORT` + hook `/* SYNTECH-EXP
   ANAMORPHIC (24, 30, 29,97 MOV moov-in-fondo, 25 senza audio, letterbox 2.39 → 1920×802, stop, high); per ogni effetto
   ffprobe fps/fotogrammi/dimensione esatti + codice a barre 0…N-1 senza doppioni/buchi (o fotogrammi tutti diversi dove
   il look cancella il codice): 24 / 29,97 / 240 fps; **4K 3840×2160** provato su anamorphic, analog, blob_tracker,
-  pointcloud, time_machine, bokeh (+ verifiche di Haiku sugli altri); 1080p60; audio `aac (copy)` con beep a 1,0000 s;
-  colore tv/bt709; file tagliato 26/26 fotogrammi; AC-3 → avviso; stop; REC live MP4; anteprima invariata (diff 0–3
+  pointcloud, time_machine, bokeh, e (verifica finale, dopo il push) invisible, blob_reveal, quadtree, painting (6
+  fotogrammi 4K, codice a barre 0…5, `aac`); 240 fps su invisible e blob_reveal (240/240, 0…239); REC live webcam → MP4
+  H.264 su painting, pointcloud, blob_reveal, invisible, quadtree (PAINTING qui = 4 fotogrammi in 13,5 s: è l'anteprima
+  stessa a 0,33 fps in GL software, 0 scartati); stop su blob_reveal a metà render (20/96) e su invisible durante la
+  preparazione (decodifica audio): niente salvato. Inoltre: 1080p60; audio `aac (copy)` con beep a 1,0000 s; colore
+  tv/bt709; file tagliato 26/26 fotogrammi; AC-3 → avviso; stop; anteprima invariata (diff 0–3
   livelli); `npm run lint` pulito, `npm run build` ok. Prima/dopo: REC di f24 → 1280×536 con 21 fotogrammi diversi
   in 1,5 s (≈14 fps) prima; ora 1920×1080, 24/1, 96/96 fotogrammi.
 - **Non verificato qui**: velocità reale e 8K su una GPU vera (il Mac dell'operatore); AAC encoder (assente in Chromium
