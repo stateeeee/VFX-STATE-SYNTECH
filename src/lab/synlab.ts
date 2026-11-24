@@ -81,3 +81,39 @@ export function readEffectSettings(id: ModuleId): unknown {
     return null; // corrupt snapshot or private mode — the effect keeps its defaults
   }
 }
+
+/* ── SynFx (2026-11-23, docs/workflow/11-EXPORT-STILLS-LAB.md §2.2) ──────────────────
+   The offline, frame-by-frame face of an effect: the same shader / parameters as the live view, but drawn
+   for a frame the shell hands in. Used by the Lab's offline MP4 render and its PNG / JPEG / PDF export. */
+
+/** the region of a returned canvas to export (default: the whole canvas) */
+export interface SynFxRegion {
+  canvas: HTMLCanvasElement;
+  sx?: number;
+  sy?: number;
+  sw?: number;
+  sh?: number;
+  alphaRect?: { x: number; y: number; w: number; h: number };
+}
+
+export interface SynFxApi {
+  version: number;
+  /** the output size for a w × h input (anamorphic: desqueeze) */
+  outSize(w: number, h: number): { w: number; h: number };
+  /** stops the live drawing; canvas + render targets at the native size; 'lab' = temporal state reset */
+  begin(opts: { mode: 'still' | 'lab'; width: number; height: number; fps?: number; audioFile?: Blob | null }): void | Promise<void>;
+  /** draws `src` (width × height) with the effect's look; i = frame index, t = seconds */
+  frame(src: HTMLCanvasElement | HTMLImageElement, i: number, t: number): Promise<SynFxRegion> | SynFxRegion;
+  /** ALWAYS: restores the live view */
+  end(): void | Promise<void>;
+}
+
+/** the node's SynFx (null while loading, for a stale cached page without it, or a torn-down frame). Never throws. */
+export function synFxOf(iframe: HTMLIFrameElement | null | undefined): SynFxApi | null {
+  try {
+    const api = (iframe?.contentWindow as (Window & { SynFx?: SynFxApi }) | null)?.SynFx;
+    return api && typeof api.begin === 'function' && typeof api.frame === 'function' && typeof api.end === 'function' && typeof api.outSize === 'function' ? api : null;
+  } catch {
+    return null;
+  }
+}

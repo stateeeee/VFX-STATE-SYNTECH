@@ -114,8 +114,8 @@ Prima stesura:
 ### 2.4 Dopo (prossime sessioni)
 
 - ~~Lo stesso blocco negli altri 9 effetti~~ — FATTO nella stessa sessione (2026-11-23).
-- **Lab offline**: `SynLab` impara `renderFrame(sorgente, i, t)`; la catena viene resa nodo
-  per nodo fotogramma per fotogramma invece che come stream in tempo reale.
+- ~~**Lab offline**~~ — FATTO il 2026-11-24 con un contratto diverso (`window.SynFx` in ogni effetto,
+  non `SynLab.renderFrame`): vedi `11-EXPORT-STILLS-LAB.md`.
 
 ## 3. Criteri di accettazione (ANAMORPHIC)
 

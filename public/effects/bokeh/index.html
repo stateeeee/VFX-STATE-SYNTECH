@@ -2445,6 +2445,7 @@ const mirrorCv=document.createElement('canvas');
 const mirrorCtx=mirrorCv.getContext('2d',{willReadFrequently:true});
 let _mirrorFrameTag=-1; /* STATE.frameCount value the mirror was last drawn for */
 function getFrameSource(){
+  if(window.__synFxSrc) return window.__synFxSrc; /* SYNTECH-EXPORT: SynFx.frame draws the given frame instead of the <video> */
   if(!STATE.webcamActive) return video;
   const w=video.videoWidth, h=video.videoHeight;
   if(!w||!h) return video;
@@ -2648,7 +2649,7 @@ function _sortSeg(d,idxs,len){
 
 let _sortTick=0;
 function runPixelSort(){
-  if(P.bgfxStyle!==2||video.readyState<2)return;
+  if(P.bgfxStyle!==2||(video.readyState<2&&!window.__synFxSrc))return; /* SYNTECH-EXPORT: a SynFx frame has no <video> (was video.readyState<2) */
   _sortTick++; if(_sortTick%2!==0)return;
   sortSmCtx.drawImage(canvas,0,0,SORT_W,SORT_H);
   const id=sortSmCtx.getImageData(0,0,SORT_W,SORT_H);
@@ -2796,7 +2797,7 @@ function render(now){
     updatePadCursor();
   }
 
-  if(!STATE.hasVideo||video.readyState<video.HAVE_CURRENT_DATA){
+  if(!window.__synFxSrc&&(!STATE.hasVideo||video.readyState<video.HAVE_CURRENT_DATA)){ /* SYNTECH-EXPORT: a SynFx frame needs no <video> (was !STATE.hasVideo||video.readyState<video.HAVE_CURRENT_DATA) */
     gl.bindFramebuffer(gl.FRAMEBUFFER,null);
     gl.viewport(0,0,CONFIG.W,CONFIG.H);
     gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
@@ -3957,6 +3958,7 @@ requestAnimationFrame(syncSectionTitleGradients);
 <!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
 <script src="../shared/syn-export.js"></script>
+<script src="../shared/syn-still.js"></script>
 <script>
 /* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
    Two recorders, both through the engine, both MP4 only (the old MediaRecorder code — mp4 first,
@@ -4146,6 +4148,170 @@ requestAnimationFrame(syncSectionTitleGradients);
   }
   SynExport.attach(make('main'));
   SynExport.attach(make('anam'));
+
+  /* ───── PHOTO SOURCE (docs/workflow/11-EXPORT-STILLS-LAB.md) ─────
+     BOKEH's IMAGE button / file input / drop sent a picture to loadVideoFile → <video>, which cannot show it.
+     An image file is now intercepted here (capture phase; video files go to loadVideoFile untouched): the File is
+     kept (alpha), decoded, drawn black-flattened into a canvas (long side <= 4096 for the preview), and its
+     captureStream() becomes video.srcObject — exactly how the Lab stream feeds the effect (hasVideo on, webcamActive
+     off, so no mirroring). The effect's own code is unchanged. A video pick / webcam / Lab stream replaces it. */
+  var photo=null;                                                  /* {file, img, w, h, cv, stream} */
+  function photoActive(){ return !!photo&&video.srcObject===photo.stream&&!!STATE.hasVideo; }
+  function photoClear(){
+    if(!photo) return;
+    var p=photo; photo=null;
+    if(video.srcObject===p.stream){ try{ video.pause(); }catch(e){} video.srcObject=null; }
+    try{ p.stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+    p.cv.width=0;
+  }
+  async function photoLoad(file){
+    var url=URL.createObjectURL(file), img=new Image();
+    try{
+      await new Promise(function(res,rej){ img.onload=res; img.onerror=function(){ rej(new Error('this picture could not be decoded')); }; img.src=url; });
+      if(img.decode) try{ await img.decode(); }catch(e){}
+    }catch(e){ URL.revokeObjectURL(url); status('✕ '+e.message); return; }
+    var w=img.naturalWidth, h=img.naturalHeight;
+    if(!w||!h){ URL.revokeObjectURL(url); status('✕ this picture has no size'); return; }
+    if(STATE.webcamActive) stopWebcam();
+    photoClear();
+    if(currentURL){ URL.revokeObjectURL(currentURL); currentURL=null; }
+    video.removeAttribute('src');
+    var sc=Math.min(1,4096/Math.max(w,h)), cv=document.createElement('canvas');
+    cv.width=Math.max(1,Math.round(w*sc)); cv.height=Math.max(1,Math.round(h*sc));
+    var x=cv.getContext('2d'); x.fillStyle='#000'; x.fillRect(0,0,cv.width,cv.height); x.drawImage(img,0,0,cv.width,cv.height);
+    var stream=cv.captureStream(0), tr=stream.getVideoTracks()[0];
+    photo={file:file, img:img, w:w, h:h, cv:cv, stream:stream, url:url};
+    video.srcObject=stream; video.muted=true; video.loop=false;
+    STATE.hasVideo=true; STATE.webcamActive=false;
+    $('drop-overlay').style.display='none';
+    var pf=function(){ try{ if(tr&&tr.requestFrame) tr.requestFrame(); }catch(e){} };
+    pf(); [60,250,800].forEach(function(d){ setTimeout(pf,d); });
+    var pl=video.play(); if(pl&&pl.catch) pl.catch(function(){});
+    status('Photo loaded — PNG / JPEG / PDF at '+w+'×'+h);
+  }
+  video.addEventListener('loadedmetadata',function(){
+    if(!photoActive()) return;
+    $('info-file').textContent=photo.file.name.length>18?photo.file.name.slice(0,16)+'...':photo.file.name;
+    var s=$('ic-source'); if(s) s.textContent='IMAGE';
+    var r=$('ic-res'); if(r) r.textContent=photo.w+'×'+photo.h;
+    var ir=$('info-res'); if(ir) ir.textContent=photo.w+'x'+photo.h;
+    $('pill-label').textContent='IMAGE';
+  });
+  (function(){
+    var _lvf=window.loadVideoFile;
+    window.loadVideoFile=function(file){ if(file) photoClear(); return _lvf.apply(this,arguments); };   /* srcObject would win over the file's src */
+    var inp=$('file-input'), CA=$('canvas-area');
+    if(inp) inp.addEventListener('change',function(e){
+      var f=this.files&&this.files[0];
+      if(f&&/^image\//.test(f.type)){ e.stopImmediatePropagation(); photoLoad(f); try{ this.value=''; }catch(x){} }
+    },true);
+    if(CA) CA.addEventListener('drop',function(e){
+      var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
+      if(f&&/^image\//.test(f.type)){
+        e.preventDefault(); e.stopPropagation();
+        $('drop-overlay').classList.remove('drag-over'); $('drop-overlay').style.display='none';
+        photoLoad(f);
+      }
+    },true);
+  })();
+
+  /* ───── SynFx: draw ONE given frame with this effect's pipeline (still export + Lab offline) ─────
+     Same machinery as the video render above: canvas + every full-frame FBO at the NATIVE size, pixel-sized constants
+     kept in PREVIEW pixels (ctl.pw/ph), window.__synExpCtl idles the live loop, clock = t. The given frame replaces the
+     <video> through window.__synFxSrc (hooks in getFrameSource / render / runPixelSort); it is copied into a local
+     canvas flattened on black (the photo's own alpha is re-applied by SynStill). The subject mask comes from awaited
+     MediaPipe sends of THAT frame. Output = the whole canvas (Letterbox bars included, like RENDER MP4): outSize = w×h.
+       lab   : frame 0: 10 sends (mask EMA settled); then the live 30 Hz mask cadence in media time;
+               k = max(1, round(60/fps)) render passes per frame (temporal FBOs advance at the preview's 60 Hz).
+       still : temporal state zeroed, 10 sends, then WARM passes at 60 Hz: 1 when no BG FX is on (nothing else accumulates),
+               STILL_WARM = 90 (1.5 s) with a temporal BG FX (datamosh / pixel sort / liquid / morph / lava). */
+  var STILL_WARM=90, fx=null;
+  function fxSend(cv,ms){
+    return new Promise(function(resolve,reject){
+      var to=setTimeout(function(){ reject(new Error('the subject detector (MediaPipe) did not answer in '+Math.round(ms/1000)+' s')); },ms);
+      segmenter.send({image:cv}).then(function(){ clearTimeout(to); resolve(); },function(e){ clearTimeout(to); reject(new Error('the subject detector failed: '+((e&&e.message)||e))); });
+    });
+  }
+  window.SynFx={
+    version:1,
+    outSize:function(w,h){ return {w:w,h:h}; },
+    begin:async function(o){
+      if(fx) this.end();
+      var w=o.width, h=o.height;
+      if(!w||!h) throw new Error('SynFx.begin needs width and height');
+      var L=glLimits();
+      if(w>L.tex||h>L.tex||w>L.vw||h>L.vh||w>L.rb||h>L.rb) throw new Error('the GPU cannot draw '+w+'×'+h+'. '+limitsMsg(L));
+      if(!segmenter) throw new Error('the subject detector (MediaPipe) is not loaded — BOKEH cannot separate subject and background');
+      fx={mode:o.mode, w:w, h:h, fps:o.fps||30, loc:null, seg:null, lastSeg:-1, fbos:false,
+          sv:{t:video.currentTime, paused:video.paused, loop:video.loop, W:CONFIG.W, H:CONFIG.H, cw:canvas.width, ch:canvas.height}};
+      var ctl={inside:false, t:0, pw:CONFIG.W, ph:CONFIG.H, k:Math.max(1,Math.round(60/fx.fps)), fps:fx.fps, w:w, h:h, anam:false};
+      window.__synExpCtl=ctl;
+      try{ video.pause(); }catch(e){}
+      if(PAD.animating){ PAD.x=PAD.targetX; PAD.y=PAD.targetY; PAD.animating=false; applyPadToParams(); updatePadCursor(); }
+      var t0=performance.now();
+      while(_segBusy&&performance.now()-t0<5000) await new Promise(function(r){ setTimeout(r,20); });
+      canvas.width=w; canvas.height=h; CONFIG.W=w; CONFIG.H=h;
+      if(gl.drawingBufferWidth!==w||gl.drawingBufferHeight!==h) throw new Error('the GPU gave a '+gl.drawingBufferWidth+'×'+gl.drawingBufferHeight+' canvas instead of '+w+'×'+h+'. '+limitsMsg(L));
+      fx.fbos=true; sizeFBOs(w,h,true);
+      resetTemporal();
+      fx.loc=document.createElement('canvas'); fx.loc.width=w; fx.loc.height=h;
+      var sc=Math.min(1,512/Math.max(w,h)); fx.seg=document.createElement('canvas');
+      fx.seg.width=Math.max(2,Math.round(w*sc)); fx.seg.height=Math.max(2,Math.round(h*sc));
+    },
+    frame:async function(src,i,t){
+      var ctl=window.__synExpCtl;
+      if(!fx||!ctl) throw new Error('SynFx.frame without begin');
+      if(canvas.width!==ctl.w||canvas.height!==ctl.h||CONFIG.W!==ctl.w) throw new Error('the canvas was re-sized during the render');
+      var lx=fx.loc.getContext('2d');
+      lx.fillStyle='#000'; lx.fillRect(0,0,fx.w,fx.h); lx.drawImage(src,0,0,fx.w,fx.h);       /* local, black-flattened copy */
+      var sx=fx.seg.getContext('2d'); sx.drawImage(fx.loc,0,0,fx.seg.width,fx.seg.height);
+      window.__synFxSrc=fx.loc;
+      try{
+        var sends, passes;
+        if(fx.mode==='still'){ sends=10; passes=P.bgfxStyle?STILL_WARM:1; }
+        else{
+          var tick=Math.floor(t*30+1e-6);
+          sends=i===0?10:Math.min(2,tick-fx.lastSeg); fx.lastSeg=tick; passes=ctl.k;
+        }
+        for(var s=0;s<sends;s++) await fxSend(fx.seg,(i===0&&s===0)?60000:20000);
+        for(var p=0;p<passes;p++){
+          ctl.t=fx.mode==='still'?t+p/60:t+p/(ctl.fps*ctl.k); ctl.inside=true;
+          try{ render(performance.now()); }finally{ ctl.inside=false; }
+        }
+      }finally{ window.__synFxSrc=null; }
+      return {canvas:canvas};
+    },
+    end:function(){
+      if(!fx) return;
+      var s=fx; fx=null;
+      window.__synFxSrc=null;
+      window.__synExpCtl=null;                                    /* live loop draws again from its next tick */
+      canvas.width=s.sv.cw; canvas.height=s.sv.ch; CONFIG.W=s.sv.W; CONFIG.H=s.sv.H;
+      if(s.fbos){ sizeFBOs(s.sv.W,s.sv.H,false); resetTemporal(); }
+      fitCanvas();
+      if(s.loc) s.loc.width=0;
+      if(!s.sv.paused&&(video.srcObject||video.currentSrc)){ var pl=video.play(); if(pl&&pl.catch) pl.catch(function(){}); }
+    }
+  };
+
+  /* PNG · JPEG · PDF of the loaded PHOTO at its native size, once, under RENDER MP4 */
+  if(window.SynStill){
+    SynStill.attach({
+      label:'BOKEH', anchorEl:$('btn-render'), buttonClass:'fs-btn',
+      toast:function(m){ status(m); }, statusId:'render-status',
+      hasStill:photoActive,
+      getStillFile:function(){ return photo?photo.file:null; },
+      sourceName:function(){ return photo?photo.file.name:'image'; },
+      beforeStill:async function(){ await SynFx.begin({mode:'still',width:photo.w,height:photo.h}); },
+      renderStill:function(){ return SynFx.frame(photo.img,0,(performance.now()-STATE.startTime)/1000); },
+      afterStill:function(){ SynFx.end(); },
+      alphaRect:function(w,h){                                    /* Letterbox bars are opaque: the photo lies between them */
+        if(!P.anamLetterbox) return null;
+        var cropF=Math.min(1,Math.max(0.05,(w/h)/(P.anamRatio||(w/h))));
+        return {x:0, y:Math.round(h*(1-cropF)/2), w:w, h:Math.round(h*cropF)};
+      }
+    });
+  }
   /* R key (toggleRecord / toggleExport → toggleRec): the REC button, i.e. the MP4 engine above */
   window.toggleRecord=window.toggleExport=function(){ var b=$('btn-rec'); if(b) b.click(); };
 })();

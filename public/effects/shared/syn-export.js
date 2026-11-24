@@ -48,6 +48,10 @@
  *   minDecibels, maxDecibels })  and call an.setTime(t) in getFrame before the effect reads it
  *   (same read API as AnalyserNode; see offlineAnalyser below).
  *
+ *   render opts added 2026-11-23 (Lab offline): audioFile (audio from this file/promise instead of `file`),
+ *   audioLoop (tile it when shorter than the video), ready(info) (rate + frame count known, before frame 0).
+ *   attach() also installs the native-resolution webcam wrapper (see installNativeCamera).
+ *
  * window.SynExport = { isSupported, probeFps, render, recordLive, attach, encoderFor, offlineAnalyser,
  *   decodeFileAudio, snapRate }   (render / recordLive also accept limitedRange:false → browser RGB path)
  * window.__synExportLast = last result: success {filename, codec, audioCodec, width, height, fps, num,
@@ -87,8 +91,8 @@
   function gcd(a, b) { while (b) { var t = a % b; a = b; b = t; } return a; }
   /* Snap a measured rate to the NEAREST standard rational when within 0.03 % (24 and 23.976 are only
      0.1 % apart: both must survive), else keep num/den (reduced). */
-  function snapRate(fps, num, den) {
-    var best = null, bestErr = 0.0003;
+  function snapRate(fps, num, den, tol) {
+    var best = null, bestErr = tol > 0 ? tol : 0.0003;
     for (var i = 0; i < STD_RATES.length; i++) {
       var r = STD_RATES[i][0] / STD_RATES[i][1], err = Math.abs(fps - r) / r;
       if (err < bestErr) { bestErr = err; best = STD_RATES[i]; }
@@ -379,7 +383,19 @@
     for (var i = 1; i < seen.length; i++) if (seen[i] - seen[i - 1] > 0.0015) deltas.push(seen[i] - seen[i - 1]);
     if (!deltas.length) return { fps: 30, num: 30, den: 1, source: 'default' };
     deltas.sort(function (a, b) { return a - b; });
-    var s = snapRate(1 / deltas[Math.floor(deltas.length / 2)]);
+    /* Containers like WebM store times in whole MILLISECONDS: a 30 fps clip reads 33 / 34 / 33 ms, so one delta
+       says 30.303 fps (→ a wrong rate and an extra frame). Average over the whole span seen (± 1 ms over several
+       frames) and snap to the nearest standard rate within 1.5 %; an unusual rate keeps the averaged value. */
+    var med = deltas[Math.floor(deltas.length / 2)], span = seen[seen.length - 1] - seen[0];
+    var nFr = Math.max(1, Math.round(span / med)), avg = span / nFr;
+    /* at millisecond resolution 30 and 29.97 (24 / 23.976 …) read the same over a few frames: within the ~1 %
+       that rounding can cost, the whole rate wins (WebM is mostly screen / MediaRecorder material at whole rates) */
+    var fe = 1 / avg, s = null;
+    for (var j = 0; j < STD_RATES.length; j++) {
+      var rr = STD_RATES[j];
+      if (rr[1] === 1 && Math.abs(fe - rr[0]) / rr[0] < 0.01) { s = { fps: rr[0], num: rr[0], den: 1 }; break; }
+    }
+    if (!s) s = snapRate(fe, 0, 0, 0.015);
     return { fps: s.fps, num: s.num, den: s.den, source: 'estimate' };
   }
 
@@ -528,13 +544,21 @@
     wm.set(blob, p);
     return p;
   }
-  async function decodeAudio(blob, seconds, warnings) {
+  async function decodeAudio(blob, seconds, warnings, loop) {
     if (blob && blob.size > MAX_DECODE) { warnings.push('source over 2 GB and not AAC-in-MP4: audio not included (memory)'); return null; }
     var ab = await decodeFileAudio(blob);
     if (!ab || !ab.length) return null;
-    var ch = Math.min(2, ab.numberOfChannels), n = Math.min(ab.length, Math.round(seconds * ab.sampleRate));
+    var ch = Math.min(2, ab.numberOfChannels), want = Math.round(seconds * ab.sampleRate);
+    var n = loop ? want : Math.min(ab.length, want);
     var planes = [];
-    for (var c = 0; c < ch; c++) planes.push(ab.getChannelData(c).subarray(0, n));
+    for (var c = 0; c < ch; c++) {
+      var src = ab.getChannelData(c);
+      if (loop && ab.length < want) {            /* a looping soundtrack (the Lab's TRACK) shorter than the video: tiled */
+        var tiled = new Float32Array(want);
+        for (var o = 0; o < want; o += ab.length) tiled.set(src.subarray(0, Math.min(ab.length, want - o)), o);
+        planes.push(tiled);
+      } else planes.push(src.subarray(0, n));
+    }
     return { sampleRate: ab.sampleRate, channels: ch, length: n, planes: planes };
   }
   async function pickAudioCodec(sr, ch) {
@@ -698,6 +722,9 @@
       var Mux = await loadMuxer();
       onProgress(0, 0, 'probe', {});
       var file = await Promise.resolve(opts.file).catch(function () { return null; });
+      /* audioFile (optional): the audio is taken from THIS file instead of `file` (the Lab's TRACK); audioLoop
+         tiles it when it is shorter than the video. A promise is fine. */
+      var afile = opts.audioFile ? await Promise.resolve(opts.audioFile).catch(function () { return null; }) : file;
       if (aborted()) return (result = { stopped: true });
 
       if (typeof opts.prepare === 'function') { prepared = true; await opts.prepare(); }
@@ -712,20 +739,27 @@
       if (isFinite(video.duration) && video.duration > 0) total = Math.max(1, Math.min(total, Math.round(video.duration * num / den)));
       var tsOf = function (i) { return Math.round(i * 1e6 * den / num); };
       var videoSec = total * den / num;
+      /* ready(info) (optional): rate and frame count are known, frame 0 not drawn yet (the Lab begins its nodes here) */
+      if (typeof opts.ready === 'function') await opts.ready({ fps: num / den, num: num, den: den, total: total, width: video.videoWidth, height: video.videoHeight, duration: videoSec });
+      if (aborted()) return (result = { stopped: true });
 
       /* 2. audio. AAC in MP4/MOV: the source packets are COPIED (lossless). Otherwise decoded from the
          file, re-encoded AAC → Opus before the frames. Either way muxed interleaved with the video. */
       var audio = null, audioCodec = 'none';
-      if (opts.audio !== false && file) {
+      if (opts.audio !== false && afile) {
         onProgress(0, total, 'audio', {});
         var copy = null;
-        try { copy = await probeAacCopy(file, videoSec); } catch (e) { copy = null; }
+        try { copy = await probeAacCopy(afile, videoSec); } catch (e) { copy = null; }
+        if (copy && opts.audioLoop && copy.items.length) {
+          var lastIt = copy.items[copy.items.length - 1];
+          if ((lastIt.ts + lastIt.dur) / 1e6 < videoSec - 0.05) copy = null;       /* too short: decode + tile instead */
+        }
         if (copy) {
           audio = { items: copy.items, meta: copy.meta, mux: { codec: 'aac', numberOfChannels: copy.channels, sampleRate: copy.sampleRate }, raw: true };
           audioCodec = copy.label;
         } else {
           var ABORTED = {}, abortPoll = 0;
-          var pcm = await Promise.race([decodeAudio(file, videoSec, warnings), new Promise(function (res) {
+          var pcm = await Promise.race([decodeAudio(afile, videoSec, warnings, !!opts.audioLoop), new Promise(function (res) {
             abortPoll = setInterval(function () { if (aborted()) res(ABORTED); }, 100);
           })]);
           clearInterval(abortPoll);
@@ -744,9 +778,9 @@
           }
         }
       }
-      if (!audio && opts.audio !== false && file && !warnings.some(function (x) { return /audio/i.test(x); })) {
+      if (!audio && opts.audio !== false && afile && !warnings.some(function (x) { return /audio/i.test(x); })) {
         var snd = null;
-        try { snd = await probeSoundTrack(file); } catch (e) { snd = null; }
+        try { snd = await probeSoundTrack(afile); } catch (e) { snd = null; }
         if (snd) warnings.push('the source audio (' + snd + ') could not be included — the file is silent');
       }
       if (aborted()) return (result = { stopped: true });
@@ -1040,6 +1074,34 @@
       fps: fps, num: fps, den: 1, frames: 0, bytes: blob.size, seconds: Math.round((performance.now() - t0) / 100) / 10, realtime: true, warnings: warnings };
   }
 
+  /* ───────────────────────── webcam at the camera's NATIVE resolution ─────────────────────────
+     The effects ask for 1280×720; with a 1080p / 4K webcam the file then comes out 720p. attach() installs,
+     ONCE per window, a wrapper over navigator.mediaDevices.getUserMedia: a call that asks for VIDEO has its
+     width / height (any form: number, {ideal}, {min,max,exact}…) replaced by ideals of 3840 × 2160, and gets
+     frameRate ideal 30 when it names none. The browser then picks the closest mode the camera really has,
+     i.e. its highest. deviceId / facingMode / aspectRatio / audio and everything else are kept; audio-only
+     calls are not touched. (Original constraints stay in window.__synGumLast.asked, what was sent in .sent.) */
+  function installNativeCamera() {
+    var md = navigator.mediaDevices;
+    if (!md || typeof md.getUserMedia !== 'function' || md.__synNativeCam) return;
+    var orig = md.getUserMedia.bind(md);
+    md.getUserMedia = function (c) {
+      var sent = c;
+      try {
+        if (c && c.video) {
+          var v = c.video === true ? {} : Object.assign({}, c.video);
+          v.width = { ideal: 3840 };
+          v.height = { ideal: 2160 };
+          if (v.frameRate === undefined) v.frameRate = { ideal: 30 };
+          sent = Object.assign({}, c, { video: v });
+        }
+      } catch (e) { sent = c; }
+      window.__synGumLast = { asked: c, sent: sent };
+      return orig(sent);
+    };
+    md.__synNativeCam = true;
+  }
+
   /* ───────────────────────── offline AnalyserNode stand-in ─────────────────────────
      SynExport.offlineAnalyser({ file | audioBuffer, fftSize=2048, smoothingTimeConstant=0.8,
        minDecibels=-100, maxDecibels=-30, sampleRate=48000 }) → Promise<analyser>
@@ -1155,6 +1217,7 @@
      }) → { busy(), stop() }
      Tests: window.__synExportNoPicker = true → no save dialog, <a download>. */
   function attach(cfg) {
+    installNativeCamera();
     var $ = function (id) { return id ? document.getElementById(id) : null; };
     var toast = typeof cfg.toast === 'function' ? cfg.toast : function () {};
     var ui = cfg.recUi || {};
@@ -1259,8 +1322,10 @@
       else job.ctl.stop();
     }
 
+    function stillBusy() { if (window.__synStillBusy) { toast('PNG / JPEG / PDF export in progress — wait a moment', 2500); return true; } return false; }
     if (renderBtn) renderBtn.addEventListener('click', function () {
       if (job) { stop(); return; }
+      if (stillBusy()) return;
       if (!call(cfg.hasVideoFile)) { toast('RENDER needs a video file — use REC for live sources', 3000); return; }
       if (!isSupported()) { toast('⚠ RENDER needs WebCodecs (Chrome / Edge)', 3500); return; }
       startRender();
@@ -1271,6 +1336,7 @@
       if (!job && call(cfg.passThroughRec)) return;
       e.stopImmediatePropagation(); e.preventDefault();
       if (job) { stop(); return; }
+      if (stillBusy()) return;
       if (call(cfg.hasVideoFile)) { if (!isSupported()) { toast('⚠ RENDER needs WebCodecs (Chrome / Edge)', 3500); return; } startRender(); }
       else if (call(cfg.hasLiveSource) === false) toast('◯ No active source', 2000);
       else startLive();

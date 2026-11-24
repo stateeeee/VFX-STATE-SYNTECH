@@ -2492,6 +2492,7 @@ window.addEventListener('resize',()=>{
 /* SYNTECH-EXPORT-START: offline-render handle for the SYNTECH-EXPORT block at the end of the page
    (docs/workflow/10-EXPORT-MASTER.md). The engine's state is module-scoped: this exposes what a native-size render
    needs. Nothing here runs on its own; with window.__synExpLook unset the resize listener below does nothing. */
+let _synSavedTex=null, _synSrcOn=false;
 const _synLookU=[structU,kuwaharaU,oilFinishU,temperaU,waterFinishU,smearU];
 function _synApplyLook(){
   /* the render draws at the source's size, but pixel-sized kernels / edges / hatch keep the footprint they have in the
@@ -2519,6 +2520,22 @@ window.__synPaintExp={
     [smearRT[0],smearRT[1],feedRT[0],feedRT[1]].forEach(rt=>{ renderer.setRenderTarget(rt); renderer.clear(); });
     renderer.setRenderTarget(null); renderer.setClearColor(cc,ca);
   },
+  /* SynFx / SynStill: the engine's source texture becomes a canvas (cv) for a still / Lab frame; setSrc(null) puts the
+     live source's texture back. touchSrc() re-uploads cv after it was redrawn. */
+  setSrc(cv){
+    if(cv){
+      if(!_synSrcOn){ _synSrcOn=true; _synSavedTex=videoTex||null; }
+      if(videoTex&&videoTex!==_synSavedTex) videoTex.dispose();
+      const t=new THREE.CanvasTexture(cv); t.generateMipmaps=false; t.minFilter=THREE.LinearFilter; t.magFilter=THREE.LinearFilter; t.flipY=true;
+      videoTex=t; injectVideo(t);
+    }else{
+      if(!_synSrcOn) return;                                  /* end() with no frame drawn: the live texture was never swapped */
+      if(videoTex&&videoTex!==_synSavedTex) videoTex.dispose();
+      videoTex=_synSavedTex; _synSavedTex=null; _synSrcOn=false;
+      if(videoTex) injectVideo(videoTex);
+    }
+  },
+  touchSrc(){ if(videoTex) videoTex.needsUpdate=true; },
   limits(){ const gl=renderer.getContext(), vp=gl.getParameter(gl.MAX_VIEWPORT_DIMS)||[0,0];
     return {tex:gl.getParameter(gl.MAX_TEXTURE_SIZE), rb:gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), vpw:vp[0], vph:vp[1], dbw:gl.drawingBufferWidth, dbh:gl.drawingBufferHeight}; }
 };
@@ -2677,6 +2694,7 @@ animate(0);
 <!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
 <script src="../shared/syn-export.js"></script>
+<script src="../shared/syn-still.js"></script>
 <script>
 /* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
    VIDEO FILE : EXPORT MP4 and RENDER MP4 both run the OFFLINE render: every source frame → one output frame, source
@@ -2820,6 +2838,101 @@ animate(0);
       },
       stop:function(){ ui(false,'EXPORT MP4'); $('export-fill').style.width='0%'; }
     }
+  });
+
+  /* ───── SynFx (docs/workflow/11-EXPORT-STILLS-LAB.md): the same draw as getFrame, but the picture comes from `src` ─────
+     size    : outSize(w,h) = w×h (the whole picture, uncropped); the engine + every render target run at exactly that size
+               (enterSize) with the preview's pixel-sized look kept (window.__synExpLook).
+     'still' : one frame of a photo. WATERCOLOR's smear feedback accumulates → deterministic warm-up from an EMPTY
+               feedback: N = 32 passes (60 Hz steps, clock t-31/60 … t; each pass keeps 0.38–0.63 of the previous
+               picture, so 32 passes leave < 1e-5 of the empty start). The other styles are stateless → 1 pass.
+     'lab'   : state cleared in begin(), then k = round(60/fps) passes per frame for WATERCOLOR (1 for the others), clock t + j/(fps·k).
+     end()   : engine size / pixel ratio / PAINT switch / source texture / feedback / live loop all put back. */
+  var fx=null, STILL_WARM=32;
+  function fxBegin(o){
+    if(fx) fxEnd();
+    if(window.__synExportBusy||window.__synExpCtl) throw new Error('another export is running');
+    if(!E()) throw new Error('the painting engine is not running (WebGL unavailable)');
+    var w=Math.round(o&&o.width), h=Math.round(o&&o.height);
+    if(!(w>0&&h>0)) throw new Error('SynFx.begin needs width and height');
+    var st=enterSize(w,h), en=E();
+    window.__synExpCtl={t:0, inside:false};
+    en.reset(0,true);
+    var wc=en.style()==='watercolor', fps=(o.fps>0?o.fps:30), k=(o.mode==='lab'&&wc)?Math.max(1,Math.round(60/fps)):1;
+    fx={mode:o.mode==='lab'?'lab':'still', w:w, h:h, st:st, k:k, step:1/(fps*k), cv:document.createElement('canvas'), tex:false};
+    fx.cv.width=w; fx.cv.height=h;
+  }
+  function fxFrame(src,i,t){
+    var en=E(), ctl=window.__synExpCtl;
+    if(!fx||!en||!ctl) throw new Error('SynFx.frame called without begin');
+    if(cEl.width!==fx.w||cEl.height!==fx.h) throw new Error('the canvas was resized during the render');
+    var c2=fx.cv.getContext('2d');
+    c2.fillStyle='#000'; c2.fillRect(0,0,fx.w,fx.h);                /* the photo over black, like the effect sees it */
+    c2.drawImage(src,0,0,fx.w,fx.h);
+    if(!fx.tex){ en.setSrc(fx.cv); fx.tex=true; } else en.touchSrc();
+    en.applyLook();
+    var n, t0, dt;
+    if(fx.mode==='still'){
+      en.reset(0,true);                                             /* deterministic: always from an empty feedback */
+      n=en.style()==='watercolor'?STILL_WARM:1; dt=1/60; t0=t-(n-1)*dt;
+    }else{ n=fx.k; dt=fx.step; t0=t; }
+    for(var j=0;j<n;j++){
+      ctl.t=t0+j*dt; ctl.inside=true;
+      try{ en.draw(0); }finally{ ctl.inside=false; }
+    }
+    return Promise.resolve({canvas:cEl});                           /* read in this task: the canvas has no preserveDrawingBuffer */
+  }
+  function fxEnd(){
+    var en=E(), f=fx; fx=null;
+    if(!f) return;                                                  /* nothing begun (or begin refused): leave any real render alone */
+    window.__synExpCtl=null;                                        /* live loop draws again from its next tick */
+    if(en) en.setSrc(null);
+    leaveSize(f.st);
+    if(en) en.reset(performance.now()/1000,false);
+    window.updateExportUI();
+  }
+  window.SynFx={
+    version:1,
+    outSize:function(w,h){ return {w:w,h:h}; },
+    begin:fxBegin, frame:fxFrame, end:fxEnd
+  };
+
+  /* ───── photo export: PNG · JPEG · PDF (../shared/syn-still.js) at the photo's NATIVE size, uncropped ─────
+     The preview feeds the engine a 1920×1080 cover-cropped copy (imgCanvas); the export instead reloads the ORIGINAL
+     file, so the File is kept here (capture-phase listeners, the effect's own handlers are untouched). */
+  var stillFile=null, stillImg=null;
+  function keepFile(f){ if(f&&f.type&&f.type.indexOf('image/')===0) stillFile=f; }
+  var fiImg=$('fi-img');
+  if(fiImg) fiImg.addEventListener('change',function(e){ keepFile(e.target.files&&e.target.files[0]); },true);
+  document.addEventListener('drop',function(e){
+    var fl=[].slice.call((e.dataTransfer&&e.dataTransfer.files)||[]);
+    if(fl.some(function(f){ return f.type.indexOf('video/')===0; })) return;      /* the effect gives videos priority */
+    var im=fl.filter(function(f){ return f.type.indexOf('image/')===0; })[0];
+    if(im) keepFile(im);
+  },true);
+  function hasStill(){ return sourceMode==='image'&&!!stillFile&&!exporting&&!window.__synExportBusy&&!!E(); }
+  function loadStill(file){
+    return new Promise(function(res,rej){
+      var url=URL.createObjectURL(file), im=new Image();
+      im.onload=function(){ URL.revokeObjectURL(url); res(im); };
+      im.onerror=function(){ URL.revokeObjectURL(url); rej(new Error('the photo could not be decoded')); };
+      im.src=url;
+    });
+  }
+  var anchor=$('btn-render')&&$('btn-render').closest('.row');
+  if(window.SynStill&&anchor) SynStill.attach({
+    label:'PAINTING', anchorEl:anchor, buttonClass:'seg-btn', statusId:'render-status',
+    toast:function(m){ var s=$('render-status'); if(s) s.textContent=m; },
+    hasStill:hasStill,
+    getStillFile:function(){ return stillFile; },
+    sourceName:function(){ return stillFile?stillFile.name:(lastFileName||'photo'); },
+    beforeStill:async function(){
+      stillImg=await loadStill(stillFile);
+      var o=SynFx.outSize(stillImg.naturalWidth,stillImg.naturalHeight);
+      await SynFx.begin({mode:'still', width:o.w, height:o.h});
+    },
+    renderStill:function(){ return SynFx.frame(stillImg,0,performance.now()/1000); },
+    afterStill:function(){ stillImg=null; return SynFx.end(); }
   });
 })();
 </script>

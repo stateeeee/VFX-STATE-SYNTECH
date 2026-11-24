@@ -422,6 +422,14 @@ Rules:
   and scales its offsets by fps/60. Audio-reactive effects read `SynExport.offlineAnalyser`
   (the file's music) during a render.
 
+
+**Added 2026-11-24 (`11-EXPORT-STILLS-LAB.md`) — same block, same rules:** the block also defines
+`window.SynFx {outSize, begin, frame, end}` (the effect as a function of a GIVEN picture at native
+resolution: `still` = the photo export, `lab` = one node of the Lab's offline chain) and loads
+`../shared/syn-still.js`, whose `SynStill.attach` adds the **PNG · JPEG · PDF** row under RENDER MP4
+(native size, PNG/PDF lossless with the photo's own alpha, JPEG q 1.0 4:4:4). The Lab's EXPORT VFX CHAIN
+with a video input renders the chain frame by frame through every node's `SynFx` (`src/lab/offline.ts`).
+
 ## 6. Node graph spec (INPUT → effects → OUTPUT)
 
 - **Nodes**: INPUT (the loaded source video, with audio — or a still photo,

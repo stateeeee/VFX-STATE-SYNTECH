@@ -1657,6 +1657,7 @@ video.addEventListener('error',()=>{document.getElementById('bb-warn').textConte
 const mirrorCanvas=document.createElement('canvas');
 const mirrorCtx=mirrorCanvas.getContext('2d',{willReadFrequently:true});
 function currentFrameSource(){
+  if(window.__synFxSrc)return window.__synFxSrc; /* SYNTECH-EXPORT: SynFx.frame() draws the frame it was given */
   if(STATE.srcMode==='image'&&activeImage)return activeImage;
   if(STATE.srcMode==='webcam'&&video.videoWidth>0){
     if(mirrorCanvas.width!==video.videoWidth||mirrorCanvas.height!==video.videoHeight){
@@ -1673,6 +1674,7 @@ function currentFrameSource(){
   return video;
 }
 function sourceReady(){
+  if(window.__synFxSrc)return true; /* SYNTECH-EXPORT: SynFx.frame() */
   if(STATE.srcMode==='image')return !!activeImage;
   return video.readyState>=video.HAVE_CURRENT_DATA;
 }
@@ -2728,6 +2730,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 <!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
 <script src="../shared/syn-export.js"></script>
+<script src="../shared/syn-still.js"></script>
 <script>
 /* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
    VIDEO FILE : RENDER MP4 and REC both run the OFFLINE render: every source frame → one output frame, source
@@ -2869,6 +2872,118 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
       progress:function(kind,v){ if(kind==='render'){ var rt=$('rec-time'); if(rt) rt.textContent='RENDER '+v+'%'; } },
       stop:function(){ setRecUi(false); }
     }
+  });
+
+  /* ───────── SynFx — the effect as a function of a GIVEN picture (docs/workflow/11-EXPORT-STILLS-LAB.md) ─────────
+     Used by the photo export (PNG · JPEG · PDF, SynStill) and by the Lab's offline frame-by-frame chain.
+     begin   : the live loop idles (window.__synExpCtl), canvas + every FBO at the NATIVE size (nativeSize),
+               source forced "ready"; 'lab' also zeroes the temporal state exactly like beforeRender and, with an
+               audioFile, feeds the Reactive engine from SynExport.offlineAnalyser (same band mapping as the Lab's
+               live analyser; Reactive is switched on for the run, as the Lab does when it has audio).
+     frame   : the given canvas / image is copied onto a local black-backed canvas (it may come from another
+               document; transparency is flattened over black, the alpha is re-applied by SynStill) and drawn by
+               the effect's own render(). 'lab' = k = round(60/fps) passes per frame (like getFrame).
+               'still' = deterministic warm-up from a cleared state at 60 Hz: the only accumulating stage is the
+               SMOOTH feedback (the quadtree itself is recomputed from the picture every pass) → N = 1 with
+               SMOOTH off, else N = ceil(ln 0.01 / ln SMOOTH) + 2 (residual < 1 %: 4 passes at the default 0.15,
+               92 at the 0.95 max). The cell border (px) is scaled ×H/1080 like the video render.
+     end     : native size → the 1920×1080 frame, FBOs cleared, live loop, source, Reactive, temporal state back. */
+  var SF=null, fxLocal=null;
+  function fxCopy(src,w,h){
+    if(!fxLocal) fxLocal=document.createElement('canvas');
+    if(fxLocal.width!==w||fxLocal.height!==h){ fxLocal.width=w; fxLocal.height=h; }
+    var c=fxLocal.getContext('2d');
+    c.globalCompositeOperation='source-over'; c.fillStyle='#000'; c.fillRect(0,0,w,h);
+    c.drawImage(src,0,0,w,h);
+    return fxLocal;
+  }
+  function fxEnd(){
+    if(!SF) return;
+    var s=SF; SF=null;
+    window.__synFxSrc=null; window.__synExpCtl=null;
+    if(s.upd) updateReactive=s.upd;
+    if(s.turnedOn&&P.reactEnabled) toggleReactive();
+    STATE.hasVideo=s.hasVideo;
+    try{ sizeTo(LIVE_W,LIVE_H); }catch(e){ console.error(e); }
+    prevMotionFrame=null;
+    if(fxLocal){ fxLocal.width=fxLocal.height=0; }
+  }
+  window.SynFx={
+    version:1,
+    outSize:function(w,h){ return {w:Math.round(w),h:Math.round(h)}; },
+    begin:async function(o){
+      if(SF||window.__synExpCtl) throw new Error('another export is running');
+      var w=Math.round(o.width), h=Math.round(o.height);
+      if(!(w>0&&h>0)) throw new Error('SynFx.begin: no picture size');
+      SF={mode:o.mode==='lab'?'lab':'still', w:w, h:h, fps:o.fps>0?o.fps:30, hasVideo:STATE.hasVideo, upd:null, turnedOn:false, an:null};
+      window.__synExpCtl={t:0, dt:0, inside:false, fps0:SF.fps, bw:h/LIVE_H};
+      try{
+        nativeSize(w,h);
+        STATE.hasVideo=true;
+        if(SF.mode==='lab'){
+          STATE.frameCount=0; _rs=0;
+          ['bass','mid','high'].forEach(function(k){ var b=REACT._b[k]; b.s=0; b.bt=0; b.t=0; REACT[k]=0; });
+          prevMotionFrame=null; motionEnergy=0; rawMotionEnergy=0;
+          if(o.audioFile){
+            var an=await SynExport.offlineAnalyser({file:o.audioFile, fftSize:1024, smoothingTimeConstant:0.5});
+            if(an){
+              SF.an=an; SF.upd=updateReactive;
+              if(!P.reactEnabled){ toggleReactive(); SF.turnedOn=true; }
+              var f=new Uint8Array(an.frequencyBinCount), BANDS=[['bass',20,250,0.06],['mid',250,2000,0.1],['high',2000,10000,0.2]];
+              updateReactive=function(){                     /* = the Lab adapter's labReact(), on the offline analyser */
+                if(!P.reactEnabled){ REACT.bass=REACT.mid=REACT.high=0; return; }
+                an.getByteFrequencyData(f);
+                var hz=an.sampleRate/an.fftSize, n=f.length;
+                BANDS.forEach(function(d){
+                  var a=Math.max(1,Math.floor(d[1]/hz)), z=Math.min(n-1,Math.ceil(d[2]/hz)), sum=0, c=0;
+                  for(var i=a;i<=z;i++){ sum+=f[i]; c++; }
+                  var e=c?sum/c/255:0, raw=Math.min(1,e*1.6*P.reactSens), tgt=Math.min(1,Math.max(0,raw-0.15)/0.85);
+                  var b=REACT._b[d[0]], kk=tgt>b.s?d[3]*3:d[3]*0.8;
+                  b.s+=(tgt-b.s)*Math.min(1,kk);
+                  REACT[d[0]]=Math.max(0,Math.min(1,b.s));
+                });
+              };
+            }
+          }
+        }
+      }catch(e){ fxEnd(); throw e; }
+    },
+    frame:async function(src,i,t){
+      if(!SF) throw new Error('SynFx.frame before begin');
+      if(!src) throw new Error('SynFx.frame: no picture');
+      if(canvas.width!==SF.w||canvas.height!==SF.h||CONFIG.W!==SF.w) throw new Error('the frame size changed during the export');
+      window.__synFxSrc=fxCopy(src,SF.w,SF.h);
+      var ctl=window.__synExpCtl, n, step;
+      if(SF.mode==='lab'){
+        n=Math.max(1,Math.round(60/SF.fps)); step=1/(SF.fps*n);
+        if(SF.an) SF.an.setTime(t);
+      }else{
+        n=P.qSmooth>0.005?Math.min(240,Math.ceil(Math.log(0.01)/Math.log(Math.min(P.qSmooth,0.95)))+2):1;
+        step=1/60; clearFeedback(); smR=0; smW=1; STATE.frameCount=0;
+      }
+      for(var j=0;j<n;j++){
+        ctl.t=t-(n-1-j)*step; ctl.dt=step; ctl.inside=true;
+        try{ render(performance.now()); }finally{ ctl.inside=false; }
+      }
+      return {canvas:canvas};
+    },
+    end:fxEnd
+  };
+
+  /* ───────── photo export: PNG · JPEG · PDF under RENDER MP4 ───────── */
+  var stillFile=null;
+  var _loadImg=loadImageFile;
+  loadImageFile=function(f){ if(f) stillFile=f; return _loadImg.apply(this,arguments); };
+  if(window.SynStill) SynStill.attach({
+    label:'QUADTREE', anchorEl:$('btn-render'), buttonClass:'rec-btn',
+    toast:function(m,ms){ var el=$('bb-warn'); if(!el) return; el.textContent=m; clearTimeout(bbT); bbT=setTimeout(function(){ el.textContent=''; },ms||2500); },
+    statusId:'render-status',
+    hasStill:function(){ return STATE.srcMode==='image'&&!!activeImage; },
+    getStillFile:function(){ return stillFile; },
+    sourceName:function(){ var f=$('info-file'); return stillFile&&stillFile.name?stillFile.name:(f?f.textContent:'image'); },
+    beforeStill:function(){ return SynFx.begin({mode:'still', width:activeImage.naturalWidth, height:activeImage.naturalHeight}); },
+    renderStill:function(){ return SynFx.frame(activeImage,0,(performance.now()-STATE.startTime)/1000); },
+    afterStill:function(){ return SynFx.end(); }
   });
 })();
 </script>

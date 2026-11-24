@@ -10,9 +10,10 @@ import {
 import { elementToJpeg } from '../ai/capture';
 import { labFrameSrc } from '../effects-registry';
 import { EFFECT_META } from './NodalComposition';
-import { SynLabApi, SynLabParam, labPanelSrc, readEffectSettings, synLabOf } from '../lab/synlab';
+import { SynLabApi, SynLabParam, labPanelSrc, readEffectSettings, synFxOf, synLabOf } from '../lab/synlab';
 import { ChainPresetV2, StoredPreset, isV2, presetChain, readPresets, writePresets } from '../lab/presets';
-import { MasterRecorder, recordVideoClip } from '../lab/record';
+import { OutputTap, recordVideoClip } from '../lab/record';
+import { OfflineChain, OfflineNode, SynExportResult, decodePhotoNative, loadSharedEngines, sourceBlob } from '../lab/offline';
 import { analyzeBeatGrid, withDuration } from '../lab/beatgrid';
 import { CUE_EPS, CueSegment, activeCueIndex, barLines, buildSegments, fmtCueTime, sanitizeGrid, stateAtIndex } from '../lab/cues';
 // the opened-effect look (top bar, framed stage, transport, the right column of blocks), scoped under .syn-fxlab
@@ -76,17 +77,23 @@ export interface ChainLabProps {
 /** an iframe whose effect never registers SynLab is reported (and bypassed) after this */
 const LINK_TIMEOUT_MS = 15000;
 /** frame budget of a Lab node that feeds what is on screen (or the Master / a Gemini capture):
- *  SynLab.setFrameBudget(LAB_FPS). The Master records the OUTPUT at 30 fps (record.ts
- *  captureStream(30)), so 30 never starves an export. Nodes nobody watches get 0 (paused). */
+ *  SynLab.setFrameBudget(LAB_FPS). The realtime Master take records the OUTPUT at 30 fps
+ *  (SynExport.recordLive), so 30 never starves it; an offline render never gates a node (the nodes'
+ *  SynFx.frame may await a frame of the gated rAF). Nodes nobody watches get 0 (paused). */
 const LAB_FPS = 30;
 /** after a node's link comes up, an effect that drops the Lab stream by itself in this window is re-fed */
 const RESTORE_GUARD_MS = 4000;
 /** photo INPUT: redraw cadence, so its captured track keeps delivering frames */
 const PHOTO_REDRAW_MS = 100;
 const PHOTO_MAX_SIDE = 1920;
-/** Master export of a photo / webcam INPUT (no timeline): a fixed take */
+/** Master export of a photo INPUT (no timeline): a fixed realtime take; a webcam take runs until STOP */
 const STILL_TAKE_SEC = 10;
-const MASTER_WIDTH = 1920;
+/** the export quality the effects' RENDER MP4 also remembers (SynExport.attach) */
+const EXPORT_QUALITY_KEY = 'syntech.export.quality';
+const readExportQuality = (): 'master' | 'high' => {
+  try { return localStorage.getItem(EXPORT_QUALITY_KEY) === 'high' ? 'high' : 'master'; } catch { return 'master'; }
+};
+type ExportKind = '' | 'video' | 'live' | 'still';
 /** a node's iframe viewport is taller than its panel and grows in steps (its wrapper clips it to the
  *  panel's height): opening a section of the effect's panel then does not resize the effect's window
  *  (PAINTING re-allocates its engine on every window resize) */
@@ -298,10 +305,20 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   const [exportMsg, setExportMsg] = useState('');
   const exportingRef = useRef(false);
   const exportStopRef = useRef(false);
-  /** > 1 while a Master export gives every node's (offscreen) canvas area an enlarged size */
-  const [exportScale, setExportScale] = useState(1);
-  const exportScaleRef = useRef(1);
-  exportScaleRef.current = exportScale;
+  /** what the export in flight is: 'video' = offline frame by frame, 'live' = realtime MP4 (webcam / photo),
+   *  'still' = PNG / JPEG / PDF of a photo */
+  const [exportKind, setExportKind] = useState<ExportKind>('');
+  const exportKindRef = useRef<ExportKind>('');
+  const [quality, setQualityState] = useState<'master' | 'high'>(readExportQuality);
+  const qualityRef = useRef(quality);
+  qualityRef.current = quality;
+  /** the offline render's AbortController / the live take's controller (STOP) */
+  const exportAbortRef = useRef<AbortController | null>(null);
+  const exportLiveRef = useRef<{ stop(): Promise<SynExportResult> } | null>(null);
+  /** true while an offline render runs: the cue engine stands down (the render drives the cue state itself) */
+  const offlineRef = useRef(false);
+  /** the Track file (AudioEngine.startFile keeps only an element), for the offline render's audio */
+  const trackFileRef = useRef<File | null>(null);
   const audioLogRef = useRef<string[]>([]);
   const lastExportRef = useRef<{ name: string; size: number; type: string; width: number; height: number; audio: boolean; url: string } | null>(null);
   /* the cue timeline (the CUE TIMELINE section) and the INPUT's beat grid */
@@ -364,14 +381,12 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
 
   /* ═══ LAYOUT: every node shows its PANEL only (SynLab.setLayout) ══════
      Its canvas area leaves the iframe's viewport but keeps a real size: the
-     stage's (what the operator sees), times the Master's enlargement while an
-     export runs. Identity-checked per node (cheap: called from replumb). */
+     stage's (what the operator sees). Identity-checked per node (cheap: called from replumb). */
   const areaSize = () => {
     const b = stageBoxRef.current;
-    const f = exportScaleRef.current;
     return {
-      width: Math.round(Math.max(AREA_MIN_W, b.w) * f),
-      height: Math.round(Math.max(AREA_MIN_H, b.h) * f),
+      width: Math.round(Math.max(AREA_MIN_W, b.w)),
+      height: Math.round(Math.max(AREA_MIN_H, b.h)),
     };
   };
   const applyLayouts = () => {
@@ -749,6 +764,9 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // the shared export engines (SynExport / SynStill) are loaded once, ahead of the first click
+  useEffect(() => { void loadSharedEngines().catch(() => {}); }, []);
+
   // the dashboard's shared source (single load path: the Lab's own button lifts its pick to the shell)
   const loadedUrlRef = useRef<string | null>(null);
   useEffect(() => {
@@ -775,7 +793,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
 
   const startWebcam = async () => {
     const seq = ++loadSeqRef.current;
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } }, audio: false }); // the camera's NATIVE mode: the MP4 is as sharp as the camera
     if (seq !== loadSeqRef.current) { stream.getTracks().forEach((t) => t.stop()); return; }
     cueSourceChange(null);
     releaseClip();
@@ -1043,6 +1061,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     if (!file) return;
     try {
       await audioRef.current!.startFile(file);
+      trackFileRef.current = file;
       clipWantedRef.current = false;
       setError(null);
       mirror();
@@ -1160,122 +1179,284 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetRequest?.seq]);
 
-  /* ═══ MASTER export (realtime) ════════════════════════════════════════
-     The chain's OUTPUT is recorded as it plays: a video INPUT is rewound and
-     played once to the end; a photo / the webcam gives a fixed 10 s take. The
-     effects are first given an enlarged frame (a 1920-px-class canvas, scaled
-     back down on screen — never off screen) when that makes them render
-     bigger; the file is 1920 wide when the effect's own canvas is ≥ 1600 px,
-     else it keeps the canvas's native size (no fake upscale). MP4 (H.264 +
-     AAC) when MediaRecorder can, else WebM. STOP cancels. */
-  const lastNodeCanvas = (): HTMLCanvasElement | null => {
-    for (let i = chainRef.current.length - 1; i >= 0; i--) {
-      const api = nodesRef.current.get(chainRef.current[i])?.api;
-      if (api) { try { return api.outputCanvas(); } catch { return null; } }
-    }
-    return null;
+  /* ═══ EXPORT VFX CHAIN (docs/workflow/11-EXPORT-STILLS-LAB.md §2.3) ═══
+     Three ways out, all through the shared engines (SynExport / SynStill, loaded into the shell):
+       video INPUT   OFFLINE, frame by frame ("like Premiere"): SynExport.render drives the INPUT <video>
+                     (seek to frame i, exact fps and frame count from the file); each frame goes through the
+                     nodes' SynFx one after the other (node 1 gets the native frame, node k+1 the output of
+                     node k), the beat-synced cue timeline is applied at the frame's time exactly as in
+                     playback, the last output goes to the encoder. Native size, audio AAC.
+       photo INPUT   PNG · JPEG · PDF of the chain at the photo's NATIVE size (SynStill.exportStill), plus
+                     the realtime 10 s MP4 take below.
+       webcam/photo  REALTIME MP4 (SynExport.recordLive, WebCodecs, never WebM) of the chain OUTPUT at its
+                     native live size, with the Lab audio; the webcam runs until STOP.
+     The save dialog opens INSIDE the click (every start function below runs synchronously up to the engine
+     call). A node without SynFx (a stale cached page) → a clear error, nothing is saved. */
+  const noPicker = () => (window as unknown as { __synExportNoPicker?: boolean }).__synExportNoPicker === true;
+  const setQuality = (q: 'master' | 'high') => {
+    setQualityState(q);
+    try { localStorage.setItem(EXPORT_QUALITY_KEY, q); } catch { /* private mode */ }
   };
-  const runMaster = async () => {
-    if (exportingRef.current) { exportStopRef.current = true; return; }
-    const ov = outputVideoRef.current;
-    const k = kindRef.current;
-    if (!ov || k === 'none' || !outputStreamRef.current) { setExportMsg('✗ Master export needs a source (video, photo or webcam)'); return; }
-    const v = inputVideoRef.current!;
-    if (k === 'video' && (!isFinite(v.duration) || !v.duration)) { setExportMsg('✗ the video has no readable duration yet'); return; }
+  const fmtEta = (s: number) => { const n = Math.max(0, Math.round(s)); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`; };
+  const exportBase = () => (sourceNameRef.current || 'lab').replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_') || 'lab';
+  const describeResult = (r: SynExportResult) =>
+    `${r.width}×${r.height} · ${Math.round((r.fps ?? 0) * 1000) / 1000} fps · ${r.frames} fr · ${String(r.codec ?? '').split(' (')[0]}`
+    + `${r.audioCodec && r.audioCodec !== 'none' ? ` + ${r.audioCodec.split(' ')[0]}` : ' (no audio)'} · ${((r.bytes ?? 0) / 1048576).toFixed(1)} MB`;
+
+  /** The nodes of the active chain, in order, with their SynFx. Nodes with no Lab link are bypassed (as live).
+   *  → { nodes } or { error } (a node that is still loading, or whose page has no SynFx). */
+  const offlineNodes = (): { nodes: OfflineNode[] } | { error: string } => {
+    const nodes: OfflineNode[] = [];
+    for (const id of chainRef.current) {
+      const rec = nodesRef.current.get(id);
+      if (!rec?.api) {
+        if (rec && rec.loadedAt > 0 && performance.now() - rec.loadedAt <= LINK_TIMEOUT_MS) return { error: `${fxName(id)} is still loading — try again in a moment` };
+        continue;
+      }
+      const fx = synFxOf(rec.iframe);
+      if (!fx) return { error: `${fxName(id)} has no frame-by-frame export (a stale cached page) — reload the app (Ctrl+Shift+R); nothing was saved` };
+      nodes.push({ id, name: fxName(id), fx });
+    }
+    return { nodes };
+  };
+
+  /** the common start / end of every export (the Lab stays live meanwhile, as before) */
+  const beginExport = (kind: ExportKind, offline: boolean) => {
     exportingRef.current = true;
     exportStopRef.current = false;
+    exportKindRef.current = kind;
+    offlineRef.current = offline;
+    setExportKind(kind);
     setExporting(true);
     syncLoop();
+  };
+  const endExport = () => {
+    exportingRef.current = false;
+    exportStopRef.current = false;
+    exportKindRef.current = '';
+    offlineRef.current = false;
+    exportAbortRef.current = null;
+    exportLiveRef.current = null;
+    setExportKind('');
+    setExporting(false);
+    syncLoop(); // finished while the Lab is hidden: it parks now
+    window.setTimeout(replumb, 400);
+  };
+
+  /** video INPUT → offline MP4 */
+  const startOfflineVideo = (eng: NonNullable<Window['SynExport']>) => {
+    const v = inputVideoRef.current!;
+    const src = fileSourceRef.current;
+    if (!src || src.kind !== 'video') { setExportMsg('✗ the video source is not a file (nothing to render frame by frame)'); return; }
+    if (!eng.isSupported()) { setExportMsg('✗ RENDER needs WebCodecs (Chrome / Edge) — nothing was saved'); return; }
+    if (!isFinite(v.duration) || !v.duration) { setExportMsg('✗ the video has no readable duration yet'); return; }
+    const found = offlineNodes();
+    if ('error' in found) { setExportMsg('✗ ' + found.error); return; }
+    /* audio: the Track when it is the Lab audio (looped under the video), the INPUT's own sound otherwise;
+       a microphone cannot be rendered offline */
+    const mode = audioRef.current!.mode;
+    const trackFile = mode === 'file' ? trackFileRef.current : null;
+    const noAudioNote = mode === 'mic' ? 'the microphone cannot be rendered offline: the file has no audio' : '';
+    const q = qualityRef.current;
+    const ac = new AbortController();
+    exportAbortRef.current = ac;
+    beginExport('video', true);
+    const prevTime = v.currentTime;
     const prevLoop = v.loop;
-    const wasPaused = v.paused && !v.ended;
-    let rec: MasterRecorder | null = null;
-    let progress = 0;
-    try {
-      setExportMsg('MASTER: sizing the effects…');
-      // 1. give the effects a bigger frame when that makes them render bigger
-      const c0 = lastNodeCanvas();
-      const w0 = c0?.width ?? ov.videoWidth;
-      if (w0 && w0 < 1600) {
-        const f = clamp(MASTER_WIDTH / w0, 1, 3);
-        setExportScale(f);
-        await wait(1500);
-        replumb();
-        const w1 = lastNodeCanvas()?.width ?? 0;
-        if (!(w1 > w0 * 1.1)) setExportScale(1); // the effect renders at its source's size: no point
-        await wait(300);
-        replumb();
-      }
-      // 2. from the top
-      if (k === 'video') {
-        v.loop = false;
-        v.pause();
+    const wasPlaying = !v.paused && !v.ended;
+    let chain: OfflineChain | null = null;
+    let work: HTMLCanvasElement | null = null;
+    let cleaned = false;
+    const cleanup = async () => {
+      if (cleaned) return;
+      cleaned = true;
+      try { await chain?.end(); } catch { /* */ }
+      chain = null;
+      if (work) { work.width = work.height = 0; work = null; }
+      v.loop = prevLoop;
+      try {
         await new Promise<void>((r) => {
           const on = () => { v.removeEventListener('seeked', on); r(); };
           v.addEventListener('seeked', on);
-          window.setTimeout(r, 2000);
-          v.currentTime = 0;
+          window.setTimeout(on, 1500);
+          v.currentTime = Math.min(prevTime, Math.max(0, (v.duration || prevTime) - 0.05));
         });
-        await wait(250);
-        cueSync(); // the take starts with the cue state at 0 (the engine then follows the playback)
+      } catch { /* */ }
+      if (wasPlaying) void v.play().catch(() => {});
+      offlineRef.current = false; // the cue engine takes over again…
+      cueSync(); // …from the state at the INPUT's time
+      endExport();
+    };
+    setExportMsg(`Preparing ${q === 'high' ? 'HIGH' : 'MASTER'} render…`);
+    let lastProg = 0;
+    const filePromise = sourceBlob(src.url).catch(() => null);
+    const name = `${exportBase()}_LAB_${q.toUpperCase()}.mp4`;
+    void eng.render({
+      video: v,
+      file: filePromise,
+      audioFile: trackFile,
+      audioLoop: !!trackFile,
+      audio: mode !== 'mic',
+      quality: q,
+      signal: ac.signal,
+      useFilePicker: !noPicker(),
+      filename: name,
+      prepare: () => {
+        v.loop = false;
+        v.pause();
+      },
+      ready: async (info) => {
+        const c = new OfflineChain(found.nodes);
+        chain = c;
+        let audioBlob: Blob | null = trackFile;
+        if (!audioBlob && mode !== 'mic') audioBlob = await filePromise;
+        await c.begin('lab', info.width, info.height, info.fps, audioBlob);
+        work = document.createElement('canvas');
+        work.width = info.width;
+        work.height = info.height;
+      },
+      getFrame: async (i, t) => {
+        const c = chain;
+        const w = work;
+        if (!c || !w) throw new Error('the chain is not ready');
+        cueTick(t, true); // the beat-synced cue state at this frame, as in playback
+        const g = w.getContext('2d');
+        if (!g) throw new Error('could not allocate the source frame');
+        g.drawImage(v, 0, 0, w.width, w.height);
+        return c.frame(w, i, t);
+      },
+      finish: () => cleanup(),
+      onProgress: (i, total, phase, info) => {
+        if (phase !== 'render') { setExportMsg(phase === 'audio' ? 'Decoding audio…' : phase === 'finalize' ? 'Writing MP4…' : 'Reading source…'); return; }
+        const now = performance.now();
+        if (now - lastProg < 250 && i < total) return;
+        lastProg = now;
+        setExportMsg(`● RENDER ${i}/${total} (${Math.floor((i / total) * 100)}%) · ${info.width}×${info.height} · ${info.speed.toFixed(1)} fr/s · ETA ${fmtEta(info.eta)} — click to stop`);
+      },
+    }).then(async (r) => {
+      await cleanup();
+      if (r.error) { setExportMsg('✗ ' + r.error); return; }
+      if (r.stopped) { setExportMsg(r.cancelled ? '✗ Export cancelled — nothing saved' : '✗ Master export stopped — nothing saved'); return; }
+      const warn = [...(r.warnings ?? []), noAudioNote].filter((x) => /audio|Opus|scaled|fallback|microphone/i.test(x));
+      lastExportRef.current = { name: r.filename ?? name, size: r.bytes ?? 0, type: 'video/mp4', width: r.width ?? 0, height: r.height ?? 0, audio: !!r.audioCodec && r.audioCodec !== 'none', url: '' };
+      setExportMsg(`✓ ${r.filename ?? name} · ${describeResult(r)}${warn.length ? ' — ' + warn.join('; ') : ''}`);
+    }).catch(async (e: unknown) => {
+      await cleanup();
+      setExportMsg('✗ ' + ((e as Error)?.message || String(e)));
+    });
+  };
+
+  /** webcam / photo INPUT → realtime MP4 of the chain OUTPUT at its native live size */
+  const startLiveTake = (eng: NonNullable<Window['SynExport']>) => {
+    const ov = outputVideoRef.current;
+    const k = kindRef.current;
+    if (!ov || !outputStreamRef.current || !outputHasFrame()) { setExportMsg('✗ the chain has no output frame yet — try again in a moment'); return; }
+    const tap = new OutputTap(ov);
+    const q = qualityRef.current;
+    const name = `${exportBase()}_LAB_REC.mp4`;
+    beginExport('live', false);
+    let stopped = false;
+    const ctl = eng.recordLive({
+      getCanvas: () => tap.region(),
+      fps: 30,
+      audioStream: labAudioStream(),
+      quality: q,
+      useFilePicker: !noPicker(),
+      filename: name,
+      onProgress: (sec, info) => {
+        const lim = k === 'image' ? ` / ${STILL_TAKE_SEC}s` : '';
+        setExportMsg(`● REC ${info.width}×${info.height} · ${sec.toFixed(1)}s${lim} · ${info.frames} fr${info.dropped ? ` (${info.dropped} dropped)` : ''} — click to stop`);
+        if (k === 'image' && sec >= STILL_TAKE_SEC && !stopped) { stopped = true; void ctl.stop(); }
+      },
+    });
+    exportLiveRef.current = ctl;
+    setExportMsg('● REC — MP4');
+    void ctl.done.then((r) => {
+      tap.dispose();
+      if (r.error) setExportMsg('✗ ' + r.error);
+      else if (r.stopped) setExportMsg(r.cancelled ? '✗ Export cancelled — nothing saved' : '✗ Master export stopped — nothing saved');
+      else {
+        const warn = (r.warnings ?? []).filter((x) => /audio|Opus|scaled|fallback/i.test(x));
+        lastExportRef.current = { name: r.filename ?? name, size: r.bytes ?? 0, type: 'video/mp4', width: r.width ?? 0, height: r.height ?? 0, audio: !!r.audioCodec && r.audioCodec !== 'none', url: '' };
+        setExportMsg(`✓ ${r.filename ?? name} · ${describeResult(r)}${r.dropped ? ` · ${r.dropped} dropped` : ''}${warn.length ? ' — ' + warn.join('; ') : ''}`);
       }
-      if (exportStopRef.current) throw new Error('stopped');
-      // a Clip the operator wants but that dropped (the clip had reached its end): back on for the take
-      if (k === 'video' && clipWantedRef.current && audioRef.current!.mode === 'off') {
-        await startClipOn(v).catch(() => {});
-      }
-      await awaitFreshOutput(); // the budgets were raised by the export: the take starts on fresh frames
-      if (exportStopRef.current) throw new Error('stopped');
-      const ow = ov.videoWidth;
-      const native = `${ow}×${ov.videoHeight}`;
-      const width = ow >= 1600 ? MASTER_WIDTH : Math.max(2, Math.round(ow / 2) * 2);
-      rec = new MasterRecorder(ov, labAudioStream(), width);
-      const total = k === 'video' ? v.duration : STILL_TAKE_SEC;
-      rec.start();
-      const t0 = performance.now();
-      if (k === 'video') await v.play().catch(() => {});
-      await new Promise<void>((resolve) => {
-        const tick = window.setInterval(() => {
-          const t = k === 'video' ? v.currentTime : (performance.now() - t0) / 1000;
-          progress = clamp(t / total, 0, 1);
-          setExportMsg(`● REC ${rec!.width}×${rec!.height} ${t.toFixed(1)}s / ${total.toFixed(1)}s (${Math.round(progress * 100)}%) — click to stop`);
-          const done = k === 'video' ? v.ended || (v.paused && t >= total - 0.05) : t >= total;
-          if (done || exportStopRef.current) { window.clearInterval(tick); resolve(); }
-        }, 200);
-      });
-      const keep = !exportStopRef.current;
-      const res = await rec.finish(keep);
-      rec = null;
-      if (!keep) { setExportMsg('✗ Master export stopped — nothing saved'); return; }
-      if (!res) throw new Error('the recorder produced no data');
-      const base = (sourceNameRef.current || 'lab').replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_') || 'lab';
-      const name = `${base}_lab.${res.ext}`;
-      const url = URL.createObjectURL(res.blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      lastExportRef.current = { name, size: res.blob.size, type: res.mime, width: res.width, height: res.height, audio: res.audio, url };
-      if (!debugOn) window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-      const codec = res.ext === 'mp4' ? 'H.264' : 'WebM';
-      setExportMsg(`✓ ${name} · ${res.width}×${res.height} (chain output ${native}) · ${codec}${res.audio ? ' + audio' : ' (no audio: Lab audio was off)'} · ${(res.blob.size / 1048576).toFixed(1)} MB`);
-    } catch (e) {
-      setExportMsg(exportStopRef.current ? '✗ Master export stopped — nothing saved' : '✗ ' + (e as Error).message);
-    } finally {
-      if (rec) await rec.finish(false).catch(() => null);
-      setExportScale(1);
-      if (k === 'video') {
-        v.loop = prevLoop;
-        if (wasPaused) v.pause();
-        else void v.play().catch(() => {});
-      }
-      exportingRef.current = false;
-      exportStopRef.current = false;
-      setExporting(false);
-      syncLoop(); // finished while the Lab is hidden: it parks now
-      window.setTimeout(replumb, 400);
+    }).finally(() => endExport());
+  };
+
+  const runMaster = () => {
+    if (exportingRef.current) {
+      if (exportKindRef.current === 'still') { setExportMsg('a PNG / JPEG / PDF export is writing — it cannot be stopped, wait a moment'); return; }
+      exportStopRef.current = true;
+      exportAbortRef.current?.abort();
+      void exportLiveRef.current?.stop();
+      if (exportKindRef.current === 'video') setExportMsg('Stopping…');
+      return;
     }
+    const k = kindRef.current;
+    if (k === 'none') { setExportMsg('✗ Master export needs a source (video, photo or webcam)'); return; }
+    const eng = window.SynExport;
+    if (!eng) { // the engines are normally loaded at mount; a slow load here costs the save dialog's click activation
+      setExportMsg('loading the export engine…');
+      void loadSharedEngines().then(() => runMaster()).catch((e: Error) => setExportMsg('✗ ' + e.message));
+      return;
+    }
+    if (k === 'video') startOfflineVideo(eng);
+    else startLiveTake(eng);
+  };
+
+  /** photo INPUT → PNG / JPEG / PDF of the chain at the photo's native size */
+  const runStill = (format: 'png' | 'jpeg' | 'pdf') => {
+    if (exportingRef.current) return;
+    const src = fileSourceRef.current;
+    if (kindRef.current !== 'image' || !src || src.kind !== 'image') {
+      setExportMsg('✗ PNG / JPEG / PDF need a photo as the INPUT (IMAGE) — for a video or the webcam use EXPORT VFX CHAIN');
+      return;
+    }
+    const still = window.SynStill;
+    if (!still) {
+      setExportMsg('loading the export engine…');
+      void loadSharedEngines().then(() => runStill(format)).catch((e: Error) => setExportMsg('✗ ' + e.message));
+      return;
+    }
+    const found = offlineNodes();
+    if ('error' in found) { setExportMsg('✗ ' + found.error); return; }
+    beginExport('still', false);
+    const chain = new OfflineChain(found.nodes);
+    const blobP = sourceBlob(src.url);
+    let photo: Blob | null = null;
+    let alphaRect: { x: number; y: number; w: number; h: number } | null = null;
+    const ext = format === 'jpeg' ? 'jpg' : format;
+    const name = `${exportBase()}_LAB.${ext}`;
+    void still.exportStill({
+      format,
+      filename: name,
+      useFilePicker: !noPicker(),
+      /* read after render(): the ORIGINAL photo's own alpha is re-applied to the result */
+      get alphaSource() { return photo; },
+      alphaRect: () => alphaRect,
+      onStatus: (t) => setExportMsg(t),
+      render: async () => {
+        photo = await blobP;
+        const cv = await decodePhotoNative(photo); // the original, native size, over black
+        setExportMsg(`rendering ${cv.width}×${cv.height}…`);
+        await chain.begin('still', cv.width, cv.height, undefined, null);
+        const r = await chain.frame(cv, 0, 0);
+        alphaRect = r.alphaRect ?? null;
+        return r;
+      },
+    }).then((r) => {
+      if (r.error) setExportMsg('✗ ' + r.error);
+      else if (r.cancelled) setExportMsg('✗ Export cancelled — nothing saved');
+      else {
+        const mode = format === 'jpeg' ? 'RGB · q100 4:4:4' : r.alpha ? 'RGBA (transparent)' : 'RGB';
+        setExportMsg(`✓ ${r.filename ?? name} · ${r.width}×${r.height} · ${mode} · ${((r.bytes ?? 0) / 1048576).toFixed(1)} MB`);
+      }
+    }).catch((e: unknown) => {
+      setExportMsg('✗ ' + ((e as Error)?.message || String(e)));
+    }).finally(async () => {
+      await chain.end(); // ALWAYS: every node that began gets its end()
+      endExport();
+    });
   };
 
   /* ═══ the Gemini LabHandle (src/ai/contract.ts) on top of SynLab ═══════
@@ -1386,9 +1567,10 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   const transportRef = useRef<HTMLDivElement | null>(null);
 
   /** one engine step at the INPUT time `t` (default: its currentTime) */
-  const cueTick = (t?: number) => {
+  const cueTick = (t?: number, force = false) => {
     const run = cueRef.current;
     if (!run || !run.enabled || !cueAliveRef.current) return;
+    if (offlineRef.current && !force) return; // an offline render writes the cue state itself, frame by frame
     const v = inputVideoRef.current;
     if (!v || kindRef.current !== 'video' || fileSourceRef.current?.url !== run.src || v.readyState < 1) return;
     const time = t ?? v.currentTime;
@@ -2200,10 +2382,13 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       </button>
     );
   };
-  const exportTitle = exporting ? 'Stop the export (nothing is saved)'
-    : kind === 'video' ? 'Record the chain output from the start of the video to its end (realtime), with the Lab audio'
+  const exportTitle = exportKind === 'still' ? 'A PNG / JPEG / PDF is being written'
+    : exporting ? 'Stop the export (nothing is saved)'
+    : kind === 'video' ? 'Render the chain frame by frame (offline): every frame of the video, its exact frame rate and size, its sound — MP4'
     : kind === 'none' ? 'The export needs a source'
-    : `Record ${STILL_TAKE_SEC} s of the chain output (realtime), with the Lab audio`;
+    : kind === 'webcam' ? 'Record the chain output as MP4 (realtime, the camera\'s native size) until you stop it, with the Lab audio'
+    : `Record ${STILL_TAKE_SEC} s of the chain output as MP4 (realtime), with the Lab audio`;
+  const stillTitle = (f: string) => kind === 'image' ? `Save the chain's result on the photo as ${f}, at the photo's native size, uncompressed / maximum quality` : `${f} needs a photo as the INPUT`;
 
   return (
     <div className="syn-fxlab" data-testid="chain-lab" data-theme={theme}>
@@ -2492,12 +2677,42 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
                   type="button"
                   data-testid="chain-master"
                   onClick={runMaster}
-                  disabled={kind === 'none' && !exporting}
+                  disabled={(kind === 'none' && !exporting) || exportKind === 'still'}
                   title={exportTitle}
                   className={`fxl-seg fxl-lab-btn fxl-export${exporting ? ' on rec' : ''}`}
                 >
-                  {exporting ? '■ STOP EXPORT' : 'EXPORT VFX CHAIN'}
+                  {exporting ? (exportKind === 'still' ? 'WRITING…' : '■ STOP EXPORT') : 'EXPORT VFX CHAIN'}
                 </button>
+                <div className="fxl-seg-row" data-testid="chain-quality" role="group" aria-label="Export quality">
+                  {(['master', 'high'] as const).map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      className={`fxl-seg${quality === q ? ' on' : ''}`}
+                      data-testid={`chain-quality-${q}`}
+                      disabled={exporting}
+                      onClick={() => setQuality(q)}
+                      title={q === 'master' ? 'MASTER: about 1 bit per pixel (H.264 High) — near lossless' : 'HIGH: smaller files'}
+                    >
+                      {q.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <div className="fxl-seg-row" data-testid="chain-stills" role="group" aria-label="Save a photo">
+                  {([['png', 'PNG'], ['jpeg', 'JPEG'], ['pdf', 'PDF']] as const).map(([f, label]) => (
+                    <button
+                      key={f}
+                      type="button"
+                      className="fxl-seg"
+                      data-testid={`chain-still-${f}`}
+                      disabled={exporting}
+                      onClick={() => runStill(f)}
+                      title={stillTitle(label)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 {exportMsg && (
                   <p data-testid="chain-export-msg" className={`fxl-lab-msg${exportMsg.startsWith('✗') ? ' err' : ''}`} title={exportMsg}>
                     {exportMsg}

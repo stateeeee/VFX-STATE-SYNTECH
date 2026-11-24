@@ -2209,6 +2209,7 @@ syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on,
 <!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
 <script src="../shared/syn-export.js"></script>
+<script src="../shared/syn-still.js"></script>
 <script>
 /* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
    VIDEO FILE : RENDER MP4 and REC both run the OFFLINE render: every source frame → one output frame,
@@ -2293,7 +2294,7 @@ syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on,
       getByteTimeDomainData:function(a){ a.fill(128); }, getFloatTimeDomainData:function(a){ a.fill(0); } };
   }
   /* the mask of THIS frame: send it, then wait for onResults' ImageBitmap (it lands a few ms after send resolves) */
-  async function segNow(){
+  async function segNow(img){   /* SYNTECH-EXPORT: img = the picture to segment (default: the <video>, as for RENDER MP4) */
     if(!segEnabled) return;
     if(!segReady||!segObj){
       var t0=performance.now();
@@ -2304,7 +2305,7 @@ syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on,
     var before=lastMaskBitmap, to=0;
     segSendGen=segGen; segBusy=true;
     try{
-      await Promise.race([segObj.send({image:vid}), new Promise(function(_,rej){ to=setTimeout(function(){ rej(new Error('the segmentation did not answer')); },20000); })]);
+      await Promise.race([segObj.send({image:img||vid}), new Promise(function(_,rej){ to=setTimeout(function(){ rej(new Error('the segmentation did not answer')); },20000); })]);
     }finally{ clearTimeout(to); segBusy=false; }
     var t1=performance.now();
     while(lastMaskBitmap===before&&performance.now()-t1<5000) await sleep(1);
@@ -2415,6 +2416,110 @@ syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on,
       stop:function(){ setRecUi(false); }
     }
   });
+  /* ───────────────── SynFx (docs/workflow/11-EXPORT-STILLS-LAB.md §2.2) ─────────────────
+     One contract for the photo export (PNG/JPEG/PDF) and the Lab's offline chain.
+       outSize(w,h) → {w,h}   BLOB REVEAL output = input size (no letterbox / desqueeze).
+       begin({mode,width,height,fps?,audioFile?})  the live loop idles (same __synExpCtl latch as RENDER MP4),
+            #dc + c-blob / c-mask / c-sub / c-erode go to width×height (goFull: a size over the 2D canvas
+            limits THROWS a clear error — never a smaller picture), pixel-sized parameters scale by
+            output/preview width (__synExpPx). The live segmentation mask is parked (the picture's own mask
+            is computed per frame). mode 'lab': audio history / beat envelope reset, and with audioFile the
+            file's own soundtrack feeds the 60 Hz audio ticks (offlineAnalyser) like a video render.
+            mode 'still': analysers untouched — beatExpand keeps its current live value.
+       frame(src,i,t)  src (canvas / image, from any same-origin document) is copied to a local canvas, the
+            subject mask of THIS picture is awaited (MediaPipe, async), then the effect's own frame() draws
+            it (blob windows + subject) with the live parameters. No temporal accumulation in this effect
+            (the blob analysis and the mask are per picture) → no warm-up needed: N = 0.
+       end()  always: latch released, canvases back to the display box (fit), live mask / audio analyser /
+            paused preview restored, live loop restarted. Idempotent. */
+  var fx=null;
+  function fxRestore(){
+    var f=fx; if(!f) return; fx=null;
+    window.__synExpCtl=null;
+    if(f.offAn&&analyser===f.offAn&&f.liveAn){ analyser=f.liveAn; freqBuf=new Uint8Array(f.liveAn.frequencyBinCount); waveBuf=new Uint8Array(f.liveAn.fftSize); }
+    if(lastMaskBitmap&&lastMaskBitmap!==f.mask){ try{ lastMaskBitmap.close(); }catch(e){} }
+    lastMaskBitmap=f.mask;
+    if(full) endFull();
+    if(f.src){ f.src.width=0; }
+    if(paused&&f.snap){ try{ dCtx.drawImage(f.snap,0,0,dc.width,dc.height); }catch(e){} }
+    if(animId) cancelAnimationFrame(animId);
+    loopGen++; frame();
+    resetMotion();
+  }
+  window.SynFx={
+    version:1,
+    outSize:function(w,h){ return {w:Math.round(w),h:Math.round(h)}; },
+    begin:async function(o){
+      if(window.__synExpCtl||fx) throw new Error('another export is already running');
+      var w=Math.round(o.width), h=Math.round(o.height);
+      if(!(w>0&&h>0)) throw new Error('bad size');
+      var lab=o.mode==='lab';
+      fx={ mode:o.mode, mask:lastMaskBitmap, snap:null, src:null, lastTick:-1, liveAn:null, offAn:null, w:w, h:h };
+      try{
+        fx.snap=document.createElement('canvas'); fx.snap.width=dc.width; fx.snap.height=dc.height;
+        try{ fx.snap.getContext('2d').drawImage(dc,0,0); }catch(e){ fx.snap=null; }
+        window.__synExpCtl={inside:false};
+        loopGen++;
+        var t0=performance.now();
+        while(segBusy&&performance.now()-t0<5000) await sleep(20);
+        lastMaskBitmap=null;                                   /* the live mask stays parked in fx.mask (onResults would close it) */
+        goFull(w,h);
+        fx.src=document.createElement('canvas'); fx.src.width=w; fx.src.height=h;
+        if(fx.src.width!==w||fx.src.height!==h) throw new Error('could not allocate a '+w+'×'+h+' canvas');
+        if(lab){
+          loudHist=[]; beatIntervals=[]; beatExpand=0; bassV=loudV=trebleV=0; lastBeatT=-1e6;
+          if(o.audioFile&&micEnabled&&analyser&&typeof SynExport.offlineAnalyser==='function'){
+            fx.liveAn=analyser;
+            fx.offAn=await SynExport.offlineAnalyser({ file:o.audioFile, fftSize:analyser.fftSize, smoothingTimeConstant:analyser.smoothingTimeConstant,
+              minDecibels:analyser.minDecibels, maxDecibels:analyser.maxDecibels, sampleRate:audioCtx?audioCtx.sampleRate:48000 });
+            analyser=fx.offAn; freqBuf=new Uint8Array(fx.offAn.frequencyBinCount); waveBuf=new Uint8Array(fx.offAn.fftSize);
+          }
+        }
+        if(segEnabled&&!segReady){
+          var t1=performance.now();
+          while(segEnabled&&!segReady&&performance.now()-t1<60000) await sleep(100);
+          if(segEnabled&&!segReady) throw new Error('the segmentation model did not load');
+        }
+      }catch(e){ fxRestore(); throw e; }
+    },
+    frame:async function(src,i,t){
+      var f=fx, ctl=window.__synExpCtl;
+      if(!f||!ctl) throw new Error('SynFx.begin was not called');
+      if(dc.width!==f.w||dc.height!==f.h) applyFull();
+      var cx=f.src.getContext('2d');
+      cx.clearRect(0,0,f.w,f.h);
+      cx.drawImage(src,0,0,f.w,f.h);                           /* local copy: the picture may come from another document */
+      await segNow(f.src);                                     /* the subject mask of THIS picture */
+      if(fx!==f) throw new Error('the export was ended');
+      if(f.mode==='lab'&&f.offAn){
+        ctl.inside=true;
+        try{
+          var tk=Math.floor(t*60+1e-6);
+          for(var k=(i===0?tk:f.lastTick+1);k<=tk;k++){ f.offAn.setTime(k/60); tickAudio(k*1000/60); }
+          f.lastTick=tk;
+        }finally{ ctl.inside=false; }
+      }
+      var wasPaused=paused, was=srcImg; paused=false; srcImg=f.src;   /* the renderer reads activeSrc() = srcImg||vid */
+      ctl.inside=true;
+      try{ frame(); }finally{ ctl.inside=false; paused=wasPaused; srcImg=was; }
+      return {canvas:dc};
+    },
+    end:function(){ fxRestore(); }
+  };
+
+  /* PNG · JPEG · PDF of a loaded photo (SynStill, ../shared/syn-still.js): native resolution, photo alpha kept. */
+  if(window.SynStill&&$('btn-render')){
+    SynStill.attach({
+      label:'BLOB_REVEAL', anchorEl:$('btn-render'), buttonClass:'fs-btn',
+      toast:function(m){ var s=$('render-status'); if(s) s.textContent=m; }, statusId:'render-status',
+      hasStill:function(){ return srcMode==='image'&&!!srcImg; },
+      getStillFile:function(){ return srcImg; },                /* the decoded photo: its own alpha is the output's alpha */
+      sourceName:function(){ var f=$('info-file'); return f?f.textContent:'photo'; },
+      beforeStill:function(){ return SynFx.begin({mode:'still',width:srcImg.naturalWidth,height:srcImg.naturalHeight}); },
+      renderStill:function(){ return SynFx.frame(srcImg,0,0); },
+      afterStill:function(){ SynFx.end(); }
+    });
+  }
 })();
 </script>
 <!-- SYNTECH-EXPORT-END -->

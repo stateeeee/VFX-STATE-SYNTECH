@@ -1,13 +1,13 @@
 /*
  * LAB RECORDING — the chain's OUTPUT is a MediaStream (the last node's
- * canvas.captureStream()), shown by the Lab in a <video>. Both recorders here
+ * canvas.captureStream()), shown by the Lab in a <video>. Both readers here
  * read that <video>: every presented frame is drawn into a canvas of a FIXED
  * size the recorder owns, so an effect resizing its canvas mid-take (a window
  * resize, the export's enlarged frame) never reaches the encoder.
  *
  *   recordVideoClip  a short webm for Gemini (≤ 640 px, LabHandle.recordOutputClip)
- *   MasterRecorder   the Master export: realtime, MP4 (H.264 + AAC) when the
- *                    browser's MediaRecorder can, else WebM
+ *   OutputTap        the frame the Master's realtime MP4 take (SynExport.recordLive) records, at the
+ *                    OUTPUT's native size
  */
 
 import type { MediaPart } from '../ai/contract';
@@ -115,110 +115,50 @@ export async function recordVideoClip(video: HTMLVideoElement, audio: MediaStrea
   }
 }
 
-/* ── Master export ─────────────────────────────────────────────── */
+/* ── Master export (realtime MP4: webcam / photo INPUT) ───────────────
+   The encoder is SynExport.recordLive (WebCodecs H.264 + AAC, MP4 only — never WebM). What this file adds is
+   the frame it records: the chain OUTPUT <video> drawn into a canvas that keeps the OUTPUT's NATIVE size
+   (even numbers: H.264) for the whole take, so an effect resizing its canvas mid-take never reaches the
+   encoder, and nothing is upscaled. */
 
-/** MP4 first (Chromium ≥ 126 muxes H.264 + AAC in MediaRecorder), WebM otherwise. */
-const MASTER_MIMES = [
-  'video/mp4;codecs=avc1.640028,mp4a.40.2',
-  'video/mp4;codecs=avc1.4d0028,mp4a.40.2',
-  'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-  'video/mp4;codecs=avc1,mp4a.40.2',
-  'video/webm;codecs=vp9,opus',
-  'video/webm;codecs=vp8,opus',
-  'video/webm',
-];
-/** the video-only variants, for a take with no audio track */
-const MASTER_MIMES_SILENT = [
-  'video/mp4;codecs=avc1.640028',
-  'video/mp4;codecs=avc1.4d0028',
-  'video/mp4;codecs=avc1.42E01E',
-  'video/mp4;codecs=avc1',
-  'video/webm;codecs=vp9',
-  'video/webm;codecs=vp8',
-  'video/webm',
-];
-
-export const pickMasterMime = (withAudio: boolean): string | null => pick(withAudio ? MASTER_MIMES : MASTER_MIMES_SILENT);
-
-export interface MasterResult { blob: Blob; mime: string; ext: 'mp4' | 'webm'; width: number; height: number; audio: boolean }
-
-/**
- * Realtime recorder of the Lab OUTPUT <video> (+ the Lab audio). The frame is
- * `width` wide, its height follows the output's aspect (even numbers: H.264).
- */
-export class MasterRecorder {
+/** the canvas a take reads: `region()` draws the OUTPUT's current frame into it and returns it */
+export class OutputTap {
   readonly width: number;
   readonly height: number;
-  readonly mime: string;
-  readonly hasAudio: boolean;
   private canvas: HTMLCanvasElement;
-  private copier: { stop(): void; draw(): void };
-  private stream: MediaStream;
-  private clones: MediaStreamTrack[] = [];
-  private rec: MediaRecorder;
-  private chunks: Blob[] = [];
-  private stopped: Promise<void>;
+  private g: CanvasRenderingContext2D | null;
 
-  constructor(video: HTMLVideoElement, audio: MediaStream | null, width = 1920) {
-    const sw = video.videoWidth || 16;
-    const sh = video.videoHeight || 9;
+  constructor(private video: HTMLVideoElement) {
     const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
-    this.width = even(width);
-    this.height = even((width * sh) / sw);
+    this.width = even(video.videoWidth || 16);
+    this.height = even(video.videoHeight || 9);
     this.canvas = document.createElement('canvas');
     this.canvas.width = this.width;
     this.canvas.height = this.height;
-    const liveAudio = audio?.getAudioTracks().filter((t) => t.readyState === 'live') ?? [];
-    this.hasAudio = liveAudio.length > 0;
-    /* pick the format BEFORE anything starts, so a throw leaves nothing running */
-    const mime = pickMasterMime(this.hasAudio);
-    if (!mime) throw new Error('this browser cannot record video (no MediaRecorder format)');
-    this.mime = mime;
-    this.copier = frameCopier(video, this.canvas);
-    this.stream = this.canvas.captureStream(30);
-    liveAudio.forEach((t) => {
-      const c = t.clone();
-      this.clones.push(c);
-      this.stream.addTrack(c);
-    });
-    try {
-      // ~12 Mbps at 1080p: a master, not a preview
-      this.rec = new MediaRecorder(this.stream, {
-        mimeType: mime,
-        videoBitsPerSecond: Math.round(12_000_000 * ((this.width * this.height) / (1920 * 1080))),
-        audioBitsPerSecond: 192_000,
-      });
-    } catch (e) {
-      this.copier.stop();
-      this.stream.getTracks().forEach((t) => t.stop());
-      throw e;
-    }
-    this.rec.ondataavailable = (e) => { if (e.data && e.data.size) this.chunks.push(e.data); };
-    this.stopped = new Promise<void>((resolve) => { this.rec.onstop = () => resolve(); this.rec.onerror = () => resolve(); });
+    this.g = this.canvas.getContext('2d');
+    this.draw();
   }
 
-  start(): void {
-    this.copier.draw();
-    this.rec.start(1000);
+  private draw() {
+    const g = this.g;
+    const v = this.video;
+    if (!g) return;
+    const sw = v.videoWidth;
+    const sh = v.videoHeight;
+    if (!sw || !sh || v.readyState < 2) return; // keeps the previous frame
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    if (sw === W && sh === H) { g.drawImage(v, 0, 0); return; }
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, W, H);
+    const k = Math.min(W / sw, H / sh);
+    g.drawImage(v, (W - sw * k) / 2, (H - sh * k) / 2, sw * k, sh * k);
   }
 
-  /** ends the take; `keep` false discards it (STOP / an error) */
-  async finish(keep: boolean): Promise<MasterResult | null> {
-    try {
-      if (this.rec.state !== 'inactive') this.rec.stop();
-      let t = 0;
-      await Promise.race([this.stopped, new Promise<void>((r) => { t = window.setTimeout(r, 5000); })]);
-      window.clearTimeout(t);
-    } finally {
-      this.copier.stop();
-      this.stream.getTracks().forEach((tr) => tr.stop());
-      this.clones.forEach((tr) => tr.stop());
-      this.canvas.width = this.canvas.height = 0;
-    }
-    if (!keep) return null;
-    const type = this.mime.split(';')[0];
-    const blob = new Blob(this.chunks, { type });
-    if (!blob.size) return null;
-    return { blob, mime: this.mime, ext: type === 'video/mp4' ? 'mp4' : 'webm', width: this.width, height: this.height, audio: this.hasAudio };
+  region(): HTMLCanvasElement {
+    this.draw();
+    return this.canvas;
   }
+
+  dispose() { this.canvas.width = this.canvas.height = 0; }
 }

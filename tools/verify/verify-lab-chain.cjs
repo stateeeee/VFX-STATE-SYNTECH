@@ -29,9 +29,10 @@
  *      change a param → open restores it; RESET puts the initial value back
  *   7. Gemini LabHandle: chainState lists params from every node; applyPlan /
  *      revertPlan round-trip one value
- *   8. Master MP4: a file > 0 bytes with a video track (and audio)
+ *   8. EXPORT VFX CHAIN = offline SynExport.render of a 2 s clip: download *_LAB_MASTER.mp4; ffprobe h264 / size / fps /
+ *      frame count / audio equal the input's; MASTER/HIGH + PNG/JPEG/PDF rows exist
  *   9. day theme reaches every Lab iframe (data-syn-theme + the effect's <html>); the
- *      block headers stay black + amber
+ *      block headers turn white + violet (operator decision 2026-11-22, commit 6f12310)
  *  10. hidden Lab: parked, every node paused, a Gemini grab holds it live (FRESH frames)
  *
  * Two targets (same as verify-audio-meter.cjs):
@@ -488,8 +489,9 @@ const outputAdvance = (page, ms) => page.evaluate(async (ms) => {
     return p ? { key: p.key, value: p.value, min: p.min, max: p.max, step: p.step, label: p.label } : null;
   }, CHAIN[0]);
   if (pick) {
-    const labBtns = await page.evaluate(() => [...document.querySelectorAll('[data-testid="lab-block-laboratory"] .fxl-blk-body > *')].map((e) => e.textContent.trim()));
-    step('LABORATORY: exactly the four buttons, no captions', JSON.stringify(labBtns) === JSON.stringify(['SAVE VFX CHAIN TO PROJECTS', 'OPEN VFX CHAIN FROM PROJECTS', 'RESET VFX CHAIN', 'EXPORT VFX CHAIN']), JSON.stringify(labBtns));
+    const labBtns = await page.evaluate(() => [...document.querySelectorAll('[data-testid="lab-block-laboratory"] .fxl-blk-body > button')].map((e) => e.textContent.trim()));
+    const labTitles = await page.evaluate(() => [...document.querySelectorAll('[data-testid="lab-block-laboratory"] .fxl-blk-body > button')].map((e) => !!e.title));
+    step('LABORATORY: the four icon buttons (SAVE / OPEN / RESET / EXPORT) with their titles', labTitles.length === 4 && labTitles.every(Boolean) && JSON.stringify(labBtns) === JSON.stringify(['SAVE VFX CHAIN TO PROJECTS', 'OPEN VFX CHAIN FROM PROJECTS', 'RESET VFX CHAIN', 'EXPORT VFX CHAIN']), JSON.stringify(labBtns));
     await domClick(page, q('lab-save-chain'));
     await sleep(300);
     await page.evaluate(() => {
@@ -551,34 +553,62 @@ const outputAdvance = (page, ms) => page.evaluate(async (ms) => {
   });
   step('grabPair returns SOURCE + OUTPUT stills', pair.s > 1000 && pair.o > 1000, `${pair.s} / ${pair.o} b64 chars`);
 
-  // ── 8. Master MP4 ───────────────────────────────────────────────────────
-  const mimes = await page.evaluate(() => ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/webm;codecs=vp9,opus'].map((m) => `${m}: ${MediaRecorder.isTypeSupported(m)}`).join(' · '));
-  info(`MediaRecorder: ${mimes}`);
-  await setPlaying(page, true); // the export restores what was playing: start from a playing INPUT
-  const dl = browser ? page.waitForEvent('download', { timeout: 200000 }).catch(() => null) : Promise.resolve(null);
+  // ── 8. EXPORT VFX CHAIN = OFFLINE frame-by-frame render (SynExport.render), MASTER ──────
+  // A short (2 s) clip is loaded as the source: software GL renders the chain frame by frame.
+  const probe = (file) => {
+    const j = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-show_streams', '-show_format', '-of', 'json', file], { maxBuffer: 1 << 26 }).toString());
+    const v = j.streams.find((x) => x.codec_type === 'video');
+    const a = j.streams.find((x) => x.codec_type === 'audio');
+    return { v, a, frames: Number(v.nb_read_frames || v.nb_frames), rate: v.r_frame_rate, w: v.width, h: v.height };
+  };
+  const SHORT = path.join(SCRATCH, 'lab-chain-short.webm');
+  execFileSync('ffmpeg', [
+    '-loglevel', 'error', '-y',
+    '-f', 'lavfi', '-i', 'color=c=0x101010:s=1280x720:r=30:d=2',
+    '-f', 'lavfi', '-i', "aevalsrc='0.45*sin(2*PI*110*t)*lt(mod(t\\,0.5)\\,0.12)+0.12*sin(2*PI*440*t)':s=48000:d=2",
+    '-vf', "drawbox=x=0:y=0:w=640:h=720:color=0xf0f0f0@1:t=fill,drawbox=x='700+mod(t*160\\,480)':y=300:w=90:h=90:color=0xe03030@1:t=fill",
+    '-c:v', 'libvpx', '-b:v', '1500k', '-c:a', 'libopus', '-b:a', '160k', '-shortest', SHORT,
+  ]);
+  const inSrc = probe(SHORT);
+  info(`export input: ${inSrc.w}×${inSrc.h} · ${inSrc.rate} · ${inSrc.frames} frames · audio ${inSrc.a ? inSrc.a.codec_name : 'none'}`);
+  await page.setInputFiles(q('source-file'), SHORT);
+  await until(page, () => { const v = window.__synLabDebug.inputVideo(); return v && v.readyState >= 2 && Math.abs(v.duration - 2) < 0.3; }, 60000);
+  await sleep(2500);
+  await setPlaying(page, true);
+  await page.evaluate(() => { window.__synExportNoPicker = true; });
+  step('LABORATORY: MASTER / HIGH quality row and PNG / JPEG / PDF row exist', await page.evaluate(() => {
+    const t = (sel) => [...document.querySelectorAll(`${sel} .fxl-seg`)].map((e) => e.textContent.trim().toUpperCase());
+    return JSON.stringify(t('[data-testid="chain-quality"]')) === '["MASTER","HIGH"]' && JSON.stringify(t('[data-testid="chain-stills"]')) === '["PNG","JPEG","PDF"]'
+      && !!document.querySelector('[data-testid="chain-quality"].fxl-seg-row') && !!document.querySelector('[data-testid="chain-stills"].fxl-seg-row');
+  }), 'chain-quality + chain-stills');
+  await page.evaluate(() => document.querySelector('[data-testid="chain-quality-master"]')?.click());
+  const dl = browser ? page.waitForEvent('download', { timeout: 900000 }).catch(() => null) : Promise.resolve(null);
   await domClick(page, q('chain-master'));
-  await until(page, () => /^[✓✗]/.test(document.querySelector('[data-testid="chain-export-msg"]')?.textContent || ''), 180000);
+  await until(page, () => /^[✓✗]/.test(document.querySelector('[data-testid="chain-export-msg"]')?.textContent || ''), 900000);
   const msg = await page.textContent(q('chain-export-msg')).catch(() => '');
   info(`export: ${msg}`);
-  const ex = await page.evaluate(async () => {
-    const e = window.__synLabDebug.lastExport();
-    if (!e) return null;
-    const v = document.createElement('video');
-    v.src = e.url; v.muted = true;
-    v.style.cssText = 'position:fixed;left:0;top:0;width:8px;height:8px;opacity:0.01';
-    document.body.appendChild(v);
-    await new Promise((r) => { v.onloadeddata = r; v.onerror = r; setTimeout(r, 8000); });
-    let audioTracks = -1;
-    try { await v.play(); await new Promise((r) => setTimeout(r, 600)); audioTracks = v.captureStream().getAudioTracks().length; } catch { /* */ }
-    const out = { ...e, vw: v.videoWidth, vh: v.videoHeight, dur: v.duration, audioTracks, err: v.error ? v.error.code : 0 };
-    v.remove();
-    return out;
-  });
-  step('Master export produced a file > 0 bytes', !!ex && ex.size > 0 && msg.startsWith('✓'), ex ? `${ex.name} · ${ex.type} · ${(ex.size / 1048576).toFixed(2)} MB` : msg);
-  step('the file has a video track (decodes)', !!ex && ex.vw > 0 && ex.vh > 0, ex ? `${ex.vw}×${ex.vh} · duration ${ex.dur} · decode error ${ex.err}` : '');
-  step('the file has the Lab audio', !!ex && ex.audio && ex.audioTracks > 0, ex ? `recorded with audio ${ex.audio} · decoded audio tracks ${ex.audioTracks}` : '');
+  const last = await page.evaluate(() => window.__synExportLast || null);
+  const dbgLast = await page.evaluate(() => window.__synLabDebug.lastExport());
+  step('EXPORT VFX CHAIN finished with ✓ (no cancel / error)', msg.startsWith('✓'), msg);
+  step('offline render: __synExportLast is a success with frames + fps (not the realtime MasterRecorder)', !!last && !last.error && !last.cancelled && last.frames > 0 && (!dbgLast || dbgLast.url === ''),
+    last ? `frames ${last.frames} · ${last.width}×${last.height} · ${last.fps} fps · ${last.codec} · debug url '${dbgLast?.url ?? 'n/a'}'` : 'no __synExportLast');
   const d1 = await dl;
-  if (browser) step('the browser received a download', !!d1, d1 ? d1.suggestedFilename() : 'no download event');
+  if (browser) {
+    step('the browser received a download named <source>_LAB_MASTER.mp4', !!d1 && /_LAB_MASTER\.mp4$/.test(d1.suggestedFilename()), d1 ? d1.suggestedFilename() : 'no download event');
+    if (d1) {
+      const outFile = path.join(SCRATCH, 'export-master.mp4');
+      await d1.saveAs(outFile);
+      const o = probe(outFile);
+      const [wantW, wantH] = (last && last.width && last.height) ? [last.width, last.height] : [inSrc.w, inSrc.h];
+      step('ffprobe: video is h264', o.v.codec_name === 'h264', `${o.v.codec_name} ${o.v.profile || ''}`);
+      step('ffprobe: width × height = the input\'s native size (this chain keeps the size)', o.w === inSrc.w && o.h === inSrc.h && wantW === inSrc.w && wantH === inSrc.h,
+        `${o.w}×${o.h} · input ${inSrc.w}×${inSrc.h} · SynExport ${wantW}×${wantH}`);
+      step('ffprobe: r_frame_rate = the input\'s', o.rate === inSrc.rate, `${o.rate} vs ${inSrc.rate}`);
+      step('ffprobe: frame count = the input\'s (nothing dropped)', o.frames === inSrc.frames, `${o.frames} vs ${inSrc.frames}`);
+      step('ffprobe: an audio stream, as the input has', !!inSrc.a && !!o.a, o.a ? `${o.a.codec_name} ${o.a.sample_rate} Hz · ${o.a.channels} ch` : 'none');
+      info(`ffprobe ${outFile}: ${o.v.codec_name} ${o.w}×${o.h} ${o.rate} ${o.frames} frames · ${fs.statSync(outFile).size} bytes`);
+    }
+  }
   await snap(page, 'after-export');
 
   // ── 9. day theme on every Lab iframe ────────────────────────────────────
@@ -594,7 +624,7 @@ const outputAdvance = (page, ms) => page.evaluate(async (ms) => {
   await setBlock(page, SORTED[0], true);
   await sleep(1000);
   const heads = await page.evaluate(() => [...document.querySelectorAll('[data-testid^="lab-block-head-"]')].map((h) => { const c = getComputedStyle(h); return `${c.backgroundColor}|${c.color}`; }));
-  step('day: the block headers stay black + amber', heads.length > 0 && heads.every((x) => x === 'rgb(0, 0, 0)|rgb(232, 192, 0)'), [...new Set(heads)].join(' · '));
+  step('day: the block headers are white + violet (2026-11-22)', heads.length > 0 && heads.every((x) => x === 'rgb(255, 255, 255)|rgb(109, 40, 217)'), [...new Set(heads)].join(' · '));
   await snap(page, 'day');
   await setBlock(page, SORTED[0], false);
   await domClick(page, 'button[title="Toggle day / night"]');

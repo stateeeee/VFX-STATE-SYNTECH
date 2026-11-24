@@ -345,6 +345,7 @@ const vertexShader = /* glsl */`
   uniform float uBrightness;
   uniform float uNoiseMult;
   uniform float uPixelRatio;
+  uniform float uMinPt;   /* SYNTECH-EXPORT (render): smallest point in px; 0 = off (preview: the GPU's own 1 px floor) */
   uniform float uAspect;
   uniform bool  uMirrorX;
 
@@ -459,7 +460,12 @@ const vertexShader = /* glsl */`
     // ── Size ──────────────────────────────────────────────────────────────
     float ls = mix(1.0, 0.5 + luma*0.9, t);
     vec4 mv  = modelViewMatrix * vec4(pos, 1.0);
-    gl_PointSize = (aSize * uSizeMult * uPixelRatio * ls * 230.0) / max(0.001, -mv.z);
+    float ptPx = (aSize * uSizeMult * uPixelRatio * ls * 230.0) / max(0.001, -mv.z);
+    /* SYNTECH-EXPORT (render): export only (uMinPt > 0). The preview's points never go under 1 device px (GPU floor); the export keeps that
+       floor as a fraction of the frame (uMinPt). Under 1 px the GPU still draws 1 px, so the alpha carries the missing area (size^2.4, measured: 640x360 .. 4000x3000 within 8% of the preview). */
+    ptPx = max(uMinPt, ptPx);
+    if (uMinPt > 0.0) vAlpha *= min(1.0, pow(ptPx, 2.4));
+    gl_PointSize = ptPx;
     gl_Position  = projectionMatrix * mv;
   }
 `;
@@ -509,6 +515,7 @@ const uniforms = {
   uBrightness: { value: 1.2 },
   uNoiseMult:  { value: 0.28 },
   uPixelRatio: { value: renderer.getPixelRatio() },
+  uMinPt:      { value: 0 },   /* SYNTECH-EXPORT (render) */
   uAspect:     { value: 16 / 9 },
   uMirrorX:    { value: false },
 };
@@ -1039,6 +1046,7 @@ window.__synLabPointcloud = {
 /* ═══ SYNTECH-EXPORT-START (offline MP4 render): handle for the offline-render block at the end of the page
    (docs/workflow/10-EXPORT-MASTER.md). This module's state is not reachable from a classic script: it exposes what a
    native-size render needs. Nothing here runs on its own. ═══ */
+let _fxSave = null, _fxTex = null;
 window.__synPointExp = {
   canvas, renderer, composer, bloom, camera, uniforms, wrapEl,
   draw: animate,                          // one frame of the live code (window.__synExpCtl.inside = true)
@@ -1050,6 +1058,27 @@ window.__synPointExp = {
     : (vid.videoWidth > 0 ? { w: vid.videoWidth, h: vid.videoHeight } : null)),
   /* lastT = the clock origin; clean = start of a render: the intro morph is finished (as in the steady preview) */
   reset(lt, clean) { lastT = lt; if (clean && playing) transition = 1; },
+  /* SynFx / SynStill: the cloud is built from a canvas (cv) for a still / Lab frame — a THREE.Texture with the same settings
+     as the image path (linear, RGBA, flipY=false, no mipmaps), uAspect from the canvas, no mirror, morph finished.
+     setSrc(null) puts the live source's texture / aspect / mirror / morph state back. touchSrc() re-uploads cv. */
+  setSrc(cv) {
+    if (cv) {
+      if (!_fxSave) _fxSave = { tex: uniforms.uVideo.value, mir: uniforms.uMirrorX.value, asp: uniforms.uAspect.value, playing, transition };
+      if (_fxTex) _fxTex.dispose();
+      _fxTex = new THREE.Texture(cv);
+      _fxTex.minFilter = THREE.LinearFilter; _fxTex.magFilter = THREE.LinearFilter;
+      _fxTex.format = THREE.RGBAFormat; _fxTex.flipY = false; _fxTex.generateMipmaps = false;
+      _fxTex.needsUpdate = true;
+      uniforms.uVideo.value = _fxTex; uniforms.uMirrorX.value = false;
+      uniforms.uAspect.value = cv.width / cv.height;
+      playing = true; transition = 1;
+    } else if (_fxSave) {
+      uniforms.uVideo.value = _fxSave.tex; uniforms.uMirrorX.value = _fxSave.mir; uniforms.uAspect.value = _fxSave.asp;
+      playing = _fxSave.playing; transition = _fxSave.transition; _fxSave = null;
+      if (_fxTex) { _fxTex.dispose(); _fxTex = null; }
+    }
+  },
+  touchSrc() { if (_fxTex) _fxTex.needsUpdate = true; },
   limits() { const gl = renderer.getContext(), vp = gl.getParameter(gl.MAX_VIEWPORT_DIMS) || [0, 0];
     return { tex: gl.getParameter(gl.MAX_TEXTURE_SIZE), rb: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), vpw: vp[0], vph: vp[1], dbw: gl.drawingBufferWidth, dbh: gl.drawingBufferHeight }; },
 };
@@ -1145,6 +1174,7 @@ animate(0);
 <!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
 <script src="../shared/syn-export.js"></script>
+<script src="../shared/syn-still.js"></script>
 <script>
 /* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js. (The module's older
    "SYNTECH-EXPORT" section is the 1920×1080 MediaRecorder export: kept, no longer reached from the button.)
@@ -1185,7 +1215,7 @@ animate(0);
     if(w>L.tex||h>L.tex||w>L.rb||h>L.rb||w>L.vpw||h>L.vph)
       throw new Error('the GPU cannot draw '+w+'×'+h+' (MAX_TEXTURE_SIZE '+L.tex+', MAX_RENDERBUFFER_SIZE '+L.rb+', MAX_VIEWPORT_DIMS '+L.vpw+'×'+L.vph+')');
     var fh=Math.max(1,e.wrapEl.clientHeight), pr=e.renderer.getPixelRatio();
-    var st={pr:pr, upr:e.uniforms.uPixelRatio.value};
+    var st={pr:pr, upr:e.uniforms.uPixelRatio.value, umin:e.uniforms.uMinPt.value};
     window.__synExpHold=true;                                  /* fitRenderer leaves the size alone */
     e.renderer.setPixelRatio(1); e.composer.setPixelRatio(1);
     e.renderer.setSize(w,h,false);                             /* false: the CSS size stays the frame's (.exporting) */
@@ -1194,6 +1224,7 @@ animate(0);
     e.bloom.setSize(bw,bh);                                    /* the preview's bloom density (composer.setSize gave it frame × ratio) */
     e.camera.aspect=w/h; e.camera.updateProjectionMatrix();
     e.uniforms.uPixelRatio.value=h/fh;                         /* same point size, relative to the frame, as the preview */
+    e.uniforms.uMinPt.value=h/(fh*pr);                         /* the preview's points never go under 1 device px (GPU floor) = 1/(fh*pr) of the frame: keep that fraction, or a sub-pixel point shrinks with the size and the cloud goes dark */
     e.wrapEl.classList.add('exporting'); cEl.style.objectFit='contain';
     var L2=e.limits();
     if(cEl.width!==w||cEl.height!==h||L2.dbw!==w||L2.dbh!==h){
@@ -1211,7 +1242,7 @@ animate(0);
     var fw=Math.max(1,e.wrapEl.clientWidth), fh=Math.max(1,e.wrapEl.clientHeight);
     e.renderer.setSize(fw,fh,false); e.composer.setSize(fw,fh);   /* shrink at ratio 1 BEFORE restoring the ratio */
     e.renderer.setPixelRatio(st.pr); e.composer.setPixelRatio(st.pr);
-    e.uniforms.uPixelRatio.value=st.upr;
+    e.uniforms.uPixelRatio.value=st.upr; e.uniforms.uMinPt.value=st.umin;
     e.fit();                                                   /* camera, renderer, composer + bloom back to the frame */
   }
   function trackFps(){
@@ -1277,6 +1308,88 @@ animate(0);
       },
       stop:function(){ ui(false,'EXPORT MP4'); $('export-fill').style.width='0%'; if(window.__synExpUi) window.__synExpUi(); }
     }
+  });
+
+  /* ───── SynFx (docs/workflow/11-EXPORT-STILLS-LAB.md): the same draw as getFrame, but the picture comes from `src` ─────
+     size    : outSize(w,h) = w×h (the whole picture, uncropped); renderer + bloom composer at exactly that size (enterSize),
+               camera aspect = w/h, uAspect from the picture, point size and bloom density as in the preview.
+     'still' : no state accumulates in this effect (the cloud is a pure function of the picture, the clock and the sliders;
+               the intro morph is forced to its finished state) → NO warm-up: N = 1 pass at the preview's clock t.
+     'lab'   : likewise one pass per frame with the clock t (noise, camera drift follow media time).
+     end()   : size / pixel ratio / camera / uPixelRatio / source texture / morph state / live loop all put back. */
+  var fx=null;
+  function fxBegin(o){
+    if(fx) fxEnd();
+    if(window.__synExportBusy||window.__synExpCtl) throw new Error('another export is running');
+    var e=E(); if(!e) throw new Error('the pointcloud engine is not running (WebGL unavailable)');
+    var w=Math.round(o&&o.width), h=Math.round(o&&o.height);
+    if(!(w>0&&h>0)) throw new Error('SynFx.begin needs width and height');
+    var st=enterSize(w,h);
+    window.__synExpCtl={t:0, inside:false};
+    e.reset(0,true);
+    fx={w:w, h:h, st:st, cv:document.createElement('canvas'), tex:false};
+    fx.cv.width=w; fx.cv.height=h;
+  }
+  function fxFrame(src,i,t){
+    var e=E(), ctl=window.__synExpCtl;
+    if(!fx||!e||!ctl) throw new Error('SynFx.frame called without begin');
+    if(cEl.width!==fx.w||cEl.height!==fx.h) throw new Error('the canvas was resized during the render');
+    var c2=fx.cv.getContext('2d');
+    c2.fillStyle='#000'; c2.fillRect(0,0,fx.w,fx.h);                /* the photo over black, like the effect sees it */
+    c2.drawImage(src,0,0,fx.w,fx.h);
+    if(!fx.tex){ e.setSrc(fx.cv); fx.tex=true; } else e.touchSrc();
+    ctl.t=t; ctl.inside=true;
+    try{ e.draw(0); }finally{ ctl.inside=false; }
+    return Promise.resolve({canvas:cEl});                           /* read in this task: the canvas has no preserveDrawingBuffer */
+  }
+  function fxEnd(){
+    var e=E(), f=fx; fx=null;
+    if(!f) return;                                                  /* nothing begun (or begin refused): leave any real render alone */
+    window.__synExpCtl=null;                                        /* live loop draws again from its next tick */
+    if(e){ e.setSrc(null); leaveSize(f.st); e.reset(performance.now()/1000,false); }
+    else window.__synExpHold=false;
+    if(window.__synExpUi) window.__synExpUi();
+  }
+  window.SynFx={
+    version:1,
+    outSize:function(w,h){ return {w:w,h:h}; },
+    begin:fxBegin, frame:fxFrame, end:fxEnd
+  };
+
+  /* ───── photo export: PNG · JPEG · PDF (../shared/syn-still.js) at the photo's NATIVE size ─────
+     The effect already draws a photo at its natural size (imgTex); the export reloads the ORIGINAL file so the alpha
+     can be re-applied, which means the File is kept here (capture-phase listeners; the effect's handlers are untouched). */
+  var stillFile=null, stillImg=null;
+  function keepFile(f){ if(f&&f.type&&f.type.indexOf('image/')===0) stillFile=f; }
+  $('fi').addEventListener('change',function(e){ keepFile(e.target.files&&e.target.files[0]); },true);
+  document.body.addEventListener('drop',function(e){
+    var fl=[].slice.call((e.dataTransfer&&e.dataTransfer.files)||[]);
+    var f=fl.filter(function(f){ return f.type.indexOf('video/')===0||f.type.indexOf('image/')===0; })[0];   /* the effect's own pick rule */
+    if(f) keepFile(f);
+  },true);
+  function hasStill(){ return mode()==='image'&&!!stillFile&&!window.__synExportBusy&&!!E()&&!E().oldBusy(); }
+  function loadStill(file){
+    return new Promise(function(res,rej){
+      var url=URL.createObjectURL(file), im=new Image();
+      im.onload=function(){ URL.revokeObjectURL(url); res(im); };
+      im.onerror=function(){ URL.revokeObjectURL(url); rej(new Error('the photo could not be decoded')); };
+      im.src=url;
+    });
+  }
+  var anchor=$('btn-render')&&$('btn-render').closest('.row');
+  if(window.SynStill&&anchor) SynStill.attach({
+    label:'POINTCLOUD', anchorEl:anchor, buttonClass:'seg-btn', statusId:'render-status',
+    toast:function(m){ var s=$('render-status'); if(s) s.textContent=m; },
+    hasStill:hasStill,
+    getStillFile:function(){ return stillFile; },
+    sourceName:function(){ return stillFile?stillFile.name:'photo'; },
+    beforeStill:async function(){
+      stillImg=await loadStill(stillFile);
+      var o=SynFx.outSize(stillImg.naturalWidth,stillImg.naturalHeight);
+      await SynFx.begin({mode:'still', width:o.w, height:o.h});
+    },
+    renderStill:function(){ return SynFx.frame(stillImg,0,performance.now()/1000); },
+    afterStill:function(){ stillImg=null; return SynFx.end(); }
   });
 })();
 </script>

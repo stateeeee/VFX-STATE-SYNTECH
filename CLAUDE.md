@@ -28,6 +28,7 @@ done, what is next, and every decision made so far. Then follow
 | `08-PROMPTS.md` | The prompts the operator pastes to drive each session |
 | `09-MODEL-ROUTING.md` | **Which model does which task** (Haiku / Sonnet / Opus) + the mandatory Opus review gate |
 | `10-EXPORT-MASTER.md` | Offline frame-by-frame MP4 render (RENDER MP4): why realtime REC loses quality/fps, the SynExport design |
+| `11-EXPORT-STILLS-LAB.md` | Photo export PNG · JPEG · PDF (SynStill, real alpha, native size) + the Lab's offline frame-by-frame render (SynFx) |
 | `DESKTOP.md` | The double-click desktop app (Electron): how it is built, tested, delivered |
 
 ## Commands
@@ -66,6 +67,7 @@ src/components/NodalComposition.tsx  Node graph panel (INPUT → effects → OUT
 src/components/ChainLab.tsx     Lab surface: iframe chain of the real effects, INPUT + transport, audio, presets, Master MP4, LabHandle, cue engine + lane
 src/lab/beatgrid.ts             Beat grid of the source's soundtrack (BPM, phase, energy sections), decoded in the browser
 src/lab/cues.ts                 Cue timeline helpers (state at t, snapping, lane segments)
+src/lab/offline.ts              Lab offline export: shared-engine loader, OfflineChain (SynFx node by node), native photo decode
 src/components/EffectHost.tsx   Full-screen iframe host for one standalone effect
 src/components/IntroSplash.tsx  Desktop-app opening: logo → pet video + LOADING 0–100% (browser: ?intro)
 src/components/AiDirector.tsx   Gemini panel: key form, model + effort picker, Art Director / Agent / Optimizer, Apply/Undo
@@ -81,7 +83,8 @@ src/effects-registry.ts         ModuleId → iframe src mapping
 public/effects/<id>/index.html  The 10 standalone effect apps (SOURCE OF TRUTH for effect look)
 public/effects/shared/          syn-chrome.css/.js — Bokeh's chrome + day theme, shared by all 10 (§5.1); syn-extras.js — work timer + timeline;
                                 syn-lab.js — the Lab chain link (window.SynLab, §5.2);
-                                syn-export.js — offline MP4 render engine (window.SynExport, §5.3)
+                                syn-export.js — offline MP4 render engine (window.SynExport, §5.3);
+                                syn-still.js — PNG / JPEG / PDF of a photo (window.SynStill; each effect's window.SynFx)
 ```
 
 ## Hard rules

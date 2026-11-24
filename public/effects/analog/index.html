@@ -1797,6 +1797,7 @@ video.addEventListener('error',()=>{document.getElementById('bb-warn').textConte
 const mirrorCanvas=document.createElement('canvas');
 const mirrorCtx=mirrorCanvas.getContext('2d',{willReadFrequently:true});
 function currentFrameSource(){
+  if(window.__synFxSrc)return window.__synFxSrc; /* SYNTECH-EXPORT: SynFx.frame() draws the frame it was given */
   if(STATE.srcMode==='image'&&activeImage)return activeImage;
   if(STATE.srcMode==='webcam'&&video.videoWidth>0){
     if(mirrorCanvas.width!==video.videoWidth||mirrorCanvas.height!==video.videoHeight){
@@ -1813,6 +1814,7 @@ function currentFrameSource(){
   return video;
 }
 function sourceReady(){
+  if(window.__synFxSrc)return true; /* SYNTECH-EXPORT: SynFx.frame() */
   if(STATE.srcMode==='image')return !!activeImage;
   return video.readyState>=video.HAVE_CURRENT_DATA;
 }
@@ -2865,6 +2867,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 <!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
 <script src="../shared/syn-export.js"></script>
+<script src="../shared/syn-still.js"></script>
 <script>
 /* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
    VIDEO FILE : RENDER MP4 and REC both run the OFFLINE render: every source frame → one output frame, source
@@ -3003,6 +3006,117 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
       progress:function(kind,v){ if(kind==='render'){ var rt=$('rec-time'); if(rt) rt.textContent='RENDER '+v+'%'; } },
       stop:function(){ setRecUi(false); }
     }
+  });
+
+  /* ───────── SynFx — the effect as a function of a GIVEN picture (docs/workflow/11-EXPORT-STILLS-LAB.md) ─────────
+     Used by the photo export (PNG · JPEG · PDF, SynStill) and by the Lab's offline frame-by-frame chain.
+     begin   : the live loop idles (window.__synExpCtl), canvas + every FBO at the NATIVE size (nativeSize),
+               source forced "ready"; 'lab' also zeroes the temporal state exactly like beforeRender and, with an
+               audioFile, feeds the Reactive engine from SynExport.offlineAnalyser (same band mapping as the Lab's
+               live analyser; Reactive is switched on for the run, as the Lab does when it has audio).
+     frame   : the given canvas / image is copied onto a local black-backed canvas (it may come from another
+               document; transparency is flattened over black, the alpha is re-applied by SynStill) and drawn by
+               the effect's own render(). 'lab' = k = round(60/fps) passes per frame (like getFrame).
+               'still' = deterministic warm-up from a cleared state at 60 Hz: the only accumulating stage is the
+               feedback ping-pong (pixel sort restarts from the picture every pass) → N = 1 with feedback off,
+               else N = ceil(ln 0.01 / ln amount) + 2 (residual < 1 %, 9 passes at 0.5, 231 at the 0.98 max).
+     end     : native size → the 1920×1080 frame, FBOs cleared, live loop, source, Reactive, temporal state back. */
+  var SF=null, fxLocal=null;
+  function fxCopy(src,w,h){
+    if(!fxLocal) fxLocal=document.createElement('canvas');
+    if(fxLocal.width!==w||fxLocal.height!==h){ fxLocal.width=w; fxLocal.height=h; }
+    var c=fxLocal.getContext('2d');
+    c.globalCompositeOperation='source-over'; c.fillStyle='#000'; c.fillRect(0,0,w,h);
+    c.drawImage(src,0,0,w,h);
+    return fxLocal;
+  }
+  function fxEnd(){
+    if(!SF) return;
+    var s=SF; SF=null;
+    window.__synFxSrc=null; window.__synExpCtl=null;
+    if(s.upd) updateReactive=s.upd;
+    if(s.turnedOn&&P.reactEnabled) toggleReactive();
+    STATE.hasVideo=s.hasVideo;
+    try{ sizeTo(LIVE_W,LIVE_H); }catch(e){ console.error(e); }
+    prevMotionFrame=null;
+    if(fxLocal){ fxLocal.width=fxLocal.height=0; }
+  }
+  window.SynFx={
+    version:1,
+    outSize:function(w,h){ return {w:Math.round(w),h:Math.round(h)}; },
+    begin:async function(o){
+      if(SF||window.__synExpCtl) throw new Error('another export is running');
+      var w=Math.round(o.width), h=Math.round(o.height);
+      if(!(w>0&&h>0)) throw new Error('SynFx.begin: no picture size');
+      SF={mode:o.mode==='lab'?'lab':'still', w:w, h:h, fps:o.fps>0?o.fps:30, hasVideo:STATE.hasVideo, upd:null, turnedOn:false, an:null};
+      window.__synExpCtl={t:0, dt:0, inside:false, fps0:SF.fps};
+      try{
+        nativeSize(w,h);
+        STATE.hasVideo=true;
+        if(SF.mode==='lab'){
+          STATE.sortEven=0; STATE.frameCount=0; _rs=0;
+          ['bass','mid','high'].forEach(function(k){ var b=REACT._b[k]; b.s=0; b.bt=0; b.t=0; REACT[k]=0; });
+          prevMotionFrame=null; motionEnergy=0; rawMotionEnergy=0;
+          if(o.audioFile){
+            var an=await SynExport.offlineAnalyser({file:o.audioFile, fftSize:2048, smoothingTimeConstant:0.5});
+            if(an){
+              SF.an=an; SF.upd=updateReactive;
+              if(!P.reactEnabled){ toggleReactive(); SF.turnedOn=true; }
+              var f=new Uint8Array(an.frequencyBinCount), au={bass:0,loud:0,treble:0};
+              updateReactive=function(){
+                if(!P.reactEnabled){ REACT.bass=REACT.mid=REACT.high=0; return; }
+                an.getByteFrequencyData(f);
+                var hz=an.sampleRate/an.fftSize;
+                function avg(lo,hi){ var a=Math.max(0,Math.floor(lo/hz)), b=Math.min(f.length-1,Math.ceil(hi/hz)), s=0; for(var i=a;i<=b;i++) s+=f[i]; return s/((b-a+1)*255); }
+                function sm(c,t){ return c+(t-c)*(t>c?0.4:0.12); }
+                au.bass=sm(au.bass,Math.min(1,avg(20,250)*1.25));
+                au.loud=sm(au.loud,Math.min(1,avg(20,12000)*1.6));
+                au.treble=sm(au.treble,Math.min(1,avg(4000,12000)*2.2));
+                REACT.bass=Math.min(1,au.bass*P.reactSens);
+                REACT.mid=Math.min(1,au.loud*P.reactSens);
+                REACT.high=Math.min(1,au.treble*P.reactSens);
+              };
+            }
+          }
+        }
+      }catch(e){ fxEnd(); throw e; }
+    },
+    frame:async function(src,i,t){
+      if(!SF) throw new Error('SynFx.frame before begin');
+      if(!src) throw new Error('SynFx.frame: no picture');
+      if(canvas.width!==SF.w||canvas.height!==SF.h||CONFIG.W!==SF.w) throw new Error('the frame size changed during the export');
+      window.__synFxSrc=fxCopy(src,SF.w,SF.h);
+      var ctl=window.__synExpCtl, n, step;
+      if(SF.mode==='lab'){
+        n=Math.max(1,Math.round(60/SF.fps)); step=1/(SF.fps*n);
+        if(SF.an) SF.an.setTime(t);
+      }else{
+        n=P.feedbackAmt>0.01?Math.min(240,Math.ceil(Math.log(0.01)/Math.log(Math.min(P.feedbackAmt,0.98)))+2):1;
+        step=1/60; clearFeedback(); sortR=0; sortW=1; fbkR=0; fbkW=1; STATE.frameCount=0; STATE.sortEven=0;
+      }
+      for(var j=0;j<n;j++){
+        ctl.t=t-(n-1-j)*step; ctl.dt=step; ctl.inside=true;
+        try{ render(performance.now()); }finally{ ctl.inside=false; }
+      }
+      return {canvas:canvas};
+    },
+    end:fxEnd
+  };
+
+  /* ───────── photo export: PNG · JPEG · PDF under RENDER MP4 ───────── */
+  var stillFile=null;
+  var _loadImg=loadImageFile;
+  loadImageFile=function(f){ if(f) stillFile=f; return _loadImg.apply(this,arguments); };
+  if(window.SynStill) SynStill.attach({
+    label:'ANALOG', anchorEl:$('btn-render'), buttonClass:'rec-btn',
+    toast:function(m,ms){ var el=$('bb-warn'); if(!el) return; el.textContent=m; clearTimeout(bbT); bbT=setTimeout(function(){ el.textContent=''; },ms||2500); },
+    statusId:'render-status',
+    hasStill:function(){ return STATE.srcMode==='image'&&!!activeImage; },
+    getStillFile:function(){ return stillFile; },
+    sourceName:function(){ var f=$('info-file'); return stillFile&&stillFile.name?stillFile.name:(f?f.textContent:'image'); },
+    beforeStill:function(){ return SynFx.begin({mode:'still', width:activeImage.naturalWidth, height:activeImage.naturalHeight}); },
+    renderStill:function(){ return SynFx.frame(activeImage,0,(performance.now()-STATE.startTime)/1000); },
+    afterStill:function(){ return SynFx.end(); }
   });
 })();
 </script>

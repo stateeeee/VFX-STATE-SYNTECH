@@ -363,7 +363,7 @@ for(const lm of lms){const q=lm.map(p=>[p.x*W,p.y*H]);hx.lineWidth=Math.max(8,Ma
 hx.beginPath();[0,1,5,9,13,17].forEach((k,i)=>i?hx.lineTo(q[k][0],q[k][1]):hx.moveTo(q[k][0],q[k][1]));hx.closePath();hx.fill();
 hx.beginPath();HB.forEach(([a,b])=>{hx.moveTo(q[a][0],q[a][1]);hx.lineTo(q[b][0],q[b][1])});hx.stroke()}
 const d=hx.getImageData(0,0,MW,MH).data;for(let y=0;y<MH;y++)for(let x=0;x<MW;x++)handBuf[(MH-1-y)*MW+x]=d[(y*MW+x)*4+3];handAge=0}
-function runHands(now){const ts=lastTs=Math.max(lastTs+1,Math.round(now));const lms=hand.detectForVideo(vid,ts).landmarks||[];drawHands(lms);let pin=null;
+function runHands(now){const ts=lastTs=Math.max(lastTs+1,Math.round(now));const lms=hand.detectForVideo(window.__synFxV||vid/* SYNTECH-EXPORT: was vid */,ts).landmarks||[];drawHands(lms);let pin=null;
 for(const lm of lms){const d=(a,b)=>Math.hypot(lm[a].x-lm[b].x,lm[a].y-lm[b].y),sz=d(0,9)||1;
 const ext=[[12,10],[16,14],[20,18]].every(([t,q])=>d(0,t)>d(0,q)*1.1);if(ext&&d(4,8)/sz<(pinS?.35:.25)){pin=[(lm[4].x+lm[8].x)/2,1-(lm[4].y+lm[8].y)/2];break}}
 const hs=$('hs');pinS=!!pin;if(pin&&!gesture){hs.textContent='HAND — TRACK';hs.className=''}else if(pin){hs.textContent='HAND — PINCH';hs.className='p';if(!latch){if(!pSince)pSince=now;if(now-pSince>160&&now-lastTog>900){latch=true;lastTog=now;setFx(!fxOn,pin)}}rel=0}
@@ -371,7 +371,7 @@ else{pSince=0;hs.className='';hs.textContent=lms.length?'HAND — OPEN':'HAND �
 function setFx(on,c){if(on===fxOn)return;o0=fxOn?1:0;o1=on?1:0;fxOn=on;tS=window.__synExpCtl?window.__synExpCtl.now:performance.now()/* SYNTECH-EXPORT: a pinch in the footage during an offline render starts the transition on the media clock (was performance.now()) */;pc=c||[.5,.5];$('bfx').classList.toggle('on',on);$('fxl').textContent=on?'INVISIBLE ON':'INVISIBLE OFF'}
 /* ── GAIN ESPOSIZIONE: confronta live e sfondo catturato fuori dalla persona ── */
 const gc=document.createElement('canvas');gc.width=48;gc.height=27;const gx=gc.getContext('2d',{willReadFrequently:true});
-function smallFrame(){gx.drawImage(srcMode==='image'?img:vid,0,0,48,27);return gx.getImageData(0,0,48,27).data}
+function smallFrame(){gx.drawImage(srcMode==='image'?img:(window.__synFxV||vid)/* SYNTECH-EXPORT: SynFx.frame feeds a given picture instead of the <video> (was vid) */,0,0,48,27);return gx.getImageData(0,0,48,27).data}
 function estGain(){if(!plateReal||!plS||!maskReady||srcMode==='image')return;const d=smallFrame();const a=[0,0,0],b=[0,0,0];let n=0;
 for(let y=1;y<26;y++)for(let x=1;x<47;x++){const mx=Math.round((x+.5)/48*MW),my=MH-1-Math.round((y+.5)/27*MH);let mm=0;
 for(let j=-3;j<=3;j+=3)for(let i=-3;i<=3;i+=3)mm=Math.max(mm,maskBuf[Math.min(MH-1,Math.max(0,my+j))*MW+Math.min(MW-1,Math.max(0,mx+i))]);
@@ -388,11 +388,12 @@ try{let learn=true,capturing=false;
 if(capAt){const el=(now-capAt)/1000,cd=$('cd').firstChild;
 if(el<3){learn=false;cd.textContent=Math.ceil(3-el)}else if(el<4.6){capturing=true;cd.textContent='●'}
 else{capAt=0;$('cd').style.display='none';plateReal=true;gain=[1,1,1];plS=new Uint8ClampedArray(smallFrame());$('bcap').classList.add('on');toast('✓ Sfondo catturato')}}
+const _V=window.__synFxV||vid;/* SYNTECH-EXPORT: SynFx.frame (Lab mode) feeds a given canvas through the video path (was: no _V, vid used below) */
 let dirty=false;gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
 if(srcMode==='image'){if(imgDirty){for(let i=0;i<2;i++){bind(0,srcTs[i]);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img)}imgDirty=false;hf=true;dirty=true}}
-else if(vid.readyState>=2&&(!HAS_RVFC||newFrame||!hf)){newFrame=false;sI^=1;bind(0,srcTs[sI]);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,vid);hf=true;dirty=true}
+else if((_V!==vid||vid.readyState>=2)&&(!HAS_RVFC||newFrame||!hf)){newFrame=false;sI^=1;bind(0,srcTs[sI]);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,_V);/* SYNTECH-EXPORT: _V === vid normally */hf=true;dirty=true}
 if(!hf)return;
-if(mpState==='ready'){const s=srcMode==='image'?img:vid;
+if(mpState==='ready'){const s=srcMode==='image'?img:_V;/* SYNTECH-EXPORT: was vid */
 if(srcMode==='image'){if(segDirty){runSeg(s,now);dirty=true}}
 else if(dirty){runSeg(s,now);if((segN++&1)===0)runHands(now)}}
 if(dirty){if((gN++&7)===0)estGain();
@@ -622,6 +623,7 @@ allocPlate();
 <!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
 <script src="../shared/syn-export.js"></script>
+<script src="../shared/syn-still.js"></script>
 <script>
 /* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
    VIDEO FILE : RENDER MP4 and REC (button or R key) run the OFFLINE render: every source frame → one
@@ -815,6 +817,149 @@ allocPlate();
       stop:function(){ setRecUi(false); }
     }
   });
+  /* ───────────────── SynFx (docs/workflow/11-EXPORT-STILLS-LAB.md §2.2) ─────────────────
+     One contract for the photo export (PNG/JPEG/PDF) and the Lab's offline chain.
+       outSize(w,h) → {w,h}  = the input size EXACTLY (no preview cap of 1080p, no even-rounding).
+       begin({mode,width,height})  the live loop idles (__synExpCtl latch); #cv, the clean plate (W/2×H/2,
+            mipmapped) and the matte / echo buffers (0.66×) get FBOs at width×height (a size the GPU cannot
+            draw THROWS a clear error — never a smaller picture); MediaPipe is awaited. Snapshot of the live
+            state (plate, matte, masks, gain, INVISIBLE state, hand latch, source textures) is restored by end().
+          mode 'still' — a PHOTO has no operator-built background: the plate starts CLEAN (as when the photo was
+            loaded) and the effect runs exactly the sequence the preview runs for an image: segmentation of THIS
+            picture → ONE plate-learning pass (person area = hole, filled from the mip chain of the surroundings)
+            → ONE matte pass → the composite. The preview does nothing more for a photo, so the warm-up N = 1
+            pass (identical to the preview). INVISIBLE ON/OFF follows the panel toggle (settled, no transition):
+            OFF → the photo as it is, ON → the invisible look; the noise/glitch clock is t.
+          mode 'lab'   — the picture goes through the VIDEO path (a <video> stand-in: window.__synFxV): per-frame
+            segmentation with the 0.2/0.8 temporal blend, hands/pinch, motion term, echo trail, gain estimate,
+            continuous plate learning, MediaPipe timestamps spaced by t. The operator's current plate (CAPTURE BG
+            or auto-learned) is kept and upscaled, like RENDER MP4 does; echo matte / hand mask / latch start clean.
+       frame(src,i,t) → {canvas:#cv}  src (canvas / image from any same-origin document) is copied to a local canvas.
+       end()  always: FBOs deleted, live plate / matte / masks / textures / state / canvas size restored, loop live. */
+  var fx=null, fxSrc=null;
+  async function fxEnsureMP(){
+    if(mpState==='idle') loadMP();
+    var t0=performance.now();
+    while(mpState!=='ready'&&performance.now()-t0<60000){ if(mpState==='idle'&&performance.now()-t0>1000) break; await sleep(100); }
+    if(mpState!=='ready') throw new Error('the segmentation (MediaPipe) is not ready');
+  }
+  function fxRestore(){
+    var f=fx; if(!f) return; fx=null;
+    window.__synFxV=null;
+    window.__synExpCtl=null;
+    var sn=f.snap;
+    if(sn&&!f.swapped){ dropFB((f.rp||[]).concat(f.rm||[])); gl.bindFramebuffer(gl.FRAMEBUFFER,null); }
+    else if(sn){
+      if(plate===f.rp&&mat===f.rm){
+        dropFB(f.rp.concat(f.rm));
+        W=sn.W; H=sn.H; plate=sn.plate; pi=sn.pi; PW=sn.PW; PH=sn.PH; mat=sn.mat; mi=sn.mi; TW=sn.TW; TH=sn.TH;
+        maskBuf.set(sn.maskBuf); rawBuf.set(sn.rawBuf); handBuf.set(sn.handBuf); handAge=sn.handAge; maskReady=sn.maskReady; segDirty=sn.segDirty;
+        plateReal=sn.plateReal; plS=sn.plS; gain=sn.gain; bootN=sn.bootN; gN=sn.gN; segN=sn.segN;
+        fxOn=sn.fxOn; o0=sn.o0; o1=sn.o1; tS=sn.tS; pc=sn.pc; latch=sn.latch; pSince=sn.pSince; rel=sn.rel; lastTog=sn.lastTog; pinS=sn.pinS;
+        sI=sn.sI; hf=sn.hf; newFrame=sn.newFrame; img=sn.img; imgDirty=false; srcMode=sn.srcMode;
+        if(cv.width!==W||cv.height!==H){ cv.width=W; cv.height=H; }
+        upMask();
+        $('bfx').classList.toggle('on',fxOn); $('fxl').textContent=fxOn?'INVISIBLE ON':'INVISIBLE OFF';
+        $('bcap').classList.toggle('on',plateReal); $('hs').textContent=sn.hsT; $('hs').className=sn.hsC;
+        /* the source textures hold the export's picture: put the live source back */
+        if(srcMode==='image'&&img){ gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true); for(var q=0;q<2;q++){ bind(0,srcTs[q]); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img); } }
+        else newFrame=true;                                     /* video / webcam / stream: the next live frame re-uploads */
+      }else{                                                    /* a new source re-allocated everything meanwhile: keep it */
+        dropFB(sn.plate.concat(sn.mat));
+        if(plate!==f.rp) dropFB(f.rp); if(mat!==f.rm) dropFB(f.rm);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,W,H);
+    }
+    if(fxSrc){ fxSrc.width=0; fxSrc=null; }
+  }
+  window.SynFx={
+    version:1,
+    outSize:function(w,h){ return {w:Math.max(2,Math.round(w)), h:Math.max(2,Math.round(h))}; },
+    begin:async function(o){
+      if(window.__synExpCtl||fx) throw new Error('another export is already running');
+      if(capAt) throw new Error('a CAPTURE BG is running — let it finish');
+      var lab=o.mode==='lab', w=Math.max(2,Math.round(o.width)), h=Math.max(2,Math.round(o.height));
+      var f=fx={ mode:o.mode, w:w, h:h, snap:null, rp:null, rm:null, swapped:false, tsBase:0 };
+      try{
+        await fxEnsureMP();
+        if(window.__synExpCtl) throw new Error('another export is already running');
+        window.__synExpCtl={inside:false, now:0};              /* live loop idles from its next tick */
+        glCheck(w,h);
+        f.snap={W:W,H:H,plate:plate,pi:pi,PW:PW,PH:PH,mat:mat,mi:mi,TW:TW,TH:TH,
+          maskBuf:maskBuf.slice(),rawBuf:rawBuf.slice(),handBuf:handBuf.slice(),handAge:handAge,maskReady:maskReady,segDirty:segDirty,
+          plateReal:plateReal,plS:plS,gain:gain.slice(),bootN:bootN,gN:gN,segN:segN,
+          fxOn:fxOn,o0:o0,o1:o1,tS:tS,pc:pc,latch:latch,pSince:pSince,rel:rel,lastTog:lastTog,pinS:pinS,
+          sI:sI,hf:hf,newFrame:newFrame,img:img,srcMode:srcMode,hsT:$('hs').textContent,hsC:$('hs').className};
+        var pw=Math.max(2,w>>1), ph=Math.max(2,h>>1), tw=Math.max(2,Math.round(w*.66)), th=Math.max(2,Math.round(h*.66));
+        f.rp=[mkFB(pw,ph,true,0),mkFB(pw,ph,true,0)]; f.rm=[mkFB(tw,th,false,1),mkFB(tw,th,false,1)];
+        if(!fbOk(f.rp.concat(f.rm))) throw new Error('the GPU cannot allocate the '+w+'×'+h+' plate / matte buffers');
+        if(lab&&plate.length){                                  /* keep the operator's plate (upscaled bilinear + mips) */
+          gl.bindFramebuffer(gl.READ_FRAMEBUFFER,plate[pi].f); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,f.rp[0].f);
+          gl.blitFramebuffer(0,0,PW,PH,0,0,pw,ph,gl.COLOR_BUFFER_BIT,gl.LINEAR);
+          gl.bindFramebuffer(gl.READ_FRAMEBUFFER,null); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,null);
+        }
+        bind(1,f.rp[0].t); gl.generateMipmap(gl.TEXTURE_2D);
+        plate=f.rp; pi=0; PW=pw; PH=ph; mat=f.rm; mi=0; TW=tw; TH=th; W=w; H=h; f.swapped=true;
+        cv.width=W; cv.height=H;
+        if(gl.drawingBufferWidth!==W||gl.drawingBufferHeight!==H) throw new Error('the GPU cannot draw '+W+'×'+H+' (drawing buffer '+gl.drawingBufferWidth+'×'+gl.drawingBufferHeight+')');
+        handBuf.fill(0); handAge=99; gN=0; segN=0; latch=false; pSince=0; rel=0; lastTog=-1e9; pinS=false;
+        tS=-1e9; o0=o1=fxOn?1:0;                                /* settled INVISIBLE ON/OFF, no transition */
+        if(!lab){                                               /* STILL: a photo's own clean start (what loading it gives) */
+          maskBuf.fill(0); rawBuf.fill(0); upMask(); maskReady=false; segDirty=true; plateReal=false; plS=null; gain=[1,1,1]; bootN=1; capAt=0;
+        }
+        f.tsBase=lastTs+1000;
+        fxSrc=document.createElement('canvas'); fxSrc.width=w; fxSrc.height=h;
+        if(fxSrc.width!==w||fxSrc.height!==h) throw new Error('could not allocate a '+w+'×'+h+' canvas');
+      }catch(e){ fxRestore(); throw e; }
+    },
+    frame:async function(src,i,t){
+      var f=fx, ctl=window.__synExpCtl;
+      if(!f||!ctl||!fxSrc) throw new Error('SynFx.begin was not called');
+      if(plate!==f.rp||mat!==f.rm||W!==f.w||H!==f.h||cv.width!==f.w||cv.height!==f.h) throw new Error('the effect was re-sized during the export');
+      var cx=fxSrc.getContext('2d');
+      cx.fillStyle='#000'; cx.fillRect(0,0,f.w,f.h);              /* over BLACK: SynStill re-applies the photo's alpha (compose assumes black) */
+      cx.drawImage(src,0,0,f.w,f.h);                            /* local copy: the picture may come from another document */
+      var now=(t||0)*1000, lab=f.mode==='lab';
+      ctl.now=now;
+      lastTs=Math.max(lastTs,f.tsBase+Math.round(now)-1);       /* MediaPipe VIDEO timestamps: strictly increasing, media spacing */
+      var sm=srcMode, im=img;
+      var err=null, ce=console.error;                           /* frame() swallows its errors: surface them */
+      try{
+        if(lab){
+          srcMode='video'; window.__synFxV=fxSrc;
+          if(i===0){
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true); bind(0,srcTs[sI]);   /* previous frame = frame 0: no false motion */
+            gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,fxSrc);
+            runSeg(fxSrc,now); runSeg(fxSrc,now);
+          }
+          newFrame=true;
+        }else{ srcMode='image'; img=fxSrc; imgDirty=true; segDirty=true; }
+        console.error=function(e){ if(!err) err=e; return ce.apply(console,arguments); };
+        ctl.inside=true;
+        try{ frame(now); }finally{ ctl.inside=false; console.error=ce; }
+      }finally{ window.__synFxV=null; if(!fx||fx!==f){ /* ended meanwhile */ } else { srcMode=sm; img=im; imgDirty=false; } }
+      if(err) throw new Error('frame '+i+': '+((err&&err.message)||err));
+      return {canvas:cv};
+    },
+    end:function(){ fxRestore(); }
+  };
+
+  /* PNG · JPEG · PDF of a loaded photo (SynStill, ../shared/syn-still.js): native resolution, photo alpha kept. */
+  var imgName='photo';
+  document.addEventListener('change',function(e){ if(e.target&&e.target.id==='fi1'&&e.target.files&&e.target.files[0]) imgName=e.target.files[0].name; },true);
+  document.addEventListener('drop',function(e){ var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(f&&f.type&&f.type.indexOf('image/')===0) imgName=f.name; },true);
+  if(window.SynStill&&$('btn-render')){
+    SynStill.attach({
+      label:'INVISIBLE', anchorEl:$('btn-render'), buttonClass:'fs-btn',
+      toast:function(m,d){ toast(m,d); }, statusId:'render-status',
+      hasStill:function(){ return srcMode==='image'&&!!img; },
+      getStillFile:function(){ return img; },                   /* the decoded photo: its own alpha is the output's alpha */
+      sourceName:function(){ return imgName; },
+      beforeStill:function(){ return SynFx.begin({mode:'still',width:img.naturalWidth,height:img.naturalHeight}); },
+      renderStill:function(){ return SynFx.frame(img,0,0); },
+      afterStill:function(){ SynFx.end(); }
+    });
+  }
 })();
 </script>
 <!-- SYNTECH-EXPORT-END -->

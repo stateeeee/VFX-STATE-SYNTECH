@@ -3361,6 +3361,7 @@ document.querySelector('.chip').classList.add('on');
 <!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
 <script src="../shared/syn-export.js"></script>
+<script src="../shared/syn-still.js"></script>
 <script>
 /* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
    VIDEO FILE : RENDER MP4 and REC both run the OFFLINE render: every source frame → one output frame,
@@ -3502,6 +3503,108 @@ document.querySelector('.chip').classList.add('on');
       stop:function(){ setRecUi(false); }
     }
   });
+
+  /* ───── SynFx (docs/workflow/11-EXPORT-STILLS-LAB.md): draw ONE given frame with this effect's render() ─────
+     Same machinery as the video render above (hooks marked SYNTECH-EXPORT): while window.__synExpCtl is set the live
+     rAF loop idles; the given source is installed as the active image (srcMode 'image' + activeImg, the canvas gets
+     naturalWidth/Height) so uploadFrame / flare / motion / Bokeh all read IT. Size = what RENDER MP4 produces for the
+     same input: full resolution, desqueeze honoured, letterbox bars cropped (even dims, _expComputeCrop).
+     still : flare detector warmed up STILL_WARM = 30 passes on the photo (the 0.18 smoothing converges, 0.82^30 ≈ 0.3%);
+             Bokeh mask = 6 sends; analysers otherwise untouched. Nothing else accumulates in this effect.
+     lab   : flare every 0.16 s / motion every 0.12 s of media time (as getFrame), Bokeh mask 6 sends on frame 0. */
+  var STILL_WARM=30, fx=null, stillFile=null;
+  var _lif=window.loadImageFile;
+  window.loadImageFile=function(file){ stillFile=file||null; return _lif.apply(this,arguments); };  /* keep the original File for the photo's alpha */
+  function fxSize(w,h){
+    var cw=P.desqueeze?Math.round(w*P.squeeze):w, ch=h, cropF=1;
+    if(P.letterbox&&P.ratio>0.01) cropF=Math.min(1,Math.max(0.05,(w/h)/P.ratio));
+    var sh=Math.round(ch*cropF);
+    return {w:Math.max(2,cw-(cw%2)), h:Math.max(2,sh-(sh%2))};
+  }
+  function fxSrc(src,w,h){
+    var c=fx.loc;
+    if(!c){ c=fx.loc=document.createElement('canvas'); }
+    if(c.width!==w||c.height!==h){ c.width=w; c.height=h; }
+    var x=c.getContext('2d'); x.fillStyle='#000'; x.fillRect(0,0,w,h);   /* over BLACK: SynStill re-applies the photo's alpha (compose assumes black) */
+    x.drawImage(src,0,0,w,h);                                   /* local copy: src may live in another document */
+    return c;
+  }
+  window.SynFx={
+    version:1,
+    outSize:function(w,h){ return fxSize(w,h); },
+    begin:function(o){
+      if(fx) this.end();
+      fx={mode:o.mode, w:o.width, h:o.height, loc:null,
+          sm:srcMode, ai:activeImg, paused:vid.paused, flare:[autoFlareX,autoFlareActive,flarePhase,targetFlareX,flareJitter,smoothFlareX]};
+      window.__synExpCtl={t:0,inside:false};                    /* live loop idles from its next tick */
+      try{ vid.pause(); }catch(e){}
+      fx.loc=document.createElement('canvas'); fx.loc.width=o.width; fx.loc.height=o.height;
+      Object.defineProperty(fx.loc,'naturalWidth',{get:function(){ return fx&&fx.loc===this?fx.w:0; },configurable:true});
+      Object.defineProperty(fx.loc,'naturalHeight',{get:function(){ return fx&&fx.loc===this?fx.h:0; },configurable:true});
+      activeImg=fx.loc; srcMode='image';
+      if(!tex) initTex();
+      prevMotionFrame=null; bkRadiusSmoothed=null; lastFl=-1; lastMo=-1;
+      if(o.mode==='lab'){ smoothFlareX=0.5; targetFlareX=0.5; autoFlareX=0.5; autoFlareActive=0; flarePhase=0; flareJitter=0; }
+      fullFit();
+      if(P.bokehMM>0) return (async function(){
+        ensureBkSegmenter();
+        var t0=performance.now();
+        while(!bkSegmenterReady&&performance.now()-t0<60000){
+          if(!bkSegmenter&&!bkSegmenterLoading) throw new Error('the Bokeh subject detector is unavailable');
+          await new Promise(function(r){ setTimeout(r,100); });
+        }
+        if(!bkSegmenterReady) throw new Error('the Bokeh subject detector did not load');
+      })();
+    },
+    frame:async function(src,i,t){
+      var ctl=window.__synExpCtl;
+      if(!fx||!ctl) throw new Error('SynFx.frame without begin');
+      fxSrc(src,fx.w,fx.h);
+      if(cv.width===0||bkBlurFBO.w!==cv.width) fullFit();
+      ctl.inside=true;
+      try{
+        if(fx.mode==='still'){ for(var k=0;k<STILL_WARM;k++) detectFlare(); }
+        else{
+          var fl=Math.floor(t/0.16+1e-9), mo=Math.floor(t/0.12+1e-9);
+          if(fl!==lastFl){ lastFl=fl; detectFlare(); }
+          if(mo!==lastMo){ lastMo=mo; computeMotion(); updateMotionUI(); }
+        }
+      }finally{ ctl.inside=false; }
+      if(P.bokehMM>0&&bkSegmenterReady){
+        for(var j=0;j<((fx.mode==='still'||i===0)?6:1);j++) await bkSegmenter.send({image:fx.loc});
+      }
+      ctl.t=t; ctl.inside=true;
+      try{ render(); }finally{ ctl.inside=false; }
+      var c=_expComputeCrop();
+      return c?{canvas:cv, sx:0, sy:c.sy, sw:c.ew, sh:c.eh}:{canvas:cv};
+    },
+    end:function(){
+      if(!fx) return;
+      var s=fx; fx=null;
+      window.__synExpCtl=null;                                  /* live loop draws again from its next tick */
+      srcMode=s.sm; activeImg=s.ai;
+      bkFit(BK_W,BK_H);
+      prevMotionFrame=null; bkRadiusSmoothed=null;
+      autoFlareX=s.flare[0]; autoFlareActive=s.flare[1]; flarePhase=s.flare[2]; targetFlareX=s.flare[3]; flareJitter=s.flare[4]; smoothFlareX=s.flare[5];
+      resizeCanvasToVideo();                                    /* preview size again (also resets the Info resolution) */
+      if(s.loc){ s.loc.width=0; }
+      if(!s.paused&&(vid.src||vid.srcObject)){ var p=vid.play(); if(p&&p.catch) p.catch(function(){}); }
+    }
+  };
+
+  /* PNG · JPEG · PDF of a loaded PHOTO at its native size (letterbox bars cropped like RENDER MP4 / REC; the photo fills the exported region) */
+  if(window.SynStill){
+    SynStill.attach({
+      label:'ANAMORPHIC', anchorEl:$('btn-render'), buttonClass:'fs-btn',
+      toast:function(m,d){ toast(m,d); }, statusId:'render-status',
+      hasStill:function(){ return srcMode==='image'&&!!activeImg&&!!activeImg.naturalWidth; },
+      getStillFile:function(){ return stillFile; },
+      sourceName:function(){ var f=$('info-file'); return f?f.textContent:'image'; },
+      beforeStill:async function(){ await SynFx.begin({mode:'still',width:activeImg.naturalWidth,height:activeImg.naturalHeight}); },
+      renderStill:function(){ return SynFx.frame(fx.ai,0,(Date.now()-t0)/1000); },
+      afterStill:function(){ SynFx.end(); }
+    });
+  }
 })();
 </script>
 <!-- SYNTECH-EXPORT-END -->

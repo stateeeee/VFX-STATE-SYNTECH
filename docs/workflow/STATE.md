@@ -29,6 +29,66 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-11-23/24 — EXPORT FOTO (PNG · JPEG · PDF) in TUTTI e 10 gli effetti + LAB fotogramma per fotogramma. FATTO.**
+Operatore: *"se carico una foto … da ogni effetto, sia nell'hub sia nella sezione di destra … PNG che sia un vero PNG. Se
+carico una foto con sfondo trasparente, deve restare trasparente. JPEG e PDF … nella qualità più alta possibile. Sempre …
+video o webcam: MP4 il più lossless possibile … 4K → 4K, HD → HD, 720 → 720, come Premiere … il LAB registra ancora in
+tempo reale: rifarlo fotogramma per fotogramma come i singoli effetti … pusha su main"*. Piano, design e criteri:
+**`11-EXPORT-STILLS-LAB.md`** (committato prima del codice).
+- **Audit prima del codice** (Haiku + orchestratore): nessun effetto esportava foto; trasparenza persa ovunque (alpha:false /
+  nero / shader alpha 1); anteprime foto non native (ANALOG/QUADTREE/TIME MACHINE/BOKEH 1920×1080 stirate, PAINTING cover-crop,
+  ANAMORPHIC ≤1280…); **BOKEH non sapeva caricare foto** (il bottone IMAGE le mandava a un `<video>` → nero); Lab = REC in tempo
+  reale (MasterRecorder 12 Mbps, 1920 px, WebM di riserva); webcam chiesta a 720p quasi ovunque. JPEG del browser a q 1.0 =
+  già il massimo (misurato: 4:4:4, quantizzazione tutta a 1). Video negli effetti: già nativo (sessione precedente).
+- **`public/effects/shared/syn-still.js` (`window.SynStill`)**: PNG scritto da noi (RGBA esatto, niente premoltiplicazione del
+  canvas; RGB se la foto è opaca; filtri per riga + deflate, IDAT ≤4 MB; 8K in ~2 s), JPEG `toBlob` q 1.0, PDF 1.4 scritto da
+  noi (immagine Flate senza perdita + **SMask** per la trasparenza, 1 px = 1 pt), `readAlpha` (alpha originale della foto) +
+  `compose` (alpha della foto, bordi de-premoltiplicati, soglia 16), "Salva con nome" aperto dentro il click, `attach()` = riga
+  **PNG · JPEG · PDF** sotto RENDER MP4 con lo stile del bottone. Mai ridotto: oltre i limiti del canvas → errore, nessun file.
+- **Ogni effetto: `window.SynFx {outSize, begin, frame, end}`** nel blocco `SYNTECH-EXPORT` (+ ganci di una riga marcati):
+  l'effetto come funzione di un'immagine data, alla risoluzione nativa, con i suoi shader e parametri; `still` = come
+  l'anteprima (riscaldamento deterministico dove l'effetto accumula: ANALOG feedback N=f(amt), QUADTREE smooth, TIME MACHINE 2
+  layer, BLOB TRACKER 36, ANAMORPHIC flare 30, BOKEH 10 send + 90 con BG FX temporale, PAINTING acquerello 32), `lab` = stato
+  temporale a cadenza fps come il render video, audio da `offlineAnalyser`. BOKEH: sorgente FOTO aggiunta. POINTCLOUD: i render
+  nativi uscivano scuri (punti sotto il pixel in anteprima → a 4K 1 % di copertura invece del 14 %): pavimento `uMinPt` solo in
+  export (anteprima invariata) → 4000×3000 media 1,5 → 16,9, = 1280×720; vale anche per RENDER MP4 / REC.
+- **Lab offline** (`src/lab/offline.ts`, `ChainLab.tsx`): video → `SynExport.render` sul video d'ingresso (fps/fotogrammi dal
+  file, seek esatto), ogni fotogramma passa nodo per nodo con `SynFx.frame` alla risoluzione nativa (outSize a catena), la
+  **timeline di cue sul beat applicata a ogni fotogramma**, audio del file copiato (Track = file della traccia, in loop; Mic =
+  avviso, niente audio); foto → PNG/JPEG/PDF della catena dalla foto ORIGINALE (non dalla tela 1920 dell'anteprima); webcam /
+  foto in MP4 → `SynExport.recordLive` (MP4, mai WebM) alla dimensione nativa dell'uscita. `MasterRecorder` e WebM rimossi.
+  Riga MASTER/HIGH + riga PNG/JPEG/PDF nel blocco LABORATORY.
+- **Webcam nativa**: `installNativeCamera()` (da `SynExport.attach`, tutti e 10) + Lab chiedono ideal 3840×2160 @ 30 → la
+  webcam dà la sua risoluzione massima (prima 720p).
+- **Corretto lungo la strada**: stima fps dei WebM (tempi al millisecondo: un 30 fps veniva letto 30,303 → +1 fotogramma):
+  media sull'intervallo + preferenza per i valori interi entro 1 % (24/25/30/50/60 esatti). PDF senza trasparenza con xref
+  non valido (oggetto 6 mancante) → numerazione senza buchi.
+- **Processo** (richiesta dell'operatore: Sonnet + Haiku delegati, l'orchestratore verifica): Haiku ×2 (audit; verifica
+  indipendente finale), Sonnet ×9 (syn-still; SynFx in 5 gruppi; Lab; test del Lab; POINTCLOUD), orchestratore (diagnosi,
+  piano, contratto SynFx, brief, controllo di ogni consegna, fix: alphaRect, xref PDF, fps WebM, fix della revisione).
+  Interruzione per limite d'uso (5 h) a metà revisione: ripresa dagli stessi agenti. **Revisione Opus 1: FAIL** — H1
+  ANAMORPHIC/INVISIBLE copiavano la foto su trasparente invece che su nero → bordi semitrasparenti ×2 / bianchi; M1 PAINTING
+  `end()` senza `frame()` distruggeva la texture live; L REC/RENDER durante un export foto → tutti corretti. **Revisione Opus
+  del delta: PASS** (rifatti nel browser: INVISIBLE alpha 128 → 79,9 vs controllo opaco 79,4; ANAMORPHIC non più doppio/bianco,
+  un po' più scuro ai bordi perché blur/striature mescolano il nero della zona trasparente — design; PAINTING resta vivo).
+- **Verifica** (Chromium headless, GL software): per ognuno dei 10 effetti foto opaca 4000×3000 / 2000×1500 → PNG RGB nativo,
+  JPEG nativo 4:4:4, PDF nativo pdfinfo pulito; foto trasparente 1600×1200 / 1200×900 → PNG RGBA con alpha **identica pixel per
+  pixel** alla sorgente (ANAMORPHIC: letterbox 2.39 = stesso ritaglio del RENDER MP4; BOKEH: letterbox schiaccia la foto nella
+  fascia, alpha schiacciata uguale, barre opache), PDF con SMask; anteprima ripristinata; RENDER MP4 invariato (24/24
+  fotogrammi). Video: 720p → 1280×720 25/1 25 fr, 1080p → 1920×1080 24/1 24 fr, aac, su ANALOG (ANAMORPHIC 1280×536 /
+  1920×802 = suo letterbox). Lab: catena analog→blob_tracker 640×360 24 fps → 640×360 24/1 48/48 fotogrammi distinti, `aac
+  (copy)`; 1280×720 29,97 → 30000/1001 29 fr; anamorphic→analog → 640×268; STOP → niente salvato; cue applicati; foto 4000×3000
+  → PNG/JPEG/PDF 4000×3000, trasparente → RGBA alpha esatta. `verify-lab-chain.cjs` aggiornato (export offline + ffprobe:
+  1280×720, 30/1, 60/60, audio). `npm run lint` pulito, `npm run build` ok.
+- **Non verificato qui**: velocità reale su GPU (il GL software fa 0,1–3 fps); webcam vera 4K (fake device: 3840×2160 ricevuto);
+  finestra "Salva con nome"; Track separata come audio del Lab; segmentazione MediaPipe con persone vere sulle foto.
+- **Aperti** (LOW): webcam 4K può appesantire l'anteprima live su macchine lente (se succede: tetto a 1080p); un WebM vero a
+  29,97 esce a 30 (indistinguibile al millisecondo); l'export offline del Lab porta l'audio del file anche con l'audio del Lab
+  spento (come Premiere); overlay di BLOB TRACKER in pixel fissi → piccoli a 4000×3000; `verify-lab-chain`: test "LOOP off =
+  look di PAUSE" e misure fps a macchina carica da rivedere.
+- **PROSSIMO PASSO**: sul Mac dell'operatore — PNG di una foto trasparente da 2–3 effetti aperti in Photoshop/Premiere,
+  EXPORT VFX CHAIN di un 4K vero con 2–3 nodi (tempo, file in Premiere), webcam: fluidità dell'anteprima a risoluzione nativa.
+
 **SESSIONE 2026-11-22/23 — EXPORT MASTER: RENDER MP4 offline, fotogramma per fotogramma, in TUTTI e 10 gli effetti. FATTO.**
 Operatore: *"ho usato l'effetto anamorphic … la qualità si abbassa enormemente. Va tutto a scatti … deve essere come
 Premiere … un export mp4 il più lossless possibile … se carico un video da 30 fps, da 24 fps sembra che scenda a 15"*;

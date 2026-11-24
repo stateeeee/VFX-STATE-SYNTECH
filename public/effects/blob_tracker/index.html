@@ -5467,7 +5467,7 @@ function _trkUpdate(list,mode,fresh){
 }
 
 // ── DETECT switch (hooks in trackerFrame) ──────────────────────────────────
-function _detEffMode(src){return(_detMode==='motion'&&src===activeImg)?'luma':_detMode;} // still image: no motion → LUMA
+function _detEffMode(src){return(_detMode==='motion'&&src===activeImg&&!window.__synFxLab)?'luma':_detMode;} /* SYNTECH-EXPORT: SynFx lab frames are a video stream, not a still → MOTION stays MOTION */ // still image: no motion → LUMA
 // Smart-contour mask orientation: tracker detection on webcam works mirrored (like _drawSrc, every DETECT mode); Panels stay raw
 function _bodySegMirror(){return appMode==='tracker'&&srcMode==='webcam';}
 function _detDrawProc(src,noMirror){ // detection canvas in display space: same letterbox rect as dc (SYNTECH-FIT), webcam mirrored like _drawSrc
@@ -7755,6 +7755,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 <!-- SYNTECH-LAB-END -->
 <!-- SYNTECH-EXPORT-START (offline MP4 render; standalone-safe) -->
 <script src="../shared/syn-export.js"></script>
+<script src="../shared/syn-still.js"></script><!-- SYNTECH-EXPORT: PNG · JPEG · PDF of a photo (docs/workflow/11-EXPORT-STILLS-LAB.md) -->
 <script>
 /* MP4-only export — docs/workflow/10-EXPORT-MASTER.md, engine in ../shared/syn-export.js.
    VIDEO FILE : RENDER MP4 and REC (button + R key) run the OFFLINE render: every source frame → one
@@ -7854,7 +7855,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
   }
 
   /* ── clean temporal state at the start of a render (repeatable file) ── */
-  function resetTemporal(T0){
+  function resetTemporal(T0,keepAudio){
     prevMotionFrame=null; motionEnergy=0; rawEnergy=0;
     _flowTrails=[]; _flowVel=[]; _flowPrevGray=null; _flowCurrGray=null;
     _vrPrevData=null; _vrFlowPrev=null; _vrFrame=0; _vrPFFrame=0; _vrLastCut=-9999; _vrLastFrame=-1; _arLastFrame=-1;
@@ -7865,7 +7866,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
     panelsT=0; camC.x=camC.y=0; camT.x=camT.y=0; pansFc=0;
     rForce=0; rTargetForce=0; rMx=-5; rMy=-5;
     if(rRenderer&&rRtA&&rRtB){ rRenderer.setRenderTarget(rRtA); rRenderer.clear(); rRenderer.setRenderTarget(rRtB); rRenderer.clear(); rRenderer.setRenderTarget(null); }
-    if(AE.inited){
+    if(AE.inited&&!keepAudio){                                 /* SynFx still: the live analysers are left alone */
       for(var k in AE.bands){ AE.bands[k]=0; AE._rawBands[k]=0; }
       AE.energy=0; AE.spectralCentroid=0; AE.spectralFlux=0; AE.onsetStrength=0; AE.isOnset=false;
       if(AE._prevLinBuf) AE._prevLinBuf.fill(0); if(AE._fluxBuf) AE._fluxBuf.fill(0); if(AE._ioiBuf) AE._ioiBuf.fill(0);
@@ -8025,6 +8026,125 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
       progress:function(kind,v){ if(kind==='render'){ var rt=$('rec-time'); if(rt) rt.textContent='RENDER '+v+'%'; } },
       stop:function(){ setRecUi(false); }
     }
+  });
+
+
+  /* ═══ window.SynFx — one-frame contract (docs/workflow/11-EXPORT-STILLS-LAB.md §2.2) ═════════════
+     Same draw as getFrame (pass() × k at native size, compose() of the visible layers) but the source is
+     the given canvas / image instead of the seeked <video>: srcMode='image', activeImg=<src> while the
+     frame is drawn. begin() swaps the live loops out (window.__synExpCtl → they idle), enterNative(W,H)
+     sizes #dc, #fx-ov-cv, REC/ripple canvases, #glC and #panels-canvas; end() restores everything.
+     STILL : state reset, then a deterministic WARM-UP of STILL_WARM = 36 passes on the same photo at a
+             60 Hz clock (clock t-(35..0)/60 s): enough for the body landmarkers (3 runs / still image),
+             the smart-contour segmenter (≤20 fps cap → 12 runs), blob tracks, flow, ripple / panels sim.
+             The audio analysers are NOT touched (live values). The mask / landmark inference is
+             synchronous inside each pass; frame() awaits the models (waitModels) before the first pass.
+     LAB   : state reset in begin(); per frame k = round(60/fps) passes (clock stepping 1/(fps·k)),
+             exactly as getFrame; opts.audioFile → the file's own audio analysis (offlineAnalyser) when
+             AUDIO or AUTO is on, setTime(t) per frame. */
+  var STILL_WARM=36, fx=null;
+  function fxFill(){ dCtx.globalAlpha=1; dCtx.globalCompositeOperation='source-over'; dCtx.fillStyle='#000'; dCtx.fillRect(0,0,dc.width,dc.height); }
+  window.SynFx={
+    version:1,
+    outSize:function(w,h){ return {w:w,h:h}; },
+    begin:async function(o){
+      if(ctl||fx||api.busy()||proCtl) throw new Error('another export is running');
+      var W=Math.round(o.width), H=Math.round(o.height), lab=o.mode==='lab';
+      if(!(W>0&&H>0)) throw new Error('SynFx.begin: no size');
+      var fps=lab?(o.fps>0?o.fps:30):60;
+      var c={t:0,inside:false,W:W,H:H,fps:fps,k:lab?Math.max(1,Math.round(60/fps)):1,T0:0,C0:0,aeT:0,oa:null,lab:lab,fx:true,
+        saved:{srcMode:srcMode,activeImg:activeImg,paused:paused,an:null,ctxProps:null,tex:null},inCv:null,tex:null};
+      fx=c; ctl=c;
+      try{
+        await waitModels();
+        if(lab&&o.audioFile&&(arOn||autoMode)){
+          if(!AE.inited) AE.init();
+          if(AE.inited&&AE.analyser&&AE.ctx){
+            var a=AE.analyser;
+            c.oa=await SynExport.offlineAnalyser({file:o.audioFile,fftSize:a.fftSize,smoothingTimeConstant:a.smoothingTimeConstant,minDecibels:a.minDecibels,maxDecibels:a.maxDecibels,sampleRate:AE.ctx.sampleRate});
+          }
+        }
+        if(ctl!==c) throw new Error('interrupted');
+        c.T0=performance.now()+1000;
+        window.__synExpCtl=c; window.__synFxLab=lab;
+        if(appMode==='tracker'&&!trackerRafId) startTracker();
+        if(appMode==='panels'){ if(!panelsBgRafId) startPanelsBg(); if(!panelsRafId) startPanels(); }
+        if(c.oa){
+          c.saved.an=AE.analyser; AE.analyser=c.oa;
+          c.C0=AE.ctx.currentTime+1;
+          Object.defineProperty(AE.ctx,'currentTime',{get:function(){ return c.aeT; },configurable:true});
+          c.saved.ctxProps=AE.ctx;
+        }
+        enterNative(W,H);
+        expCv.width=W; expCv.height=H;
+        if(!canAlloc(expCtx,expCv)) throw new Error('the browser cannot allocate a '+W+'×'+H+' canvas');
+        resetTemporal(c.T0,!lab);
+      }catch(e){ window.SynFx.end(); throw e; }
+    },
+    frame:async function(src,i,t){
+      var c=fx;
+      if(!c||ctl!==c||window.__synExpCtl!==c) throw new Error('SynFx.begin() was not called');
+      if(!src) throw new Error('SynFx.frame: no source');
+      await waitModels();
+      var sw=src.naturalWidth||src.videoWidth||src.width, sh=src.naturalHeight||src.videoHeight||src.height;
+      if(!(sw>0&&sh>0)) throw new Error('SynFx.frame: the source has no size');
+      var s=src;
+      if(!(typeof HTMLImageElement!=='undefined'&&src instanceof HTMLImageElement&&src.ownerDocument===document)){
+        if(!c.inCv) c.inCv=document.createElement('canvas');
+        if(c.inCv.width!==sw) c.inCv.width=sw;
+        if(c.inCv.height!==sh) c.inCv.height=sh;
+        var ictx=c.inCv.getContext('2d'); ictx.clearRect(0,0,sw,sh); ictx.drawImage(src,0,0,sw,sh);   /* local copy (the Lab's canvas lives in another document) */
+        s=c.inCv;
+      }
+      srcMode='image'; activeImg=s;
+      if(dc.width!==c.W||dc.height!==c.H){ exitNative(); enterNative(c.W,c.H); }
+      /* the Panels layer samples the picture through a THREE texture: point it at this frame */
+      if(typeof panelMeshes!=='undefined'&&panelsScene&&panelMeshes.length){
+        if(!c.tex){ c.saved.tex=panelMeshes[0].material.uniforms.map.value; c.tex=new THREE.CanvasTexture(s); c.tex.minFilter=THREE.LinearFilter; c.tex.magFilter=THREE.LinearFilter; panelMeshes.forEach(function(p){ p.material.uniforms.map.value=c.tex; }); }
+        else if(c.tex.image!==s) c.tex.image=s;
+        c.tex.needsUpdate=true;
+      }
+      var passes;
+      if(c.lab){
+        _BODY_KINDS.forEach(function(k){ _body[k].img=null; });                 /* each lab frame is a new picture: landmarkers re-run (≤3 runs) */
+        fxFill();
+        for(var p=0;p<c.k;p++) pass(t-(c.k-1-p)/(c.fps*c.k));
+      }else{
+        resetTemporal(c.T0,true);
+        for(var w=0;w<STILL_WARM;w++){ fxFill(); pass(t-(STILL_WARM-1-w)/60); }
+      }
+      compose(expCtx,c.W,c.H,false);                                           /* same task as the draw: #glC is still readable */
+      return {canvas:expCv};
+    },
+    end:function(){
+      var c=fx; fx=null;
+      if(!c) return;
+      if(ctl===c) ctl=null;
+      window.__synExpCtl=null; window.__synFxLab=false;
+      if(c.saved.an) AE.analyser=c.saved.an;
+      if(c.saved.ctxProps) delete c.saved.ctxProps.currentTime;
+      if(c.tex){ try{ panelMeshes.forEach(function(p){ p.material.uniforms.map.value=c.saved.tex; }); c.tex.dispose(); }catch(e){} }
+      try{ exitNative(); }catch(e){}
+      srcMode=c.saved.srcMode; activeImg=c.saved.activeImg; paused=c.saved.paused;
+      _ctSmartTs=-1; _arLastFrame=-1; _vrLastFrame=-1; _bodyNextAt=0; lastFpsT=performance.now(); fc=0;
+      _BODY_KINDS.forEach(function(k){ _body[k].sets=[]; _body[k].img=null; });
+      prevMotionFrame=null; _trkReset();
+    }
+  };
+
+  /* ── PNG · JPEG · PDF of a loaded photo (SynStill) ── */
+  var stillFile=null;
+  $('fi-i').addEventListener('change',function(e){ var f=e.target.files&&e.target.files[0]; if(f) stillFile=f; },true);
+  $('canvas-area').addEventListener('drop',function(e){ var f=e.dataTransfer&&e.dataTransfer.files[0]; if(f&&/^image\//.test(f.type)) stillFile=f; },true);
+  if(window.SynStill) SynStill.attach({
+    label:'BLOBTRACKER', anchorEl:$('btn-render'), buttonClass:'fs-btn',
+    toast:function(m,d){ toast(m,d); }, statusId:'render-status',
+    hasStill:function(){ return srcMode==='image'&&!!activeImg&&activeImg.naturalWidth>0&&!fx&&!ctl; },
+    getStillFile:function(){ return stillFile; },
+    sourceName:function(){ return stillFile&&stillFile.name?stillFile.name:'image'; },
+    beforeStill:function(){ return window.SynFx.begin({mode:'still',width:activeImg.naturalWidth,height:activeImg.naturalHeight}); },
+    renderStill:function(){ return window.SynFx.frame(activeImg,0,0); },
+    afterStill:function(){ return window.SynFx.end(); }
   });
 
   /* the R shortcut calls toggleRec() directly: send it through the REC button (→ engine) */
