@@ -85,19 +85,20 @@ export interface KnownModel {
 /** The models this build knows. The picker does NOT follow this order: it
  *  sorts every row by strengthOf() (strongest first — operator, 2026-11-19:
  *  "metti in ordine tutti i modelli in base alla loro forza").
- *  `strength` = the operator's ranking (2026-11-19): Neon > Carbon >
- *  Hydrogen > Argon (Artificial Analysis index: Neon 61, Carbon ~60), on the
+ *  `strength` = the operator's ranking (2026-11-25): Carbon > Neon >
+ *  Argon > Hydrogen (reordered by the operator; was Neon > Carbon > Hydrogen
+ *  > Argon, 2026-11-19), on the
  *  same scale strengthOf() gives unknown ids (version × 100 + tier).
  *  free 'no' = no free tier on Google's published pricing: the server PROBES
  *  those for each key (ModelInfo.locked) — a paid key unlocks them. */
 export const KNOWN_MODELS: readonly KnownModel[] = [
-  { id: 'gemini-4-neon', name: 'Gemini 4 Neon', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', free: 'no', strength: 462,
+  { id: 'gemini-4-neon', name: 'Gemini 4 Neon', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', free: 'no', strength: 461,
     note: 'Il più forte (indice 61), uscito il 18-11-2026.' },
-  { id: 'gemini-4-carbon', name: 'Gemini 4 Carbon', efforts: ['low', 'medium', 'high'], defaultEffort: 'high', free: 'no', strength: 461,
+  { id: 'gemini-4-carbon', name: 'Gemini 4 Carbon', efforts: ['low', 'medium', 'high'], defaultEffort: 'high', free: 'no', strength: 462,
     note: 'Per i progetti più lunghi e difficili.' },
-  { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', free: 'yes', strength: 454,
+  { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', free: 'yes', strength: 450,
     note: 'Vede video, foto e webcam e sente la musica.' },
-  { id: 'gemini-4-argon', name: 'Gemini 4 Argon', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', free: 'no', strength: 450,
+  { id: 'gemini-4-argon', name: 'Gemini 4 Argon', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', free: 'no', strength: 454,
     note: 'Più leggero dei 4 della serie Gemini 4.' },
   { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', efforts: ['minimal', 'low', 'medium', 'high'], defaultEffort: 'high', free: 'yes', strength: 385,
     note: 'Il modello di prima, veloce.' },

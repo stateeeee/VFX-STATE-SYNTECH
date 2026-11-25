@@ -702,9 +702,9 @@ process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
       && !pick['gemini-3.8-flash'].lock && !pick['gemini-3.8-flash'].disabled && !pick['gemini-4-hydrogen'].lock,
       short({ argon: pick['gemini-4-argon'], flash: pick['gemini-3.8-flash'] }));
     const at = (id) => ids.indexOf(id);
-    check(' rows run strongest first (newer version above older; Neon > Carbon > Hydrogen > Argon; 2.5 Pro > 2.5 Flash > 2.5 Flash-Lite)',
+    check(' rows run strongest first (newer version above older; Carbon > Neon > Argon > Hydrogen; 2.5 Pro > 2.5 Flash > 2.5 Flash-Lite)',
       ids.every((id, i) => i === 0 || versionRank(ids[i - 1]) >= versionRank(id))
-      && ['gemini-4-neon', 'gemini-4-carbon', 'gemini-4-hydrogen', 'gemini-4-argon'].every((id, i, a) => at(id) >= 0 && (i === 0 || at(a[i - 1]) < at(id)))
+      && ['gemini-4-carbon', 'gemini-4-neon', 'gemini-4-argon', 'gemini-4-hydrogen'].every((id, i, a) => at(id) >= 0 && (i === 0 || at(a[i - 1]) < at(id)))
       && ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'].every((id, i, a) => at(id) >= 0 && (i === 0 || at(a[i - 1]) < at(id))), short(ids, 300));
     const choiceNow = () => page.evaluate(() => { try { return JSON.parse(localStorage.getItem('syntech.geminiChoice') || 'null'); } catch { return 'unparsable'; } });
     const setSlider = (i) => page.evaluate((v) => {

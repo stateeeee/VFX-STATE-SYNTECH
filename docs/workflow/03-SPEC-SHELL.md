@@ -796,9 +796,9 @@ the music through its own reactive controls, which are ordinary parameters.
   (LOW · MEDIUM · HIGH · X-HIGH for Hydrogen).
 - The rows come from `GET /api/gemini/models`: every `gemini-…` model the key
   can call with generateContent, version ≥ 2.5, minus embedding / image /
-  TTS / live / Gemma models, **strongest first** (operator, 2026-11-19):
-  `strengthOf()` — known models by the operator's ranking (Neon 462 > Carbon
-  461 > Hydrogen 454 > Argon 450 > 3.8 Flash 385 > 3.1 Pro Preview > 2.5
+  TTS / live / Gemma models, **strongest first** (operator, 2026-11-19; reordered 2026-11-25):
+  `strengthOf()` — known models by the operator's ranking (Carbon 462 > Neon
+  461 > Argon 454 > Hydrogen 450 > 3.8 Flash 385 > 3.1 Pro Preview > 2.5
   Pro), any other by version × 100 + tier (Pro 9, named 8, Flash 5,
   Flash-Lite 2).
 - **No Free / Paid / New text anywhere** (not even tooltips). A row shows

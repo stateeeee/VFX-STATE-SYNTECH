@@ -29,6 +29,8 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-11-25 — ORDINE MODELLI GEMINI: Carbon > Neon > Argon > Hydrogen.** Operatore: *"riordina i modelli … prima carbon poi neon poi argon e poi hydrogen"*. Cambiati solo i `strength` in `KNOWN_MODELS` (`src/ai/contract.ts`: Carbon 462, Neon 461, Argon 454, Hydrogen 450) + spec §9.14 + verify-gemini. Il modello consigliato a una chiave gratuita resta Hydrogen (gli altri sono bloccati). **Neon con account universitario:** Neon è solo API a pagamento (nessun free tier); l'abbonamento/offerta studenti sblocca l'app Gemini e il playground di AI Studio, NON una chiave API gratuita → l'app lo vede bloccato (lucchetto). Serve una chiave di un progetto con fatturazione attiva.
+
 **SESSIONE 2026-11-23/24 — EXPORT FOTO (PNG · JPEG · PDF) in TUTTI e 10 gli effetti + LAB fotogramma per fotogramma. FATTO.**
 Operatore: *"se carico una foto … da ogni effetto, sia nell'hub sia nella sezione di destra … PNG che sia un vero PNG. Se
 carico una foto con sfondo trasparente, deve restare trasparente. JPEG e PDF … nella qualità più alta possibile. Sempre …
