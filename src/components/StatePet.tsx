@@ -1,15 +1,17 @@
 /* STATE PET — the 3D mascot that lives in the cage's bottom-right opening.
  *
- * Idle: it floats (bob + a slow sway). Hover: it spins a full turn, scales up
- * and keeps looking at the cursor; click makes it jump and turn. Press and hold
- * and it follows the mouse anywhere in the app (it is only a translate of its own
- * small canvas); let go and it springs back to its home in the opening, keeping
- * the speed it was thrown with. Leave it alone and it floats again.
+ * At rest it is STILL (one static frame, zero rAF callbacks): it animates only
+ * when touched. Hover: it spins a full turn, scales up and keeps looking at the
+ * cursor; click makes it jump and turn. Press and hold and it follows the mouse
+ * anywhere in the app (it is only a translate of its own small canvas); let go
+ * and it springs back to its home in the opening, keeping the speed it was
+ * thrown with, then renders its final rest frame and the loop stops.
  *
  * Cost: three.js is already in the main bundle (blob_tracker uses it); the 1.5 MB
- * mesh and the texture are fetched AFTER first paint (requestIdleCallback), the render loop idles at 30 fps and only runs at full rate while the
- * pet is being touched or is still settling, and it stops entirely while the
- * hero is fullscreen or the tab is hidden. The cage's frame-cost contract
+ * mesh and the texture are fetched AFTER first paint (requestIdleCallback); the
+ * render loop runs at full rate only while the pet is being touched or is still
+ * settling (it is started on demand and stops when settled), and it does not run
+ * while the hero is fullscreen or the tab is hidden. The cage's frame-cost contract
  * (one image, nothing animated on top of the hero) is untouched: the pet is its
  * own small canvas.
  *
@@ -52,8 +54,12 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const dayRef = useRef(isDayMode);
   const pausedRef = useRef(paused);
+  const wakeRef = useRef<(() => void) | null>(null); // render a frame / start the loop on demand
   dayRef.current = isDayMode;
   pausedRef.current = paused;
+
+  /* theme change or leaving fullscreen: redraw the rest frame (the loop is otherwise off) */
+  useEffect(() => { wakeRef.current?.(); }, [isDayMode, paused]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -141,14 +147,14 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
         camera.aspect = cssW / cssH; camera.updateProjectionMatrix();
       };
       resize();
-      const ro = new ResizeObserver(resize); ro.observe(host);
+      const ro = new ResizeObserver(() => { resize(); drawPose(); }); ro.observe(host); // resizing clears the canvas: redraw at once
 
       /* ── motion state ── */
       const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
       let yaw = 0, yawV = 0, turns = 0;       // yaw target = turns·2π + look (+ idle sway)
       let pitch = 0, pitchV = 0;
       let lift = 0, liftV = 0;                // click jump
-      let grow = 0.001, growV = 0;            // spawn + hover scale
+      let grow = 1, growV = 0;                // hover scale (rest = 1)
       let hover = false, dragging = false;
       let lookYaw = 0, lookPitch = 0;
       let px = -1, py = -1;                   // pointer in canvas CSS px
@@ -157,15 +163,15 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
       let ax = 0, ay = 0;                     // offset currently WRITTEN to host.style.transform
       let gx = 0, gy = 0;                     // where in the pet the pointer grabbed it
       let tx = 0, ty = 0;                     // drag target offset
-      let busyUntil = 0;                      // stay at full frame rate until then
-      let t = 0;
+      let running = false, raf = 0, last = 0, acc = 0;  // the loop only exists while the pet moves
+      let wake = () => {};                    // (re)start the loop; assigned below
 
       /* the hit area is an ellipse around the figure's projected centre: it does not
          depend on yaw, so the flat figure going edge-on mid-spin never loses the hover */
       const pxPerUnit = () => cssH / visH;
       const hit = (x: number, y: number) => {
         const u = pxPerUnit();
-        const cx = cssW / 2, cy = cssH / 2 - lift * u - Math.sin(t * 1.4) * 0.03 * u;
+        const cx = cssW / 2, cy = cssH / 2 - lift * u;
         const rx = (figW / 2) * u * 1.0, ry = 0.5 * u * 1.04;
         const dx = (x - cx) / rx, dy = (y - cy) / ry;
         return dx * dx + dy * dy <= 1;
@@ -173,13 +179,13 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
       const setHover = (h: boolean) => {
         if (h === hover) return;
         hover = h;
-        busyUntil = performance.now() + 1500;
         canvas.style.cursor = h ? 'grab' : '';
         if (h && !dragging) {
           const settled = Math.abs(yaw - turns * TAU) < 0.9 && Math.abs(yawV) < 2;
           if (settled && !reduced) turns += 1; // one full turn on entering
         }
         if (!h && !dragging) { turns = Math.round(yaw / TAU); }
+        wake();
       };
       const local = (e: PointerEvent) => {
         const r = canvas.getBoundingClientRect();
@@ -190,7 +196,7 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
         if (dragging) {
           moved += Math.abs(e.movementX) + Math.abs(e.movementY);
           tx = e.clientX - gx; ty = e.clientY - gy;
-          busyUntil = performance.now() + 1500;
+          wake();
           return;
         }
         setHover(hit(px, py));
@@ -198,7 +204,7 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
           const u = pxPerUnit();
           lookYaw = clamp((px - cssW / 2) / (figW / 2 * u), -1, 1) * 0.7;
           lookPitch = clamp((py - cssH / 2) / (0.5 * u), -1, 1) * 0.25;
-          busyUntil = performance.now() + 1500;
+          wake();
         }
       };
       const onDown = (e: PointerEvent) => {
@@ -209,7 +215,7 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
         canvas.setPointerCapture(e.pointerId);   // the drag keeps working outside the canvas, over the whole app
         canvas.style.cursor = 'grabbing';
         turns = Math.round(yaw / TAU);
-        busyUntil = performance.now() + 1500;
+        wake();
       };
       const onUp = (e: PointerEvent) => {
         if (!dragging) return;
@@ -222,7 +228,7 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
            Refresh hover WITHOUT running the "pointer entered" logic (it would add a spin)
            and never leave a stale cursor. */
         local(e); hover = hit(px, py); canvas.style.cursor = hover ? 'grab' : '';
-        busyUntil = performance.now() + 4000;
+        wake();
       };
       const onLeave = () => { px = py = -1; if (!dragging) setHover(false); };
       canvas.addEventListener('pointermove', onMove);
@@ -233,20 +239,17 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
       canvas.addEventListener('pointerleave', onLeave);
 
       /* ── loop ── */
-      let raf = 0, last = performance.now(), acc = 0;
       const sp = { x: 0, v: 0 };              // scratch: no allocation per spring step
       const spring = (x: number, v: number, target: number, k: number, damp: number, h: number) => {
         const a = k * (target - x) - damp * v;
         sp.v = v + a * h; sp.x = x + sp.v * h;
       };
-      const frame = (now: number) => {
-        raf = requestAnimationFrame(frame);
-        if (pausedRef.current || document.hidden) { last = now; return; }
-        const busy = now < busyUntil || dragging || hover || ox !== 0 || oy !== 0;
+      const step = (now: number) => {
+        raf = 0;
+        if (pausedRef.current || document.hidden) { running = false; return; } // resumed by wake()
         const elapsed = now - last;
-        if (!busy && elapsed < 32) return;       // idle: ~30 fps
         last = now;
-        const dt = Math.min(elapsed, 100) / 1000;
+        const dt = clamp(elapsed, 0, 100) / 1000;
         acc += dt;
         /* while held, the pet is exactly where the mouse put it (kept inside the window);
            its speed is measured so it can be thrown */
@@ -259,13 +262,11 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
         }
         const H = 1 / 120;
         while (acc >= H) {
-          acc -= H; t += H;
+          acc -= H;
           const flying = Math.abs(ovx) + Math.abs(ovy) > 40;
-          const idleYaw = reduced ? 0 : Math.sin(t * 0.55) * 0.38;
-          const idlePitch = reduced ? 0 : Math.sin(t * 0.42 + 1) * 0.06;
-          /* travelling: it leans into the motion; otherwise it looks at the cursor or sways */
-          const tYaw = turns * TAU + (flying && !reduced ? clamp(ovx / 900, -1, 1) * 0.6 : hover ? lookYaw : idleYaw);
-          const tPitch = flying && !reduced ? clamp(ovy / 1500, -1, 1) * 0.2 : hover ? lookPitch : idlePitch;
+          /* travelling: it leans into the motion; otherwise it looks at the cursor or rests facing front */
+          const tYaw = turns * TAU + (flying && !reduced ? clamp(ovx / 900, -1, 1) * 0.6 : hover ? lookYaw : 0);
+          const tPitch = flying && !reduced ? clamp(ovy / 1500, -1, 1) * 0.2 : hover ? lookPitch : 0;
           spring(yaw, yawV, tYaw, 55, 2 * Math.sqrt(55) * 0.42, H); yaw = sp.x; yawV = sp.v;
           spring(pitch, pitchV, tPitch, 60, 2 * Math.sqrt(60) * 0.8, H); pitch = sp.x; pitchV = sp.v;
           if (!dragging) {                         // home spring
@@ -290,24 +291,46 @@ export default function StatePet({ isDayMode, paused = false }: Props) {
           host.style.transform = ox === 0 && oy === 0 ? '' : `translate3d(${ox.toFixed(2)}px,${oy.toFixed(2)}px,0)`;
           ax = ox; ay = oy;
         }
-        const bob = reduced ? 0 : Math.sin(t * 1.4) * 0.03 + Math.sin(t * 0.7) * 0.012;
-        const y = bob + lift;
-        pivot.position.y = y;
-        pivot.rotation.set(pitch, yaw, reduced ? 0 : Math.sin(t * 0.9) * 0.025 - clamp(ovx * 0.0004, -0.3, 0.3), 'YXZ');
+        /* settled = at home, facing front, scale 1, nothing moving: snap to the exact rest pose,
+           draw it one last time and let the loop die */
+        const settled = !dragging && !hover && ox === 0 && oy === 0 && lift === 0
+          && Math.abs(yaw - turns * TAU) < 0.004 && Math.abs(yawV) < 0.05
+          && Math.abs(pitch) < 0.004 && Math.abs(pitchV) < 0.05
+          && Math.abs(grow - 1) < 0.002 && Math.abs(growV) < 0.05;
+        if (settled) { yaw = turns * TAU; yawV = 0; pitch = pitchV = 0; grow = 1; growV = 0; liftV = 0; acc = 0; }
+        drawPose();
+        if (settled) { running = false; return; }
+        raf = requestAnimationFrame(frame);
+      };
+      /* a throw (e.g. WebGL context lost) must not leave running=true with no frame queued: wake() could never restart it */
+      const frame = (now: number) => {
+        try { step(now); } catch (e) { running = false; raf = 0; console.warn('[StatePet] frame failed', e); }
+      };
+      const drawPose = () => {
+        pivot.position.y = lift;
+        pivot.rotation.set(pitch, yaw, reduced ? 0 : -clamp(ovx * 0.0004, -0.3, 0.3), 'YXZ');
         pivot.scale.setScalar(Math.max(0.001, grow));
-        const h = clamp(1 - y * 1.4, 0.35, 1.2);
+        const h = clamp(1 - lift * 1.4, 0.35, 1.2);
         shadow.scale.set(0.7 * h * grow, 0.7 * h * grow, 1);
         const day = dayRef.current;
         shadowMat.color.set(day ? 0x000000 : 0x8b5cf6);
         shadowMat.opacity = (day ? 0.28 : 0.4) * h;
         renderer.render(scene, camera);
       };
-      raf = requestAnimationFrame(frame);
-      busyUntil = performance.now() + 2500;       // spawn pop
+      wake = () => {
+        if (running || disposed || pausedRef.current || document.hidden) return;
+        running = true; last = performance.now(); acc = 0;
+        raf = requestAnimationFrame(frame);
+      };
+      wakeRef.current = wake;
+      const onVis = () => { if (!document.hidden) wake(); };
+      document.addEventListener('visibilitychange', onVis);
+      drawPose();                                 // the static rest frame (also covers paused / hidden at load)
       host.style.opacity = '1';
 
       cleanup = () => {
-        cancelAnimationFrame(raf); ro.disconnect();
+        wakeRef.current = null; running = false; cancelAnimationFrame(raf); ro.disconnect();
+        document.removeEventListener('visibilitychange', onVis);
         canvas.removeEventListener('pointermove', onMove);
         canvas.removeEventListener('pointerdown', onDown);
         canvas.removeEventListener('pointerup', onUp);

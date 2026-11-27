@@ -536,6 +536,7 @@ let videoTex = null, playing = false, transition = 0;
 function activateVideo(isCam) {
   if (videoTex) videoTex.dispose();
   videoTex = new THREE.VideoTexture(vid);
+  if (window.__synPrev) window.__synPrev.force(); /* SYNTECH-PREVIEW: new texture → the next tick uploads */
   videoTex.minFilter = THREE.LinearFilter;
   videoTex.magFilter = THREE.LinearFilter;
   videoTex.format    = THREE.RGBAFormat;
@@ -925,7 +926,7 @@ function animate(ts) {
   /* SYNTECH-SOURCE: was "if (videoTex) videoTex.needsUpdate = true;". No upload from a stopped webcam (the
      texture keeps its last frame for the morph back) nor from a video element that has no frame yet while
      a new source loads (that upload fails — "texImage2D: no video" — and leaves the texture as it was). */
-  if (videoTex && srcMode !== 'none' && vid.readyState >= vid.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
+  if (videoTex && srcMode !== 'none' && vid.readyState >= vid.HAVE_CURRENT_DATA && (!window.__synPrev || window.__synPrev.fresh())) videoTex.needsUpdate = true; /* SYNTECH-PREVIEW: upload only on a NEW video frame (was: every tick) */
 
   driftCamera(t);
   composer.render();
@@ -1394,6 +1395,20 @@ animate(0);
 })();
 </script>
 <!-- SYNTECH-EXPORT-END -->
+<!-- SYNTECH-PREVIEW-START (live preview quality — docs/workflow/12-PREVIEW-QUALITY.md; standalone-safe) -->
+<script src="../shared/syn-view.js"></script>
+<script>
+/* POINTCLOUD: the preview resolution is NOT changed (the canvas already renders at its box x min(DPR,2), so
+   there is nothing to sharpen). This adapter does the smoothness part only: the video is uploaded to the
+   GPU only when the <video> presented a NEW frame (SynView.frames) — animate() calls window.__synPrev.fresh() — and, on 120 / 144 Hz displays, the page draws at max(60, video fps). The cloud's own
+   time animation still runs every drawn frame; exports / SynFx (window.__synExpCtl) always upload. */
+(function(){ 'use strict'; if(!window.SynView) return;
+  var gate=SynView.frames(function(){ var v=document.getElementById('vid'); return (v&&(v.srcObject||v.currentSrc||v.src))?v:null; });
+  window.__synPrev={ fresh:function(){ return gate.fresh(); }, force:function(){ gate.force(); } };
+  SynView.capRefresh();
+})();
+</script>
+<!-- SYNTECH-PREVIEW-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

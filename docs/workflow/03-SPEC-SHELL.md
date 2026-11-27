@@ -430,6 +430,39 @@ resolution: `still` = the photo export, `lab` = one node of the Lab's offline ch
 (native size, PNG/PDF lossless with the photo's own alpha, JPEG q 1.0 4:4:4). The Lab's EXPORT VFX CHAIN
 with a video input renders the chain frame by frame through every node's `SynFx` (`src/lab/offline.ts`).
 
+### 5.4 Live preview quality — `SYNTECH-PREVIEW` (operator request 2026-11-26 — fifth permitted edit)
+
+*"Il mio video, oltre a perdere di qualità visiva sgranandosi, va anche a scatti … come Premiere: non deve
+perdere di qualità, non deve perdere FPS."* Operator decision: preview resolution **automatic** (Premiere's
+"Auto": as sharp as the screen shows, never above the source). Design, causes and acceptance:
+`12-PREVIEW-QUALITY.md`. An effect carries one more delimited block, right after `SYNTECH-EXPORT-END`:
+
+```
+<!-- SYNTECH-PREVIEW-START (live preview quality — docs/workflow/12-PREVIEW-QUALITY.md; standalone-safe) -->
+<script src="../shared/syn-view.js"></script>
+<script> …adapter: preview size, new-frame upload gate, capRefresh… </script>
+<!-- SYNTECH-PREVIEW-END -->
+```
+
+plus one-line hooks marked `/* SYNTECH-PREVIEW */` where the effect's code must ask for the preview size or
+the upload gate (also allowed inside its SYNTECH-EXPORT / SYNTECH-LAB blocks, e.g. exposing a closure sizer
+or making a post-export restore use the current preview size). Rules:
+
+- **Resolution** = `SynView.size(source, visible area)` (`public/effects/shared/syn-view.js`): the source
+  aspect fitted into the area the picture occupies × `devicePixelRatio`, never above the source, shrunk only
+  if the GPU cannot draw it. It reuses the effect's own native-size machinery from its SYNTECH-EXPORT block
+  (same FBOs, same pixel-footprint compensation), so the preview looks like the export, only sharper; the
+  frame follows the source aspect (a 9:16 clip stays 9:16). No source → the effect's old default size.
+  Never re-sized during an export / SynFx / live REC; afterwards back to the current preview size. Live REC
+  never records smaller than before. PAINTING and POINTCLOUD keep their resolution (already screen × DPR).
+- **New-frame gate**: the video is uploaded to the GPU only when a new frame was presented
+  (`SynView.frames`, `requestVideoFrameCallback`), once while paused, always while an export / SynFx draws;
+  the effect's own drawing (time-animated looks) keeps running every tick.
+- **Refresh cap**: `SynView.capRefresh()` — on displays faster than ~75 Hz the page draws every n-th vsync
+  (120 Hz → 60, 144 → 72) unless the video is faster; a pass-through at 60 Hz. It sits under SynLab's gate.
+- The Lab: multi-node chains run at the source's frame rate (not a fixed 30) and every node's gate fires on
+  the same absolute time slots (`syn-lab.js`), so the nodes draw in the same vsync.
+
 ## 6. Node graph spec (INPUT → effects → OUTPUT)
 
 - **Nodes**: INPUT (the loaded source video, with audio — or a still photo,

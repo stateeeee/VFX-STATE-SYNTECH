@@ -29,6 +29,77 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-11-26/27 — ANTEPRIMA COME PREMIERE: nitida (risoluzione dello schermo, mai sopra il video) e fluida
+(fotogrammi caricati solo quando sono nuovi, 120 Hz → 60, LAB agli fps del video) in TUTTI e 10 gli effetti + LAB. FATTO.**
+Operatore: *"ho appena provato a usare l'effetto anamorphic … il mio video, oltre a perdere di qualità visiva sgranandosi, va
+anche a scatti … anche gli altri effetti … come Premiere, come After Effects: carico un video, lo modifico, non deve perdere
+di qualità, non deve perdere FPS … pusha su main"*. Decisioni (AskUserQuestion): anteprima **automatica** (= "Auto" di
+Premiere); mascotte: *"animala solo se la tocco"*. Piano, cause e criteri: **`12-PREVIEW-QUALITY.md`**; regola: 03-SPEC
+**§5.4** (quinta modifica permessa agli HTML: blocco `SYNTECH-PREVIEW` + hook `/* SYNTECH-PREVIEW */`).
+- **Cause misurate prima del codice** (audit Haiku del codice + misure nel browser, 1600×1000 DPR 2): l'export era già
+  nativo — il problema era l'ANTEPRIMA. Canvas sotto i pixel dello schermo in 8 effetti (ANAMORPHIC ≤1280 → 0,50 dei
+  pixel mostrati; ANALOG/BOKEH/QUADTREE/TIME MACHINE fissi 1920×1080 anche con un 4K → 0,75; INVISIBLE ≤1080p; BLOB
+  REVEAL/TRACKER in px CSS → 0,50); un 9:16 STIRATO in 16:9 in 4 effetti (l'export invece giusto); il video ricaricato
+  sulla GPU a ogni giro dello schermo anche quando il fotogramma non cambia e anche in pausa (9 effetti su 10); su schermi
+  120/144 Hz tutto disegnato 120 volte al secondo; LAB a 30 fps fissi con più nodi, ogni nodo con la sua fase; la
+  mascotte sempre animata sullo stesso thread degli effetti.
+- **`public/effects/shared/syn-view.js` (`window.SynView`)**: `size` (formato della sorgente nel riquadro × DPR, mai sopra
+  la sorgente), `fit` (riduce solo se la GPU non ce la fa), `watch` (riquadro / finestra / schermo intero / DPR, debounce
+  150 ms), `frames` (gate `requestVideoFrameCallback`: carica solo un fotogramma NUOVO, una volta in pausa, sempre durante
+  export/SynFx, ricade sul vecchio comportamento se rVFC tace — mai un'immagine congelata), `capRefresh` (sopra ~75 Hz
+  ogni n-esimo vsync: 120→60, 144→72, 240→60, 90/100 tutti; passaggio diretto a 60 Hz e quando c'è un budget del Lab).
+- **Ogni effetto: blocco `SYNTECH-PREVIEW`** che riusa il motore nativo del proprio export (stessi FBO, stessa
+  compensazione dei valori in pixel → l'anteprima ha il look dell'export, solo nitida); mai ridimensionato durante
+  export / SynFx / PNG / REC live; dopo, torna alla dimensione ATTUALE; REC live mai più piccolo di prima. ANAMORPHIC
+  (anche i buffer del Bokeh oltre 1280×720), INVISIBLE (il clean plate catturato viene COPIATO nella nuova dimensione:
+  non si perde mai con finestra / schermo intero / Lab; REC live ≥ vecchio limite 1080p), ANALOG / QUADTREE (frame nel
+  formato della sorgente; pixel sort = passate × lato lungo / 1920 solo in anteprima; bordo QUADTREE × H/1080), BOKEH
+  (`PREVREF` 1920 px sul lato lungo per i valori in pixel), TIME MACHINE (la cache temporale resta la manopola
+  dell'operatore), BLOB REVEAL (parametri ×k come l'export), BLOB TRACKER (HUD con `setTransform(k)` + shadowBlur ×k: stesse
+  dimensioni sullo schermo; nei modi a pixel INVERT/THERMAL/SECURITY/LIQUID/GLITCH/FIXED PTS/RIPPLE/PANELS resta alla
+  risoluzione di prima; l'uscita verso il Lab ha dimensione costante), PAINTING / POINTCLOUD (già a risoluzione schermo:
+  solo gate + capRefresh).
+- **LAB**: budget dei nodi = fps della sorgente (contenitore MP4/MOV esatto; WebM = stima passiva dai fotogrammi del video
+  che suona; webcam = fps della traccia; foto 30), tra 24 e 60; un nodo solo nativo; il gate di `syn-lab.js` scatta su
+  slot di tempo assoluti condivisi (orologio sul top window, solo numeri) → tutti i nodi nello stesso vsync; la presa REC
+  in tempo reale (webcam / foto) registra alla stessa cadenza e con ogni nodo alla risoluzione NATIVA della sorgente; la
+  finestra "Salva con nome" si apre dentro il click.
+- **Mascotte** (`StatePet.tsx`): ferma, nessun loop a riposo; si anima solo toccandola (passaggio, click, trascinamento) e
+  si ferma quando torna in posa.
+- **Cambia anche l'EXPORT (solo BOKEH, solo sorgenti non 16:9)**: sfocatura / maschera / datamosh / lava ora rotondi invece
+  che stirati (prima i valori in pixel usavano 1920×1080 anche su un 1080×1920). Il 16:9 è identico.
+- **Processo** (richiesta dell'operatore: orchestratore + Sonnet/Haiku delegati, tutto verificato): Haiku ×3 (audit codice,
+  misure prima, test di regressione + misure dopo), Sonnet ×6 (mascotte; ANAMORPHIC+INVISIBLE; ANALOG+QUADTREE;
+  BOKEH+TIME MACHINE; PAINTING+POINTCLOUD; LAB), Opus ×1 builder (i due BLOB, 2D con HUD), orchestratore (diagnosi, piano,
+  `syn-view.js` + test unitari, brief, controllo di ogni consegna, fix della revisione in syn-view/syn-lab/StatePet/
+  ChainLab). Plugin **Everything Claude Code**: il suo `code-reviewer` come seconda revisione del codice condiviso
+  (APPROVE, 2 MEDIUM → corretti). Due interruzioni per limiti d'uso + due riavvii del worker: ripreso ogni volta dai file.
+  **Revisione Opus 1: FAIL** (REC live INVISIBLE e presa REC del Lab più piccoli di prima; a 120 Hz nodi su vsync alterni;
+  BLOB TRACKER gate che si accumulano + dimensione dell'uscita che cambia col modo e resetta i nodi a valle; pixel sort di
+  ANALOG che cambia con la finestra; allocazioni per fotogramma) → tutti corretti. **Revisione Opus del delta: PASS**; poi
+  "Salva con nome" nel click: PASS.
+- **Verifica** (Chromium headless, GL software — gli fps veri non si misurano qui): dimensioni = `SynView.size` in ogni
+  effetto (1080p → 1920×1080 dove prima 1280×720; 4K → 2560×1440 dove prima 1280×720 / 1920×1080; 9:16 → 9:16 non stirato);
+  caricamenti del video = fotogrammi del video, 0 in pausa (BLOB TRACKER: 196 → 0 disegni in 2,5 s di pausa; letture pixel
+  153/s → 23/s); ridimensionamento finestra, modalità pannello del Lab, RENDER MP4 (dimensioni / fps / fotogrammi come prima
+  in tutti e 10), PNG nativo, REC live ≥ prima; look invariato (coppie di screenshot / differenze di pixel guardate);
+  `verify-export-master` 26/26; `syn-view` test unitari (gate 48 caricamenti / 2 s su un 24 fps a 60 Hz, 0 in pausa;
+  cadenze 120/144/240/90/100/165 Hz). `npm run lint` pulito, `npm run build` ok.
+  `verify-lab-chain` 65/66 ×3 giri (+1 giro 64/66): l'unico FAIL costante è "pause: INPUT paused, no new input frames"
+  (input 3–5 fps con l'orologio fermo) — **NON è una regressione**, provato per bisezione: con il codice di HEAD e la catena
+  analog,painting fallisce anche lì (1 fps); a HEAD la catena analog,painting,bokeh passava solo perché BOKEH disegnava
+  1920×1080 nel Lab e bloccava il thread (GL software). Il secondo FAIL saltuario "LOOP off = look di PAUSE" fallisce
+  anche a HEAD (già noto).
+- **Non verificato qui**: fluidità reale e 120 Hz su una GPU vera (il Mac dell'operatore); webcam vera.
+- **Aperti** (LOW): BLOB REVEAL `drawSubject` a piena risoluzione costa di più (composito 2D, sulla GPU del Mac);
+  ANALOG a 4K schermo intero: le scie del pixel sort in anteprima e nel RENDER MP4 nativo differiscono (come già prima);
+  lo slot condiviso del Lab assume che lo sfasamento dei `timeOrigin` degli iframe resti sotto metà vsync (3–7 ms);
+  in pausa la cattura del video INPUT di Chromium riemette il fotogramma fermo (pre-esistente, vedi sopra): i nodi
+  continuano a disegnare la loro grana sul fotogramma fermo — il test "pause" va riscritto per misurare il TEMPO del
+  video (fermo) invece dei fotogrammi del flusso.
+- **PROSSIMO PASSO**: sul Mac dell'operatore — aprire ANAMORPHIC con un 4K e un 1080p (anteprima nitida, play fluido a
+  schermo intero), un video 9:16 in ANALOG/BOKEH, una catena di 2–3 nodi nel LAB con un 24 e un 60 fps.
+
 **SESSIONE 2026-11-25 — ORDINE MODELLI GEMINI: Carbon > Neon > Argon > Hydrogen.** Operatore: *"riordina i modelli … prima carbon poi neon poi argon e poi hydrogen"*. Cambiati solo i `strength` in `KNOWN_MODELS` (`src/ai/contract.ts`: Carbon 462, Neon 461, Argon 454, Hydrogen 450) + spec §9.14 + verify-gemini. Il modello consigliato a una chiave gratuita resta Hydrogen (gli altri sono bloccati). **Neon con account universitario:** Neon è solo API a pagamento (nessun free tier); l'abbonamento/offerta studenti sblocca l'app Gemini e il playground di AI Studio, NON una chiave API gratuita → l'app lo vede bloccato (lucchetto). Serve una chiave di un progetto con fatturazione attiva.
 
 **SESSIONE 2026-11-23/24 — EXPORT FOTO (PNG · JPEG · PDF) in TUTTI e 10 gli effetti + LAB fotogramma per fotogramma. FATTO.**

@@ -29,6 +29,7 @@ done, what is next, and every decision made so far. Then follow
 | `09-MODEL-ROUTING.md` | **Which model does which task** (Haiku / Sonnet / Opus) + the mandatory Opus review gate |
 | `10-EXPORT-MASTER.md` | Offline frame-by-frame MP4 render (RENDER MP4): why realtime REC loses quality/fps, the SynExport design |
 | `11-EXPORT-STILLS-LAB.md` | Photo export PNG · JPEG · PDF (SynStill, real alpha, native size) + the Lab's offline frame-by-frame render (SynFx) |
+| `12-PREVIEW-QUALITY.md` | Live preview like Premiere "Auto": screen-resolution canvas (never above the source), video uploaded only on new frames, 120/144 Hz cap, Lab at the source fps (SynView) |
 | `DESKTOP.md` | The double-click desktop app (Electron): how it is built, tested, delivered |
 
 ## Commands
@@ -84,7 +85,8 @@ public/effects/<id>/index.html  The 10 standalone effect apps (SOURCE OF TRUTH f
 public/effects/shared/          syn-chrome.css/.js — Bokeh's chrome + day theme, shared by all 10 (§5.1); syn-extras.js — work timer + timeline;
                                 syn-lab.js — the Lab chain link (window.SynLab, §5.2);
                                 syn-export.js — offline MP4 render engine (window.SynExport, §5.3);
-                                syn-still.js — PNG / JPEG / PDF of a photo (window.SynStill; each effect's window.SynFx)
+                                syn-still.js — PNG / JPEG / PDF of a photo (window.SynStill; each effect's window.SynFx);
+                                syn-view.js — live preview quality (window.SynView, §5.4): preview size, new-frame gate, refresh cap
 ```
 
 ## Hard rules
@@ -97,7 +99,10 @@ public/effects/shared/          syn-chrome.css/.js — Bokeh's chrome + day them
    `public/effects/shared/syn-chrome.css`), plus the delimited `SYNTECH-LAB`
    adapter block that links the effect into the Lab chain (§5.2), plus the
    delimited `SYNTECH-EXPORT` block + `/* SYNTECH-EXPORT */` hooks for the
-   offline RENDER MP4 (§5.3, `10-EXPORT-MASTER.md`).
+   offline RENDER MP4 (§5.3, `10-EXPORT-MASTER.md`), plus the delimited
+   `SYNTECH-PREVIEW` block + `/* SYNTECH-PREVIEW */` hooks for the live preview
+   quality — screen-resolution preview, new-frame uploads, 120 Hz cap (§5.4,
+   `12-PREVIEW-QUALITY.md`).
 2. **The Lab runs the real effects** (LAB v2, operator decision 2026-10-28 —
    "option 1"): each Lab node is the standalone effect in an iframe with its
    whole interface, fed the previous node's `canvas.captureStream()` as an

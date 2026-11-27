@@ -2213,6 +2213,7 @@ function _drawMirror(){
 /* SYNTECH-FIX-END */
 function activateVideo(){
   if(videoTex) videoTex.dispose();
+  if(window.__synPrev) window.__synPrev.force(); /* SYNTECH-PREVIEW: new texture → the next tick uploads */
   if(_camMirrored()){ _drawMirror(); videoTex=new THREE.CanvasTexture(_mirCv); videoTex.generateMipmaps=false; } /* SYNTECH-FIX: webcam = mirrored canvas */
   else videoTex=new THREE.VideoTexture(vid);
   videoTex.minFilter=THREE.LinearFilter;
@@ -2320,8 +2321,9 @@ function animate(ts){
     document.getElementById('sFps').textContent=f;
     fpsAcc=fpsN=0;}
   if(playing) transition=Math.min(1.,transition+dt*.4);
-  if(videoTex && videoTex.isCanvasTexture && vid.readyState >= vid.HAVE_CURRENT_DATA) _drawMirror(); /* SYNTECH-FIX: next mirrored webcam frame */
-  if(videoTex && vid.readyState >= vid.HAVE_CURRENT_DATA) videoTex.needsUpdate=true; /* SYNTECH-FIX: was "if(videoTex)" — no upload while a new source has no frame yet (it failed with "texImage2D: no video" and left the texture as it was), as in POINTCLOUD */
+  const _pvUp = videoTex && vid.readyState >= vid.HAVE_CURRENT_DATA && (!window.__synPrev || window.__synPrev.fresh()); /* SYNTECH-PREVIEW: mirror draw + upload only on a NEW video frame (was: every tick) */
+  if(_pvUp && videoTex.isCanvasTexture) _drawMirror(); /* SYNTECH-FIX: next mirrored webcam frame (SYNTECH-PREVIEW: was "if(videoTex && videoTex.isCanvasTexture && vid.readyState >= vid.HAVE_CURRENT_DATA)") */
+  if(_pvUp) videoTex.needsUpdate=true; /* SYNTECH-PREVIEW: was "if(videoTex && vid.readyState >= vid.HAVE_CURRENT_DATA)". SYNTECH-FIX: was "if(videoTex)" — no upload while a new source has no frame yet (it failed with "texImage2D: no video" and left the texture as it was), as in POINTCLOUD */
 
   const color=parseFloat(document.getElementById('sColor').value);
 
@@ -2937,6 +2939,21 @@ animate(0);
 })();
 </script>
 <!-- SYNTECH-EXPORT-END -->
+<!-- SYNTECH-PREVIEW-START (live preview quality — docs/workflow/12-PREVIEW-QUALITY.md; standalone-safe) -->
+<script src="../shared/syn-view.js"></script>
+<script>
+/* PAINTING: the preview resolution is NOT changed (the canvas already renders at the screen size x min(DPR,2), so
+   there is nothing to sharpen). This adapter does the smoothness part only: the video (or the mirrored webcam canvas)
+   is uploaded to the GPU only when the <video> presented a NEW frame (SynView.frames) — animate() calls
+   window.__synPrev.fresh() — and, on 120 / 144 Hz displays, the page draws at max(60, video fps). The painting's own
+   time animation still runs every drawn frame; exports / SynFx (window.__synExpCtl) always upload. */
+(function(){ 'use strict'; if(!window.SynView) return;
+  var gate=SynView.frames(function(){ var v=document.getElementById('vid'); return (v&&(v.srcObject||v.currentSrc||v.src))?v:null; });
+  window.__synPrev={ fresh:function(){ return gate.fresh(); }, force:function(){ gate.force(); } };
+  SynView.capRefresh();
+})();
+</script>
+<!-- SYNTECH-PREVIEW-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

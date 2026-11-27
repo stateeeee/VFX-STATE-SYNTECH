@@ -1640,6 +1640,7 @@ function initTex(){
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  window.__synPrev&&window.__synPrev.force(); /* SYNTECH-PREVIEW: new texture → the next frame must upload */
 }
 function initLUT(){
   lutTex=gl.createTexture();
@@ -2399,6 +2400,7 @@ function updateMotionUI(){
 
 function uploadFrame(){
   if(!srcReady())return;
+  if(window.__synPrev&&!window.__synPrev.fresh())return; /* SYNTECH-PREVIEW: upload a video frame only when it is new */
   gl.bindTexture(gl.TEXTURE_2D,tex);
   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,getSrcEl());
 }
@@ -2407,13 +2409,15 @@ let baseW=0,baseH=0;
 function resizeCanvasToVideo(forceFull=false){
   const sw=getSrcW(),sh=getSrcH();
   if(!sw)return;
-  const MAX=forceFull?Number.POSITIVE_INFINITY:1280;
+  if(window.__synLiveFull&&window.__synLiveFull())forceFull=true; /* SYNTECH-PREVIEW: a live REC keeps the full canvas (also for the vid 'resize' listener, which holds the unwrapped function) */
+  const MAX=forceFull?Number.POSITIVE_INFINITY:1280; /* SYNTECH-PREVIEW: non-forced path overridden below by SynView.size (was the 1280 preview) */
   const sc=Math.min(1,MAX/sw);
   baseW=Math.round(sw*sc);
   baseH=Math.round(sh*sc);
   const w=P.desqueeze?Math.round(baseW*P.squeeze):baseW;
-  cv.width=w;
-  cv.height=baseH;
+  const pv=forceFull||!window.__synPrev?null:window.__synPrev.size(sw,sh); /* SYNTECH-PREVIEW: {w,h} = SynView.size of the (desqueezed) source in the frame, or null → legacy */
+  cv.width=pv?pv.w:w;
+  cv.height=pv?pv.h:baseH;
   gl.viewport(0,0,cv.width,cv.height);
   const icRes=document.getElementById('ic-res');
   if(icRes)icRes.textContent=sw+'×'+sh;
@@ -2475,6 +2479,7 @@ function render(){
      skipped: zero extra cost.                                      */
   let mainTex=tex;
   if(P.bokehMM>0&&srcReady()){
+    window.__synPrev&&window.__synPrev.bkSync(); /* SYNTECH-PREVIEW: Bokeh buffers follow the preview canvas when it is bigger than BK_W×BK_H */
     if(!bkSegmenter&&!bkSegmenterLoading)ensureBkSegmenter();
     if(bkSegmenterReady&&frameN%2===0&&!window.__synExpCtl)bkSegmenter.send({image:getSrcEl()}).catch(()=>{}); /* SYNTECH-EXPORT: an offline render awaits its own send per frame */
     if(bkMaskReady&&tex){
@@ -3317,7 +3322,7 @@ document.querySelector('.chip').classList.add('on');
     cv.classList.remove('on');
     $('drop-overlay').classList.remove('hidden');
     /* render() keeps drawing `tex`: a black texel, so the picture handed down the chain is black, as at boot */
-    if(tex){ gl.bindTexture(gl.TEXTURE_2D,tex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255])); }
+    if(tex){ gl.bindTexture(gl.TEXTURE_2D,tex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255])); window.__synPrev&&window.__synPrev.force(); } /* SYNTECH-PREVIEW */
   }
 
   SynLab.register({
@@ -3395,6 +3400,9 @@ document.querySelector('.chip').classList.add('on');
     if(grew&&gl.getError()===gl.OUT_OF_MEMORY) throw new Error('the GPU has no memory for the Bokeh buffers at '+w+'×'+h+' — turn Bokeh off for this export; the size is never reduced');
   }
   /* L10: while a live REC runs, a desqueeze / preset click or a resize must not shrink the canvas to the preview size */
+  window.__synBkFit=bkFit; window.__synLiveFull=function(){ return liveFull; }; /* SYNTECH-PREVIEW: hooks for the preview adapter */
+  /* SYNTECH-PREVIEW: Bokeh buffers back to the CURRENT preview size (was bkFit(BK_W,BK_H)) */
+  function bkPrev(){ if(window.__synPrev&&window.__synPrev.bkRestore) window.__synPrev.bkRestore(); else bkFit(BK_W,BK_H); }
   var _rcv=resizeCanvasToVideo;
   window.resizeCanvasToVideo=function(ff){
     _rcv(ff||liveFull);
@@ -3477,7 +3485,7 @@ document.querySelector('.chip').classList.add('on');
     },
     afterRender:function(){
       window.__synExpCtl=null;                                  /* live loop draws again from its next tick */
-      bkFit(BK_W,BK_H);                                         /* bokeh buffers back to the preview size */
+      bkPrev();                                                 /* bokeh buffers back to the preview size (SYNTECH-PREVIEW: was bkFit(BK_W,BK_H)) */
       prevMotionFrame=null; bkRadiusSmoothed=null;
       if(srcMode==='video'&&saved){
         resizeCanvasToVideo();
@@ -3492,7 +3500,7 @@ document.querySelector('.chip').classList.add('on');
     getLiveAudio:function(){ return null; },                    /* live sources here are silent (webcam audio:false) */
     liveFps:trackFps,
     beforeLive:function(){ liveFull=true; resizeCanvasToVideo(true); bkFit(cv.width,cv.height); },  /* record the full canvas resolution, not the 1280 preview */
-    afterLive:function(){ liveFull=false; resizeCanvasToVideo(); bkFit(BK_W,BK_H); },
+    afterLive:function(){ liveFull=false; resizeCanvasToVideo(); bkPrev(); }, /* SYNTECH-PREVIEW: was bkFit(BK_W,BK_H) */
     recUi:{
       start:function(kind){
         setRecUi(true);
@@ -3583,7 +3591,7 @@ document.querySelector('.chip').classList.add('on');
       var s=fx; fx=null;
       window.__synExpCtl=null;                                  /* live loop draws again from its next tick */
       srcMode=s.sm; activeImg=s.ai;
-      bkFit(BK_W,BK_H);
+      bkPrev(); /* SYNTECH-PREVIEW: was bkFit(BK_W,BK_H) */
       prevMotionFrame=null; bkRadiusSmoothed=null;
       autoFlareX=s.flare[0]; autoFlareActive=s.flare[1]; flarePhase=s.flare[2]; targetFlareX=s.flare[3]; flareJitter=s.flare[4]; smoothFlareX=s.flare[5];
       resizeCanvasToVideo();                                    /* preview size again (also resets the Info resolution) */
@@ -3608,6 +3616,64 @@ document.querySelector('.chip').classList.add('on');
 })();
 </script>
 <!-- SYNTECH-EXPORT-END -->
+<!-- SYNTECH-PREVIEW-START (live preview quality — docs/workflow/12-PREVIEW-QUALITY.md; standalone-safe) -->
+<script src="../shared/syn-view.js"></script>
+<script>
+/* ANAMORPHIC LAB live preview adapter (operator, 2026-11-26: the picture got grainy and stuttered).
+   SIZE   : resizeCanvasToVideo()'s non-forced path (hook marked SYNTECH-PREVIEW) asks __synPrev.size(): the DESQUEEZED
+            source fitted into #canvas-wrap (the frame the canvas is contained in) × devicePixelRatio, never above the
+            source (SynView.size; was a fixed 1280 px wide), limited to what the GPU can draw (SynView.fit). The forced
+            path (RENDER MP4 / REC live / SynFx / photo export) stays native; every export restore calls
+            resizeCanvasToVideo() and so comes back to the CURRENT preview size. A live REC keeps its full canvas
+            (window.__synLiveFull). No source, or the frame not laid out yet → the legacy 1280 path.
+   BOKEH  : its blur + composite buffers are fixed 1280×720 (BK_W×BK_H); when the preview canvas is bigger in either
+            dimension they follow it (bkSync once per drawn Bokeh frame, bkRestore after an export), so the Bokeh look is not
+            routed through a 1280×720 bottleneck. Out of GPU memory → silent fallback to BK_W×BK_H.
+   UPLOAD : uploadFrame() uploads the <video> only when a new frame was presented (gate); images, the 1×1 placeholder and
+            every export / SynFx draw (window.__synExpCtl) are never skipped. render() itself is NOT gated.
+   REFRESH: SynView.capRefresh() (120/144 Hz displays draw at 60/72 Hz).
+   Re-applied when the frame's box changes (SynView.watch on #canvas-wrap: window, fullscreen, Lab panel, DPR). */
+(function(){
+  'use strict';
+  if(!window.SynView) return;
+  var gate=SynView.frames(function(){ return (srcMode==='image'||srcMode==='none')?null:vid; });
+  var wrap=document.getElementById('canvas-wrap'), bkFailed=false;
+  function live(){ return !!(window.__synLiveFull&&window.__synLiveFull()); }
+  function size(sw,sh){
+    if(!wrap||!(sw>0)||!(sh>0)) return null;
+    var bw=wrap.clientWidth, bh=wrap.clientHeight;
+    if(!(bw>0&&bh>0)) return null;                                  /* not laid out (hidden iframe): legacy path */
+    var dw=(P.desqueeze&&P.squeeze>0)?Math.round(sw*P.squeeze):sw;  /* the canvas the effect draws: desqueezed width × source height */
+    var r=SynView.size(dw,sh,bw,bh);
+    return SynView.fit(r.w,r.h,gl);
+  }
+  function bkApply(w,h){
+    if(bkFailed||!window.__synBkFit) return;
+    var f=(w>BK_W||h>BK_H)?[w,h]:[BK_W,BK_H];
+    if(bkBlurFBO.w===f[0]&&bkBlurFBO.h===f[1]&&bkCompositeFBO.w===f[0]&&bkCompositeFBO.h===f[1]) return;   /* unchanged: no bkFit (its gl.getError drain can stall the GPU) */
+    try{ window.__synBkFit(f[0],f[1]); }
+    catch(e){ bkFailed=true; console.warn('[preview] Bokeh buffers at '+f[0]+'×'+f[1]+' failed, back to '+BK_W+'×'+BK_H,e); try{ window.__synBkFit(BK_W,BK_H); }catch(_){} }
+  }
+  window.__synPrev={
+    fresh:function(){ return gate.fresh(); },
+    force:function(){ gate.force(); },
+    size:size,
+    bkSync:function(){ if(window.__synExpCtl||live()) return; bkApply(cv.width,cv.height); },
+    bkRestore:function(){
+      var s=(P.bokehMM>0&&srcMode!=='none')?size(getSrcW(),getSrcH()):null;
+      if(s) bkApply(s.w,s.h); else { try{ window.__synBkFit&&window.__synBkFit(BK_W,BK_H); }catch(e){} }
+    }
+  };
+  SynView.watch(wrap,function(){
+    if(window.__synExpCtl||live()||srcMode==='none') return;
+    var sw=getSrcW(), sh=getSrcH(); if(!sw) return;
+    var t=size(sw,sh); if(!t) return;
+    if(cv.width!==t.w||cv.height!==t.h) window.resizeCanvasToVideo();   /* the wrapped one (live REC full size) */
+  });
+  SynView.capRefresh();
+})();
+</script>
+<!-- SYNTECH-PREVIEW-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

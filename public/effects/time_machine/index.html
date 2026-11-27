@@ -1942,7 +1942,7 @@ function render(now){
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D,videoTex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,currentFrameSource());
+  if(!window.__synPrevGate||window.__synPrevGate.fresh())gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,currentFrameSource()); /* SYNTECH-PREVIEW: the <video> frame goes to the GPU only when it is NEW (docs/workflow/12-PREVIEW-QUALITY.md); the cache write + draw below still run every tick (was: gl.texImage2D(…,currentFrameSource());) */
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
 
   const t=(now-STATE.startTime)/1000;
@@ -2984,6 +2984,8 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
     },
 
     getLiveCanvas:function(){ return canvas; },                   /* #glcanvas, full 1920×1080, preserveDrawingBuffer */
+    beforeLive:function(){ if(window.__synPrevLiveBegin) window.__synPrevLiveBegin(); },   /* SYNTECH-PREVIEW: the live REC records at least the old 1920-px frame (the preview may be smaller in a small window) */
+    afterLive:function(){ if(window.__synPrevLiveEnd) window.__synPrevLiveEnd(); },         /* SYNTECH-PREVIEW: back to the preview size */
     getLiveAudio:function(){ return null; },                      /* live sources here are silent (webcam / camera audio:false, images) */
     liveFps:trackFps,
     recUi:{
@@ -3131,6 +3133,68 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 </script>
 <!-- SYNTECH-EXPORT-END -->
+<!-- SYNTECH-PREVIEW-START (live preview quality — docs/workflow/12-PREVIEW-QUALITY.md; standalone-safe) -->
+<script src="../shared/syn-view.js"></script>
+<script>
+/* TIME MACHINE live preview adapter.
+   RESOLUTION : the preview canvas (the only full-frame render target; the 512×288 time map and the frame cache are
+                separate and untouched — the operator's CACHE RES / SIZE knobs keep their meaning) follows the SOURCE:
+                SynView.size(source, #canvas-area box minus fitCanvas' 24 px margin) × devicePixelRatio, never above the
+                source, in the source's aspect (a 9:16 video is no longer stretched into 16:9). No source: 1920×1080 as
+                before. Re-applied on source change / box change / devicePixelRatio change, never during an offline render,
+                SynFx (window.__synExpCtl) or a live REC (the export block's restore paths put back the size they saved =
+                this preview size; a box change that arrives meanwhile is applied right after).
+   LIVE REC   : starts at max(preview, 1920-px long edge) so it never records less than the old fixed 1920×1080 canvas.
+   GATE       : the video upload in render() runs only for a NEW video frame (SynView.frames); an image source is not gated.
+                The cache write (one layer per DRAWN frame) is NOT gated: a repeated frame writes the same picture again,
+                exactly as when the display is faster than the video.
+   REFRESH    : SynView.capRefresh() — 120/144 Hz displays draw every 2nd vsync. */
+(function(){
+  'use strict';
+  if(!window.SynView) return;
+  var area=document.getElementById('canvas-area'), live=false, tmr=0;
+  var gate=window.__synPrevGate=SynView.frames(function(){ return STATE.srcMode==='image'?null:video; });
+  SynView.capRefresh();
+
+  function busy(){ return !!(window.__synExpCtl||window.__synStillBusy||live); }
+  function srcSize(){
+    if(!STATE.hasVideo) return null;
+    if(STATE.srcMode==='image') return (activeImage&&activeImage.naturalWidth>0)?[activeImage.naturalWidth,activeImage.naturalHeight]:null;
+    var w=video.videoWidth, h=video.videoHeight;
+    return (w>0&&h>0&&video.readyState>=1)?[w,h]:null;
+  }
+  function setSize(w,h){
+    if(canvas.width===w&&canvas.height===h&&CONFIG.W===w&&CONFIG.H===h) return;
+    canvas.width=w; canvas.height=h; CONFIG.W=w; CONFIG.H=h;
+    fitCanvas();
+    gate.force();
+  }
+  function apply(){
+    if(!area) return;
+    if(busy()){ clearTimeout(tmr); tmr=setTimeout(apply,300); return; }   /* retried until the export / REC is over */
+    var s=srcSize(), t;
+    if(!s) t={w:1920,h:1080};
+    else{
+      var bw=area.clientWidth-24, bh=area.clientHeight-24;                 /* fitCanvas' box */
+      if(!(bw>0&&bh>0)) return;                                            /* not laid out: keep the current size */
+      var z=SynView.size(s[0],s[1],bw,bh); t=SynView.fit(z.w,z.h,gl);
+    }
+    setSize(t.w,t.h);
+  }
+  window.__synPrevLiveBegin=function(){
+    live=true;
+    var s=srcSize(); if(!s) return;
+    var k=1920/Math.max(s[0],s[1]), r=SynView.fit(Math.max(2,Math.round(s[0]*k/2)*2),Math.max(2,Math.round(s[1]*k/2)*2),gl);
+    if(CONFIG.W*CONFIG.H<r.w*r.h) setSize(r.w,r.h);
+  };
+  window.__synPrevLiveEnd=function(){ live=false; apply(); };
+
+  SynView.watch(area,apply);
+  ['loadedmetadata','resize','emptied'].forEach(function(ev){ video.addEventListener(ev,apply); });
+  setInterval(apply,500);                                                  /* image / webcam / camera / Lab starts and stops */
+})();
+</script>
+<!-- SYNTECH-PREVIEW-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

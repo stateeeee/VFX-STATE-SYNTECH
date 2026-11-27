@@ -36,6 +36,14 @@
    order, with the real frame timestamp, once the interval has elapsed; paused,
    they are HELD (never dropped) and fire when the budget is raised;
    cancelAnimationFrame cancels a held one. The compositor below follows it.
+   2026-11-26: the cap fires on ABSOLUTE time slots, slot = floor((performance.timeOrigin + t) /
+   (1000 / budget)), the same in every iframe (same origin = same vsync clock): a callback batch fires
+   when the slot differs from the last fired one. Every node at the same budget therefore draws in the
+   same vsync, so node N+1 always sees node N's previous-slot frame (no phase beat between nodes), and a
+   24 fps source gets a regular 24-slot grid. A slot boundary within ~1 ms of a vsync is snapped to the
+   later vsync so it never double-fires. The shell sets the budget to the SOURCE's frame rate. While a
+   budget is set, window.__synLabBudget mirrors it and SynView.capRefresh (syn-view.js, 120/144 Hz cap)
+   steps aside, so no per-iframe vsync parity sits under the shared slots.
    Only rendering is gated: media elements and audio keep playing. Timers
    (setInterval / setTimeout) and requestVideoFrameCallback are NOT gated.
    state().budget reports the current budget.
@@ -83,20 +91,55 @@
   var budget=null;          /* null = native, 0 = paused, > 0 = fps cap */
   var gate=null;            /* {raf, caf}: what window.requestAnimationFrame was when installed */
   var GATE_ID0=0x40000000;  /* gate ids never collide with the browser's (small) native ids */
-  var gateSeq=0, held=[], heldById={}, pumpId=0, lastFire=-1e9;
+  var gateSeq=0, held=[], heldById={}, pumpId=0, lastSlot=-1, lastPumpT=-1e9, vsync=0;
   function reportErr(e){
     try{ if(typeof window.reportError==='function') window.reportError(e); else setTimeout(function(){ throw e; }); }catch(_){}
   }
   function schedulePump(){
     if(!pumpId && budget!==0 && held.length) pumpId=gate.raf.call(window,pump);
   }
+  /* The slot of this vsync. Each iframe's performance.timeOrigin is only known to ~0.1-6 ms, so two
+     iframes could put the SAME vsync on different sides of a slot boundary. The first iframe to pump in a
+     vsync (|Δt| < 3 ms) publishes its slot on the shell window (same origin) and the others reuse it. */
+  /* Only numbers are stored on the shell window (no object of this iframe's realm, so a removed / reloaded
+     iframe is never kept alive by the shell, and nothing is allocated per vsync). The "same vsync" window is
+     half the display interval (3–7 ms). */
+  function slotOf(t,iv){
+    var ta=performance.timeOrigin+t, slot=Math.floor((ta+1)/iv), sh=null;
+    try{ sh=window.top; }catch(_){ sh=null; }
+    if(!sh) return slot;
+    try{
+      var thr=vsync>0 ? Math.max(3,Math.min(7,vsync*0.5)) : 3;
+      if(Math.abs(ta-sh.__synLabClockTa)<thr){
+        if(sh.__synLabClockIv===iv) return sh.__synLabClockSlot;        /* another node pumped this vsync first */
+      } else { sh.__synLabClockTa=ta; sh.__synLabClockIv=iv; sh.__synLabClockSlot=slot; }
+    }catch(_){}
+    return slot;
+  }
+  /* the display's frame interval: median of the last 15 pump intervals (a single short or long outlier,
+     or a move to a screen with another refresh rate, cannot latch it) */
+  var dts=[], dtScratch=[], dtN=0;
+  function dtAsc(a,b){ return a-b; }
+  function noteDt(dt){
+    if(!(dt>2&&dt<40)) return;
+    dts[dtN%15]=dt; dtN++;
+    if(dtN<15){ if(!vsync) vsync=dt; return; }
+    if(dtN%5===0){ for(var i=0;i<15;i++) dtScratch[i]=dts[i]; dtScratch.length=15; dtScratch.sort(dtAsc); vsync=dtScratch[7]; }
+  }
   function pump(t){
     pumpId=0;
     if(budget===0 || !held.length) return;              /* paused: everything stays held */
     if(budget>0){
-      var iv=1000/budget, el=t-lastFire;
-      if(el<iv-2){ schedulePump(); return; }             /* 2 ms slack: 120 Hz → every 4th frame at 30 */
-      lastFire = el>iv*2 ? t : lastFire+iv;
+      var iv=1000/budget;
+      /* absolute slot of this vsync; +1 ms: a boundary that falls just after a vsync belongs to it,
+         so the next vsync (one frame later) cannot fire the same logical slot again */
+      var slot=slotOf(t,iv);
+      noteDt(t-lastPumpT); lastPumpT=t;
+      /* budget ≈ the display rate: fire on every vsync (a slot grid there would drop frames to jitter) */
+      if(!(vsync && iv<=vsync*1.08)){
+        if(slot===lastSlot){ schedulePump(); return; }
+      }
+      lastSlot=slot;
     }
     var q=held; held=[];                                 /* re-requests during this pump go to the next one */
     for(var i=0;i<q.length;i++){
@@ -134,7 +177,8 @@
     if(fps!=null){ b=Number(fps); b=isFinite(b) ? Math.max(0,b) : null; }
     if(b===budget) return;
     if(b!==null) installGate();
-    budget=b; lastFire=-1e9;
+    budget=b; lastSlot=-1; vsync=0; dtN=0;
+    try{ window.__synLabBudget=b; }catch(_){}           /* SynView.capRefresh is a pass-through while a budget is set */
     if(gate) schedulePump();                             /* raised / native again: held callbacks resume */
   }
 

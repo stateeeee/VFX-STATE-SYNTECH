@@ -1336,6 +1336,12 @@ try {
    CONFIG & STATE
    ========================================= */
 const CONFIG = { W: 1920, H: 1080, FPS: 60 };
+/* SYNTECH-PREVIEW: the preview frame now follows the source's size and aspect (SYNTECH-PREVIEW block), so the shader constants that
+   are measured in PIXELS (bokeh radius, mask blur, datamosh blocks, lava drip) read this fixed reference instead of CONFIG.W/H:
+   1920 px on the long edge, square pixels (1920×1080 for 16:9 — exactly the old frame — 1080×1920 for 9:16). Same look at any
+   preview size, and the offline export (ctl.pw/ph) uses the same reference. */
+const PREVREF = { w: 1920, h: 1080 };
+function prevRefFor(w,h){ const k=1920/Math.max(w,h); return {w:Math.round(w*k),h:Math.round(h*k)}; }
 
 const STATE = {
   hasVideo: false, isPlaying: false, isLooping: true,
@@ -2274,7 +2280,7 @@ function drawMaskBlur(){
   gl.viewport(0,0,CONFIG.W,CONFIG.H);
   gl.useProgram(PMB);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,maskTemporalFBO[maskTR].tex); gl.uniform1i(UMB.u_mask,0);
-  gl.uniform2f(UMB.u_px, 1.0/(window.__synExpCtl?window.__synExpCtl.pw:CONFIG.W), 1.0/(window.__synExpCtl?window.__synExpCtl.ph:CONFIG.H)); /* SYNTECH-EXPORT: kernel in PREVIEW pixels at the native render size → same look (was 1.0/CONFIG.W, 1.0/CONFIG.H) */
+  gl.uniform2f(UMB.u_px, 1.0/(window.__synExpCtl?window.__synExpCtl.pw:PREVREF.w), 1.0/(window.__synExpCtl?window.__synExpCtl.ph:PREVREF.h)); /* SYNTECH-EXPORT: kernel in PREVIEW pixels at the native render size → same look (was 1.0/CONFIG.W, 1.0/CONFIG.H) */ /* SYNTECH-PREVIEW: PREVREF instead of CONFIG.W/H (the preview frame size now varies) */
   bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 }
 
@@ -2288,7 +2294,7 @@ function drawBokeh(srcTex){
   gl.uniform1f(UB.u_bloom,  P.bokehBloom);
   gl.uniform1i(UB.u_style,  P.bokehStyle);
   gl.uniform2f(UB.u_bshapeXY, BSHAPE.x, BSHAPE.y);
-  gl.uniform2f(UB.u_px, 1.0/(window.__synExpCtl?window.__synExpCtl.pw:CONFIG.W), 1.0/(window.__synExpCtl?window.__synExpCtl.ph:CONFIG.H)); /* SYNTECH-EXPORT: bokeh radius in PREVIEW pixels at the native render size → same look (was 1.0/CONFIG.W, 1.0/CONFIG.H) */
+  gl.uniform2f(UB.u_px, 1.0/(window.__synExpCtl?window.__synExpCtl.pw:PREVREF.w), 1.0/(window.__synExpCtl?window.__synExpCtl.ph:PREVREF.h)); /* SYNTECH-EXPORT: bokeh radius in PREVIEW pixels at the native render size → same look (was 1.0/CONFIG.W, 1.0/CONFIG.H) */ /* SYNTECH-PREVIEW: PREVREF instead of CONFIG.W/H */
   gl.uniform1f(UB.u_time, window.__synExpCtl?window.__synExpCtl.t%1000.0:(performance.now()*0.001)%1000.0); /* SYNTECH-EXPORT: media time during an offline render (was (performance.now()*0.001)%1000.0) */
   bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 }
@@ -2341,7 +2347,7 @@ function drawBgFx(t, srcTex){
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,keyframeFBO.tex); gl.uniform1i(UDM.u_prev,1);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,read.tex);        gl.uniform1i(UDM.u_feedback,2);
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D,maskBlurFBO.tex); gl.uniform1i(UDM.u_mask,3);
-    gl.uniform2f(UDM.u_res,    (window.__synExpCtl?window.__synExpCtl.pw:CONFIG.W), (window.__synExpCtl?window.__synExpCtl.ph:CONFIG.H)); /* SYNTECH-EXPORT: datamosh blocks in PREVIEW pixels at the native render size (was CONFIG.W, CONFIG.H) */
+    gl.uniform2f(UDM.u_res,    (window.__synExpCtl?window.__synExpCtl.pw:PREVREF.w), (window.__synExpCtl?window.__synExpCtl.ph:PREVREF.h)); /* SYNTECH-EXPORT: datamosh blocks in PREVIEW pixels at the native render size (was CONFIG.W, CONFIG.H) */ /* SYNTECH-PREVIEW: PREVREF instead of CONFIG.W/H */
     gl.uniform1f(UDM.u_time,   t);
     gl.uniform1f(UDM.u_drift,  P.dmDrift);
     gl.uniform1f(UDM.u_isiframe, DM.isIframe);
@@ -2394,7 +2400,7 @@ function drawBgFx(t, srcTex){
     gl.uniform1f(ULV.u_speed,      P.lvSpeed);
     gl.uniform1f(ULV.u_viscosity,  P.lvViscosity);
     gl.uniform1f(ULV.u_time,       t);
-    gl.uniform2f(ULV.u_px, 1.0/(window.__synExpCtl?window.__synExpCtl.pw:CONFIG.W), 1.0/(window.__synExpCtl?window.__synExpCtl.ph:CONFIG.H)); /* SYNTECH-EXPORT: lava drip in PREVIEW pixels at the native render size (was 1.0/CONFIG.W, 1.0/CONFIG.H) */
+    gl.uniform2f(ULV.u_px, 1.0/(window.__synExpCtl?window.__synExpCtl.pw:PREVREF.w), 1.0/(window.__synExpCtl?window.__synExpCtl.ph:PREVREF.h)); /* SYNTECH-EXPORT: lava drip in PREVIEW pixels at the native render size (was 1.0/CONFIG.W, 1.0/CONFIG.H) */ /* SYNTECH-PREVIEW: PREVREF instead of CONFIG.W/H */
   }
 
   bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
@@ -2809,7 +2815,7 @@ function render(now){
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D,videoTex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,getFrameSource());
+  if(!window.__synPrevGate||window.__synPrevGate.fresh())gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,getFrameSource()); /* SYNTECH-PREVIEW: upload (and the webcam mirror draw inside getFrameSource) only for a NEW video frame; the rest of render() runs every tick (was: gl.texImage2D(…,getFrameSource());) */
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
 
   /* Feed current frame to segmenter (async — onSegResults fires separately) */
@@ -4026,6 +4032,7 @@ requestAnimationFrame(syncSectionTitleGradients);
     gl.bindTexture(gl.TEXTURE_2D,sortedTex);
     gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255]));
   }
+  window.__synPrevSize=function(w,h){ sizeFBOs(w,h,false); resetTemporal(); };   /* SYNTECH-PREVIEW: the SYNTECH-PREVIEW block re-sizes the preview's full-frame FBOs with this export machinery */
   function sizeAnamCv(){                                           /* toggleAnamRec's sizing, on the current canvas */
     var targetAR=P.anamRatio||CONFIG.W/CONFIG.H;
     anamCv.width=canvas.width;
@@ -4074,7 +4081,7 @@ requestAnimationFrame(syncSectionTitleGradients);
 
       beforeRender:async function(){
         saved={t:video.currentTime, paused:video.paused, loop:video.loop, W:CONFIG.W, H:CONFIG.H, cw:canvas.width, ch:canvas.height, fbos:false};
-        var ctl={inside:false, t:0, pw:CONFIG.W, ph:CONFIG.H, k:1, fps:30, w:0, h:0, anam:anam};
+        var ctl={inside:false, t:0, pw:PREVREF.w, ph:PREVREF.h, k:1, fps:30, w:0, h:0, anam:anam};   /* SYNTECH-PREVIEW: pw/ph = PREVREF (was CONFIG.W, CONFIG.H); refined to the source aspect below */
         window.__synExpCtl=ctl;                                    /* live loop idles from its next tick */
         video.pause();
         if(PAD.animating){ PAD.x=PAD.targetX; PAD.y=PAD.targetY; PAD.animating=false; applyPadToParams(); updatePadCursor(); }   /* the preset's final values */
@@ -4088,6 +4095,7 @@ requestAnimationFrame(syncSectionTitleGradients);
         if(!w||!h) throw new Error('the video has no picture size yet');
         if(w>L.tex||h>L.tex||w>L.vw||h>L.vh||w>L.rb||h>L.rb) throw new Error('the GPU cannot draw '+w+'×'+h+'. '+limitsMsg(L));
         canvas.width=w; canvas.height=h; CONFIG.W=w; CONFIG.H=h; ctl.w=w; ctl.h=h;
+        { var rf=prevRefFor(w,h); ctl.pw=rf.w; ctl.ph=rf.h; }   /* SYNTECH-PREVIEW: pixel-footprint reference of THIS source's aspect */
         if(gl.drawingBufferWidth!==w||gl.drawingBufferHeight!==h) throw new Error('the GPU gave a '+gl.drawingBufferWidth+'×'+gl.drawingBufferHeight+' canvas instead of '+w+'×'+h+'. '+limitsMsg(L));
         saved.fbos=true; sizeFBOs(w,h,true);
         resetTemporal();
@@ -4132,8 +4140,8 @@ requestAnimationFrame(syncSectionTitleGradients);
       getLiveCanvas:function(){ return anam?anamCv:canvas; },
       getLiveAudio:function(){ return null; },                      /* webcam audio:false; the Lab plays its own sound */
       liveFps:trackFps,
-      beforeLive:function(){ if(anam){ sizeAnamCv(); anamCv._active=true; anamCapLoop(); } },   /* the anamorphic REC's own copy loop */
-      afterLive:function(){ if(anam) anamCv._active=false; },
+      beforeLive:function(){ if(window.__synPrevLiveBegin) window.__synPrevLiveBegin(); if(anam){ sizeAnamCv(); anamCv._active=true; anamCapLoop(); } },   /* the anamorphic REC's own copy loop */ /* SYNTECH-PREVIEW: live REC frame >= the old 1920-px one, set before the anamorphic crop is sized */
+      afterLive:function(){ if(anam) anamCv._active=false; if(window.__synPrevLiveEnd) window.__synPrevLiveEnd(); },   /* SYNTECH-PREVIEW: back to the preview size */
       recUi:{
         start:function(k){
           owner=kind; setUi(true);
@@ -4244,7 +4252,7 @@ requestAnimationFrame(syncSectionTitleGradients);
       if(!segmenter) throw new Error('the subject detector (MediaPipe) is not loaded — BOKEH cannot separate subject and background');
       fx={mode:o.mode, w:w, h:h, fps:o.fps||30, loc:null, seg:null, lastSeg:-1, fbos:false,
           sv:{t:video.currentTime, paused:video.paused, loop:video.loop, W:CONFIG.W, H:CONFIG.H, cw:canvas.width, ch:canvas.height}};
-      var ctl={inside:false, t:0, pw:CONFIG.W, ph:CONFIG.H, k:Math.max(1,Math.round(60/fx.fps)), fps:fx.fps, w:w, h:h, anam:false};
+      var ctl={inside:false, t:0, pw:prevRefFor(w,h).w, ph:prevRefFor(w,h).h, k:Math.max(1,Math.round(60/fx.fps)), fps:fx.fps, w:w, h:h, anam:false};   /* SYNTECH-PREVIEW: was pw:CONFIG.W, ph:CONFIG.H */
       window.__synExpCtl=ctl;
       try{ video.pause(); }catch(e){}
       if(PAD.animating){ PAD.x=PAD.targetX; PAD.y=PAD.targetY; PAD.animating=false; applyPadToParams(); updatePadCursor(); }
@@ -4317,6 +4325,70 @@ requestAnimationFrame(syncSectionTitleGradients);
 })();
 </script>
 <!-- SYNTECH-EXPORT-END -->
+<!-- SYNTECH-PREVIEW-START (live preview quality — docs/workflow/12-PREVIEW-QUALITY.md; standalone-safe) -->
+<script src="../shared/syn-view.js"></script>
+<script>
+/* BOKEH live preview adapter.
+   RESOLUTION : the preview canvas and every full-frame FBO (the SYNTECH-EXPORT block's sizeFBOs, exposed as
+                window.__synPrevSize) follow the SOURCE: SynView.size(source, #canvas-area box minus fitCanvas' 24 px margin)
+                × devicePixelRatio, never above the source, in the source's aspect (a 9:16 video is no longer stretched into
+                16:9). No source: 1920×1080 as before. Pixel-sized shader constants stay on PREVREF (1920 px long edge), so
+                the look is the same at any preview size and equals the export's. Re-applied on source change / box change /
+                devicePixelRatio change; never during an offline render, SynFx (window.__synExpCtl) or a live REC — their
+                restore paths put back the size they saved, which is this preview size; a box change that arrives meanwhile is
+                applied right after. A re-size restarts the mask / BG FX feedback like an export's restore does.
+   LIVE REC   : starts at max(preview, 1920-px long edge) so it never records less than the old fixed 1920×1080 canvas
+                (the anamorphic REC crops that canvas, as before).
+   GATE       : the video upload (and the webcam mirror draw) in render() runs only for a NEW video frame (SynView.frames).
+                The segmenter's 512-px input, the 80×45 motion timer and the pixel-sort CPU path are left as they were.
+   REFRESH    : SynView.capRefresh() — 120/144 Hz displays draw every 2nd vsync. */
+(function(){
+  'use strict';
+  if(!window.SynView||!window.__synPrevSize) return;
+  var area=document.getElementById('canvas-area'), live=false, tmr=0;
+  var gate=window.__synPrevGate=SynView.frames(function(){ return STATE.hasVideo?video:null; });
+  SynView.capRefresh();
+
+  function busy(){ return !!(window.__synExpCtl||window.__synStillBusy||live); }
+  function srcSize(){
+    var w=video.videoWidth, h=video.videoHeight;
+    return (STATE.hasVideo&&w>0&&h>0&&video.readyState>=1)?[w,h]:null;
+  }
+  function setSize(w,h){
+    if(canvas.width===w&&canvas.height===h&&CONFIG.W===w&&CONFIG.H===h) return;
+    canvas.width=w; canvas.height=h; CONFIG.W=w; CONFIG.H=h;
+    window.__synPrevSize(w,h);
+    fitCanvas();
+    gate.force();
+  }
+  function apply(){
+    if(!area) return;
+    if(busy()){ clearTimeout(tmr); tmr=setTimeout(apply,300); return; }   /* retried until the export / REC is over */
+    var s=srcSize(), t, r;
+    if(!s){ t={w:1920,h:1080}; r={w:1920,h:1080}; }
+    else{
+      var bw=area.clientWidth-24, bh=area.clientHeight-24;                 /* fitCanvas' box */
+      if(!(bw>0&&bh>0)) return;                                            /* not laid out: keep the current size */
+      var z=SynView.size(s[0],s[1],bw,bh); t=SynView.fit(z.w,z.h,gl);
+      r=prevRefFor(s[0],s[1]);
+    }
+    PREVREF.w=r.w; PREVREF.h=r.h;
+    setSize(t.w,t.h);
+  }
+  window.__synPrevLiveBegin=function(){
+    live=true;
+    var s=srcSize(); if(!s) return;
+    var k=1920/Math.max(s[0],s[1]), r=SynView.fit(Math.max(2,Math.round(s[0]*k/2)*2),Math.max(2,Math.round(s[1]*k/2)*2),gl);
+    if(CONFIG.W*CONFIG.H<r.w*r.h) setSize(r.w,r.h);
+  };
+  window.__synPrevLiveEnd=function(){ live=false; apply(); };
+
+  SynView.watch(area,apply);
+  ['loadedmetadata','resize','emptied'].forEach(function(ev){ video.addEventListener(ev,apply); });
+  setInterval(apply,500);                                                  /* webcam / photo / Lab starts and stops */
+})();
+</script>
+<!-- SYNTECH-PREVIEW-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

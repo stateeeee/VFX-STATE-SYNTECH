@@ -331,7 +331,7 @@ PW=Math.max(2,W>>1);PH=Math.max(2,H>>1);plate=[mkFB(PW,PH,true,0),mkFB(PW,PH,tru
 TW=Math.max(2,Math.round(W*.66));TH=Math.max(2,Math.round(H*.66));mat=[mkFB(TW,TH,false,1),mkFB(TW,TH,false,1)];mi=0;gl.bindFramebuffer(gl.FRAMEBUFFER,null)}
 function upMask(){bind(2,maskT);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texImage2D(gl.TEXTURE_2D,0,gl.R8,MW,MH,0,gl.RED,gl.UNSIGNED_BYTE,maskBuf)}
 function resetPlate(){allocPlate();maskBuf.fill(0);rawBuf.fill(0);handBuf.fill(0);handAge=99;upMask();maskReady=false;segDirty=true;plateReal=false;capAt=0;plS=null;gain=[1,1,1];$('cd').style.display='none';$('bcap').classList.remove('on')}
-function resizeTo(w,h){const s=Math.min(1,1920/w,1080/h);W=Math.max(2,Math.round(w*s/2)*2);H=Math.max(2,Math.round(h*s/2)*2);cv.width=W;cv.height=H;resetPlate();$('iR').textContent=W+'×'+H}
+function resizeTo(w,h){const s=Math.min(1,1920/w,1080/h);const pv=window.__synPrev&&window.__synPrev.size(w,h);/* SYNTECH-PREVIEW: pv = SynView.size of the source in the frame (was the fixed 1920×1080 cap s); null → legacy */W=Math.max(2,Math.round((pv?pv.w:w*s)/2)*2);H=Math.max(2,Math.round((pv?pv.h:h*s)/2)*2);cv.width=W;cv.height=H;resetPlate();$('iR').textContent=W+'×'+H}
 /* ── MEDIAPIPE (segmentazione persone + mani) ── */
 /* SYNTECH-FIX: MediaPipe fully local (offline) — was cdn.jsdelivr.net @mediapipe/tasks-vision@0.10.14 + storage.googleapis.com models;
    the two model files are byte-identical to those URLs (selfie_multiclass_256x256 float32, hand_landmarker float16/1) */
@@ -796,6 +796,7 @@ allocPlate();
     getLiveAudio:function(){ return null; },                    /* the old REC had sound only for a video file (now the offline render) */
     liveFps:trackFps,
     beforeLive:function(){                                      /* a still image: record it at its native size, not the 1920×1080 preview cap */
+      if(window.__synPrev&&window.__synPrev.liveBegin) window.__synPrev.liveBegin(); /* SYNTECH-PREVIEW: webcam / Lab stream REC at least the old 1920×1080 cap; no preview re-size during the take */
       liveImg=null;
       if(srcMode!=='image'||!img) return;
       var nw=even(img.naturalWidth), nh=even(img.naturalHeight);
@@ -804,6 +805,7 @@ allocPlate();
       liveImg=img; W=nw; H=nh; cv.width=W; cv.height=H; resetPlate(); imgDirty=true;
     },
     afterLive:function(){
+      if(window.__synPrev&&window.__synPrev.liveEnd) window.__synPrev.liveEnd(); /* SYNTECH-PREVIEW: flag off, back to the current preview size */
       if(liveImg&&srcMode==='image'&&img===liveImg){ resizeTo(img.naturalWidth,img.naturalHeight); imgDirty=true; }
       liveImg=null;
     },
@@ -963,6 +965,92 @@ allocPlate();
 })();
 </script>
 <!-- SYNTECH-EXPORT-END -->
+<!-- SYNTECH-PREVIEW-START (live preview quality — docs/workflow/12-PREVIEW-QUALITY.md; standalone-safe) -->
+<script src="../shared/syn-view.js"></script>
+<script>
+/* INVISIBLE live preview adapter (operator, 2026-11-26: the picture got grainy and stuttered).
+   SIZE   : resizeTo() (hook marked SYNTECH-PREVIEW) asks __synPrev.size(): the source's aspect fitted into #canvas-wrap
+            (the frame #cv is contained in) × devicePixelRatio, never above the source (SynView.size; was a fixed cap of
+            1920×1080), limited to what the GPU can draw (SynView.fit). The clean plate / matte buffers keep the
+            effect's own ratio to the canvas (allocPlate: half / 0.66). Frame not laid out yet → the legacy cap.
+            Re-applied when the frame's box changes (SynView.watch) and when an offline render / SynFx ends (their restore
+            puts back the preview buffers they started from); never while one runs (window.__synExpCtl). A box-driven re-size
+            carries the plate / matte over (boxResize: blit), nothing the operator captured is lost; a NEW source resets as before.
+   UPLOAD : already gated by requestVideoFrameCallback in frame() (newFrame) — unchanged.
+   REFRESH: SynView.capRefresh() (120/144 Hz displays draw at 60/72 Hz). */
+(function(){
+  'use strict';
+  if(!window.SynView) return;
+  var wrap=document.getElementById('canvas-wrap');
+  function srcSize(){
+    if(srcMode==='image') return img?[img.naturalWidth,img.naturalHeight]:[0,0];
+    return [vid.videoWidth,vid.videoHeight];
+  }
+  function size(w,h){
+    if(!wrap||!(w>0)||!(h>0)) return null;
+    var bw=wrap.clientWidth, bh=wrap.clientHeight;
+    if(!(bw>0&&bh>0)) return null;                                  /* not laid out (hidden iframe): legacy cap */
+    var r=SynView.size(w,h,bw,bh);
+    return SynView.fit(r.w,r.h,gl);
+  }
+  var liveRec=false;                                                /* a live REC (webcam / Lab stream / image) is running */
+  window.__synPrev={size:size,
+    /* live REC must record at least what it did before this adapter (the old cap min(1,1920/w,1080/h) of the source):
+       the canvas goes to the larger of that and the preview via boxResize (plate carried), and stays put during the take */
+    liveBegin:function(){
+      liveRec=true;
+      if(srcMode==='none'||srcMode==='image') return;               /* images: the existing native-size path below */
+      var sz=srcSize(); if(!(sz[0]>0&&sz[1]>0)) return;
+      var k=Math.min(1,1920/sz[0],1080/sz[1]), ow=even(sz[0]*k), oh=even(sz[1]*k);
+      var pv=size(sz[0],sz[1]), pw=pv?even(pv.w):0, ph=pv?even(pv.h):0;
+      var tw=(pw*ph>ow*oh)?pw:ow, th=(pw*ph>ow*oh)?ph:oh;
+      if(cv.width!==tw||cv.height!==th) boxResize(tw,th);
+    },
+    liveEnd:function(){ liveRec=false; setTimeout(recheck,0); }};
+  function even(v){ return Math.max(2,Math.round(v/2)*2); }
+  function recheck(){
+    if(window.__synExpCtl||liveRec||srcMode==='none') return;
+    var s=srcSize(); if(!(s[0]>0&&s[1]>0)) return;
+    var t=size(s[0],s[1]); if(!t) return;
+    if(cv.width!==even(t.w)||cv.height!==even(t.h)) boxResize(even(t.w),even(t.h));
+  }
+  /* BOX-driven re-size (window / fullscreen / Lab panel): unlike a new source it must keep what the operator captured.
+     resizeTo()/resetPlate() would wipe the clean plate, its locked flag (plateReal), plS / gain (exposure match), the
+     matte memory and the mask. Here the plate and matte FBOs are re-allocated at the new size (same ratios as allocPlate:
+     plate W/2×H/2 mipmapped, matte 0.66×) and the old ones are BLITTED in (bilinear, as the export does), then mipmapped;
+     plateReal / plS / gain / bootN / capAt / mask buffers / hand state / fx state are NOT touched (the mask is 256×256 in UV,
+     size independent). Any failure → nothing changes (the old buffers stay). */
+  function boxResize(nw,nh){
+    var pw=Math.max(2,nw>>1), ph=Math.max(2,nh>>1), tw=Math.max(2,Math.round(nw*.66)), th=Math.max(2,Math.round(nh*.66));
+    var np=null, nm=null, ok=false;
+    try{
+      while(gl.getError()!==gl.NO_ERROR){}
+      np=[mkFB(pw,ph,true,0),mkFB(pw,ph,true,0)]; nm=[mkFB(tw,th,false,1),mkFB(tw,th,false,1)];
+      ok=gl.getError()===gl.NO_ERROR&&np.concat(nm).every(function(x){ gl.bindFramebuffer(gl.FRAMEBUFFER,x.f); return gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE; });
+      if(ok){
+        var pairs=[[plate[pi],np[0],PW,PH,pw,ph],[mat[mi],nm[0],TW,TH,tw,th]];
+        pairs.forEach(function(q){
+          gl.bindFramebuffer(gl.READ_FRAMEBUFFER,q[0].f); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,q[1].f);
+          gl.blitFramebuffer(0,0,q[2],q[3],0,0,q[4],q[5],gl.COLOR_BUFFER_BIT,gl.LINEAR);
+        });
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER,null); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,null);
+        ok=gl.getError()===gl.NO_ERROR;
+      }
+    }catch(e){ ok=false; }
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    if(!ok){ [].concat(np||[],nm||[]).forEach(function(x){ try{ gl.deleteTexture(x.t); gl.deleteFramebuffer(x.f); }catch(e){} }); console.warn('[preview] box re-size skipped (GPU buffers)'); return; }
+    bind(1,np[0].t); gl.generateMipmap(gl.TEXTURE_2D); bind(1,nm[0].t);
+    plate.concat(mat).forEach(function(x){ gl.deleteTexture(x.t); gl.deleteFramebuffer(x.f); });
+    plate=np; pi=0; PW=pw; PH=ph; mat=nm; mi=0; TW=tw; TH=th; W=nw; H=nh; cv.width=W; cv.height=H; $('iR').textContent=W+'×'+H;
+    hf=false; if(srcMode==='image') imgDirty=true;                  /* the source texture is uploaded again on the next frame */
+  }
+  SynView.watch(wrap,recheck);
+  var busy=false;                                                    /* an export / SynFx just ended → back to the current preview size */
+  setInterval(function(){ var b=!!window.__synExpCtl; if(busy&&!b) recheck(); busy=b; },400);
+  SynView.capRefresh();
+})();
+</script>
+<!-- SYNTECH-PREVIEW-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

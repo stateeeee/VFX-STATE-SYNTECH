@@ -76,11 +76,16 @@ export interface ChainLabProps {
 
 /** an iframe whose effect never registers SynLab is reported (and bypassed) after this */
 const LINK_TIMEOUT_MS = 15000;
-/** frame budget of a Lab node that feeds what is on screen (or the Master / a Gemini capture):
- *  SynLab.setFrameBudget(LAB_FPS). The realtime Master take records the OUTPUT at 30 fps
- *  (SynExport.recordLive), so 30 never starves it; an offline render never gates a node (the nodes'
- *  SynFx.frame may await a frame of the gated rAF). Nodes nobody watches get 0 (paused). */
+/** fallback frame budget (source rate not known yet / photo). Since 2026-11-26 the budget of a node of a
+ *  chain of 2+ nodes (or under a hold) is the SOURCE's frame rate, clamped to [LAB_FPS_MIN (24), LAB_FPS_MAX]
+ *  (video file: SynExport.probeFps; webcam: the track's frameRate; photo: 30), so a 24 fps clip is not
+ *  judder-resampled to 30 and a 50/60 fps clip is not halved. The gate in syn-lab.js fires on absolute
+ *  time slots shared by every iframe. The realtime Master take (webcam / photo) records at the same
+ *  rate; an offline render never gates a node (the nodes' SynFx.frame may await a frame of the gated
+ *  rAF). Nodes nobody watches get 0 (paused). */
 const LAB_FPS = 30;
+const LAB_FPS_MIN = 24; // a 8-15 fps / time-lapse clip must not step every node's grain / flicker at that rate
+const LAB_FPS_MAX = 60;
 /** after a node's link comes up, an effect that drops the Lab stream by itself in this window is re-fed */
 const RESTORE_GUARD_MS = 4000;
 /** photo INPUT: redraw cadence, so its captured track keeps delivering frames */
@@ -100,6 +105,7 @@ type ExportKind = '' | 'video' | 'live' | 'still';
 const PANEL_VIEWPORT_MIN = 2400;
 const PANEL_VIEWPORT_STEP = 800;
 /** the offscreen canvas area of a node never goes below this (its effect keeps a real render size) */
+const TAKE_AREA_MARGIN = 64;
 const AREA_MIN_W = 320;
 const AREA_MIN_H = 180;
 /** the stage's frame inset (the effects' #canvas-wrap: area − 24 px) */
@@ -259,6 +265,9 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   /** the file source last loaded (the webcam falls back to it when stopped) */
   const fileSourceRef = useRef<{ url: string; name: string; kind: 'video' | 'image' } | null>(null);
   const loadSeqRef = useRef(0);
+  /** the INPUT's frame rate (the nodes' budget in a 2+ node chain): LAB_FPS until it is known */
+  const srcFpsRef = useRef(LAB_FPS);
+  const aliveRef = useRef(true);
   const loopRef = useRef(true);
   const ownUrlRef = useRef<string | null>(null);
 
@@ -382,11 +391,16 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   /* ═══ LAYOUT: every node shows its PANEL only (SynLab.setLayout) ══════
      Its canvas area leaves the iframe's viewport but keeps a real size: the
      stage's (what the operator sees). Identity-checked per node (cheap: called from replumb). */
+  /** during a realtime Master take (webcam / photo): the SOURCE's native size in CSS px (÷ DPR), so every
+   *  node renders at native resolution instead of the stage's (SynView.size fits the area × DPR). Never
+   *  smaller than the stage. null = the stage's size. */
+  const takeAreaRef = useRef<{ w: number; h: number } | null>(null);
   const areaSize = () => {
     const b = stageBoxRef.current;
+    const t = takeAreaRef.current;
     return {
-      width: Math.round(Math.max(AREA_MIN_W, b.w)),
-      height: Math.round(Math.max(AREA_MIN_H, b.h)),
+      width: Math.round(Math.max(AREA_MIN_W, b.w, t ? t.w : 0)),
+      height: Math.round(Math.max(AREA_MIN_H, b.h, t ? t.h : 0)),
     };
   };
   const applyLayouts = () => {
@@ -677,6 +691,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     stopCam();
     stopPhoto();
     setInputStream(null);
+    srcFpsRef.current = LAB_FPS; // until the probe answers
     v.muted = true; // AudioEngine.startClip unmutes it while Clip is the input
     v.loop = loopRef.current;
     v.src = url;
@@ -695,6 +710,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     if (seq !== loadSeqRef.current) return false;
     setInputStream(captureVideoInput(v));
     syncLoop(); // loaded while the Lab is hidden: parked like the rest
+    void probeSourceFps(url, v, seq);
     void autoClip();
     return true;
   };
@@ -728,6 +744,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     draw();
     photoImgRef.current = img;
     photoTimerRef.current = window.setInterval(draw, PHOTO_REDRAW_MS);
+    srcFpsRef.current = LAB_FPS;
     fileSourceRef.current = { url, name, kind: 'image' };
     nameSource(name);
     setKindBoth('image');
@@ -809,6 +826,8 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     nameSource('webcam');
     setKindBoth('webcam');
     setError(null);
+    const camRate = Math.round(stream.getVideoTracks()[0]?.getSettings?.().frameRate ?? 0);
+    srcFpsRef.current = camRate > 0 ? camRate : LAB_FPS;
     setInputStream(new MediaStream(stream.getVideoTracks()));
     syncLoop(); // the Lab was hidden while the camera started: released again
   };
@@ -850,20 +869,70 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
      Every node is a same-origin iframe: all their render loops share the
      shell's main thread. The stage always shows the OUTPUT (LAB v3: no tabs),
      so (SynLab.setFrameBudget, 03 §3.1):
-       a Master export or a Gemini capture hold  → every node at LAB_FPS
+       a Master export or a Gemini capture hold  → every node at the SOURCE fps (budgetFps)
        Lab hidden                               → every node paused (0)
-       Lab visible                              → every node at LAB_FPS
+       Lab visible                              → every node at the SOURCE fps (budgetFps)
      When exactly ONE node renders and nothing holds the Lab (no export, no
      capture) it runs native (null): a single effect keeps its v0.12.0
      smoothness. Identity-checked per node, so it is called freely: from
      replumb (every commit, the polls), syncLoop (visibility, hold, export).
      A node raised from 0 marks the OUTPUT stale (raisedAtFrameRef) until
      fresh frames went through the chain (awaitFreshOutput). */
+  const budgetFps = () => Math.min(LAB_FPS_MAX, Math.max(LAB_FPS_MIN, srcFpsRef.current || LAB_FPS));
+  /** the INPUT's rate is known / changed: nodes follow (applyBudgets is identity-checked per node) */
+  const setSourceFps = (fps: number) => {
+    const f = isFinite(fps) && fps > 0 ? fps : LAB_FPS;
+    if (Math.abs(f - srcFpsRef.current) < 0.001) return;
+    srcFpsRef.current = f;
+    applyBudgets();
+  };
+  /** exact rate of a video file (container probe); an rVFC mediaTime estimate if the probe fails */
+  const probeSourceFps = async (url: string, v: HTMLVideoElement, seq: number) => {
+    let fps = 0;
+    try {
+      await loadSharedEngines();
+      const blob = await sourceBlob(url);
+      // the container's exact rate (MP4 / MOV): read from the file, no <video>, no seek, no second decoder
+      const r = await window.SynExport!.probeFps(blob, undefined);
+      if (r && r.source === 'container' && r.fps > 0) fps = r.fps;
+    } catch (e) { console.warn('[Lab] source fps probe failed, estimating:', e); }
+    try {
+      if (seq !== loadSeqRef.current || !aliveRef.current) return;
+      // WebM / MKV (no container rate): a PASSIVE estimate from the playing INPUT's presented frames
+      // (a second <video> seeking the same file would decode it twice during playback)
+      if (!fps) fps = await estimateVideoFps(v);
+      if (seq !== loadSeqRef.current || !aliveRef.current) return;
+      if (fps > 0) setSourceFps(fps);
+    } catch (e) { console.warn('[Lab] source fps estimate failed:', e); }
+  };
+  const estimateVideoFps = (v: HTMLVideoElement) => new Promise<number>((resolve) => {
+    const rv = v as HTMLVideoElement & { requestVideoFrameCallback?: (cb: (now: number, md: { mediaTime: number }) => void) => number };
+    if (typeof rv.requestVideoFrameCallback !== 'function') return resolve(0);
+    const times: number[] = [];
+    let n = 0;
+    const done = () => {
+      let best = Infinity;
+      for (let i = 1; i < times.length; i++) { const d = times[i] - times[i - 1]; if (d > 1e-4 && d < best) best = d; }
+      let f = best < Infinity ? 1 / best : 0;
+      // WebM stores times in whole milliseconds (33 ms reads 30.3 fps): snap to a standard rate within 1.5 %
+      let bestStd = 0, bestErr = 0.015;
+      for (const std of [24, 25, 30, 48, 50, 60, 23.976, 29.97, 59.94]) { const e = Math.abs(f - std) / std; if (e < bestErr - 1e-9) { bestErr = e; bestStd = std; } } // the CLOSEST; whole rates win ties
+      if (bestStd) f = bestStd;
+      resolve(f >= 10 ? f : 0); // a starved machine drops frames: an implausibly low estimate is ignored
+    };
+    const step = (_now: number, md: { mediaTime: number }) => {
+      if (times.length === 0 || md.mediaTime > times[times.length - 1]) times.push(md.mediaTime);
+      if (times.length >= 12 || ++n > 90) return done();
+      rv.requestVideoFrameCallback!(step);
+    };
+    rv.requestVideoFrameCallback(step);
+    window.setTimeout(() => { if (times.length < 12) done(); }, 2500);
+  });
   const applyBudgets = () => {
     const ids = chainRef.current;
     const held = holdRef.current > 0 || exportingRef.current;
     const live = held || visibleRef.current;
-    const run: number | null = !held && ids.length === 1 ? null : LAB_FPS;
+    const run: number | null = !held && ids.length === 1 ? null : budgetFps();
     nodesRef.current.forEach((rec) => {
       const api = rec.api;
       if (!api || typeof api.setFrameBudget !== 'function') return;
@@ -941,6 +1010,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   }, [visible]);
 
   // unmount (the shell never unmounts the Lab, but StrictMode / HMR do)
+  useEffect(() => { aliveRef.current = true; return () => { aliveRef.current = false; }; }, []);
   useEffect(() => () => {
     cancelAnimationFrame(rafRef.current);
     liveRef.current = false;
@@ -1351,17 +1421,62 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     const ov = outputVideoRef.current;
     const k = kindRef.current;
     if (!ov || !outputStreamRef.current || !outputHasFrame()) { setExportMsg('✗ the chain has no output frame yet — try again in a moment'); return; }
-    const tap = new OutputTap(ov);
     const q = qualityRef.current;
     const name = `${exportBase()}_LAB_REC.mp4`;
     beginExport('live', false);
+    // native source size → every node's canvas area (÷ DPR), for the whole take
+    let nw = 0, nh = 0;
+    if (k === 'webcam') {
+      const st = camStreamRef.current?.getVideoTracks()[0]?.getSettings?.();
+      nw = st?.width ?? 0; nh = st?.height ?? 0;
+    } else if (k === 'image') {
+      nw = photoCanvasRef.current?.width ?? 0; nh = photoCanvasRef.current?.height ?? 0;
+    }
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const restoreLayout = () => { if (takeAreaRef.current) { takeAreaRef.current = null; applyLayouts(); } };
+    /* the "Save as" dialog needs the click's user activation: ask it NOW, before the size wait below
+       (after an async wait Chrome may refuse it and the take would silently record into memory) */
+    type SavePicker = (o: unknown) => Promise<unknown>;
+    const sfp = (window as unknown as { showSaveFilePicker?: SavePicker }).showSaveFilePicker;
+    const pickP: Promise<unknown> | null = !noPicker() && typeof sfp === 'function'
+      ? sfp.call(window, { suggestedName: name, types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] })
+      : null;
+    let fileHandle: unknown = null;
+    const begin = async () => {
+      if (pickP) {
+        try { fileHandle = await pickP; }
+        catch (e) {
+          if ((e as Error)?.name === 'AbortError') { exportStopRef.current = true; return false; } // cancelled: nothing saved
+          fileHandle = null; // dialog unavailable: the engine downloads at the end, as before
+        }
+      }
+      if (nw > 0 && nh > 0) {
+        // + margin: the effects measure their canvas area a few px short (borders), which would fit the source just under native
+        takeAreaRef.current = { w: nw / dpr + TAKE_AREA_MARGIN, h: nh / dpr + TAKE_AREA_MARGIN };
+        applyLayouts();
+        const t0 = performance.now();
+        const near = (a: number, b: number) => a >= b - 2 && a <= b + 2;
+        while (performance.now() - t0 < 3000 && !(near(ov.videoWidth, nw) && near(ov.videoHeight, nh))) {
+          await new Promise((r) => window.setTimeout(r, 100));
+          if (exportStopRef.current) return false; // stopped meanwhile
+        }
+      }
+      return !exportStopRef.current;
+    };
+    void begin().then((go) => {
+      if (!go) { restoreLayout(); setExportMsg('✗ Master export stopped — nothing saved'); endExport(); return; }
+      runTake();
+    }).catch((e: Error) => { restoreLayout(); setExportMsg('✗ ' + e.message); endExport(); });
+    const runTake = () => {
+    const tap = new OutputTap(ov);
     let stopped = false;
     const ctl = eng.recordLive({
       getCanvas: () => tap.region(),
-      fps: 30,
+      fps: Math.round(budgetFps()), // same rate as the nodes' budget: no duplicated frames in the take
       audioStream: labAudioStream(),
       quality: q,
-      useFilePicker: !noPicker(),
+      useFilePicker: pickP ? false : !noPicker(), // the dialog was already shown in the click
+      ...(fileHandle ? { fileHandle } : {}),
       filename: name,
       onProgress: (sec, info) => {
         const lim = k === 'image' ? ` / ${STILL_TAKE_SEC}s` : '';
@@ -1380,7 +1495,8 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         lastExportRef.current = { name: r.filename ?? name, size: r.bytes ?? 0, type: 'video/mp4', width: r.width ?? 0, height: r.height ?? 0, audio: !!r.audioCodec && r.audioCodec !== 'none', url: '' };
         setExportMsg(`✓ ${r.filename ?? name} · ${describeResult(r)}${r.dropped ? ` · ${r.dropped} dropped` : ''}${warn.length ? ' — ' + warn.join('; ') : ''}`);
       }
-    }).finally(() => endExport());
+    }).finally(() => { restoreLayout(); endExport(); });
+    };
   };
 
   const runMaster = () => {
@@ -1953,7 +2069,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         window.setTimeout(() => { window.clearInterval(id); sample(); finish(); }, windowSec * 1000);
       })),
 
-      // the OUTPUT's real rate: under a hold (every node renders, capped at LAB_FPS), after fresh frames
+      // the OUTPUT's real rate: under a hold (every node renders, capped at the source fps), after fresh frames
       measureFps: (windowMs = FPS_WINDOW_MS) => withLiveLoop(async () => {
         if (exportingRef.current || !outputHasFrame()) return fpsRef.current;
         await awaitFreshOutput();
@@ -1977,7 +2093,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
           order: chainRef.current.slice(),
           params,
           fps: fpsRef.current,
-          fpsCap: LAB_FPS,
+          fpsCap: budgetFps(),
           resScale: 1,
           sourceKind: kindRef.current,
           audioActive: audio.active,

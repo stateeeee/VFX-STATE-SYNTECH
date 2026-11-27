@@ -1118,6 +1118,7 @@ function fit() {
   wrap.style.width=w+'px'; wrap.style.height=h+'px';
   [dc,cBlob,cMask,cSub,cErode].forEach(c=>{c.width=w;c.height=h;});
   dCtx.fillStyle='#000'; dCtx.fillRect(0,0,w,h);
+  if(window.__synPrev)window.__synPrev.fitted(w,h); /* SYNTECH-PREVIEW: the frame stays w×h CSS px; its canvases get the backing SynView.size (× DPR, ≤ source) with the pixel parameters × k */
 }
 window.addEventListener('resize',fit);
 document.addEventListener('fullscreenchange',()=>setTimeout(fit,100)); // SYNTECH-UNIFORM: Bokeh's fitCanvas() also re-runs on fullscreenchange
@@ -1218,7 +1219,7 @@ function drawSubject() {
 
 /* ─── BLOB DETECTION (low-res, BFS) ─────────────────────────── */
 function detectAndDrawBlobs() {
-  procCtx.drawImage(activeSrc(),0,0,PW,PH);
+  if(!window.__synPrev||window.__synPrev.procFresh())procCtx.drawImage(activeSrc(),0,0,PW,PH); /* SYNTECH-PREVIEW: only on a new video frame — c-proc still holds it otherwise (was procCtx.drawImage(activeSrc(),0,0,PW,PH); every tick) */
   const id = procCtx.getImageData(0,0,PW,PH);
   const px = id.data;
 
@@ -1472,7 +1473,7 @@ async function frame(){
     segN++;
     /* SYNTECH-SOURCE: a still image only needs (re)segmenting while it has no mask yet
        (new image, seg re-enabled, model switch) — video keeps segmenting every N frames. */
-    if(segN%P.segN===0&&!segBusy&&(!srcImg||!lastMaskBitmap)){ // never two sends in flight
+    if(segN%P.segN===0&&!segBusy&&(!srcImg||!lastMaskBitmap)&&(!window.__synPrev||window.__synPrev.segFresh())){ // never two sends in flight /* SYNTECH-PREVIEW: + a video frame not sent yet (was …(!srcImg||!lastMaskBitmap)){) */
       segSendGen=segGen; segBusy=true;
       try{ await segObj.send({image:activeSrc()}); }catch(_){}
       segBusy=false;
@@ -1794,7 +1795,7 @@ document.getElementById('rec-btn').addEventListener('click',function(){
 
   function loop(){
     if(!ov.classList.contains('active')){rafId=null;return;}
-    cv.width=window.innerWidth;cv.height=window.innerHeight;
+    {const _d=window.SynView?SynView.dpr():1,_w=Math.round(window.innerWidth*_d),_h=Math.round(window.innerHeight*_d);if(cv.width!==_w)cv.width=_w;if(cv.height!==_h)cv.height=_h;} /* SYNTECH-PREVIEW: device px, re-allocated only when the size changes (was cv.width=window.innerWidth;cv.height=window.innerHeight; every frame) */
     try{ctx3.drawImage(dc,0,0,cv.width,cv.height);}catch(e){}
     rafId=requestAnimationFrame(loop);
   }
@@ -2234,6 +2235,7 @@ syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on,
   function $(id){ return document.getElementById(id); }
   var CAN=[dc,cBlob,cMask,cSub,cErode];
   var full=null;                 /* {w,h} while the canvases are at source size (render or live REC) */
+  window.__synPrevHeld=function(){ return !!full; };   /* SYNTECH-PREVIEW: the live-preview adapter leaves the canvases alone while the export owns them */
   var saved=null, fileP=null, snap=null, liveAn=null, offAn=null, lastTick=-1, lastMo=-1, recTimer=0, recT0=0, liveDst=null, liveTap=null;
   var MAX_SIDE=32767, MAX_AREA=268435456;   /* Chromium's 2D canvas limits */
   var sleep=function(ms){ return new Promise(function(r){ setTimeout(r,ms); }); };
@@ -2258,7 +2260,7 @@ syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on,
   function goFull(w,h){
     w=Math.max(2,Math.round(w)); h=Math.max(2,Math.round(h));
     if(w>MAX_SIDE||h>MAX_SIDE||w*h>MAX_AREA) throw new Error('the browser cannot draw a '+w+'×'+h+' canvas (2D canvas limit '+MAX_SIDE+' px per side, '+MAX_AREA+' px²)');
-    var pw=dc.width;
+    var pw=(window.__synPrev&&window.__synPrev.refW())||dc.width;   /* SYNTECH-PREVIEW: the look reference is the frame's CSS px — the preview backing may be ×DPR (was var pw=dc.width;) */
     window.__synExpPx=pw>=16?w/pw:1;    /* preview → output scale for the pixel-sized parameters */
     full={w:w,h:h};
     applyFull();
@@ -2523,6 +2525,121 @@ syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on,
 })();
 </script>
 <!-- SYNTECH-EXPORT-END -->
+<!-- SYNTECH-PREVIEW-START (live preview quality — docs/workflow/12-PREVIEW-QUALITY.md; standalone-safe) -->
+<script src="../shared/syn-view.js"></script>
+<script>
+/* BLOB REVEAL — live preview quality.
+   R1 RESOLUTION  fit() still sizes the frame (#canvas-wrap, source aspect) in CSS px: that stays the look
+      reference. Its hook then gives the five frame-sized canvases (#dc, c-blob, c-mask, c-sub, c-erode) the
+      backing SynView.size(source, frame) = frame × devicePixelRatio, never above the source and never below
+      the frame's CSS px (k = backing / CSS ≥ 1; DPR 1 or a small source → exactly as before). The pixel-sized
+      parameters follow through the export block's own machinery, window.__synExpPx = k: Erode / Feather × k,
+      Min Area × k², Audio Exp × k — the mask edge, the feather blur and the blob windows sit exactly where
+      they sat, drawn with k× the pixels. c-proc 320×180 is the blob analysis: unchanged.
+      While an export owns the canvases (window.__synPrevHeld) nothing is touched; its endFull() → fit() brings
+      the CURRENT preview size back, and goFull() measures its scale from the frame's CSS px (refW).
+      Re-applied on every fit() (window resize, fullscreen, source loaded, Lab stream, transport shown/hidden)
+      and, through SynView.watch, on a devicePixelRatio / canvas-area change — only when the target differs.
+   R2 NEW-FRAME GATES  (the frame is still composed every tick; what is skipped would redraw the same pixels)
+      · c-proc: the video is drawn into the analysis canvas only on a new frame (hook in detectAndDrawBlobs);
+      · segmentation: each video frame is sent to MediaPipe once (hook in frame()) — frame() no longer awaits an
+        inference of an unchanged frame on every display tick;
+      · blob layer (c-blob) and subject (c-sub): rebuilt only when an input changed (new frame, new mask, a
+        slider, the audio envelope, the canvas size); otherwise the composite reuses them;
+      · MOTION meter 64×36: redrawn only on a new frame (live streams; files already skip on currentTime).
+      Still images, RENDER MP4 / REC / SynFx (window.__synExpCtl) are never gated.
+   R3 SynView.capRefresh(): ≈60 Hz on 120/144 Hz displays (never below the video's fps). */
+(function(){
+  'use strict';
+  if(!window.SynView) return;
+  var CAN=[dc,cBlob,cMask,cSub,cErode];
+  var st={k:1,w:0,h:0,gen:0};
+  var area=document.getElementById('canvas-area');
+  function held(){ return !!(window.__synPrevHeld&&window.__synPrevHeld()); }
+  function curVideo(){ return srcImg?null:vid; }                 /* activeSrc() when it is the <video> */
+  var ids=typeof WeakMap==='function'?new WeakMap():null, nid=0;
+  function oid(o){ if(!o) return 0; if(!ids) return -1; var v=ids.get(o); if(!v){ v=++nid; ids.set(o,v); } return v; }
+
+  /* ── R1 ── */
+  function target(w,h){                                           /* backing of a w×h CSS frame, or null = w×h (as before) */
+    var s=srcSize();
+    if(!(s.w>0&&s.h>0&&w>0&&h>0)) return null;
+    var z=SynView.size(s.w,s.h,w,h);
+    if(z.w<=w+1) return null;                                     /* the screen shows no more than the CSS px */
+    if(z.w>32767||z.h>32767||z.w*z.h>268435456) return null;      /* Chromium's 2D canvas limits */
+    return {w:z.w,h:z.h,k:z.w/w};
+  }
+  function fitted(w,h){                                           /* end of fit(): the canvases are w×h, black */
+    st.w=w; st.h=h; st.gen++;
+    if(held()) return;
+    var t=target(w,h);
+    if(!t){ st.k=1; window.__synExpPx=undefined; dc.style.width=''; dc.style.height=''; return; }
+    CAN.forEach(function(c){ c.width=t.w; c.height=t.h; });
+    dc.style.width='100%'; dc.style.height='100%';                /* #canvas-wrap keeps the w×h display box */
+    st.k=t.k; window.__synExpPx=t.k;
+    dCtx.fillStyle='#000'; dCtx.fillRect(0,0,t.w,t.h);
+  }
+  SynView.watch(area,function(){                                  /* devicePixelRatio / area changes without a window resize */
+    if(held()||window.__synExpCtl||!st.w) return;
+    var aw=area.clientWidth-24, ah=area.clientHeight-24;
+    if(!(aw>0&&ah>0)) return;
+    var s=srcSize(), asp=(s.w&&s.h)?s.w/s.h:16/9, w, h;           /* = fit()'s frame */
+    if(aw/ah>asp){ h=ah; w=Math.round(h*asp); } else { w=aw; h=Math.round(w/asp); }
+    var t=target(w,h), bw=t?t.w:w, bh=t?t.h:h;
+    if(w!==st.w||h!==st.h||dc.width!==bw||dc.height!==bh) fit();
+  });
+
+  /* ── R2 ── */
+  var gProc=SynView.frames(curVideo), gSeg=SynView.frames(curVideo), gBlob=SynView.frames(curVideo), gSub=SynView.frames(curVideo);
+  function Key(n){ this.v=new Array(n); this.i=0; this.d=true; this.ok=false; }   /* change detector over fixed fields, no per-frame allocation */
+  Key.prototype.begin=function(){ this.i=0; this.d=!this.ok; return this; };
+  Key.prototype.p=function(x){ if(this.v[this.i]!==x){ this.v[this.i]=x; this.d=true; } this.i++; return this; };
+  var _detect=detectAndDrawBlobs, dK=new Key(11), dN=0;
+  detectAndDrawBlobs=function(){
+    var fresh=gBlob.fresh();
+    if(window.__synExpCtl){ dK.ok=false; return _detect.apply(this,arguments); }
+    dK.begin().p(st.gen).p(oid(activeSrc())).p(dc.width).p(dc.height).p(window.__synExpPx||1).p(P.lumThr).p(P.dilate).p(P.minArea).p(P.maxBlobs).p(P.audioExp).p(beatExpand);
+    if(!fresh&&!dK.d) return dN;                                  /* c-blob still holds exactly this layer (a new src / srcObject makes the gate fresh) */
+    dK.ok=false; dN=_detect.apply(this,arguments); dK.ok=true; return dN;
+  };
+  var _subject=drawSubject, sK=new Key(9);
+  drawSubject=function(){
+    var fresh=gSub.fresh();
+    if(window.__synExpCtl||!segEnabled||!lastMaskBitmap){ sK.ok=false; return _subject.apply(this,arguments); }
+    sK.begin().p(st.gen).p(oid(activeSrc())).p(oid(lastMaskBitmap)).p(dc.width).p(dc.height).p(window.__synExpPx||1).p(P.segThr).p(P.erode).p(P.feather);
+    if(!fresh&&!sK.d&&cSub.width===dc.width&&cSub.height===dc.height){
+      dCtx.globalAlpha=P.opacity; dCtx.drawImage(cSub,0,0); dCtx.globalAlpha=1;   /* = drawSubject step 4 on the c-sub it built */
+      return;
+    }
+    sK.ok=false; var r=_subject.apply(this,arguments); sK.ok=true; return r;
+  };
+  (function(){                                                    /* MOTION meter sample (mCtx is only ever drawn by drawImage(vid,0,0,64,36)) */
+    var draw=mCtx.drawImage, cur=null, ok=false, li=0, la=0, lb=0, lc=0, ld=0, g=SynView.frames(function(){ return cur; });
+    mCtx.drawImage=function(img,a,b,c,d){
+      if(img instanceof HTMLVideoElement&&arguments.length===5&&!window.__synExpCtl){
+        cur=img;
+        var id=oid(img), same=ok&&id===li&&a===la&&b===lb&&c===lc&&d===ld;
+        if(!g.fresh()&&same) return;                              /* same frame → same pixels already in mCtx */
+        ok=false; var r=draw.call(this,img,a,b,c,d); ok=true; li=id; la=a; lb=b; lc=c; ld=d; return r;
+      }
+      ok=false; return draw.apply(this,arguments);
+    };
+  })();
+
+  window.__synPrev={
+    fitted:fitted,
+    refW:function(){ return (st.k>1&&!held())?st.w:0; },
+    procFresh:function(){ return gProc.fresh(); },
+    segFresh:function(){ return gSeg.fresh(); },
+    state:function(){ return {k:st.k,w:st.w,h:st.h,bw:dc.width,bh:dc.height}; }
+  };
+  if(srcMode!=='none') fit();
+
+  /* ── R3 ── */
+  SynView.capRefresh();
+})();
+</script>
+<!-- SYNTECH-PREVIEW-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

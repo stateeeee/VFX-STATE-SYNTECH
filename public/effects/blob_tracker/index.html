@@ -2456,7 +2456,7 @@ function trackerFrame(){
   if(!src||(src===vidEl&&vidEl.readyState<2)){trackerRafId=requestAnimationFrame(trackerFrame);return;}
   const now=performance.now();fc++;
   if(now-lastFpsT>700){fps=Math.round(fc/((now-lastFpsT)/1000));fc=0;lastFpsT=now;document.getElementById('fps-val').textContent=fps;document.getElementById('ic-fps').textContent=fps;}
-  const dW=dc.width,dH=dc.height;
+  if(window.__synPrev)window.__synPrev.tick();const dW=window.__synPrev?window.__synPrev.boxW(dc.width):dc.width,dH=window.__synPrev?window.__synPrev.boxH(dc.height):dc.height; /* SYNTECH-PREVIEW: box px while #dc's backing is box×k behind a k transform (was const dW=dc.width,dH=dc.height;) */
   // 1) Raw COLOR video — always clean base
   _drawSrc(src,dW,dH);
 
@@ -2507,7 +2507,7 @@ function trackerFrame(){
     sc.forEach((b,i)=>drawTextFill(b,scX,scY,i));
   } else {
     // BG Mode OFF: FX su tutto il background, i blob mostrano video pulito
-    const _patches=sc.map(b=>{
+    const _patches=(window.__synPrev&&!window.__synPrev.fxBgDraws())?[]:sc.map(b=>{ /* SYNTECH-PREVIEW: no FX to apply → _applyFxBg is a no-op and the patch round trip changes nothing: no #dc readback (was const _patches=sc.map(b=>{) */
       const bw=b.w*scX*xyBlobScale,bh=b.h*scY*xyBlobScale;
       const px=Math.max(0,Math.round(b.cx-bw/2)),py=Math.max(0,Math.round(b.cy-bh/2));
       const pw=Math.min(dW-px,Math.ceil(bw)),ph=Math.min(dH-py,Math.ceil(bh));
@@ -2695,7 +2695,7 @@ function panelsAnimate(){
     }
     p.material.uniforms.opacity.value = autoMode ? 1.0 : padY;
     p.material.uniforms.mirrorU.value = mirrorPanels ? 1.0 : 0.0;
-    const tex=p.material.uniforms.map.value;if(tex&&tex.isVideoTexture)tex.needsUpdate=true;
+    const tex=p.material.uniforms.map.value;if(tex&&tex.isVideoTexture&&(!window.__synPrev||window.__synPrev.texFresh(tex)))tex.needsUpdate=true; /* SYNTECH-PREVIEW: upload only a new video frame (was if(tex&&tex.isVideoTexture)tex.needsUpdate=true;) */
   });
   const targetZ = autoMode
     ? panelCamZ - _autoEnergy * 3.5 + _autoCamJolt
@@ -3082,7 +3082,7 @@ function setSourceUI(id,label){
 }
 function showPip(src,lbl){srcPip.style.display='block';document.getElementById('src-pip-lbl').textContent=lbl;pipSrc=src;}
 function hidePip(){srcPip.style.display='none';pipSrc=null;}
-setInterval(()=>{if(!pipSrc)return;const w=pipCv.width=156;let h=104;if(pipSrc.videoWidth)h=Math.round(w*pipSrc.videoHeight/pipSrc.videoWidth);if(pipSrc.naturalWidth)h=Math.round(w*pipSrc.naturalHeight/pipSrc.naturalWidth);pipCv.height=h;try{pipCtx.drawImage(pipSrc,0,0,w,h);}catch(e){}},33);
+setInterval(()=>{if(!pipSrc||(window.__synPrev&&!window.__synPrev.pipFresh(pipSrc)))return;/* SYNTECH-PREVIEW: the PiP keeps its frame until the video has a new one (was if(!pipSrc)return;) */const w=pipCv.width=156;let h=104;if(pipSrc.videoWidth)h=Math.round(w*pipSrc.videoHeight/pipSrc.videoWidth);if(pipSrc.naturalWidth)h=Math.round(w*pipSrc.naturalHeight/pipSrc.naturalWidth);pipCv.height=h;try{pipCtx.drawImage(pipSrc,0,0,w,h);}catch(e){}},33);
 function showTimeline(s){document.getElementById('tl-bar').style.display=s?'flex':'none';}
 function updatePlayBtn(){document.getElementById('tl-play').textContent=paused?'▶':'⏸';}
 function updatePlayUI(){const p=!paused&&srcMode==='video';const btn=document.getElementById('btn-play'),lbl=document.getElementById('play-label');if(btn)btn.classList.toggle('on',p);if(lbl)lbl.textContent=p?'PLAYING':'PAUSED';}
@@ -5518,7 +5518,7 @@ function _bodyUi(force){
 function _bodyTag(ctx,x,y,txt,col,k,align){
   const fs=Math.max(9,Math.round(9*k));ctx.font=fs+'px JetBrains Mono,monospace';
   const w=ctx.measureText(txt).width+fs*0.9,h=fs+5;let x0=align==='left'?x:x-w/2;
-  x0=Math.max(2,Math.min(dc.width-w-2,x0));const y0=Math.max(2,y-h);
+  x0=Math.max(2,Math.min((window.__synPrev?window.__synPrev.boxW(dc.width):dc.width)-w-2,x0));const y0=Math.max(2,y-h); /* SYNTECH-PREVIEW: box px (was dc.width) */
   ctx.globalAlpha=0.72;ctx.fillStyle='#04020a';ctx.fillRect(x0,y0,w,h);
   ctx.globalAlpha=0.9;ctx.strokeStyle=col;ctx.lineWidth=1;ctx.strokeRect(x0+0.5,y0+0.5,w-1,h-1);
   ctx.globalAlpha=1;ctx.fillStyle=col;ctx.textBaseline='middle';ctx.fillText(txt,x0+fs*0.45,y0+h/2+0.5);ctx.textBaseline='alphabetic';
@@ -6047,6 +6047,7 @@ function resize(){
   capCv.width=w;capCv.height=h;rSrcCv.width=w;rSrcCv.height=h;
   if(rRenderer)rRenderer.setSize(w,h,false);
   if(panelsRenderer){panelsW=w;panelsH=h;panelsRenderer.setSize(w,h);panelsCamera.aspect=w/h;panelsCamera.updateProjectionMatrix();}
+  if(window.__synPrev)window.__synPrev.resized(); /* SYNTECH-PREVIEW: #dc backing = box × k (SynView.size of the picture) where every draw goes through the k transform */
 }
 window.addEventListener('resize',resize);
 /* SYNTECH-UNIFORM: refit like Bokeh on fullscreen enter/exit, and whenever the area changes size without a window
@@ -6447,7 +6448,7 @@ document.getElementById('pro-rec-btn')?.addEventListener('click',()=>{
 
   function loop(){
     if(!ov.classList.contains('active')){rafId=null;return;}
-    cv.width = dc.width; cv.height = dc.height; // SYNTECH-UNIFORM: frame resolution, #fs-cv object-fit:contain keeps 16:9 (was window size → stretched)
+    if(cv.width!==dc.width)cv.width=dc.width; if(cv.height!==dc.height)cv.height=dc.height; /* SYNTECH-PREVIEW: re-allocated only when the size changes (was cv.width = dc.width; cv.height = dc.height; every frame) */ // SYNTECH-UNIFORM: frame resolution, #fs-cv object-fit:contain keeps 16:9 (was window size → stretched)
     try{ctx3.drawImage(dc,0,0,cv.width,cv.height);}catch(e){}
     if(panelsCv.style.display!=='none')try{ctx3.drawImage(panelsCv,0,0,cv.width,cv.height);}catch(e){}
     if(fxOvCv.style.display!=='none')try{ctx3.drawImage(fxOvCv,0,0,cv.width,cv.height);}catch(e){}
@@ -7698,7 +7699,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
   }
   var LAYERS=[[dc,1],[panelsCv,2],[fxOvCv,3],[glC,4]];
   var comp=kit.compositor({
-    size:function(){ return {w:dc.width,h:dc.height}; },
+    size:function(){ var o=window.__synPrev&&window.__synPrev.outSize(); return o||{w:dc.width,h:dc.height}; },   /* SYNTECH-PREVIEW: a size that does not follow the preview's ×k on/off (was return {w:dc.width,h:dc.height};) */
     layers:function(){
       hookRipple();
       return LAYERS.filter(function(l){ return l[0].getClientRects().length>0; })
@@ -7829,7 +7830,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
   }
   function enterNative(w,h){
     if(nat) return;
-    var bw=dc.width,bh=dc.height;
+    var bw=window.__synPrev?window.__synPrev.boxW(dc.width):dc.width,bh=window.__synPrev?window.__synPrev.boxH(dc.height):dc.height;   /* SYNTECH-PREVIEW: the box in box px (fixed points / PRO strip), not the ×k backing (was var bw=dc.width,bh=dc.height;) */
     nat={w:w,h:h,bw:bw,bh:bh,pr:panelsRenderer?panelsRenderer.getPixelRatio():0};
     window.__synExpHold=true;                                  /* resize() keeps its hands off until exitNative */
     var B=fitBox(bw,bh,w,h);                                   /* fixed points were clicked on the letterboxed picture of the box */
@@ -8195,6 +8196,186 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 </script>
 <!-- SYNTECH-EXPORT-END -->
+<!-- SYNTECH-PREVIEW-START (live preview quality — docs/workflow/12-PREVIEW-QUALITY.md; standalone-safe) -->
+<script src="../shared/syn-view.js"></script>
+<script>
+/* BLOB TRACKER — live preview quality.
+   R1 RESOLUTION  The 16:9 box (#canvas-wrap, SYNTECH-FIT letterbox inside) and every coordinate, stroke, font,
+      dot, dash, glow and distance of the effect stay in BOX px. #dc's backing becomes box × k, k = SynView.size
+      (source, picture rect) / picture rect (≥ 1 — never below today's box px; ≤ devicePixelRatio; ≤ the source),
+      and its 2D context draws through setTransform(k): the tracker frame computes in box px (hook on dW/dH),
+      the video is sampled at k× and the HUD is rendered at k× with the SAME on-screen size. Canvas shadows
+      ignore the transform → shadowBlur is scaled by k on this context only (connection glow, body glow).
+      ONLY where every draw on #dc goes through the transform: TRACKER mode with no pixel FX. INVERT / THERMAL /
+      SECURITY / LIQUID / GLITCH 1 / GLITCH 2 read and write #dc with getImageData / putImageData / self-drawImage
+      and size their grain, scanlines, offsets and text in canvas px (k× them would change their look and cost
+      k² per readback); a text fill outside BG mode is restored through those pixel patches; FIXED PTS stores
+      clicked points in canvas px; RIPPLE samples #dc at box px; the PANELS overlay pass draws on #dc in canvas
+      px. In those cases k = 1 = exactly today's canvas. Re-evaluated every drawn frame (source size, box, DPR,
+      mode) and in resize() (hook); a change re-sizes #dc only (it is redrawn whole by the next frame).
+      Never while an export holds the canvas (window.__synExpHold / __synExpCtl); exitNative() → resize() comes
+      back to the CURRENT preview size; enterNative() reads the box in box px (fixed points, PRO REC strip).
+      LAB OUTPUT: the compositor is sized to the safe-mode size (box × k) in EVERY mode (hook in the LAB block;
+      #dc at k = 1 is drawn scaled into it), so an FX / mode toggle never changes the stream size downstream.
+   R2 NEW-FRAME GATES  (output identical; the HUD / FX are still drawn every tick on a fresh base)
+      · _drawSrc (tracker, no pixel FX): the video is drawn on a new frame and the base copied to a cache canvas;
+        an unchanged frame gets the cached base back (same pixels, no video draw). With a pixel FX #dc is read
+        back every tick anyway and the copy would only add work: the base is drawn every tick, as before;
+      · _detDrawProc: the 320×180 detection canvas is redrawn only on a new frame (getImageData then reads the
+        same pixels, so every detection / tracking / flow step runs exactly as before);
+      · motion 64×36, video-reactive 160×90 and 40×22, body scene-cut 32×18 canvases: drawImage(video) skipped
+        when the same frame is already in them (they are only ever written by that call);
+      · the PiP keeps its frame until a new one; Panels' VideoTexture is flagged for upload on a new frame.
+      · default mode (no FX to apply): the per-blob #dc patch readbacks around a no-op _applyFxBg are skipped.
+      Still images, exports, live REC / PRO REC (native canvas) are never gated.
+   R3 SynView.capRefresh(): ≈60 Hz on 120/144 Hz displays (never below the video's fps). */
+(function(){
+  'use strict';
+  if(!window.SynView) return;
+  var st={on:false,w:0,h:0,bw:0,bh:0,kx:1,ky:1};
+  function hold(){ return !!(window.__synExpHold||window.__synExpCtl); }
+  function gated(){ return !hold()&&!window.__synPrevBypass; }
+  function on(){ return st.on&&!window.__synExpHold&&dc.width===st.bw&&dc.height===st.bh; }
+  var ids=typeof WeakMap==='function'?new WeakMap():null, nid=0;
+  function oid(o){ if(!o) return 0; if(!ids) return -1; var v=ids.get(o); if(!v){ v=++nid; ids.set(o,v); } return v; }
+
+  /* ── R1 ── */
+  function safe(){                                                /* every draw on #dc goes through the transform */
+    return appMode==='tracker'&&!rippleOn&&!FX.panels&&!fixedPtsMode&&
+      !(FX.invert||FX.thermal||FX.security||FX.liquid||FX.data||FX.glitch)&&(!textFillMode||bgFxMode);
+  }
+  function srcDims(){                                             /* the picture trackerFrame draws */
+    if(srcMode==='image'&&activeImg) return activeImg.naturalWidth>0?{w:activeImg.naturalWidth,h:activeImg.naturalHeight}:null;
+    return vidEl.videoWidth>0?{w:vidEl.videoWidth,h:vidEl.videoHeight}:null;
+  }
+  function target(any){                                          /* any: the size the safe modes would use (Lab output) */
+    if(srcMode==='none'||(!any&&!safe())) return null;
+    var bw=_synBoxW, bh=_synBoxH, s=srcDims();
+    if(!(bw>0&&bh>0)||!s) return null;
+    var a=s.w/s.h, rw, rh;
+    if(bw/bh>a){ rh=bh; rw=bh*a; } else { rw=bw; rh=bw/a; }       /* the letterboxed picture rect (SYNTECH-FIT) */
+    var z=SynView.size(s.w,s.h,rw,rh), k=Math.min(z.w/rw,z.h/rh);
+    if(!(k>1.01)) return null;
+    var W=Math.round(bw*k), H=Math.round(bh*k);
+    if(W>32767||H>32767||W*H>268435456) return null;
+    return {w:bw,h:bh,bw:W,bh:H};
+  }
+  function apply(t){
+    dc.width=t.bw; dc.height=t.bh;
+    st.on=true; st.w=t.w; st.h=t.h; st.bw=t.bw; st.bh=t.bh; st.kx=t.bw/t.w; st.ky=t.bh/t.h;
+    dCtx.setTransform(st.kx,0,0,st.ky,0,0);
+    dCtx.fillStyle='#000'; dCtx.fillRect(0,0,t.w,t.h);
+  }
+  function drop(){                                                /* back to today's canvas: the box in px, identity */
+    var mine=on(); st.on=false;
+    if(mine&&_synBoxW>0&&_synBoxH>0){ dc.width=_synBoxW; dc.height=_synBoxH; dCtx.fillStyle='#000'; dCtx.fillRect(0,0,_synBoxW,_synBoxH); }
+  }
+  function tick(){
+    if(hold()) return;
+    var t=target();
+    if(t){
+      if(!on()||t.bw!==st.bw||t.bh!==st.bh||t.w!==st.w||t.h!==st.h) apply(t);
+      else dCtx.setTransform(st.kx,0,0,st.ky,0,0);
+    } else if(st.on) drop();
+  }
+  function resized(){                                             /* resize() just set #dc to the box (identity transform) */
+    st.on=false;
+    if(hold()) return;
+    var t=target(); if(t) apply(t);
+  }
+  var SB=Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype,'shadowBlur');
+  if(SB&&SB.get&&SB.set){
+    Object.defineProperty(dCtx,'shadowBlur',{configurable:true,
+      get:function(){ var v=SB.get.call(this); return on()?v/st.kx:v; },
+      set:function(v){ SB.set.call(this,on()?(+v||0)*st.kx:v); }});
+  }
+  /* mode switches that start a loop drawing on #dc in canvas px: drop k before their first frame */
+  [['setMode'],['updateFxPanels'],['enableRipple']].forEach(function(n){
+    var name=n[0], f=window[name];
+    if(typeof f!=='function') return;
+    window[name]=function(){ var r=f.apply(this,arguments); tick(); return r; };
+  });
+
+  /* ── R2 ── */
+  function plain(){                                               /* trackerFrame's state when it draws the base */
+    if(dCtx.globalAlpha!==1||dCtx.globalCompositeOperation!=='source-over') return false;
+    if(SB&&SB.get&&SB.get.call(dCtx)!==0) return false;
+    if(('filter' in dCtx)&&dCtx.filter!=='none') return false;
+    return true;                                                  /* transform: trackerFrame's base (tick() asserts it); panelsBgLoop is excluded by FX.panels / mode */
+  }
+  function Key(n){ this.v=new Array(n); this.i=0; this.d=true; this.ok=false; }   /* change detector over fixed fields, no per-frame allocation */
+  Key.prototype.begin=function(){ this.i=0; this.d=!this.ok; return this; };
+  Key.prototype.p=function(x){ if(this.v[this.i]!==x){ this.v[this.i]=x; this.d=true; } this.i++; return this; };
+  function pixFx(){                                               /* #dc is read back / pixel-processed this frame */
+    return !!(FX.invert||FX.thermal||FX.security||FX.liquid||FX.data||FX.glitch||(textFillMode&&!bgFxMode)||fixedPtsMode);
+  }
+  var _drawSrcOrig=_drawSrc, cache=null, cctx=null, cK=new Key(6), sCur=null, gS=SynView.frames(function(){ return sCur; });
+  _drawSrc=function(src,dW,dH){
+    if(!(src instanceof HTMLVideoElement)||!gated()||appMode!=='tracker'||FX.panels||pixFx()||!plain()){ cK.ok=false; return _drawSrcOrig.apply(this,arguments); }
+    sCur=src;
+    var fresh=gS.fresh();
+    cK.begin().p(oid(src)).p(srcMode).p(dc.width).p(dc.height).p(dW).p(dH);
+    if(!fresh&&!cK.d&&cache){                                /* same frame, same geometry: the base it drew */
+      dCtx.save(); dCtx.setTransform(1,0,0,1,0,0); dCtx.drawImage(cache,0,0); dCtx.restore();
+      return;
+    }
+    cK.ok=false; var r=_drawSrcOrig.apply(this,arguments);
+    if(!cache){ cache=document.createElement('canvas'); cctx=cache.getContext('2d'); }
+    if(cache.width!==dc.width) cache.width=dc.width;
+    if(cache.height!==dc.height) cache.height=dc.height;
+    cctx.drawImage(dc,0,0); cK.ok=true;
+    return r;
+  };
+  var _detDrawProcOrig=_detDrawProc, pK=new Key(7), pCur=null, gP=SynView.frames(function(){ return pCur; });
+  _detDrawProc=function(src,noMirror){                            /* pCtx is only ever written here */
+    if(!(src instanceof HTMLVideoElement)||!gated()){ pK.ok=false; return _detDrawProcOrig.apply(this,arguments); }
+    var r=_fitProc(src);
+    pK.begin().p(oid(src)).p(srcMode).p(noMirror?1:0).p(r.x).p(r.y).p(r.w).p(r.h);
+    pCur=src;
+    if(!gP.fresh()&&!pK.d) return;
+    pK.ok=false; var out=_detDrawProcOrig.apply(this,arguments); pK.ok=true; return out;
+  };
+  function gateCtx(ctx){                                          /* analysis canvases only ever written by one full drawImage(video) */
+    if(!ctx||typeof ctx.drawImage!=='function') return;
+    var draw=ctx.drawImage, cur=null, ok=false, li=0, la=0, lb=0, lc=0, ld=0, g=SynView.frames(function(){ return cur; });
+    ctx.drawImage=function(img,a,b,c,d){
+      if(img instanceof HTMLVideoElement&&arguments.length===5&&gated()){
+        cur=img;
+        var id=oid(img), same=ok&&id===li&&a===la&&b===lb&&c===lc&&d===ld;
+        if(!g.fresh()&&same) return;                              /* same frame → same pixels already there */
+        ok=false; var r=draw.call(this,img,a,b,c,d); ok=true; li=id; la=a; lb=b; lc=c; ld=d; return r;
+      }
+      ok=false; return draw.apply(this,arguments);
+    };
+  }
+  gateCtx(motionCtx); gateCtx(vrCtx); gateCtx(_vrFCtx);
+  if(typeof _bodyCutCtx!=='undefined') gateCtx(_bodyCutCtx);
+  var pipCur=null, gPip=SynView.frames(function(){ return pipCur; });
+  var texCur=null, gTex=SynView.frames(function(){ return texCur; });   /* ONE gate for the Panels texture: a new VideoTexture per mode switch must not add gates */
+
+  window.__synPrev={
+    tick:tick, resized:resized,
+    boxW:function(x){ return on()?st.w:x; },
+    boxH:function(x){ return on()?st.h:x; },
+    fxBgDraws:function(){ return !!(FX.invert||FX.thermal||FX.security||FX.liquid||FX.data||FX.glitch||textFillMode); },
+    pipFresh:function(s){ if(!(s instanceof HTMLVideoElement)||!gated()) return true; pipCur=s; return gPip.fresh(); },
+    texFresh:function(tex){
+      if(!gated()) return true;
+      texCur=tex.image instanceof HTMLVideoElement?tex.image:null;
+      return gTex.fresh();
+    },
+    outSize:function(){                                           /* Lab output: the safe-mode size whatever the mode, so a toggle never changes the stream size */
+      if(hold()) return null;
+      var t=target(true); return t?{w:t.bw,h:t.bh}:null;
+    },
+    state:function(){ return {on:on(),w:st.w,h:st.h,bw:dc.width,bh:dc.height,kx:st.kx,ky:st.ky,safe:safe()}; }
+  };
+
+  /* ── R3 ── */
+  SynView.capRefresh();
+})();
+</script>
+<!-- SYNTECH-PREVIEW-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>

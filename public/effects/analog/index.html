@@ -1800,15 +1800,19 @@ function currentFrameSource(){
   if(window.__synFxSrc)return window.__synFxSrc; /* SYNTECH-EXPORT: SynFx.frame() draws the frame it was given */
   if(STATE.srcMode==='image'&&activeImage)return activeImage;
   if(STATE.srcMode==='webcam'&&video.videoWidth>0){
+    let _mrz=false; /* SYNTECH-PREVIEW */
     if(mirrorCanvas.width!==video.videoWidth||mirrorCanvas.height!==video.videoHeight){
       mirrorCanvas.width=video.videoWidth;
-      mirrorCanvas.height=video.videoHeight;
+      mirrorCanvas.height=video.videoHeight; _mrz=true; /* SYNTECH-PREVIEW */
     }
+    if(_mrz||(window.__synPrevFresh!==false&&window.__synPrevMirAt!==STATE.frameCount)){ /* SYNTECH-PREVIEW: the mirror is redrawn once per NEW video frame (was every call) */
+    window.__synPrevMirAt=STATE.frameCount;
     mirrorCtx.save();
     mirrorCtx.translate(mirrorCanvas.width,0);
     mirrorCtx.scale(-1,1);
     mirrorCtx.drawImage(video,0,0);
     mirrorCtx.restore();
+    }
     return mirrorCanvas;
   }
   return video;
@@ -2018,6 +2022,7 @@ function render(now){
   if(STATE.isRecording)
     document.getElementById('rec-time').textContent=fmtDur((Date.now()-STATE.recStartTime)/1000);
 
+  window.__synPrevFresh=window.__synPrev?window.__synPrev.begin():true; /* SYNTECH-PREVIEW: source-change check + new-frame verdict (upload gate) */
   updateReactive(dt);
   if(STATE.frameCount%2===0){updateVU();computeMotion(currentFrameSource());updateMotionUI();}
 
@@ -2032,6 +2037,7 @@ function render(now){
   }
 
   if(!STATE.hasVideo||!sourceReady()){
+    if(window.__synPrev)window.__synPrev.force(); /* SYNTECH-PREVIEW: the verdict was not used — upload the first frame once ready */
     gl.bindFramebuffer(gl.FRAMEBUFFER,null);
     gl.viewport(0,0,CONFIG.W,CONFIG.H);
     gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
@@ -2041,7 +2047,7 @@ function render(now){
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D,videoTex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,currentFrameSource());
+  if(window.__synPrevFresh!==false)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,currentFrameSource()); /* SYNTECH-PREVIEW: only a NEW video frame is uploaded (was unconditional) */
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
 
   const t=window.__synExpCtl?window.__synExpCtl.t:(now-STATE.startTime)/1000; /* SYNTECH-EXPORT: media-time clock during an offline render (was (now-STATE.startTime)/1000) */
@@ -2049,7 +2055,7 @@ function render(now){
   let sortOut=videoTex;
   if(P.sortEnabled){
     blit(sortFBO[sortR],videoTex);
-    for(let i=0;i<P.sortPasses;i++){
+    for(let i=0;i<(window.__synPrev&&!window.__synExpCtl?window.__synPrev.passes(P.sortPasses):P.sortPasses);i++){ /* SYNTECH-PREVIEW: live preview only — pass count scaled with the frame so the streak keeps its length relative to the frame at any preview size (was i<P.sortPasses; the export is untouched) */
       const pass=STATE.sortEven;
       drawSort(sortFBO[sortR].tex,sortFBO[sortW],pass);
       sortR^=1; sortW^=1;
@@ -2912,6 +2918,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
     clearFeedback();
     fitCanvas();                                            /* the preview box follows the frame's aspect */
   }
+  window.__synPrevSizeTo=sizeTo;                           /* SYNTECH-PREVIEW: the live preview re-sizes the frame with the export's own sizeTo */
   /* Native size or a clear error — never a smaller picture. */
   function nativeSize(w,h){
     var maxTex=gl.getParameter(gl.MAX_TEXTURE_SIZE), maxRb=gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), vp=gl.getParameter(gl.MAX_VIEWPORT_DIMS)||[0,0];
@@ -2986,7 +2993,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
     },
     afterRender:function(){
       window.__synExpCtl=null;                               /* live loop draws again from its next tick */
-      sizeTo(LIVE_W,LIVE_H);                                 /* 1920×1080 frame, canvas, FBOs; feedback cleared */
+      if(window.__synPrev)window.__synPrev.restore(); else sizeTo(LIVE_W,LIVE_H); /* SYNTECH-PREVIEW: back to the CURRENT preview size (was sizeTo(LIVE_W,LIVE_H): 1920×1080 frame, canvas, FBOs; feedback cleared) */
       prevMotionFrame=null;
       if(saved&&STATE.srcMode==='video'){
         try{ video.currentTime=saved.t; }catch(e){}
@@ -2995,6 +3002,8 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
       saved=null; fileP=null;
     },
 
+    beforeLive:function(){ if(window.__synPrev)window.__synPrev.live(true); },   /* SYNTECH-PREVIEW: live REC records at least the old 1920×1080 area */
+    afterLive:function(){ if(window.__synPrev)window.__synPrev.live(false); },  /* SYNTECH-PREVIEW: back to the preview size */
     getLiveCanvas:function(){ return canvas; },
     getLiveAudio:function(){ return null; },                 /* live sources here are silent (getUserMedia audio:false) */
     liveFps:trackFps,
@@ -3037,7 +3046,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
     if(s.upd) updateReactive=s.upd;
     if(s.turnedOn&&P.reactEnabled) toggleReactive();
     STATE.hasVideo=s.hasVideo;
-    try{ sizeTo(LIVE_W,LIVE_H); }catch(e){ console.error(e); }
+    try{ if(window.__synPrev)window.__synPrev.restore(); else sizeTo(LIVE_W,LIVE_H); }catch(e){ console.error(e); } /* SYNTECH-PREVIEW: back to the CURRENT preview size (was sizeTo(LIVE_W,LIVE_H)) */
     prevMotionFrame=null;
     if(fxLocal){ fxLocal.width=fxLocal.height=0; }
   }
@@ -3121,6 +3130,86 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
 })();
 </script>
 <!-- SYNTECH-EXPORT-END -->
+<!-- SYNTECH-PREVIEW-START (live preview quality — docs/workflow/12-PREVIEW-QUALITY.md; standalone-safe) -->
+<script src="../shared/syn-view.js"></script>
+<script>
+/* LIVE PREVIEW quality for ANALOG (the export is already native; this is what the operator sees while working).
+   RESOLUTION : the 1920x1080 CONFIG frame / canvas / every CONFIG-sized FBO follow the CURRENT source: its aspect
+                (a 9:16 video is no longer stretched into 16:9) at SynView.size(source, #canvas-area box) = the
+                pixels the screen really shows, never above the source. Done with the export block's own sizeTo
+                (window.__synPrevSizeTo): same FBOs, feedback cleared only when the size really changes. Re-applied
+                on source change (checked once per frame in begin()) and on box change (SynView.watch). Never while
+                an offline render / SynFx / still / live REC runs; their restores call restore() (the CURRENT
+                preview size, was LIVE_W x LIVE_H = 1920x1080). Live REC records at least the old 1920x1080 area
+                (source aspect, never fewer pixels than before). No source: 1920x1080 exactly as before.
+   UPLOAD GATE: the video (file / webcam / camera / Lab stream) goes to the GPU only when its frame is NEW
+                (begin() sets window.__synPrevFresh once per render; render() / currentFrameSource() read it).
+   REFRESH    : SynView.capRefresh() (120 / 144 Hz displays draw every 2nd vsync; 60 Hz unchanged). */
+(function(){
+  'use strict';
+  if(!window.SynView||!window.__synPrevSizeTo) return;
+  var area=document.getElementById('canvas-area');
+  var recLive=false, lastW=0, lastH=0;
+  var gate=SynView.frames(function(){
+    var m=STATE.srcMode;
+    return (STATE.hasVideo&&(m==='video'||m==='webcam'||m==='camera'||m==='lab'))?video:null;   /* image / none: not a <video> → never gated */
+  });
+  function srcSize(){
+    if(STATE.srcMode==='image'&&activeImage&&activeImage.naturalWidth>0) return [activeImage.naturalWidth,activeImage.naturalHeight];
+    if(STATE.hasVideo&&STATE.srcMode!=='none'&&STATE.srcMode!=='image'&&video.videoWidth>0&&video.videoHeight>0) return [video.videoWidth,video.videoHeight];
+    return null;
+  }
+  function box(){
+    var aw=area?area.clientWidth-24:0, ah=area?area.clientHeight-24:0;      /* the same 24 px margin fitCanvas keeps */
+    return (aw>0&&ah>0)?[aw,ah]:[0,0];
+  }
+  function target(){
+    var s=srcSize(); if(!s) return {w:1920,h:1080};                       /* no source: the effect's own frame */
+    var b=box(), z=SynView.size(s[0],s[1],b[0],b[1]);
+    return SynView.fit(z.w,z.h,gl);
+  }
+  function busy(){ return !!(window.__synExpCtl||window.__synFxSrc||window.__synStillBusy||recLive); }
+  function put(t){
+    window.__synPrevSizeTo(t.w,t.h);
+  }
+  function apply(){
+    if(busy()) return;
+    var t=target();
+    if(t.w!==CONFIG.W||t.h!==CONFIG.H) put(t);
+  }
+  window.__synPrev={
+    /* once per render(): source-change check + the new-frame verdict */
+    begin:function(){
+      if(!busy()){
+        var s=srcSize(), w=s?s[0]:0, h=s?s[1]:0;
+        if(w!==lastW||h!==lastH){ lastW=w; lastH=h; apply(); }
+      }
+      return (window.__synPrevFresh=gate.fresh());
+    },
+    force:function(){ gate.force(); },
+    /* pixel sort steps 1 texel per pass: its streak length relative to the frame is passes / long edge. The old
+       fixed frame was 1920 px, so the live passes scale with the preview frame (export: native size, unchanged). */
+    passes:function(n){ return Math.max(1,Math.round(n*Math.max(CONFIG.W,CONFIG.H)/1920)); },
+    /* after an offline render / SynFx / still: back to the CURRENT preview size (clears the feedback, as before) */
+    restore:function(){ put(target()); },
+    /* live REC: at least the old 1920x1080 area in the source aspect */
+    live:function(on){
+      if(!on){ recLive=false; apply(); return; }
+      recLive=true;
+      var t=target(), s=srcSize();
+      if(s){
+        var ar=s[0]/s[1], w=Math.round(Math.sqrt(1920*1080*ar)), h=Math.round(w/ar);
+        if(w*h<=t.w*t.h){ w=t.w; h=t.h; } else { var f=SynView.fit(w,h,gl); w=f.w&~1; h=f.h&~1; }
+        t={w:w,h:h};
+      }
+      if(t.w!==CONFIG.W||t.h!==CONFIG.H) put(t);
+    }
+  };
+  SynView.watch(area,apply);
+  SynView.capRefresh();
+})();
+</script>
+<!-- SYNTECH-PREVIEW-END -->
 <!-- SYNTECH-UNIFORM-START: work timer (top bar) + BLOB REVEAL timeline + FPS 0 without a source — ../shared/syn-extras.js, operator request 2026-10-11 -->
 <script src="../shared/syn-extras.js"></script>
 <script>
