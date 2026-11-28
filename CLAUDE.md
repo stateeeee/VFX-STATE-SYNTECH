@@ -88,6 +88,7 @@ public/effects/shared/          syn-chrome.css/.js — Bokeh's chrome + day them
                                 syn-export.js — offline MP4 render engine (window.SynExport, §5.3);
                                 syn-still.js — PNG / JPEG / PDF of a photo (window.SynStill; each effect's window.SynFx);
                                 syn-view.js — live preview quality (window.SynView, §5.4): preview size, new-frame gate, refresh cap
+                                syn-panel.js — the one EXPORT panel (QUALITY · FOTO · VIDEO) mounted in every effect (window.SynPanel, 13-EXPORT-PANEL.md)
 ```
 
 ## Hard rules

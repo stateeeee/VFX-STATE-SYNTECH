@@ -2917,6 +2917,99 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
     prevMotionFrame=null;
     if(fxLocal){ fxLocal.width=fxLocal.height=0; }
   }
+  /* ── SYNTECH-MATTE (docs/workflow/13-EXPORT-PANEL.md §3) — SynFx.matte: the alpha M on the colour's cell layout ──
+     The cells are decided by the COLOUR (variance on u_mip, exactly FS_QUAD's own loop: this shader is FS_QUAD's text up to
+     "cell colour", so the subdivision cannot drift) and painted with the average of the ALPHA mip inside the same cell.
+     Colour and cell border are OFF. MIX blends the alpha with the dry alpha like the colour. SMOOTH: its own ping-pong
+     (still: cleared + the same N passes; Lab: persistent). The effect's FBOs / canvas / state are never touched.
+     Output: a 2D canvas, R = M, opaque, the full frame {canvas}. */
+  var FS_MATTE=(function(){
+    var cut='  // ── cell colour: four quadrant taps one level down = exact box average ──';
+    var head=FS_QUAD.split(cut)[0];
+    if(FS_QUAD.indexOf(cut)<0||head.split('void main(){').length!==2) return null;
+    head=head.replace('uniform sampler2D u_src;','uniform sampler2D u_src; uniform sampler2D u_mipA; uniform sampler2D u_srcA;')
+             .replace('void main(){','float tapA(vec2 uv, float lod){ return textureLod(u_mipA, clamp(uv, vec2(0.001), vec2(0.999)), lod).r; }\nvoid main(){');
+    return head+
+      '  float lod = max(lodOf(cellSize) - 1.0, 0.0);\n'+
+      '  vec2 a = cellMin + cellSize * 0.25;\n'+
+      '  vec2 b = cellMin + cellSize * 0.75;\n'+
+      '  float M = (tapA(vec2(a.x,a.y), lod) + tapA(vec2(b.x,a.y), lod) + tapA(vec2(a.x,b.y), lod) + tapA(vec2(b.x,b.y), lod)) * 0.25;\n'+
+      '  float m = mix(texture(u_srcA, v_uv).r, M, u_mix);\n'+
+      '  fragColor = vec4(m, m, m, 1.0);\n}';
+  })();
+  var MT=null;
+  function fxMatteFree(){
+    if(!MT) return;
+    try{
+      [MT.mip,MT.quad,MT.sm[0],MT.sm[1],MT.out].forEach(function(o){ gl.deleteFramebuffer(o.fb); gl.deleteTexture(o.tex); });
+      gl.deleteTexture(MT.src); gl.deleteProgram(MT.prog);
+    }catch(e){}
+    MT=null;
+  }
+  function fxMatte(alphaSrc){
+    if(!SF||!SF.mt||!alphaSrc||!FS_MATTE) return null;
+    var w=SF.w, h=SF.h, rec=SF.mt, j;
+    if(MT&&(MT.w!==w||MT.h!==h)) fxMatteFree();
+    function clr(o){ gl.bindFramebuffer(gl.FRAMEBUFFER,o.fb); gl.viewport(0,0,w,h); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT); }
+    if(!MT){
+      var prog=build(FS_MATTE); if(!prog) return null;
+      MT={w:w,h:h,prog:prog,
+          U:uniforms(prog,['u_mip','u_mipA','u_srcA','u_res','u_mipSize','u_threshold','u_maxDepth','u_samples','u_seed','u_mix','u_falloff','u_grid','u_metric','u_sampleLod']),
+          mip:mkFBO(MIP,MIP,true), quad:mkFBO(w,h), sm:[mkFBO(w,h),mkFBO(w,h)], out:mkFBO(w,h), src:gl.createTexture(), r:0, cv:null};
+      initTex(MT.src); clr(MT.sm[0]); clr(MT.sm[1]);
+    }
+    /* the alpha picture + its square mip (like videoTex → mipFBO) */
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,MT.src);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,alphaSrc);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+    blit(MT.mip,MT.src,MIP,MIP);
+    gl.bindTexture(gl.TEXTURE_2D,MT.mip.tex); gl.generateMipmap(gl.TEXTURE_2D);
+    /* the cells: the same uniforms drawQuad() derived for the colour (reactive values are those of the last pass) */
+    var md=P.reactEnabled?P.modDepth:0, mo=Math.max(0,Math.min(1,motionEnergy||0));
+    var thr=Math.max(0,P.qThreshold*(1-0.80*md*REACT.bass)*(1-0.35*md*mo));
+    var dep=Math.max(1,Math.min(10,P.qMaxDepth+md*REACT.mid*3.0));
+    var U=MT.U;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,MT.quad.fb); gl.viewport(0,0,w,h);
+    gl.useProgram(MT.prog);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,mipFBO.tex);   gl.uniform1i(U.u_mip,0);     /* decisions: the COLOUR mip */
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,MT.mip.tex);   gl.uniform1i(U.u_mipA,1);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,MT.src);       gl.uniform1i(U.u_srcA,2);
+    gl.uniform2f(U.u_res,w,h); gl.uniform1f(U.u_mipSize,MIP);
+    gl.uniform1f(U.u_threshold,thr); gl.uniform1f(U.u_maxDepth,Math.round(dep)); gl.uniform1f(U.u_samples,Math.round(P.qSamples));
+    gl.uniform1f(U.u_seed,Math.round(P.qSeed)); gl.uniform1f(U.u_mix,P.qMix); gl.uniform1f(U.u_falloff,P.qFalloff);
+    gl.uniform1f(U.u_sampleLod,Math.round(P.qAcuity)); gl.uniform2f(U.u_grid,P.qSquare?16:1,P.qSquare?9:1); gl.uniform1i(U.u_metric,P.qMetric);
+    bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    gl.activeTexture(gl.TEXTURE0);
+    var outTex=MT.quad.tex;
+    if(P.qSmooth>0.005){
+      if(rec.mode!=='lab'){ clr(MT.sm[0]); clr(MT.sm[1]); MT.r=0; }
+      for(j=0;j<rec.n;j++){
+        var rd=MT.sm[MT.r], wr=MT.sm[MT.r^1];
+        gl.bindFramebuffer(gl.FRAMEBUFFER,wr.fb); gl.viewport(0,0,w,h);
+        gl.useProgram(PSM);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,MT.quad.tex); gl.uniform1i(USM.u_cur,0);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,rd.tex);      gl.uniform1i(USM.u_prev,1);
+        gl.uniform1f(USM.u_amt,P.qSmooth);
+        bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+        MT.r^=1;
+      }
+      gl.activeTexture(gl.TEXTURE0);
+      outTex=MT.sm[MT.r].tex;
+    }
+    blit(MT.out,outTex,w,h);
+    var px=new Uint8ClampedArray(w*h*4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,MT.out.fb);
+    gl.readPixels(0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    var row=w*4, tmp=new Uint8ClampedArray(row);
+    for(var y=0;y<(h>>1);y++){ var a0=y*row, b0=(h-1-y)*row; tmp.set(px.subarray(a0,a0+row)); px.copyWithin(a0,b0,b0+row); px.set(tmp,b0); }
+    if(!MT.cv) MT.cv=document.createElement('canvas');
+    MT.cv.width=w; MT.cv.height=h;
+    MT.cv.getContext('2d').putImageData(new ImageData(px,w,h),0,0);
+    return {canvas:MT.cv};
+  }
+  /* /SYNTECH-MATTE */
   window.SynFx={
     version:1,
     outSize:function(w,h){ return {w:Math.round(w),h:Math.round(h)}; },
@@ -2970,13 +3063,15 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
         n=P.qSmooth>0.005?Math.min(240,Math.ceil(Math.log(0.01)/Math.log(Math.min(P.qSmooth,0.95)))+2):1;
         step=1/60; clearFeedback(); smR=0; smW=1; STATE.frameCount=0;
       }
+      SF.mt={mode:SF.mode,n:n}; /* SYNTECH-MATTE: what matte() replays */
       for(var j=0;j<n;j++){
         ctl.t=t-(n-1-j)*step; ctl.dt=step; ctl.inside=true;
         try{ render(performance.now()); }finally{ ctl.inside=false; }
       }
       return {canvas:canvas};
     },
-    end:fxEnd
+    matte:function(alphaSrc,i,t){ return fxMatte(alphaSrc); }, /* SYNTECH-MATTE */
+    end:function(){ fxMatteFree(); return fxEnd(); }
   };
 
   /* ───────── photo export: PNG · JPEG · PDF under RENDER MP4 ───────── */

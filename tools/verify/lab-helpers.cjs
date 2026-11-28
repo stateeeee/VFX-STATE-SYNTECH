@@ -9,7 +9,7 @@
  *     the effect's real panel: its iframe `lab-frame-<ModuleId>` in panel-only layout
  *   LABORATORY (`lab-block-laboratory`, open at load) — four buttons, no captions:
  *     lab-save-chain (→ preset-name / preset-save), lab-open-chain (→ preset-load-<name> /
- *     preset-del-<name>), lab-reset, chain-master (+ chain-export-msg)
+ *     preset-del-<name>), lab-reset, the #lab-xp export panel (lab-q, lab-still-png/jpeg/pdf, lab-rec-screen, lab-export-mp4)
  * There are no tabs any more. The helpers below for the old SynEngine panel
  * (fx-head-*, param-*) are kept for the phase 3–8 scripts that still import them.
  *

@@ -29,8 +29,8 @@
  *      change a param → open restores it; RESET puts the initial value back
  *   7. Gemini LabHandle: chainState lists params from every node; applyPlan /
  *      revertPlan round-trip one value
- *   8. EXPORT VFX CHAIN = offline SynExport.render of a 2 s clip: download *_LAB_MASTER.mp4; ffprobe h264 / size / fps /
- *      frame count / audio equal the input's; MASTER/HIGH + PNG/JPEG/PDF rows exist
+ *   8. LABORATORY export panel (#lab-xp: QUALITY 0-100 · FOTO PNG/JPEG/PDF · VIDEO REC SCREEN/EXPORT MP4); EXPORT MP4 =
+ *      offline SynExport.render of a 2 s clip: download *_LAB_Q<n>.mp4; ffprobe h264 / size / fps / frame count / audio equal the input's
  *   9. day theme reaches every Lab iframe (data-syn-theme + the effect's <html>); the
  *      block headers turn white + violet (operator decision 2026-11-22, commit 6f12310)
  *  10. hidden Lab: parked, every node paused, a Gemini grab holds it live (FRESH frames)
@@ -491,7 +491,7 @@ const outputAdvance = (page, ms) => page.evaluate(async (ms) => {
   if (pick) {
     const labBtns = await page.evaluate(() => [...document.querySelectorAll('[data-testid="lab-block-laboratory"] .fxl-blk-body > button')].map((e) => e.textContent.trim()));
     const labTitles = await page.evaluate(() => [...document.querySelectorAll('[data-testid="lab-block-laboratory"] .fxl-blk-body > button')].map((e) => !!e.title));
-    step('LABORATORY: the four icon buttons (SAVE / OPEN / RESET / EXPORT) with their titles', labTitles.length === 4 && labTitles.every(Boolean) && JSON.stringify(labBtns) === JSON.stringify(['SAVE VFX CHAIN TO PROJECTS', 'OPEN VFX CHAIN FROM PROJECTS', 'RESET VFX CHAIN', 'EXPORT VFX CHAIN']), JSON.stringify(labBtns));
+    step('LABORATORY: the three icon buttons (SAVE / OPEN / RESET; EXPORT is the #lab-xp panel) with their titles', labTitles.length === 3 && labTitles.every(Boolean) && JSON.stringify(labBtns) === JSON.stringify(['SAVE VFX CHAIN TO PROJECTS', 'OPEN VFX CHAIN FROM PROJECTS', 'RESET VFX CHAIN']), JSON.stringify(labBtns));
     await domClick(page, q('lab-save-chain'));
     await sleep(300);
     await page.evaluate(() => {
@@ -576,16 +576,19 @@ const outputAdvance = (page, ms) => page.evaluate(async (ms) => {
   await sleep(2500);
   await setPlaying(page, true);
   await page.evaluate(() => { window.__synExportNoPicker = true; });
-  step('LABORATORY: MASTER / HIGH quality row and PNG / JPEG / PDF row exist', await page.evaluate(() => {
-    const t = (sel) => [...document.querySelectorAll(`${sel} .fxl-seg`)].map((e) => e.textContent.trim().toUpperCase());
-    return JSON.stringify(t('[data-testid="chain-quality"]')) === '["MASTER","HIGH"]' && JSON.stringify(t('[data-testid="chain-stills"]')) === '["PNG","JPEG","PDF"]'
-      && !!document.querySelector('[data-testid="chain-quality"].fxl-seg-row') && !!document.querySelector('[data-testid="chain-stills"].fxl-seg-row');
-  }), 'chain-quality + chain-stills');
-  await page.evaluate(() => document.querySelector('[data-testid="chain-quality-master"]')?.click());
+  step('LABORATORY: export panel #lab-xp has QUALITY / FOTO / VIDEO rows, #lab-q 0..100 and all buttons', await page.evaluate(() => {
+    const xp = document.querySelector('#lab-xp[data-testid="lab-export-panel"]');
+    if (!xp) return false;
+    const lbls = [...xp.querySelectorAll('.fxl-xp-lbl')].map((e) => e.textContent.trim().toUpperCase());
+    const qq = document.querySelector('#lab-q');
+    return JSON.stringify(lbls) === '["QUALITY","FOTO","VIDEO"]' && !!qq && qq.min === '0' && qq.max === '100' && !!document.querySelector('#lab-q-val')
+      && ['lab-still-png', 'lab-still-jpeg', 'lab-still-pdf', 'lab-rec-screen', 'lab-export-mp4'].every((id) => !!document.getElementById(id) && !!document.querySelector(`[data-testid="${id}"]`));
+  }), '#lab-xp rows + #lab-q + buttons');
+  await page.evaluate(() => { window.__synExportLast = null; });
   const dl = browser ? page.waitForEvent('download', { timeout: 900000 }).catch(() => null) : Promise.resolve(null);
-  await domClick(page, q('chain-master'));
-  await until(page, () => /^[✓✗]/.test(document.querySelector('[data-testid="chain-export-msg"]')?.textContent || ''), 900000);
-  const msg = await page.textContent(q('chain-export-msg')).catch(() => '');
+  await domClick(page, q('lab-export-mp4'));
+  await until(page, () => !!window.__synExportLast && !document.querySelector('#lab-export-mp4.on'), 900000);
+  const msg = await page.evaluate(() => { const l = window.__synExportLast; return l && !l.error && !l.cancelled ? '✓ ' + (l.filename || '') : '✗ ' + JSON.stringify(l); });
   info(`export: ${msg}`);
   const last = await page.evaluate(() => window.__synExportLast || null);
   const dbgLast = await page.evaluate(() => window.__synLabDebug.lastExport());
@@ -594,7 +597,7 @@ const outputAdvance = (page, ms) => page.evaluate(async (ms) => {
     last ? `frames ${last.frames} · ${last.width}×${last.height} · ${last.fps} fps · ${last.codec} · debug url '${dbgLast?.url ?? 'n/a'}'` : 'no __synExportLast');
   const d1 = await dl;
   if (browser) {
-    step('the browser received a download named <source>_LAB_MASTER.mp4', !!d1 && /_LAB_MASTER\.mp4$/.test(d1.suggestedFilename()), d1 ? d1.suggestedFilename() : 'no download event');
+    step('the browser received a download named <source>_LAB_Q<n>.mp4', !!d1 && /_LAB_Q\d+\.mp4$/.test(d1.suggestedFilename()), d1 ? d1.suggestedFilename() : 'no download event');
     if (d1) {
       const outFile = path.join(SCRATCH, 'export-master.mp4');
       await d1.saveAs(outFile);

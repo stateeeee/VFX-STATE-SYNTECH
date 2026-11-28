@@ -52,8 +52,19 @@
  *   audioLoop (tile it when shorter than the video), ready(info) (rate + frame count known, before frame 0).
  *   attach() also installs the native-resolution webcam wrapper (see installNativeCamera).
  *
- * window.SynExport = { isSupported, probeFps, render, recordLive, attach, encoderFor, offlineAnalyser,
- *   decodeFileAudio, snapRate }   (render / recordLive also accept limitedRange:false → browser RGB path)
+ *  C. renderSequence(opts) — OFFLINE, frame by frame, WITHOUT a source video (2026-11-28, docs/workflow/13-EXPORT-PANEL.md):
+ *     getFrame(i, t) at a fixed fps; frames N (the Lab + TRACK: exact length, audio muxed, stop() saves what is done)
+ *     or open-ended (EXPORT MP4 of a PHOTO: paced ≤ realtime, stop() fixes the length at the wall time, a slow
+ *     machine completes the missing frames after the stop). Full contract above the function.
+ *
+ * QUALITY (2026-11-28): every `quality` option is a number 0…100 (or the old 'master' = 100 / 'high' = 60):
+ *   bpp(q) = 0.02 · 50^(q/100) bits per pixel per frame below 100; at 100 the HIGHEST bitrate the machine's H.264
+ *   encoder accepts for W×H @ fps (maxBitrateEncoder). Never a smaller picture. The panel's value: localStorage
+ *   'syntech.export.q' (storedQuality). The EXPORT panel itself is syn-panel.js, loaded by attach() (see there).
+ *
+ * window.SynExport = { isSupported, probeFps, render, renderSequence, recordLive, attach, encoderFor, offlineAnalyser,
+ *   decodeFileAudio, snapRate, normQuality, bitrateFor, storedQuality }
+ *   (render / recordLive / renderSequence also accept limitedRange:false → browser RGB path)
  * window.__synExportLast = last result: success {filename, codec, audioCodec, width, height, fps, num,
  *   den, frames, bytes, seconds, …} | {stopped:true} | {error:'…'}.  window.__synExportBusy (attach).
  * Including this file changes nothing until an effect calls it.
@@ -442,14 +453,84 @@
     lad.forEach(function (l) { list.push({ codec: 'vp09.00.' + l[5] + '.08', mux: 'vp9', label: 'VP9', extra: {} }); });
     return list;
   }
-  function bitrateFor(w, h, fps, quality) {
-    var bpp = quality === 'high' ? 0.35 : 1.0;
-    return Math.round(Math.min(240e6, Math.max(2e6, w * h * fps * bpp)));
+  /* ── QUALITY 0–100 (docs/workflow/13-EXPORT-PANEL.md §2.1) ──
+     normQuality: a number 0…100 (rounded, clamped), or the old names 'master' = 100 / 'high' = 60 (the Lab, until it
+     is updated); anything else → 100.
+     q < 100: bits per pixel per frame grow smoothly and exponentially, bpp(q) = 0.02 · 50^(q/100)
+              (0 → 0.02 ≈ 1.2 Mbps at 1080p30, 50 → 0.14, 60 → 0.21, 80 → 0.46, 99 → 0.96);
+     q = 100: the HIGHEST bitrate this machine's encoder accepts for W×H @ fps (maxBitrateEncoder): from the top of
+              the H.264 table (level 6.2, 800 Mbit/s) downwards, each bitrate tagged with the LOWEST level that allows
+              it (best compatibility); the resolution is never reduced. */
+  function normQuality(q) {
+    if (q === 'master' || q === undefined || q === null || q === '') return 100;
+    if (q === 'high') return 60;
+    var n = Number(q);
+    return isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 100;
   }
-  /* The first encoder of this machine that accepts the native W×H @ fps. null = none (never downscale). */
+  function bppFor(q) { return 0.02 * Math.pow(50, normQuality(q) / 100); }
+  function bitrateFor(w, h, fps, quality) {
+    return Math.round(Math.min(240e6, Math.max(5e5, w * h * fps * bppFor(quality))));
+  }
+  /* q = 100: highest accepted H.264 High bitrate. Geometric steps (×0.9) down from 800 Mbit/s to the first accepted
+     value, then a binary refinement between it and the last refused one (±1 %). Each bitrate is tried with the lowest
+     level whose MaxBR (High profile) allows it. null = no H.264 at this size (the caller falls back to the 1 bpp list). */
+  var maxCache = {};                              /* 'W×H@fps' → result (the search runs once per size and rate) */
+  async function maxBitrateEncoder(w, h, fps) {
+    var key = w + 'x' + h + '@' + fps;
+    if (maxCache[key] !== undefined) return maxCache[key] ? Object.assign({}, maxCache[key], { config: Object.assign({}, maxCache[key].config) }) : null;
+    var res = await maxBitrateSearch(w, h, fps);
+    maxCache[key] = res;
+    return res ? Object.assign({}, res, { config: Object.assign({}, res.config) }) : null;
+  }
+  async function maxBitrateSearch(w, h, fps) {
+    var fs = Math.ceil(w / 16) * Math.ceil(h / 16), mbps = fs * fps;
+    var levels = AVC.filter(function (L) { return fs <= L[2] && mbps <= L[1] && Math.sqrt(8 * L[2]) * 16 >= Math.max(w, h); });
+    if (!levels.length) return null;
+    var top = levels[levels.length - 1][3] * 1000, floor = Math.max(5e5, w * h * fps * 0.02);
+    var tried = 0;
+    async function test(br) {
+      br = Math.round(br);
+      var L = null;
+      for (var i = 0; i < levels.length; i++) if (levels[i][3] * 1000 >= br) { L = levels[i]; break; }
+      if (!L) return null;
+      var codec = 'avc1.6400' + hex2(L[0]);
+      var variants = [
+        { codec: codec, width: w, height: h, bitrate: br, framerate: fps, latencyMode: 'quality', bitrateMode: 'variable', avc: { format: 'avc' } },
+        { codec: codec, width: w, height: h, bitrate: br, framerate: fps, avc: { format: 'avc' } }
+      ];
+      for (var v = 0; v < variants.length; v++) {
+        tried++;
+        try {
+          var r = await window.VideoEncoder.isConfigSupported(variants[v]);
+          if (r && r.supported) return { cand: { codec: codec, mux: 'avc', label: 'H.264 High', extra: { avc: { format: 'avc' } } }, config: r.config || variants[v], width: w, height: h, bitrate: br };
+        } catch (e) { /* next */ }
+      }
+      return null;
+    }
+    var hi = top, ok = null, refused = 0;
+    while (hi >= floor) {
+      ok = await test(hi);
+      if (ok) break;
+      refused = hi; hi = hi * 0.9;
+    }
+    if (!ok) return null;
+    if (refused) {
+      var lo = ok.bitrate, up = refused;
+      for (var k = 0; k < 8 && up - lo > lo * 0.01; k++) {
+        var mid = (lo + up) / 2, r2 = await test(mid);
+        if (r2) { ok = r2; lo = r2.bitrate; } else up = mid;
+      }
+    }
+    ok.maxSearch = { tried: tried, top: top };
+    return ok;
+  }
+  /* The first encoder of this machine that accepts the native W×H @ fps. null = none (never downscale).
+     quality: 0…100 or 'master' / 'high' (normQuality). */
   async function encoderFor(w, h, fps, quality) {
     if (!isSupported()) return null;
-    var bitrate = bitrateFor(w, h, fps, quality), list = codecList(w, h, fps, bitrate);
+    var q = normQuality(quality);
+    if (q >= 100) { var mx = await maxBitrateEncoder(w, h, fps); if (mx) { mx.quality = q; return mx; } }
+    var bitrate = bitrateFor(w, h, fps, q >= 100 ? 99 : q), list = codecList(w, h, fps, bitrate);
     for (var i = 0; i < list.length; i++) {
       var c = list[i];
       var variants = [
@@ -459,7 +540,7 @@
       for (var v = 0; v < variants.length; v++) {
         try {
           var r = await window.VideoEncoder.isConfigSupported(variants[v]);
-          if (r && r.supported) return { cand: c, config: r.config || variants[v], width: w, height: h, bitrate: bitrate };
+          if (r && r.supported) return { cand: c, config: r.config || variants[v], width: w, height: h, bitrate: bitrate, quality: q };
         } catch (e) { /* next */ }
       }
     }
@@ -700,10 +781,54 @@
     return 'browser default (full range)';
   }
 
+  /* The audio of a source FILE for a video of videoSec seconds (render, renderSequence). AAC in MP4/MOV: the packets
+     are COPIED (lossless); otherwise decoded from the file and re-encoded AAC → Opus. loop tiles a shorter file.
+     → {audio: {items, meta, mux, raw} | null, audioCodec} | STOPPED (aborted() went true meanwhile). */
+  var STOPPED = {};
+  async function fileAudio(afile, videoSec, loop, warnings, aborted) {
+    var audio = null, audioCodec = 'none';
+    var copy = null;
+    try { copy = await probeAacCopy(afile, videoSec); } catch (e) { copy = null; }
+    if (copy && loop && copy.items.length) {
+      var lastIt = copy.items[copy.items.length - 1];
+      if ((lastIt.ts + lastIt.dur) / 1e6 < videoSec - 0.05) copy = null;       /* too short: decode + tile instead */
+    }
+    if (copy) {
+      audio = { items: copy.items, meta: copy.meta, mux: { codec: 'aac', numberOfChannels: copy.channels, sampleRate: copy.sampleRate }, raw: true };
+      audioCodec = copy.label;
+    } else {
+      var abortPoll = 0;
+      var pcm = await Promise.race([decodeAudio(afile, videoSec, warnings, loop), new Promise(function (res) {
+        abortPoll = setInterval(function () { if (aborted()) res(STOPPED); }, 100);
+      })]);
+      clearInterval(abortPoll);
+      if (pcm === STOPPED) return STOPPED;
+      if (pcm) {
+        var audioPick = await pickAudioCodec(pcm.sampleRate, pcm.channels);
+        if (!audioPick) warnings.push('no audio encoder on this machine: video without audio');
+        else {
+          var enc = await encodeAudio(pcm, audioPick, aborted);
+          if (!enc) return STOPPED;
+          audio = { items: enc.chunks.map(function (c) { return { chunk: c, ts: c.timestamp }; }), meta: enc.meta, raw: false,
+            mux: { codec: audioPick.cand.mux, numberOfChannels: audioPick.config.numberOfChannels, sampleRate: audioPick.config.sampleRate } };
+          audioCodec = audioPick.cand.label;
+          if (audioPick.cand.mux === 'opus') warnings.push('audio Opus: may not open in Premiere/QuickTime');
+        }
+      }
+    }
+    if (!audio && !warnings.some(function (x) { return /audio/i.test(x); })) {
+      var snd = null;
+      try { snd = await probeSoundTrack(afile); } catch (e) { snd = null; }
+      if (snd) warnings.push('the source audio (' + snd + ') could not be included — the file is silent');
+    }
+    if (aborted()) return STOPPED;
+    return { audio: audio, audioCodec: audioCodec };
+  }
+
   /* ───────────────────────── A. offline render ───────────────────────── */
   async function render(opts) {
     var t0 = performance.now(), warnings = [], result = null;
-    var video = opts.video, getFrame = opts.getFrame, quality = opts.quality === 'high' ? 'high' : 'master';
+    var video = opts.video, getFrame = opts.getFrame, quality = normQuality(opts.quality);
     var filename = opts.filename || ('render_' + Date.now() + '.mp4');
     var onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : function () {};
     var signal = opts.signal || null;
@@ -748,40 +873,9 @@
       var audio = null, audioCodec = 'none';
       if (opts.audio !== false && afile) {
         onProgress(0, total, 'audio', {});
-        var copy = null;
-        try { copy = await probeAacCopy(afile, videoSec); } catch (e) { copy = null; }
-        if (copy && opts.audioLoop && copy.items.length) {
-          var lastIt = copy.items[copy.items.length - 1];
-          if ((lastIt.ts + lastIt.dur) / 1e6 < videoSec - 0.05) copy = null;       /* too short: decode + tile instead */
-        }
-        if (copy) {
-          audio = { items: copy.items, meta: copy.meta, mux: { codec: 'aac', numberOfChannels: copy.channels, sampleRate: copy.sampleRate }, raw: true };
-          audioCodec = copy.label;
-        } else {
-          var ABORTED = {}, abortPoll = 0;
-          var pcm = await Promise.race([decodeAudio(afile, videoSec, warnings, !!opts.audioLoop), new Promise(function (res) {
-            abortPoll = setInterval(function () { if (aborted()) res(ABORTED); }, 100);
-          })]);
-          clearInterval(abortPoll);
-          if (pcm === ABORTED) return (result = { stopped: true });
-          if (pcm) {
-            var audioPick = await pickAudioCodec(pcm.sampleRate, pcm.channels);
-            if (!audioPick) warnings.push('no audio encoder on this machine: video without audio');
-            else {
-              var enc = await encodeAudio(pcm, audioPick, aborted);
-              if (!enc) return (result = { stopped: true });
-              audio = { items: enc.chunks.map(function (c) { return { chunk: c, ts: c.timestamp }; }), meta: enc.meta, raw: false,
-                mux: { codec: audioPick.cand.mux, numberOfChannels: audioPick.config.numberOfChannels, sampleRate: audioPick.config.sampleRate } };
-              audioCodec = audioPick.cand.label;
-              if (audioPick.cand.mux === 'opus') warnings.push('audio Opus: may not open in Premiere/QuickTime');
-            }
-          }
-        }
-      }
-      if (!audio && opts.audio !== false && afile && !warnings.some(function (x) { return /audio/i.test(x); })) {
-        var snd = null;
-        try { snd = await probeSoundTrack(afile); } catch (e) { snd = null; }
-        if (snd) warnings.push('the source audio (' + snd + ') could not be included — the file is silent');
+        var fa = await fileAudio(afile, videoSec, !!opts.audioLoop, warnings, aborted);
+        if (fa === STOPPED) return (result = { stopped: true });
+        audio = fa.audio; audioCodec = fa.audioCodec;
       }
       if (aborted()) return (result = { stopped: true });
 
@@ -901,15 +995,194 @@
     }
   }
 
+  /* ───────────────────────── A2. offline render of a frame SEQUENCE (no source video) ─────────────────────────
+     renderSequence(opts) → { done: Promise<result>, stop(): Promise<result>, abort(): Promise<result> }
+     Call it SYNCHRONOUSLY inside the click: the save dialog opens first. Used by EXPORT MP4 of a PHOTO (an "animated
+     photo": SynFx 'lab' frames of the still) and, later, by the Lab with a TRACK (frames = the track's length).
+     opts
+       getFrame(i, tSec) → {canvas, sx?, sy?, sw?, sh?} | Promise of it — frame i at tSec = i/fps. Read in the same task
+                 as it resolves (WebGL canvases without preserveDrawingBuffer are fine).
+       fps       frames per second (default 30; snapped to the standard rational: 29.97 → 30000/1001)
+       width / height  encode size (optional; default the first frame's region, made even). The size is never reduced.
+       frames    N  → exactly N frames, offline, as fast as the machine goes; stop() ends early and SAVES what is done.
+                 null / undefined → OPEN-ENDED: runs until stop(), paced no faster than realtime (frame i is not drawn
+                 before t0 + i/fps; t0 = the moment the save dialog closed — a slow prepare(), e.g. a model loading,
+                 counts as time already elapsed). stop() fixes the length at round((tStop − t0) · fps) frames (≥ 1),
+                 i.e. the wall time between the two clicks minus the time the save dialog was open; a machine slower
+                 than realtime keeps rendering after the stop until that count, then writes the file.
+       pace      overrides the pacing (default: true when open-ended, false with frames)
+       audioFile + audioLoop   (frames given) the file's audio for the video's length: AAC in MP4/MOV copied, else
+                 decoded + AAC (→ Opus) re-encoded, tiled when audioLoop and shorter; trimmed to the frames written
+       quality   0…100 | 'master' | 'high' (normQuality); filename, useFilePicker, fileHandle, limitedRange, signal
+       prepare() after the save dialog, before frame 0;  finish(result) ALWAYS runs (saved / stopped / aborted / error)
+       onProgress(done, total|null, phase 'audio'|'render'|'finalize', info {speed, elapsed, target|null, width, height})
+     abort() = nothing saved.
+     result  {filename, codec, audioCodec, width, height, fps, num, den, frames, bytes, seconds, bitrate, quality,
+             sequence:true, endedBy:'frames'|'stop', renderFps, savedTo, colour, warnings}
+             | {stopped:true} (abort, cancel, or stop before frame 0) | {error}.  Also window.__synExportLast. */
+  function renderSequence(opts) {
+    opts = opts || {};
+    var stopReq = false, abortReq = false, stopAt = 0, stopFrames = 0, t0 = 0, framesDone = 0, wake = null;
+    var rr = snapRate(opts.fps > 0 ? opts.fps : 30, 0, 0), num = rr.num, den = rr.den;
+    var fixed = opts.frames > 0 ? Math.floor(opts.frames) : 0;
+    var pace = opts.pace !== undefined ? !!opts.pace : !fixed;
+    var signal = opts.signal || null;
+    var quality = normQuality(opts.quality);
+    var onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : function () {};
+    var aborted = function () { return abortReq || !!(signal && signal.aborted); };
+    var target = function () {                      /* how many frames the file gets (Infinity = not known yet) */
+      if (fixed) return stopReq ? Math.min(fixed, stopFrames) : fixed;
+      if (!stopReq) return Infinity;
+      if (!t0) return 0;
+      return Math.max(1, Math.round((stopAt - t0) / 1000 * num / den));
+    };
+    var tsOf = function (i) { return Math.round(i * 1e6 * den / num); };
+    var done = (async function () {
+      var tStart = performance.now(), warnings = [], handle = null, picked = false, tgt = null, encoder = null, prepared = false, ok = false, result = null;
+      var scratchRef = { noYuv: opts.limitedRange === false };
+      var filename = opts.filename || ('sequence_' + Date.now() + '.mp4');
+      try {
+        if (!isSupported()) throw new Error('WebCodecs is not available in this browser');
+        if (typeof opts.getFrame !== 'function') throw new Error('renderSequence: getFrame is required');
+        var loc = await askSaveLocation(opts, filename, warnings);
+        if (loc.cancelled) return (result = { stopped: true, cancelled: true });
+        handle = loc.handle; picked = !!loc.picked;
+        if (handle && handle.name) filename = handle.name;
+        t0 = performance.now();                       /* the clock starts when the save dialog is closed */
+        var Mux = await loadMuxer();
+        if (aborted()) return (result = { stopped: true });
+        if (typeof opts.prepare === 'function') { prepared = true; await opts.prepare(); }
+        if (aborted()) return (result = { stopped: true });
+
+        var audio = null, audioCodec = 'none';
+        if (fixed && opts.audioFile && opts.audio !== false) {
+          onProgress(0, fixed, 'audio', {});
+          var af = await Promise.resolve(opts.audioFile).catch(function () { return null; });
+          if (af) {
+            var fa = await fileAudio(af, fixed * den / num, !!opts.audioLoop, warnings, aborted);
+            if (fa === STOPPED) return (result = { stopped: true });
+            audio = fa.audio; audioCodec = fa.audioCodec;
+          }
+        }
+
+        var muxer = null, encErr = null, W = 0, H = 0, audioIdx = 0, endUs = Infinity, lastProg = 0;
+        var feedAudioUpTo = function (us) {
+          if (!audio) return;
+          while (audioIdx < audio.items.length && audio.items[audioIdx].ts <= us && audio.items[audioIdx].ts < endUs) {
+            var it = audio.items[audioIdx], m = audioIdx === 0 ? audio.meta : undefined;
+            if (audio.raw) muxer.addAudioChunkRaw(it.data, 'key', it.ts, it.dur, m);
+            else muxer.addAudioChunk(it.chunk, m);
+            audioIdx++;
+          }
+        };
+        var kfi = Math.max(1, Math.round(num / den));
+        if (fixed) t0 = performance.now();
+        for (var i = 0; ; i++) {
+          if (aborted()) return (result = { stopped: true });
+          if (encErr) throw encErr;
+          if (i >= target()) break;
+          var t = i * den / num;
+          if (pace) {                                 /* never faster than realtime: frame i is due at t0 + t */
+            for (;;) {
+              var wait = t0 + t * 1000 - performance.now();
+              if (wait <= 0 || aborted() || i >= target()) break;
+              await new Promise(function (r) { wake = r; setTimeout(r, Math.min(wait, 50)); });
+              wake = null;
+            }
+            if (aborted()) return (result = { stopped: true });
+            if (i >= target()) break;
+          }
+          var fr = await opts.getFrame(i, t);
+          if (aborted()) return (result = { stopped: true });
+          if (!fr || !fr.canvas) throw new Error('frame ' + (i + 1) + ': nothing to encode (no canvas returned)');
+          if (i === 0) {
+            W = even(opts.width || fr.sw || fr.canvas.width); H = even(opts.height || fr.sh || fr.canvas.height);
+            /* the encoder search awaits: keep frame 0 in a copy taken NOW (a WebGL canvas may be cleared after this task) */
+            var c0 = document.createElement('canvas'), sw0 = fr.sw || fr.canvas.width, sh0 = fr.sh || fr.canvas.height;
+            c0.width = sw0; c0.height = sh0;
+            c0.getContext('2d').drawImage(fr.canvas, fr.sx || 0, fr.sy || 0, sw0, sh0, 0, 0, sw0, sh0);
+            fr = { canvas: c0 };
+            var choice = await encoderFor(W, H, num / den, quality);
+            if (!choice) throw noEncoderError(W, H, num / den);
+            tgt = await makeTarget(Mux, handle);
+            var muxOpts = { target: tgt.target, fastStart: tgt.fastStart, firstTimestampBehavior: 'strict',
+              video: { codec: choice.cand.mux, width: W, height: H, frameRate: num } };
+            if (audio) muxOpts.audio = audio.mux;
+            muxer = new Mux.Muxer(muxOpts);
+            encoder = new window.VideoEncoder({
+              output: function (chunk, meta) { try { feedAudioUpTo(chunk.timestamp); muxer.addVideoChunk(chunk, tagColour(meta, scratchRef)); } catch (e) { encErr = e; } },
+              error: function (e) { encErr = e; }
+            });
+            encoder.configure(choice.config);
+            result = { filename: filename, codec: choice.cand.label + ' (' + choice.cand.codec + ')', audioCodec: audioCodec,
+              width: W, height: H, fps: num / den, num: num, den: den, frames: 0, bitrate: choice.bitrate, quality: quality, sequence: true };
+          }
+          var ts = tsOf(i), frame = frameOf(fr, W, H, ts, tsOf(i + 1) - ts, scratchRef);
+          try { encoder.encode(frame, { keyFrame: i % kfi === 0 }); } finally { frame.close(); }
+          if (i === 0) fr.canvas.width = 0;
+          framesDone = i + 1;
+          while (encoder.encodeQueueSize > 2 && !encErr) await new Promise(function (r) { setTimeout(r, 2); });
+          /* behind realtime (or offline) there is no pacing wait: give the page one task per frame (the STOP click) */
+          await new Promise(function (r) { setTimeout(r, 0); });
+          var now = performance.now();
+          if (now - lastProg > 200) {
+            lastProg = now;
+            var tg = target(), el = (now - t0) / 1000;
+            onProgress(framesDone, fixed || null, 'render', { speed: framesDone / Math.max(0.001, el), elapsed: el, target: isFinite(tg) ? tg : null, width: W, height: H });
+          }
+        }
+        if (!framesDone) return (result = { stopped: true });
+        onProgress(framesDone, framesDone, 'finalize', {});
+        endUs = tsOf(framesDone);
+        await encoder.flush();
+        if (encErr) throw encErr;
+        encoder.close(); encoder = null;
+        feedAudioUpTo(endUs);
+        muxer.finalize();
+        result.frames = framesDone;
+        result.endedBy = stopReq ? 'stop' : 'frames';
+        result.bytes = await saveTarget(tgt, handle, filename);
+        result.seconds = Math.round((performance.now() - tStart) / 100) / 10;
+        result.renderFps = Math.round(framesDone / Math.max(0.1, (performance.now() - t0) / 1000) * 100) / 100;
+        result.savedTo = handle ? 'file' : 'download';
+        result.colour = colourLabel(scratchRef, warnings);
+        result.warnings = warnings;
+        ok = true;
+        return result;
+      } catch (e) {
+        result = { error: (e && e.message) || String(e), warnings: warnings };
+        return result;
+      } finally {
+        if (encoder) { try { encoder.close(); } catch (e) { /* */ } }
+        if (scratchRef.yuv) scratchRef.yuv.destroy();
+        if (tgt && tgt.writable) { try { await tgt.writable.abort(); } catch (e) { /* */ } }
+        if (!ok && picked && handle && typeof handle.remove === 'function') { try { await handle.remove(); } catch (e) { /* */ } }
+        if (prepared && typeof opts.finish === 'function') { try { await opts.finish(result); } catch (e) { /* */ } }
+        window.__synExportLast = result;
+      }
+    })();
+    return {
+      stop: function () {
+        if (!stopReq) { stopReq = true; stopAt = performance.now(); stopFrames = framesDone; }
+        if (wake) wake();
+        return done;
+      },
+      abort: function () { abortReq = true; if (wake) wake(); return done; },
+      /* frames the file will get (Infinity while open-ended and running), frames written so far */
+      target: target, written: function () { return framesDone; },
+      done: done
+    };
+  }
+
   /* ───────────────────────── B. realtime recorder (live sources) ───────────────────────── */
-  /* recordLive({canvas | getCanvas() → canvas | {canvas,sx,sy,sw,sh}, fps=60, audioStream?, quality,
+  /* recordLive({canvas | getCanvas() → canvas | {canvas,sx,sy,sw,sh}, fps=60 (number | Promise), audioStream?, quality (0…100),
        filename, onProgress(sec, info), useFilePicker, fileHandle}) → { stop(): Promise<result>, done }
      Call it synchronously from the click (the save dialog opens first). */
   function recordLive(opts) {
     var stopRequested = false, stopResolve = null, warnings = [];
     var stopP = new Promise(function (r) { stopResolve = r; });
-    var fps = Math.max(1, Math.round(opts.fps || 60));
-    var quality = opts.quality === 'high' ? 'high' : 'master';
+    var fps = 60;                                 /* opts.fps: a number or a Promise of one (resolved after the save dialog) */
+    var quality = normQuality(opts.quality);
     var filename = opts.filename || ('rec_' + Date.now() + '.mp4');
     var onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : function () {};
     var getRegion = function () {
@@ -922,6 +1195,8 @@
         var loc = await askSaveLocation(opts, filename, warnings);
         if (loc.cancelled) return (result = { stopped: true, cancelled: true });
         handle = loc.handle; picked = !!loc.picked; if (handle && handle.name) filename = handle.name;
+        try { fps = Math.max(1, Math.round((await Promise.resolve(opts.fps)) || 60)); } catch (e) { fps = 60; }
+        if (stopRequested) return (result = { stopped: true });
         if (!isSupported()) return (result = await recordWithMediaRecorder(opts, fps, filename, stopP, warnings));
         var Mux = await loadMuxer();
         var r0 = getRegion();
@@ -1201,6 +1476,38 @@
     return an;
   }
 
+  /* ───────────────────────── quality store + the shared EXPORT panel ─────────────────────────
+     The QUALITY slider of the EXPORT panel (syn-panel.js) is remembered in localStorage 'syntech.export.q' (0…100,
+     default 100). First read without it: the old 'syntech.export.quality' is migrated (master → 100, high → 60; the old
+     key is left for the Lab). syn-panel.js is loaded on demand by attach() (here and in SynStill.attach), resolved next
+     to this script, and mounts once per page (docs/workflow/13-EXPORT-PANEL.md §2). */
+  var Q_KEY = 'syntech.export.q', Q_OLD = 'syntech.export.quality';
+  function storedQuality() {
+    try {
+      var v = localStorage.getItem(Q_KEY);
+      if (v !== null && v !== '' && isFinite(Number(v))) return normQuality(Number(v));
+      var q = localStorage.getItem(Q_OLD) === 'high' ? 60 : 100;
+      localStorage.setItem(Q_KEY, String(q));
+      return q;
+    } catch (e) { return 100; }
+  }
+  function currentQuality() {
+    var P = window.SynPanel;
+    if (P && typeof P.quality === 'function') { try { return normQuality(P.quality()); } catch (e) { /* */ } }
+    return storedQuality();
+  }
+  /* queue a controller for the panel and load syn-panel.js once (shared with syn-still.js through window globals) */
+  function registerPanel(kind, ctl, cfg, src) {
+    (window.__synPanelQ = window.__synPanelQ || []).push({ kind: kind, ctl: ctl, cfg: cfg });
+    if (window.SynPanel && typeof window.SynPanel._drain === 'function') { window.SynPanel._drain(); return; }
+    if (window.__synPanelLoading) return;
+    window.__synPanelLoading = true;
+    var s = document.createElement('script');
+    s.src = src ? new URL('syn-panel.js', src).href : '../shared/syn-panel.js';
+    s.onerror = function () { window.__synPanelLoading = false; console.warn('syn-panel.js could not be loaded: the old Export controls stay'); };
+    (document.head || document.documentElement).appendChild(s);
+  }
+
   /* ───────────────────────── attach(): the per-effect glue in one call ─────────────────────────
      SynExport.attach({
        label,                       // 'ANAMORPHIC' (file names, messages)
@@ -1208,25 +1515,42 @@
                                     //   render, live source → recordLive. The effect's own handler never runs.
        renderBtnId, qualityId, statusId,   // RENDER MP4 button, quality select / [data-q] buttons, status line
        toast(msg, ms),              // the effect's own toast
-       hasVideoFile(), getVideo(), getFile() → Blob|Promise<Blob>, sourceName(),
+       hasVideoFile(), hasLiveSource(), getVideo(), getFile() → Blob|Promise<Blob>, sourceName(),
        beforeRender(), getFrame(i, t), afterRender(result),      // see the ADAPTER CONTRACT above
        getLiveCanvas() → canvas | {canvas,sx,sy,sw,sh}, getLiveAudio() → MediaStream|null, liveFps(),
        beforeLive(), afterLive(),   // e.g. full-resolution canvas while recording live
        recUi: { start(kind), progress(kind, pct|sec), stop(kind) },   // the effect's REC visuals
        passThroughRec()             // true → let the click reach the effect's own handler
-     }) → { busy(), stop() }
+     }) → controller {
+       busy(), stop(), quality() → 0…100,
+       exportMp4()   toggle — EXPORT MP4 of the panel: video file → offline render(); photo (linked SynStill config,
+                     see linkStill) → offline "animated photo" (renderSequence, SynFx 'lab' frames at the photo's native
+                     size, 30 fps, open-ended: second call = stop); live source (webcam / Lab stream) → recordLive;
+       recScreen()   toggle — REC SCREEN: ALWAYS realtime recordLive of what the effect shows, for ANY source; a video
+                     file plays from where it is (started if paused) and its own audio is recorded
+                     (HTMLMediaElement.captureStream) when cfg.getLiveAudio() gives none;
+       linkStill(stillCfg)   the SynStill.attach config of the same page (hasStill / getStillFile / sourceName);
+       onState(fn)   fn({owner:'mp4'|'rec'|null, text}) on every change: the running job's button + the text to show
+                     inside it ("■ STOP 42%", "■ STOP 0:12", "WRITING…"); owner null = idle;
+       source()      → {kind:'video'|'photo'|'live'|'none', video} — what the panel buttons will act on;
+       notify(msg, ms)       the effect's toast
+     }
+     The controller is handed to SynPanel (syn-panel.js, loaded on demand) unless cfg.panel === false.
      Tests: window.__synExportNoPicker = true → no save dialog, <a download>. */
   function attach(cfg) {
     installNativeCamera();
     var $ = function (id) { return id ? document.getElementById(id) : null; };
-    var toast = typeof cfg.toast === 'function' ? cfg.toast : function () {};
+    var rawToast = typeof cfg.toast === 'function' ? cfg.toast : function () {};
+    /* through the panel: when the effect's toast is not visible (hidden status line) the panel shows its own */
+    var toast = function (m, ms) { var P = window.SynPanel; if (P && typeof P.toastVia === 'function') P.toastVia(rawToast, m, ms); else rawToast(m, ms); };
     var ui = cfg.recUi || {};
-    var job = null;               /* {kind:'render'|'live', ac?, ctl?} */
+    var job = null;               /* {kind:'render'|'live'|'seq', owner:'mp4'|'rec', ac?, ctl?} */
     var label = cfg.label || 'VFX';
     var renderBtn = $(cfg.renderBtnId), renderLabel = renderBtn ? renderBtn.textContent : 'RENDER MP4';
-    var qKey = 'syntech.export.quality';
+    var qKey = Q_OLD;
+    var stillCfg = null, stateFns = [];
 
-    /* quality control: <select> or [data-q] buttons (.on = selected) */
+    /* quality control: <select> or [data-q] buttons (.on = selected) — the OLD control (hidden once the panel mounts) */
     var qEl = $(cfg.qualityId);
     function setQ(q) {
       if (!qEl) return;
@@ -1234,14 +1558,16 @@
       else qEl.querySelectorAll('[data-q]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-q') === q); });
       try { localStorage.setItem(qKey, q); } catch (e) { /* */ }
     }
-    function getQ() {
+    function oldQ() {
       if (!qEl) return 'master';
       if (qEl.tagName === 'SELECT') return qEl.value === 'high' ? 'high' : 'master';
       var on = qEl.querySelector('[data-q].on');
       return on && on.getAttribute('data-q') === 'high' ? 'high' : 'master';
     }
+    /* 0…100: the panel's slider when it is there, else the stored value */
+    function getQ() { return window.SynPanel ? currentQuality() : (qEl ? normQuality(oldQ()) : storedQuality()); }
     if (qEl) {
-      if (qEl.tagName === 'SELECT') qEl.addEventListener('change', function () { setQ(getQ()); });
+      if (qEl.tagName === 'SELECT') qEl.addEventListener('change', function () { setQ(oldQ()); });
       else qEl.addEventListener('click', function (e) { var b = e.target.closest('[data-q]'); if (b && !job) setQ(b.getAttribute('data-q')); });
       var saved = null; try { saved = localStorage.getItem(qKey); } catch (e) { /* */ }
       setQ(saved === 'high' ? 'high' : 'master');
@@ -1252,6 +1578,12 @@
     function setBusy(b) { window.__synExportBusy = b; }
     function call(fn) { if (typeof fn === 'function') { try { return fn.apply(null, [].slice.call(arguments, 1)); } catch (e) { console.error(e); } } }
     function fmtT(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+    function panelOn() { return stateFns.length > 0; }
+    function emit(text) {
+      var st = { owner: job ? job.owner : null, text: job ? (text || null) : null };
+      stateFns.forEach(function (fn) { try { fn(st); } catch (e) { console.error(e); } });
+    }
+    function qLabel(q) { return 'Q' + q; }
 
     function describe(r) {
       return r.width + '×' + r.height + ' · ' + (Math.round(r.fps * 1000) / 1000) + ' fps · ' + r.frames + ' fr · ' +
@@ -1260,75 +1592,198 @@
     }
     function report(r, kind) {
       if (!r) return;
-      if (r.error) { status('✕ ' + r.error); toast('⚠ ' + (kind === 'live' ? 'REC' : 'RENDER') + ': ' + r.error, 6000); return; }
+      var what = kind === 'live' ? 'REC' : kind === 'seq' ? 'EXPORT' : 'RENDER';
+      if (r.error) { status('✕ ' + r.error); toast('⚠ ' + what + ': ' + r.error, 6000); return; }
       if (r.stopped) { status(r.cancelled ? 'Cancelled — nothing saved' : 'Stopped — nothing saved'); toast(r.cancelled ? '◯ Cancelled' : '■ Stopped — nothing saved', 2400); return; }
       var w = (r.warnings || []).filter(function (x) { return /audio|Opus|scaled|without audio|fallback/i.test(x); });
       status('✓ ' + describe(r) + (w.length ? ' — ' + w.join('; ') : ''));
-      toast('⬇ ' + (kind === 'live' ? 'REC' : 'RENDER') + ' MP4 — ' + describe(r) + (w.length ? ' — ' + w[0] : ''), 5000);
+      toast('⬇ ' + what + ' MP4 — ' + describe(r) + (w.length ? ' — ' + w[0] : ''), 5000);
     }
 
-    function startRender() {
+    /* ── what the panel acts on ── */
+    function hasPhoto() { return !!(stillCfg && call(stillCfg.hasStill)); }
+    function source() {
+      var v = call(cfg.getVideo) || null;
+      if (hasPhoto()) return { kind: 'photo', video: null };
+      if (call(cfg.hasVideoFile)) return { kind: 'video', video: v };
+      if (call(cfg.hasLiveSource) === false) return { kind: 'none', video: null };
+      return { kind: 'live', video: v };
+    }
+
+    function startRender(owner) {
       var v = cfg.getVideo(), ac = new AbortController(), q = getQ(), lastToast = 0;
-      job = { kind: 'render', ac: ac };
+      job = { kind: 'render', owner: owner || 'mp4', ac: ac };
       setBusy(true);
       if (renderBtn) renderBtn.textContent = '■ STOP 0%';
       call(ui.start, 'render');
-      status('Preparing ' + (q === 'high' ? 'HIGH' : 'MASTER') + ' render…');
+      emit('■ STOP 0%');
+      status('Preparing Q' + q + ' render…');
       var p = render({
         video: v, file: cfg.getFile(), quality: q, signal: ac.signal, useFilePicker: !noPicker(),
-        filename: base(call(cfg.sourceName)) + '_' + label + '_' + q.toUpperCase() + '.mp4',
+        filename: base(call(cfg.sourceName)) + '_' + label + '_' + qLabel(q) + '.mp4',
         prepare: function () { return cfg.beforeRender && cfg.beforeRender(); },
         getFrame: cfg.getFrame,
         finish: function (r) { return cfg.afterRender && cfg.afterRender(r); },
         onProgress: function (i, total, phase, info) {
-          if (phase !== 'render') { status(phase === 'audio' ? 'Decoding audio…' : phase === 'finalize' ? 'Writing MP4…' : 'Reading source…'); return; }
+          if (phase !== 'render') {
+            status(phase === 'audio' ? 'Decoding audio…' : phase === 'finalize' ? 'Writing MP4…' : 'Reading source…');
+            if (phase === 'finalize') emit('WRITING…');
+            return;
+          }
           var pct = Math.floor(i / total * 100);
           if (renderBtn) renderBtn.textContent = '■ STOP ' + pct + '%';
           call(ui.progress, 'render', pct);
+          emit('■ STOP ' + pct + '%');
           status('Rendering ' + i + '/' + total + ' · ' + info.width + '×' + info.height + ' · ' + info.speed.toFixed(1) + ' fr/s · ETA ' + fmtT(info.eta));
           var now = performance.now();
-          if (now - lastToast > 1000) { lastToast = now; toast('● RENDER ' + pct + '% — ' + i + '/' + total, 1600); }
+          if (!panelOn() && now - lastToast > 1000) { lastToast = now; toast('● RENDER ' + pct + '% — ' + i + '/' + total, 1600); }
         }
       });
       p.then(function (r) {
         job = null; setBusy(false);
         if (renderBtn) renderBtn.textContent = renderLabel;
         call(ui.stop, 'render');
+        emit(null);
         report(r, 'render');
       });
     }
-    function startLive() {
-      var q = getQ(), lc = call(cfg.liveFps);
-      call(cfg.beforeLive);
+
+    /* REC SCREEN of a video file: the playing element's own audio (also when the effect routes it through Web Audio:
+       captureStream taps the element, playback is not muted). → {stream, tracks} | null */
+    function videoAudio() {
+      var v = call(cfg.getVideo);
+      if (!v) return null;
+      try {
+        var cs = typeof v.captureStream === 'function' ? v.captureStream() : (typeof v.mozCaptureStream === 'function' ? v.mozCaptureStream() : null);
+        if (!cs) return null;
+        cs.getVideoTracks().forEach(function (t) { try { t.stop(); } catch (e) { /* */ } });
+        var at = cs.getAudioTracks();
+        return at.length ? { stream: new MediaStream(at), tracks: at } : null;
+      } catch (e) { return null; }
+    }
+    /* opts.screen: REC SCREEN (any source; a video file plays and gives its audio). Without it: the live REC of
+       webcam / image / Lab stream (old REC button, EXPORT MP4 of a live source). */
+    function startLive(owner, opts) {
+      opts = opts || {};
+      var q = getQ(), isVideo = !!(opts.screen && call(cfg.hasVideoFile)), own = null;
+      call(cfg.beforeLive);                         /* first, as before: some effects size their canvas / audio tap here */
+      var as = call(cfg.getLiveAudio) || null;
+      if (as && !(as.getAudioTracks && as.getAudioTracks().length)) as = null;
+      if (isVideo) {
+        var v = call(cfg.getVideo);
+        if (v && v.paused) { try { var pp = v.play(); if (pp && pp.catch) pp.catch(function () {}); } catch (e) { /* */ } }
+        if (!as) { own = videoAudio(); if (own) as = own.stream; }
+      }
+      /* frame rate: a video file records at its own rate (≤ 60), a live source at its track's (liveFps) */
+      var fps = isVideo ? Promise.resolve(cfg.getFile && cfg.getFile()).then(function (b) { return b ? probeFps(b, null) : null; })
+        .then(function (r) { return Math.min(60, r && r.fps > 0 ? r.fps : 30); }).catch(function () { return 30; }) : (call(cfg.liveFps) || 60);
       var ctl = recordLive({
-        getCanvas: cfg.getLiveCanvas, fps: lc || 60, audioStream: call(cfg.getLiveAudio) || null, quality: q,
+        getCanvas: cfg.getLiveCanvas, fps: fps, audioStream: as, quality: q,
         useFilePicker: !noPicker(), filename: base(call(cfg.sourceName) || 'live') + '_' + label + '_REC.mp4',
-        onProgress: function (sec, info) { call(ui.progress, 'live', sec); status('● REC ' + fmtT(sec) + ' · ' + info.width + '×' + info.height + ' · ' + info.frames + ' fr' + (info.dropped ? ' (' + info.dropped + ' dropped)' : '')); }
+        onProgress: function (sec, info) {
+          call(ui.progress, 'live', sec);
+          status('● REC ' + fmtT(sec) + ' · ' + info.width + '×' + info.height + ' · ' + info.frames + ' fr' + (info.dropped ? ' (' + info.dropped + ' dropped)' : ''));
+        }
       });
-      job = { kind: 'live', ctl: ctl };
+      job = { kind: 'live', owner: owner || 'rec', ctl: ctl, stopped: false };
       setBusy(true);
       call(ui.start, 'live');
+      emit('■ STOP 0:00');
       status('● REC — MP4');
+      /* the button's clock: wall time since the click (the encoder's own progress comes only every 15 frames) */
+      var t0l = performance.now(), tickL = setInterval(function () { if (job && job.kind === 'live' && !job.stopped) emit('■ STOP ' + fmtT((performance.now() - t0l) / 1000)); }, 500);
       ctl.done.then(function (r) {
+        clearInterval(tickL);
+        if (own) own.tracks.forEach(function (t) { try { t.stop(); } catch (e) { /* */ } });
         job = null; setBusy(false);
         call(cfg.afterLive);
         call(ui.stop, 'live');
+        emit(null);
         report(r, 'live');
       });
     }
+
+    /* EXPORT MP4 of a PHOTO: an "animated photo", offline, frame by frame (renderSequence): SynFx 'lab' frames of the
+       photo at its NATIVE size, 30 fps; the first click starts (save dialog inside the click), the second stops —
+       length = wall time between frame 0 and the stop (never faster than realtime; a slow machine completes the
+       missing frames after the stop). SynFx.end() always runs (the effect restores its preview). */
+    function drawable(src) {
+      return (async function () {
+        if (!src) return null;
+        var img = src, own = false;
+        if (src instanceof Blob) { img = await createImageBitmap(src); own = true; }
+        else if (typeof HTMLImageElement !== 'undefined' && src instanceof HTMLImageElement && !src.complete) await src.decode();
+        var w = img.naturalWidth || img.videoWidth || img.width, h = img.naturalHeight || img.videoHeight || img.height;
+        if (!(w > 0 && h > 0)) return null;
+        var c = document.createElement('canvas'); c.width = w; c.height = h;   /* native size, alpha kept (the effect flattens) */
+        if (c.width !== w || c.height !== h) throw new Error('could not allocate a ' + w + '×' + h + ' canvas');
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        if (own && img.close) img.close();
+        return c;
+      })();
+    }
+    function startPhoto(owner) {
+      var fx = window.SynFx;
+      if (!fx || typeof fx.begin !== 'function') { toast('⚠ EXPORT MP4: this effect has no offline frame renderer (SynFx)', 4000); return; }
+      var srcRef = call(stillCfg.getStillFile), pic = null, begun = false, t0w = 0;
+      var name = base(call(stillCfg.sourceName) || 'photo');
+      var ctl = renderSequence({
+        fps: 30, frames: null, quality: getQ(), useFilePicker: !noPicker(),
+        filename: name + '_' + label + '_' + qLabel(getQ()) + '.mp4',
+        prepare: async function () {
+          t0w = performance.now();
+          pic = await drawable(srcRef);
+          if (!pic) throw new Error('the photo could not be read');
+          /* several effects refuse SynFx.begin while "an export runs" (their own guard reads __synExportBusy / this
+             controller's busy()): this job IS the export that begins, so the guard is lowered for the call only */
+          job.inBegin = true; window.__synExportBusy = false;
+          try { await fx.begin({ mode: 'lab', width: pic.width, height: pic.height, fps: 30 }); }
+          finally { if (job) job.inBegin = false; window.__synExportBusy = true; }
+          begun = true;
+        },
+        getFrame: function (i, t) { return fx.frame(pic, i, t); },
+        finish: async function () {
+          if (begun) { try { await fx.end(); } catch (e) { console.error(e); } }
+          if (pic) pic.width = 0;
+        },
+        onProgress: function (n, total, phase, info) {
+          if (phase === 'finalize') { emit('WRITING…'); return; }
+          if (phase !== 'render') return;
+          if (info.target) emit('WRITING ' + Math.min(100, Math.floor(n / info.target * 100)) + '%');
+          else emit('■ STOP ' + fmtT(info.elapsed));
+          status('Rendering ' + n + ' fr · ' + info.width + '×' + info.height + ' · ' + info.speed.toFixed(1) + ' fr/s');
+        }
+      });
+      job = { kind: 'seq', owner: owner || 'mp4', ctl: ctl, stopped: false };
+      setBusy(true);
+      call(ui.start, 'live');
+      emit('■ STOP 0:00');
+      /* the button shows the elapsed time even while the machine catches up */
+      var tick = setInterval(function () { if (job && job.kind === 'seq' && !job.stopped && t0w) emit('■ STOP ' + fmtT((performance.now() - t0w) / 1000)); }, 500);
+      ctl.done.then(function (r) {
+        clearInterval(tick);
+        job = null; setBusy(false);
+        call(ui.stop, 'live');
+        emit(null);
+        report(r, 'seq');
+      });
+    }
+
     function stop() {
       if (!job) return;
       if (job.kind === 'render') { job.ac.abort(); status('Stopping…'); }
-      else job.ctl.stop();
+      else if (job.kind === 'seq') { job.stopped = true; emit('WRITING…'); job.ctl.stop(); }
+      else { job.stopped = true; emit('WRITING…'); job.ctl.stop(); }
     }
 
     function stillBusy() { if (window.__synStillBusy) { toast('PNG / JPEG / PDF export in progress — wait a moment', 2500); return true; } return false; }
+    function noCodecs() { if (!isSupported()) { toast('⚠ MP4 export needs WebCodecs (Chrome / Edge)', 3500); return true; } return false; }
     if (renderBtn) renderBtn.addEventListener('click', function () {
       if (job) { stop(); return; }
       if (stillBusy()) return;
       if (!call(cfg.hasVideoFile)) { toast('RENDER needs a video file — use REC for live sources', 3000); return; }
       if (!isSupported()) { toast('⚠ RENDER needs WebCodecs (Chrome / Edge)', 3500); return; }
-      startRender();
+      startRender('mp4');
     });
     if (cfg.recBtnId) document.addEventListener('click', function (e) {
       var b = e.target && e.target.closest ? e.target.closest('#' + cfg.recBtnId) : null;
@@ -1337,15 +1792,45 @@
       e.stopImmediatePropagation(); e.preventDefault();
       if (job) { stop(); return; }
       if (stillBusy()) return;
-      if (call(cfg.hasVideoFile)) { if (!isSupported()) { toast('⚠ RENDER needs WebCodecs (Chrome / Edge)', 3500); return; } startRender(); }
+      if (call(cfg.hasVideoFile)) { if (!isSupported()) { toast('⚠ RENDER needs WebCodecs (Chrome / Edge)', 3500); return; } startRender('mp4'); }
       else if (call(cfg.hasLiveSource) === false) toast('◯ No active source', 2000);
-      else startLive();
+      else startLive('rec');
     }, true);
 
-    return { busy: function () { return !!job; }, stop: stop, quality: getQ };
+    /* ── the panel's two VIDEO buttons ── */
+    function exportMp4() {
+      if (job) { if (job.owner === 'mp4') stop(); else toast('REC SCREEN is running — stop it first', 2400); return; }
+      if (window.__synExportBusy) { toast('another export is running — stop it or wait', 2500); return; }
+      if (stillBusy() || noCodecs()) return;
+      var k = source().kind;
+      if (k === 'photo') startPhoto('mp4');
+      else if (k === 'video') startRender('mp4');
+      else if (k === 'live') startLive('mp4');
+      else toast('◯ No active source', 2000);
+    }
+    function recScreen() {
+      if (job) { if (job.owner === 'rec') stop(); else toast('EXPORT MP4 is running — stop it first', 2400); return; }
+      if (window.__synExportBusy) { toast('another export is running — stop it or wait', 2500); return; }
+      if (stillBusy() || noCodecs()) return;
+      if (source().kind === 'none') { toast('◯ No active source', 2000); return; }
+      startLive('rec', { screen: true });
+    }
+
+    var ctlApi = {
+      busy: function () { return !!job && !job.inBegin; }, stop: stop, quality: getQ,
+      exportMp4: exportMp4, recScreen: recScreen, source: source,
+      linkStill: function (c) { stillCfg = c || null; },
+      onState: function (fn) { if (typeof fn === 'function') stateFns.push(fn); },
+      owner: function () { return job ? job.owner : null; },
+      notify: function (m, ms) { toast(m, ms); },
+      label: label, renderBtn: renderBtn, cfg: cfg
+    };
+    if (cfg.panel !== false && renderBtn) registerPanel('export', ctlApi, cfg, SELF_SRC);
+    return ctlApi;
   }
 
-  window.SynExport = { isSupported: isSupported, probeFps: probeFps, render: render, recordLive: recordLive, attach: attach,
+  window.SynExport = { isSupported: isSupported, probeFps: probeFps, render: render, renderSequence: renderSequence, recordLive: recordLive, attach: attach,
+    normQuality: normQuality, bitrateFor: bitrateFor, storedQuality: storedQuality,
     offlineAnalyser: offlineAnalyser, decodeFileAudio: decodeFileAudio, _probeAacCopy: probeAacCopy, _makeYuv: makeYuv,
     encoderFor: encoderFor, snapRate: snapRate, _seekFrame: seekFrame, _codecList: codecList };
 })();

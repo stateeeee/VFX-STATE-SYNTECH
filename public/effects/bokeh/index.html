@@ -784,6 +784,62 @@ body {
 #pill-rec { display:none; }
 #pill-rec .dot { background:var(--red); animation:blink 1s infinite; }
 </style>
+<!-- SYNTECH-UNIFORM-START: LED colour shared with the shell / Lab / the other effects (operator 2026-11-28, docs/workflow/13-EXPORT-PANEL.md §4).
+     Same registered --syn-c colour + syn-led-c keyframes + wall-clock pinning as ../shared/syn-chrome.css / syn-chrome.js
+     (BOKEH has its own inline chrome and does not link them). Top-bar line, frame outline and corner brackets only. -->
+<style>
+@property --syn-c { syntax:'<color>'; inherits:true; initial-value:#8b5cf6; }
+@keyframes syn-led-c {
+  0%   { --syn-c:#8b5cf6; }
+  25%  { --syn-c:#22d3ee; }
+  50%  { --syn-c:#ec4899; }
+  75%  { --syn-c:#e8c000; }
+  100% { --syn-c:#8b5cf6; }
+}
+#topbar::after {
+  background:var(--syn-c); box-shadow:0 0 6px var(--syn-c),0 -1px 8px color-mix(in srgb,var(--syn-c) 55%,transparent);
+  animation:syn-led-c 6s linear infinite;
+}
+#canvas-wrap::before {
+  background:
+    linear-gradient(var(--syn-c),var(--syn-c)) top left    / 20px 1px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) top left    / 1px 20px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) top right   / 20px 1px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) top right   / 1px 20px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) bottom left / 20px 1px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) bottom left / 1px 20px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) bottom right/ 20px 1px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) bottom right/ 1px 20px no-repeat;
+  animation:syn-led-c 6s linear infinite;
+  filter:drop-shadow(0 0 6px color-mix(in srgb,var(--syn-c) 60%,transparent)); opacity:.8;
+}
+#frame-outline {
+  border:1px solid var(--syn-c);
+  box-shadow:0 0 12px color-mix(in srgb,var(--syn-c) 40%,transparent),0 0 30px color-mix(in srgb,var(--syn-c) 15%,transparent);
+  animation:syn-led-c 6s linear infinite;
+}
+</style>
+<script>
+/* pin every syn-led-c animation to the wall clock (copy of the IIFE in ../shared/syn-chrome.js) */
+(function(){
+  'use strict';
+  if(window.__synLedSync) return; window.__synLedSync=true;
+  var PERIOD=6000;
+  function align(a){
+    if(a.animationName!=='syn-led-c') return;
+    var now=Date.now();
+    var want=now-performance.timeOrigin-(now%PERIOD), cur=a.startTime;
+    if(cur!=null && Math.abs(((cur-want)%PERIOD+PERIOD*1.5)%PERIOD-PERIOD/2)<5) return;
+    a.startTime=want;
+  }
+  function sweep(){ try{ document.getAnimations().forEach(align); }catch(e){} }
+  sweep();
+  document.addEventListener('animationstart',function(e){ if(e.animationName==='syn-led-c') sweep(); },true);
+  window.addEventListener('load',sweep);
+  setInterval(sweep,5000);
+})();
+</script>
+<!-- SYNTECH-UNIFORM-END -->
 </head>
 <body translate="no" class="notranslate">
 
@@ -4287,6 +4343,35 @@ requestAnimationFrame(syncSectionTitleGradients);
           try{ render(performance.now()); }finally{ ctl.inside=false; }
         }
       }finally{ window.__synFxSrc=null; }
+      return {canvas:canvas};
+    },
+    /* ALPHA v2 matte (docs/workflow/13-EXPORT-PANEL.md §3): the photo's alpha through the same GEOMETRY as the last frame():
+       the bokeh blur kernel (bloom 0 → a plain average, so it spreads the alpha exactly like it spreads the colour, same
+       mask), the post-blur distort warp (swirl / explosive / anamorphic) and the composite's squeeze / barrel / breathing /
+       letterbox crop (the bars come out 0 = transparent). No vignette, no highlight bloom, no BG FX: datamosh / pixel
+       sort / liquid / morph / lava only repaint colour (SynStill's U keeps what they show) and their feedback buffers are
+       never touched. Reuses the non-temporal bokehFBO / distortFBO and a private texture; P is restored in finally.
+       The R channel of the canvas is M. */
+    matte:function(alphaSrc,i,t){
+      var ctl=window.__synExpCtl;
+      if(!fx||!ctl) throw new Error('SynFx.matte without begin');
+      var tx=gl.createTexture(); initTex(tx);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,tx);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,alphaSrc);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+      var keep={bokehBloom:P.bokehBloom, bokehVignette:P.bokehVignette, anamVignette:P.anamVignette};
+      P.bokehBloom=0; P.bokehVignette=0; P.anamVignette=0;
+      ctl.inside=true;
+      try{
+        drawBokeh(tx);
+        var bg=drawDistort(ctl.t);
+        drawComposite(tx,bg,ctl.t);
+      }finally{
+        ctl.inside=false;
+        P.bokehBloom=keep.bokehBloom; P.bokehVignette=keep.bokehVignette; P.anamVignette=keep.anamVignette;
+      }
+      gl.deleteTexture(tx);
       return {canvas:canvas};
     },
     end:function(){

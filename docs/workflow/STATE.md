@@ -29,6 +29,58 @@ lighting, frame cost and the platform traps, harness playbook, open items).
 
 ## Next step
 
+**SESSIONE 2026-11-28 — UN SOLO PANNELLO EXPORT (QUALITY 0–100 · FOTO · VIDEO) in TUTTI e 10 gli effetti + LAB, PNG
+CON TRASPARENZA VERA, MP4 DA UNA FOTO, REC SCREEN, LED SINCRONIZZATI E SFUMATI. FATTO.**
+Operatore: *"se importo una foto l'export deve essere anche png veramente con sfondo trasparente, jpeg con qualita piu alta
+possibile e pdf senza perdita di qualita … se importo una foto non posso esportare mp4"*; PNG = *"se importo un file 1920x1080
+con un logo in png e applico un effetto … devo avere la mia foto senza sfondo"*; pannello *"identico … in alto QUALITY 0→100
+… sotto FOTO … sotto VIDEO con REC SCREEN ed EXPORT MP4 … niente scritte, niente pallino rosso … stessa opacità, spenti che si
+accendono quando parte l'export"*; Lab: *"dentro LABORATORY, i primi 3 bottoni tienili, da EXPORT VFX CHAIN in giù
+eliminali"*; LED *"sinchro … colore che sfuma"*. Piano, misure e criteri: **`13-EXPORT-PANEL.md`**.
+- **Motori condivisi (Opus):** `syn-export.js` — QUALITY 0–100 (`normQuality`: 'master'=100, 'high'=60; chiave
+  `syntech.export.q`, migrata da `syntech.export.quality`); q<100 → bpp = 0,02·50^(q/100); q=100 → il bitrate PIÙ ALTO che
+  l'encoder accetta (ricerca da 800 Mbit/s, livello H.264 più basso compatibile; qui ≈286,7 Mbit/s). `renderSequence` (MP4
+  di una foto: 30 fps, dimensione nativa, frames=N con audio della TRACK o start/stop al ritmo reale). REC SCREEN = sempre
+  `recordLive` (anche con un video file, audio incluso). `syn-still.js` — JPEG = `jpegQuality(q)` = max(0,05, q/100) (100 =
+  q1.0 4:4:4); FOTO di un VIDEO = fotogramma corrente a risoluzione nativa; alpha v2 `combineAlpha` / `makeAlphaSource`
+  (A = max(M,U), U = maxRGB(C) sopra 6/255 con gate spaziale 3×3, colore = C/A). Nuovo `syn-panel.js` (`window.SynPanel`):
+  il pannello identico montato nella sezione EXPORT di ogni effetto (ids `syn-q`, `syn-q-val`, `syn-still-png/jpeg/pdf`,
+  `syn-rec-screen`, `syn-export-mp4`), i vecchi controlli restano nel DOM nascosti; bottone acceso + avanzamento dentro
+  ("■ STOP 0:12", "■ STOP 42%", "WRITING…").
+- **`SynFx.matte(alphaSrc,i,t)` (Sonnet ×4, blocchi `SYNTECH-EXPORT`):** ANALOG (pixel sort / feedback / CRT rifatti
+  sull'alpha, fuori dal barile trasparente), QUADTREE (stesse celle del colore, alpha medio), TIME MACHINE (anello alpha R8
+  parallelo, +~25% memoria GPU), ANAMORPHIC (stesso `render()` con colore/luce a identità), BOKEH (letterbox trasparente),
+  BLOB REVEAL (strati `#c-blob`/`#c-sub`), POINTCLOUD (stessi punti, valore = alpha), PAINTING (stessi pennellate/kernel,
+  valore = alpha; WATERCOLOR nascosto → alpha sorgente). BLOB TRACKER e INVISIBLE non ne hanno bisogno (THERMAL: `unmult:false`).
+  Misure (logo 1920×1080): nero opaco dentro il logo ANALOG 22%→0, QUADTREE 30,5%→0, BLOB REVEAL 36%→0, BOKEH 25,7%→0,
+  ANAMORPHIC 3,4%→0, POINTCLOUD tutto nero→0.
+- **Anteprima PAINTING:** foto intera nel suo formato (prima cover-crop in 16:9), blocco `SYNTECH-PREVIEW`.
+- **BOKEH LED:** blocco `SYNTECH-UNIFORM` con lo stesso `@property --syn-c` + aggancio all'orologio. BLOB REVEAL: titolo
+  "Export" (era "Export / REC").
+- **LAB (Sonnet):** in LABORATORY restano SAVE / OPEN / RESET; al posto di EXPORT VFX CHAIN + MASTER/HIGH + PNG/JPEG/PDF lo
+  stesso pannello (ids `lab-q`, `lab-q-val`, `lab-still-png/jpeg/pdf`, `lab-rec-screen`, `lab-export-mp4`), aperto
+  LABORATORY la colonna scorre fino alla riga VIDEO. Alpha lungo la catena (`OfflineChain.frameAlpha`: `matte` dopo ogni
+  `frame()`, prima di `end()`). MP4 di una foto: TRACK → durata della traccia + audio, altrimenti start/stop. REC SCREEN
+  realtime con qualsiasi sorgente.
+- **LED (Sonnet):** un solo colore registrato (`--syn-c` negli effetti, `--fxl-c` nel Lab) violet→cyan→pink→amber 6 s
+  lineare (sfuma), ogni animazione agganciata all'orologio (`syn-chrome.js`, `src/lib/ledSync.ts`): linea sotto il titolo,
+  riquadro del video, angolini, teste dei blocchi del Lab — stesso colore nello stesso istante in shell, Lab e iframe.
+- **Verifiche:** lint pulito; `verify-export-master.cjs` aggiornato al pannello (slider `#syn-q`; 'high' = 60; su un clip
+  quasi fermo master e high saturano allo stesso bpp → controllo su bitrate configurato + bpp ≤).
+- **Aperti:** l'encoder OpenH264 di questo Chromium (senza GPU) non arriva al tetto 4:2:0 su contenuti semplici; misurare su
+  hardware vero. BOKEH: il LETTERBOX di default (2.39) ritaglia/schiaccia la foto anche da solo — è il suo look; DATAMOSH e
+  PIXEL SORT su una foto ferma la disegnano nera (anche in anteprima). BLOB TRACKER LIQUID: tacche nere < 1% del logo;
+  NUMS / LETTERS: la griglia resta nel PNG come luce semitrasparente. PAINTING POINTILLISM/IMPRESSIONISM/EXPRESSIONISM da
+  guardare su una GPU vera. AAC in REC SCREEN dipende dal browser (qui Opus). REC SCREEN di ANALOG/QUADTREE con un video
+  piccolo registra ad almeno 1920×1080 (pesante).
+  Pannello identico → nella sezione EXPORT sono nascosti FULLSCREEN (ANAMORPHIC, BLOB REVEAL, BLOB TRACKER, BOKEH; resta il
+  tasto F) e ANAMORPHIC EXPORT di BOKEH: da confermare con l'operatore. PAINTING mantiene il formato della sorgente anche con
+  video e flusso del Lab (non solo foto).
+- **Revisione Opus: PASS** (dopo FAIL su `verify-lab-chain.cjs` ancora sui vecchi controlli → aggiornato al pannello;
+  corretti anche: PNG/JPEG/PDF bloccati mentre parte l'MP4, "WRITING n%" durante il recupero, alpha scalata tra nodi di
+  dimensioni diverse). `verify-lab-chain`: export OK (`_LAB_Q100.mp4` 1280×720 30 fps 60 fotogrammi); i fallimenti
+  rimasti (budget 24 vs 30, fps in pausa) falliscono uguali su HEAD (GL software).
+
 **SESSIONE 2026-11-26/27 — ANTEPRIMA COME PREMIERE: nitida (risoluzione dello schermo, mai sopra il video) e fluida
 (fotogrammi caricati solo quando sono nuovi, 120 Hz → 60, LAB agli fps del video) in TUTTI e 10 gli effetti + LAB. FATTO.**
 Operatore: *"ho appena provato a usare l'effetto anamorphic … il mio video, oltre a perdere di qualità visiva sgranandosi, va

@@ -3,6 +3,9 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import IntroSplash, {shouldPlayIntro} from './components/IntroSplash.tsx';
 import './index.css';
+import {startLedSync} from './lib/ledSync.ts';
+
+startLedSync();
 
 /* The app mounts at once; the intro (desktop app only) plays on top of it and
    removes itself — see IntroSplash.tsx. */

@@ -91,14 +91,25 @@ const RESTORE_GUARD_MS = 4000;
 /** photo INPUT: redraw cadence, so its captured track keeps delivering frames */
 const PHOTO_REDRAW_MS = 100;
 const PHOTO_MAX_SIDE = 1920;
-/** Master export of a photo INPUT (no timeline): a fixed realtime take; a webcam take runs until STOP */
-const STILL_TAKE_SEC = 10;
-/** the export quality the effects' RENDER MP4 also remembers (SynExport.attach) */
-const EXPORT_QUALITY_KEY = 'syntech.export.quality';
-const readExportQuality = (): 'master' | 'high' => {
-  try { return localStorage.getItem(EXPORT_QUALITY_KEY) === 'high' ? 'high' : 'master'; } catch { return 'master'; }
+/** the EXPORT panel's QUALITY (0–100) is shared with the effects' panels (syn-panel.js): same key, same default 100;
+ *  the old MASTER / HIGH key is migrated once (master → 100, high → 60) */
+const EXPORT_Q_KEY = 'syntech.export.q';
+const EXPORT_Q_OLD_KEY = 'syntech.export.quality';
+const clampQuality = (v: number) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100; };
+const readExportQuality = (): number => {
+  try {
+    const v = localStorage.getItem(EXPORT_Q_KEY);
+    if (v !== null && v !== '' && Number.isFinite(Number(v))) return clampQuality(Number(v));
+    const m = localStorage.getItem(EXPORT_Q_OLD_KEY) === 'high' ? 60 : 100;
+    localStorage.setItem(EXPORT_Q_KEY, String(m));
+    return m;
+  } catch { return 100; }
 };
-type ExportKind = '' | 'video' | 'live' | 'still';
+/** EXPORT MP4 of a photo: the animated photo's frame rate */
+const PHOTO_MP4_FPS = 30;
+type ExportKind = '' | 'video' | 'live' | 'still' | 'seq';
+/** what owns the EXPORT panel while a job runs: its button is lit and carries the progress */
+type XpOwner = '' | 'png' | 'jpeg' | 'pdf' | 'rec' | 'mp4';
 /** a node's iframe viewport is taller than its panel and grows in steps (its wrapper clips it to the
  *  panel's height): opening a section of the effect's panel then does not resize the effect's window
  *  (PAINTING re-allocates its engine on every window resize) */
@@ -311,16 +322,21 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   /** LABORATORY: what opens under SAVE (the name field) or OPEN (the saved chains) */
   const [labPane, setLabPane] = useState<'save' | 'open' | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [exportMsg, setExportMsg] = useState('');
   const exportingRef = useRef(false);
   const exportStopRef = useRef(false);
-  /** what the export in flight is: 'video' = offline frame by frame, 'live' = realtime MP4 (webcam / photo),
-   *  'still' = PNG / JPEG / PDF of a photo */
+  /** what the export in flight is: 'video' = offline frame by frame, 'seq' = offline animated photo, 'live' = realtime
+   *  MP4, 'still' = PNG / JPEG / PDF */
   const [exportKind, setExportKind] = useState<ExportKind>('');
   const exportKindRef = useRef<ExportKind>('');
-  const [quality, setQualityState] = useState<'master' | 'high'>(readExportQuality);
+  const [quality, setQualityState] = useState<number>(readExportQuality);
   const qualityRef = useRef(quality);
   qualityRef.current = quality;
+  /** the EXPORT panel: which button is lit and the text inside it */
+  const [xp, setXpState] = useState<{ owner: XpOwner; text: string }>({ owner: '', text: '' });
+  const xpRef = useRef(xp);
+  const noteTimerRef = useRef(0);
+  /** the Track's length in seconds (0 = unknown): EXPORT MP4 of a photo lasts as long as the Track */
+  const trackDurRef = useRef(0);
   /** the offline render's AbortController / the live take's controller (STOP) */
   const exportAbortRef = useRef<AbortController | null>(null);
   const exportLiveRef = useRef<{ stop(): Promise<SynExportResult> } | null>(null);
@@ -1132,6 +1148,15 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     try {
       await audioRef.current!.startFile(file);
       trackFileRef.current = file;
+      trackDurRef.current = 0;
+      {
+        const u = URL.createObjectURL(file);
+        const a = new Audio();
+        a.preload = 'metadata';
+        a.onloadedmetadata = () => { if (Number.isFinite(a.duration) && a.duration > 0) trackDurRef.current = a.duration; URL.revokeObjectURL(u); };
+        a.onerror = () => URL.revokeObjectURL(u);
+        a.src = u;
+      }
       clipWantedRef.current = false;
       setError(null);
       mirror();
@@ -1249,29 +1274,60 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetRequest?.seq]);
 
-  /* ═══ EXPORT VFX CHAIN (docs/workflow/11-EXPORT-STILLS-LAB.md §2.3) ═══
-     Three ways out, all through the shared engines (SynExport / SynStill, loaded into the shell):
-       video INPUT   OFFLINE, frame by frame ("like Premiere"): SynExport.render drives the INPUT <video>
-                     (seek to frame i, exact fps and frame count from the file); each frame goes through the
-                     nodes' SynFx one after the other (node 1 gets the native frame, node k+1 the output of
-                     node k), the beat-synced cue timeline is applied at the frame's time exactly as in
-                     playback, the last output goes to the encoder. Native size, audio AAC.
-       photo INPUT   PNG · JPEG · PDF of the chain at the photo's NATIVE size (SynStill.exportStill), plus
-                     the realtime 10 s MP4 take below.
-       webcam/photo  REALTIME MP4 (SynExport.recordLive, WebCodecs, never WebM) of the chain OUTPUT at its
-                     native live size, with the Lab audio; the webcam runs until STOP.
+  /* ═══ EXPORT panel (docs/workflow/13-EXPORT-PANEL.md; engines: 11-EXPORT-STILLS-LAB.md §2.3) ═══
+     The same panel as the effects — QUALITY 0–100 · FOTO (PNG · JPEG · PDF) · VIDEO (REC SCREEN · EXPORT MP4) —
+     through the shared engines (SynExport / SynStill, loaded into the shell). No text line: the running job's
+     button lights up and carries the progress ("■ STOP 42%", "■ STOP 0:12", "WRITING…"); results and errors go
+     to the Lab's note (notify).
+       FOTO  photo INPUT   the chain at the photo's NATIVE size, ALPHA v2: every node's picture + alpha travel along
+                           the chain (OfflineChain.frameAlpha: M from SynFx.matte or the alphaRect, U = added light,
+                           A = max(M, U)) → PNG / PDF with true transparency; JPEG q = QUALITY (opaque, over black)
+            video / webcam the CURRENT frame at the source's native size (opaque)
+       EXPORT MP4  video INPUT   OFFLINE, frame by frame ("like Premiere"): SynExport.render drives the INPUT <video>
+                           (seek to frame i, exact fps and frame count from the file); each frame goes through the
+                           nodes' SynFx one after the other, the beat-synced cue timeline is applied at the frame's
+                           time as in playback, the last output goes to the encoder. Native size, audio AAC.
+                   photo INPUT   an animated photo, offline, 30 fps, native size (SynExport.renderSequence): with a
+                           TRACK = the track's length, audio-reactive (the nodes analyse the track offline), audio
+                           muxed; without = click starts, click ends (the wall time between the two clicks)
+                   webcam        REALTIME (a live source cannot be re-read), as REC SCREEN
+       REC SCREEN  ANY source: REALTIME MP4 (SynExport.recordLive, WebCodecs, never WebM) of the chain OUTPUT with the
+                   Lab audio (CLIP / TRACK / MIC), so parameters can be moved during the take; click again = stop+save.
      The save dialog opens INSIDE the click (every start function below runs synchronously up to the engine
      call). A node without SynFx (a stale cached page) → a clear error, nothing is saved. */
   const noPicker = () => (window as unknown as { __synExportNoPicker?: boolean }).__synExportNoPicker === true;
-  const setQuality = (q: 'master' | 'high') => {
+  const setQuality = (v: number) => {
+    const q = clampQuality(v);
+    qualityRef.current = q;
     setQualityState(q);
-    try { localStorage.setItem(EXPORT_QUALITY_KEY, q); } catch { /* private mode */ }
+    try { localStorage.setItem(EXPORT_Q_KEY, String(q)); } catch { /* private mode */ }
   };
+  useEffect(() => {
+    /* the effects' panels write the same key: follow them */
+    const on = (e: StorageEvent) => { if (e.key === EXPORT_Q_KEY) { const q = readExportQuality(); qualityRef.current = q; setQualityState(q); } };
+    window.addEventListener('storage', on);
+    return () => window.removeEventListener('storage', on);
+  }, []);
   const fmtEta = (s: number) => { const n = Math.max(0, Math.round(s)); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`; };
   const exportBase = () => (sourceNameRef.current || 'lab').replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_') || 'lab';
   const describeResult = (r: SynExportResult) =>
     `${r.width}×${r.height} · ${Math.round((r.fps ?? 0) * 1000) / 1000} fps · ${r.frames} fr · ${String(r.codec ?? '').split(' (')[0]}`
     + `${r.audioCodec && r.audioCodec !== 'none' ? ` + ${r.audioCodec.split(' ')[0]}` : ' (no audio)'} · ${((r.bytes ?? 0) / 1048576).toFixed(1)} MB`;
+  /** the Lab's note (status bar of the stage): results and errors of the panel; it clears itself */
+  const notify = (msg: string, ms = 6500) => {
+    setNote(msg);
+    window.clearTimeout(noteTimerRef.current);
+    noteTimerRef.current = window.setTimeout(() => setNote((cur) => (cur === msg ? null : cur)), ms);
+  };
+  /** the job that owns the panel and the text inside its (lit) button */
+  const setXp = (owner: XpOwner, text: string) => {
+    xpRef.current = { owner, text };
+    setXpState({ owner, text });
+  };
+  const setXpText = (text: string) => {
+    const cur = xpRef.current;
+    if (cur.owner && cur.text !== text) setXp(cur.owner, text);
+  };
 
   /** The nodes of the active chain, in order, with their SynFx. Nodes with no Lab link are bypassed (as live).
    *  → { nodes } or { error } (a node that is still loading, or whose page has no SynFx). */
@@ -1291,13 +1347,14 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   };
 
   /** the common start / end of every export (the Lab stays live meanwhile, as before) */
-  const beginExport = (kind: ExportKind, offline: boolean) => {
+  const beginExport = (kind: ExportKind, offline: boolean, owner: XpOwner, text: string) => {
     exportingRef.current = true;
     exportStopRef.current = false;
     exportKindRef.current = kind;
     offlineRef.current = offline;
     setExportKind(kind);
     setExporting(true);
+    setXp(owner, text);
     syncLoop();
   };
   const endExport = () => {
@@ -1309,19 +1366,23 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     exportLiveRef.current = null;
     setExportKind('');
     setExporting(false);
+    setXp('', '');
     syncLoop(); // finished while the Lab is hidden: it parks now
     window.setTimeout(replumb, 400);
+  };
+  const rememberExport = (r: SynExportResult, name: string) => {
+    lastExportRef.current = { name: r.filename ?? name, size: r.bytes ?? 0, type: 'video/mp4', width: r.width ?? 0, height: r.height ?? 0, audio: !!r.audioCodec && r.audioCodec !== 'none', url: '' };
   };
 
   /** video INPUT → offline MP4 */
   const startOfflineVideo = (eng: NonNullable<Window['SynExport']>) => {
     const v = inputVideoRef.current!;
     const src = fileSourceRef.current;
-    if (!src || src.kind !== 'video') { setExportMsg('✗ the video source is not a file (nothing to render frame by frame)'); return; }
-    if (!eng.isSupported()) { setExportMsg('✗ RENDER needs WebCodecs (Chrome / Edge) — nothing was saved'); return; }
-    if (!isFinite(v.duration) || !v.duration) { setExportMsg('✗ the video has no readable duration yet'); return; }
+    if (!src || src.kind !== 'video') { notify('✗ the video source is not a file (nothing to render frame by frame)'); return; }
+    if (!eng.isSupported()) { notify('✗ EXPORT MP4 needs WebCodecs (Chrome / Edge) — nothing was saved'); return; }
+    if (!isFinite(v.duration) || !v.duration) { notify('✗ the video has no readable duration yet'); return; }
     const found = offlineNodes();
-    if ('error' in found) { setExportMsg('✗ ' + found.error); return; }
+    if ('error' in found) { notify('✗ ' + found.error); return; }
     /* audio: the Track when it is the Lab audio (looped under the video), the INPUT's own sound otherwise;
        a microphone cannot be rendered offline */
     const mode = audioRef.current!.mode;
@@ -1330,7 +1391,7 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
     const q = qualityRef.current;
     const ac = new AbortController();
     exportAbortRef.current = ac;
-    beginExport('video', true);
+    beginExport('video', true, 'mp4', '■ STOP 0%');
     const prevTime = v.currentTime;
     const prevLoop = v.loop;
     const wasPlaying = !v.paused && !v.ended;
@@ -1357,10 +1418,9 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       cueSync(); // …from the state at the INPUT's time
       endExport();
     };
-    setExportMsg(`Preparing ${q === 'high' ? 'HIGH' : 'MASTER'} render…`);
     let lastProg = 0;
     const filePromise = sourceBlob(src.url).catch(() => null);
-    const name = `${exportBase()}_LAB_${q.toUpperCase()}.mp4`;
+    const name = `${exportBase()}_LAB_Q${q}.mp4`;
     void eng.render({
       video: v,
       file: filePromise,
@@ -1396,34 +1456,112 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
         return c.frame(w, i, t);
       },
       finish: () => cleanup(),
-      onProgress: (i, total, phase, info) => {
-        if (phase !== 'render') { setExportMsg(phase === 'audio' ? 'Decoding audio…' : phase === 'finalize' ? 'Writing MP4…' : 'Reading source…'); return; }
+      onProgress: (i, total, phase) => {
+        if (phase === 'finalize') { setXpText('WRITING…'); return; }
+        if (phase !== 'render' || exportStopRef.current) return;
         const now = performance.now();
         if (now - lastProg < 250 && i < total) return;
         lastProg = now;
-        setExportMsg(`● RENDER ${i}/${total} (${Math.floor((i / total) * 100)}%) · ${info.width}×${info.height} · ${info.speed.toFixed(1)} fr/s · ETA ${fmtEta(info.eta)} — click to stop`);
+        setXpText(`■ STOP ${Math.floor((i / total) * 100)}%`);
       },
     }).then(async (r) => {
       await cleanup();
-      if (r.error) { setExportMsg('✗ ' + r.error); return; }
-      if (r.stopped) { setExportMsg(r.cancelled ? '✗ Export cancelled — nothing saved' : '✗ Master export stopped — nothing saved'); return; }
+      if (r.error) { notify('✗ ' + r.error); return; }
+      if (r.stopped) { notify(r.cancelled ? '✗ Export cancelled — nothing saved' : '✗ Export stopped — nothing saved'); return; }
       const warn = [...(r.warnings ?? []), noAudioNote].filter((x) => /audio|Opus|scaled|fallback|microphone/i.test(x));
-      lastExportRef.current = { name: r.filename ?? name, size: r.bytes ?? 0, type: 'video/mp4', width: r.width ?? 0, height: r.height ?? 0, audio: !!r.audioCodec && r.audioCodec !== 'none', url: '' };
-      setExportMsg(`✓ ${r.filename ?? name} · ${describeResult(r)}${warn.length ? ' — ' + warn.join('; ') : ''}`);
+      rememberExport(r, name);
+      notify(`✓ ${r.filename ?? name} · ${describeResult(r)}${warn.length ? ' — ' + warn.join('; ') : ''}`);
     }).catch(async (e: unknown) => {
       await cleanup();
-      setExportMsg('✗ ' + ((e as Error)?.message || String(e)));
+      notify('✗ ' + ((e as Error)?.message || String(e)));
     });
   };
 
-  /** webcam / photo INPUT → realtime MP4 of the chain OUTPUT at its native live size */
-  const startLiveTake = (eng: NonNullable<Window['SynExport']>) => {
+  /** photo INPUT → "animated photo" MP4, offline (SynExport.renderSequence): the photo at its native size, 30 fps.
+   *  With a TRACK: its length, audio-reactive + muxed; without: click = start, click again = stop (saves). */
+  const startPhotoMp4 = (eng: NonNullable<Window['SynExport']>) => {
+    const src = fileSourceRef.current;
+    if (!src || src.kind !== 'image') { notify('✗ the photo source is not a file'); return; }
+    if (!eng.isSupported()) { notify('✗ EXPORT MP4 needs WebCodecs (Chrome / Edge) — nothing was saved'); return; }
+    const found = offlineNodes();
+    if ('error' in found) { notify('✗ ' + found.error); return; }
+    const trackFile = audioRef.current!.mode === 'file' ? trackFileRef.current : null;
+    const trackDur = trackFile ? (trackDurRef.current || audioRef.current!.transport?.duration || 0) : 0;
+    const frames = trackFile && trackDur > 0 ? Math.max(1, Math.round(trackDur * PHOTO_MP4_FPS)) : null;
+    const q = qualityRef.current;
+    const name = `${exportBase()}_LAB_Q${q}.mp4`;
+    beginExport('seq', true, 'mp4', frames ? '■ STOP 0%' : '■ STOP 0:00');
+    let chain: OfflineChain | null = null;
+    let pic: HTMLCanvasElement | null = null;
+    let cleaned = false;
+    let t0w = 0;
+    const cleanup = async () => {
+      if (cleaned) return;
+      cleaned = true;
+      window.clearInterval(tick);
+      try { await chain?.end(); } catch { /* */ }
+      chain = null;
+      if (pic) { pic.width = pic.height = 0; pic = null; }
+      endExport();
+    };
+    /* the button's clock: wall time since the click (the engine's own progress comes in bursts) */
+    const tick = window.setInterval(() => {
+      if (!frames && t0w && !exportStopRef.current) setXpText(`■ STOP ${fmtEta((performance.now() - t0w) / 1000)}`);
+    }, 500);
+    const ctl = eng.renderSequence({
+      fps: PHOTO_MP4_FPS,
+      frames,
+      quality: q,
+      audioFile: trackFile,
+      audioLoop: false,
+      useFilePicker: !noPicker(),
+      filename: name,
+      prepare: async () => {
+        t0w = performance.now();
+        const blob = await sourceBlob(src.url);
+        pic = await decodePhotoNative(blob); // the ORIGINAL photo, native size, over black
+        const c = new OfflineChain(found.nodes);
+        chain = c;
+        await c.begin('lab', pic.width, pic.height, PHOTO_MP4_FPS, trackFile);
+      },
+      getFrame: async (i, t) => {
+        const c = chain;
+        const p = pic;
+        if (!c || !p) throw new Error('the chain is not ready');
+        return c.frame(p, i, t);
+      },
+      finish: () => cleanup(),
+      onProgress: (done, total, phase, info) => {
+        if (phase === 'finalize') { setXpText('WRITING…'); return; }
+        if (phase !== 'render' || exportStopRef.current) return;
+        if (total) setXpText(`■ STOP ${Math.floor((done / total) * 100)}%`);
+        else if (info.target) setXpText('WRITING…');
+      },
+    });
+    exportLiveRef.current = ctl;
+    void ctl.done.then(async (r) => {
+      await cleanup();
+      if (r.error) { notify('✗ ' + r.error); return; }
+      if (r.stopped) { notify(r.cancelled ? '✗ Export cancelled — nothing saved' : '✗ Export stopped — nothing saved'); return; }
+      const warn = (r.warnings ?? []).filter((x) => /audio|Opus|scaled|fallback/i.test(x));
+      rememberExport(r, name);
+      notify(`✓ ${r.filename ?? name} · ${describeResult(r)}${warn.length ? ' — ' + warn.join('; ') : ''}`);
+    }).catch(async (e: unknown) => {
+      await cleanup();
+      notify('✗ ' + ((e as Error)?.message || String(e)));
+    });
+  };
+
+  /** REALTIME MP4 of the chain OUTPUT (REC SCREEN of any source; EXPORT MP4 of a webcam). A photo / webcam is
+   *  recorded at its native size; a video plays from where it is and the take ends with it (or on click). */
+  const startLiveTake = (eng: NonNullable<Window['SynExport']>, owner: 'rec' | 'mp4') => {
     const ov = outputVideoRef.current;
     const k = kindRef.current;
-    if (!ov || !outputStreamRef.current || !outputHasFrame()) { setExportMsg('✗ the chain has no output frame yet — try again in a moment'); return; }
+    if (!ov || !outputStreamRef.current || !outputHasFrame()) { notify('✗ the chain has no output frame yet — try again in a moment'); return; }
+    if (!eng.isSupported()) { notify('✗ MP4 needs WebCodecs (Chrome / Edge) — nothing was saved'); return; }
     const q = qualityRef.current;
     const name = `${exportBase()}_LAB_REC.mp4`;
-    beginExport('live', false);
+    beginExport('live', false, owner, '■ STOP 0:00');
     // native source size → every node's canvas area (÷ DPR), for the whole take
     let nw = 0, nh = 0;
     if (k === 'webcam') {
@@ -1464,115 +1602,156 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       return !exportStopRef.current;
     };
     void begin().then((go) => {
-      if (!go) { restoreLayout(); setExportMsg('✗ Master export stopped — nothing saved'); endExport(); return; }
+      if (!go) { restoreLayout(); notify('✗ Export cancelled — nothing saved'); endExport(); return; }
       runTake();
-    }).catch((e: Error) => { restoreLayout(); setExportMsg('✗ ' + e.message); endExport(); });
+    }).catch((e: Error) => { restoreLayout(); notify('✗ ' + e.message); endExport(); });
     const runTake = () => {
-    const tap = new OutputTap(ov);
-    let stopped = false;
-    const ctl = eng.recordLive({
-      getCanvas: () => tap.region(),
-      fps: Math.round(budgetFps()), // same rate as the nodes' budget: no duplicated frames in the take
-      audioStream: labAudioStream(),
-      quality: q,
-      useFilePicker: pickP ? false : !noPicker(), // the dialog was already shown in the click
-      ...(fileHandle ? { fileHandle } : {}),
-      filename: name,
-      onProgress: (sec, info) => {
-        const lim = k === 'image' ? ` / ${STILL_TAKE_SEC}s` : '';
-        setExportMsg(`● REC ${info.width}×${info.height} · ${sec.toFixed(1)}s${lim} · ${info.frames} fr${info.dropped ? ` (${info.dropped} dropped)` : ''} — click to stop`);
-        if (k === 'image' && sec >= STILL_TAKE_SEC && !stopped) { stopped = true; void ctl.stop(); }
-      },
-    });
-    exportLiveRef.current = ctl;
-    setExportMsg('● REC — MP4');
-    void ctl.done.then((r) => {
-      tap.dispose();
-      if (r.error) setExportMsg('✗ ' + r.error);
-      else if (r.stopped) setExportMsg(r.cancelled ? '✗ Export cancelled — nothing saved' : '✗ Master export stopped — nothing saved');
-      else {
-        const warn = (r.warnings ?? []).filter((x) => /audio|Opus|scaled|fallback/i.test(x));
-        lastExportRef.current = { name: r.filename ?? name, size: r.bytes ?? 0, type: 'video/mp4', width: r.width ?? 0, height: r.height ?? 0, audio: !!r.audioCodec && r.audioCodec !== 'none', url: '' };
-        setExportMsg(`✓ ${r.filename ?? name} · ${describeResult(r)}${r.dropped ? ` · ${r.dropped} dropped` : ''}${warn.length ? ' — ' + warn.join('; ') : ''}`);
-      }
-    }).finally(() => { restoreLayout(); endExport(); });
+      const tap = new OutputTap(ov);
+      const vid = k === 'video' ? inputVideoRef.current : null;
+      if (vid && vid.paused) void vid.play().catch(() => {}); // a video file plays from where it is
+      let stopped = false;
+      const ctl = eng.recordLive({
+        getCanvas: () => tap.region(),
+        fps: Math.round(budgetFps()), // same rate as the nodes' budget: no duplicated frames in the take
+        audioStream: labAudioStream(),
+        quality: q,
+        useFilePicker: pickP ? false : !noPicker(), // the dialog was already shown in the click
+        ...(fileHandle ? { fileHandle } : {}),
+        filename: name,
+      });
+      exportLiveRef.current = ctl;
+      const stopOnEnd = () => { if (!stopped) { stopped = true; setXpText('WRITING…'); void ctl.stop(); } };
+      if (vid && !vid.loop) vid.addEventListener('ended', stopOnEnd, { once: true });
+      /* the button's clock: wall time since the click (the encoder's own progress comes in bursts) */
+      const t0 = performance.now();
+      const tick = window.setInterval(() => { if (!exportStopRef.current && !stopped) setXpText(`■ STOP ${fmtEta((performance.now() - t0) / 1000)}`); }, 500);
+      void ctl.done.then((r) => {
+        tap.dispose();
+        if (r.error) notify('✗ ' + r.error);
+        else if (r.stopped) notify(r.cancelled ? '✗ Export cancelled — nothing saved' : '✗ Export stopped — nothing saved');
+        else {
+          const warn = (r.warnings ?? []).filter((x) => /audio|Opus|scaled|fallback/i.test(x));
+          rememberExport(r, name);
+          notify(`✓ ${r.filename ?? name} · ${describeResult(r)}${r.dropped ? ` · ${r.dropped} dropped` : ''}${warn.length ? ' — ' + warn.join('; ') : ''}`);
+        }
+      }).finally(() => {
+        window.clearInterval(tick);
+        vid?.removeEventListener('ended', stopOnEnd);
+        restoreLayout();
+        endExport();
+      });
     };
   };
 
-  const runMaster = () => {
-    if (exportingRef.current) {
-      if (exportKindRef.current === 'still') { setExportMsg('a PNG / JPEG / PDF export is writing — it cannot be stopped, wait a moment'); return; }
-      exportStopRef.current = true;
-      exportAbortRef.current?.abort();
-      void exportLiveRef.current?.stop();
-      if (exportKindRef.current === 'video') setExportMsg('Stopping…');
-      return;
-    }
-    const k = kindRef.current;
-    if (k === 'none') { setExportMsg('✗ Master export needs a source (video, photo or webcam)'); return; }
-    const eng = window.SynExport;
-    if (!eng) { // the engines are normally loaded at mount; a slow load here costs the save dialog's click activation
-      setExportMsg('loading the export engine…');
-      void loadSharedEngines().then(() => runMaster()).catch((e: Error) => setExportMsg('✗ ' + e.message));
-      return;
-    }
-    if (k === 'video') startOfflineVideo(eng);
-    else startLiveTake(eng);
-  };
-
-  /** photo INPUT → PNG / JPEG / PDF of the chain at the photo's native size */
+  /** FOTO: PNG / JPEG / PDF of the chain. Photo INPUT: native size + alpha v2 through the chain; video / webcam:
+   *  the CURRENT frame at the source's native size (opaque). */
   const runStill = (format: 'png' | 'jpeg' | 'pdf') => {
     if (exportingRef.current) return;
+    const k = kindRef.current;
     const src = fileSourceRef.current;
-    if (kindRef.current !== 'image' || !src || src.kind !== 'image') {
-      setExportMsg('✗ PNG / JPEG / PDF need a photo as the INPUT (IMAGE) — for a video or the webcam use EXPORT VFX CHAIN');
-      return;
-    }
+    if (k === 'none') { notify('✗ PNG / JPEG / PDF need a source (photo, video or webcam)'); return; }
+    if (k === 'image' && (!src || src.kind !== 'image')) { notify('✗ the photo source is not a file'); return; }
     const still = window.SynStill;
-    if (!still) {
-      setExportMsg('loading the export engine…');
-      void loadSharedEngines().then(() => runStill(format)).catch((e: Error) => setExportMsg('✗ ' + e.message));
-      return;
-    }
+    if (!still) { notify('loading the export engine — click again in a moment'); void loadSharedEngines().catch((e: Error) => notify('✗ ' + e.message)); return; }
     const found = offlineNodes();
-    if ('error' in found) { setExportMsg('✗ ' + found.error); return; }
-    beginExport('still', false);
+    if ('error' in found) { notify('✗ ' + found.error); return; }
+    beginExport('still', false, format, 'WRITING…');
     const chain = new OfflineChain(found.nodes);
-    const blobP = sourceBlob(src.url);
-    let photo: Blob | null = null;
-    let alphaRect: { x: number; y: number; w: number; h: number } | null = null;
+    const q = qualityRef.current;
     const ext = format === 'jpeg' ? 'jpg' : format;
     const name = `${exportBase()}_LAB.${ext}`;
-    void still.exportStill({
-      format,
-      filename: name,
-      useFilePicker: !noPicker(),
-      /* read after render(): the ORIGINAL photo's own alpha is re-applied to the result */
-      get alphaSource() { return photo; },
-      alphaRect: () => alphaRect,
-      onStatus: (t) => setExportMsg(t),
-      render: async () => {
-        photo = await blobP;
-        const cv = await decodePhotoNative(photo); // the original, native size, over black
-        setExportMsg(`rendering ${cv.width}×${cv.height}…`);
-        await chain.begin('still', cv.width, cv.height, undefined, null);
-        const r = await chain.frame(cv, 0, 0);
-        alphaRect = r.alphaRect ?? null;
-        return r;
-      },
-    }).then((r) => {
-      if (r.error) setExportMsg('✗ ' + r.error);
-      else if (r.cancelled) setExportMsg('✗ Export cancelled — nothing saved');
-      else {
-        const mode = format === 'jpeg' ? 'RGB · q100 4:4:4' : r.alpha ? 'RGBA (transparent)' : 'RGB';
-        setExportMsg(`✓ ${r.filename ?? name} · ${r.width}×${r.height} · ${mode} · ${((r.bytes ?? 0) / 1048576).toFixed(1)} MB`);
+    let work: HTMLCanvasElement | null = null;
+    void (async () => {
+      /* the save dialog first: still inside the click's user activation */
+      let handle: unknown = null;
+      if (!noPicker()) {
+        handle = await still.pickFile(name, format);
+        if (handle === 'cancel') { notify('✗ Export cancelled — nothing saved'); return; }
       }
-    }).catch((e: unknown) => {
-      setExportMsg('✗ ' + ((e as Error)?.message || String(e)));
+      let filename = name;
+      const hn = (handle as { name?: string } | null)?.name;
+      if (hn) filename = hn;
+      /* the native source frame, over black, and (photo) its alpha plane */
+      let alpha: Uint8Array | null = null;
+      if (k === 'image' && src) {
+        const blob = await sourceBlob(src.url);
+        work = await decodePhotoNative(blob);
+        const bmp = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+        const bw = bmp.width;
+        const bh = bmp.height;
+        try { alpha = await still.readAlpha(bmp, bw, bh); } finally { bmp.close(); } // null = opaque photo
+        if (alpha && (bw !== work.width || bh !== work.height)) alpha = null;
+      } else {
+        const v = k === 'video' ? inputVideoRef.current : camVideoRef.current;
+        const w = v?.videoWidth ?? 0;
+        const h = v?.videoHeight ?? 0;
+        if (!v || !w || !h || v.readyState < 2) throw new Error('the source has no frame yet');
+        work = document.createElement('canvas');
+        work.width = w; work.height = h;
+        const g = work.getContext('2d');
+        if (!g || work.width !== w || work.height !== h) throw new Error(`could not allocate a ${w}×${h} canvas`);
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, w, h);
+        g.drawImage(v, 0, 0, w, h);
+      }
+      const t0 = performance.now();
+      await chain.begin('still', work.width, work.height, undefined, null);
+      const res = await chain.frameAlpha(still, work, alpha, 0, 0);
+      const cw = res.colour.width;
+      const ch = res.colour.height;
+      let blob: Blob;
+      let hasAlpha = false;
+      if (format === 'jpeg') {
+        blob = await still.encodeJPEG(res.colour, still.jpegQuality(q));
+      } else {
+        let data: Uint8ClampedArray;
+        if (res.rgba) { data = res.rgba.data; hasAlpha = true; }
+        else {
+          const cg = res.colour.getContext('2d', { willReadFrequently: true });
+          if (!cg) throw new Error('could not read the result');
+          data = cg.getImageData(0, 0, cw, ch).data;
+        }
+        blob = format === 'png' ? await still.encodePNG(data, cw, ch, { alpha: hasAlpha }) : await still.encodePDF(data, cw, ch, { alpha: hasAlpha });
+      }
+      res.colour.width = res.colour.height = 0;
+      await still.save(blob, filename, handle);
+      const mode = format === 'jpeg' ? `RGB · q${q}` : hasAlpha ? 'RGBA (transparent)' : 'RGB';
+      notify(`✓ ${filename} · ${cw}×${ch} · ${mode} · ${(blob.size / 1048576).toFixed(1)} MB · ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+    })().catch((e: unknown) => {
+      const m = (e as Error)?.message || String(e);
+      notify(/abort/i.test(m) ? '✗ Export cancelled — nothing saved' : '✗ ' + m);
     }).finally(async () => {
       await chain.end(); // ALWAYS: every node that began gets its end()
+      if (work) { work.width = work.height = 0; work = null; }
       endExport();
     });
+  };
+
+  /** a click on one of the five panel buttons: start its job, or stop it (a still cannot be stopped) */
+  const stopExport = () => {
+    exportStopRef.current = true;
+    exportAbortRef.current?.abort();
+    void exportLiveRef.current?.stop();
+    setXpText('WRITING…');
+  };
+  const xpClick = (owner: XpOwner) => {
+    const cur = xpRef.current.owner;
+    if (cur) {
+      if (cur === owner && owner !== 'png' && owner !== 'jpeg' && owner !== 'pdf' && !exportStopRef.current) {
+        if (exportKindRef.current === 'video') { exportStopRef.current = true; exportAbortRef.current?.abort(); setXpText('STOPPING…'); }
+        else stopExport();
+      }
+      return;
+    }
+    if (owner === 'png' || owner === 'jpeg' || owner === 'pdf') { runStill(owner); return; }
+    const k = kindRef.current;
+    if (k === 'none') { notify('✗ needs a source (photo, video or webcam)'); return; }
+    const eng = window.SynExport;
+    if (!eng) { notify('loading the export engine — click again in a moment'); void loadSharedEngines().catch((e: Error) => notify('✗ ' + e.message)); return; }
+    if (owner === 'rec') { startLiveTake(eng, 'rec'); return; }
+    if (k === 'video') startOfflineVideo(eng);
+    else if (k === 'image') startPhotoMp4(eng);
+    else startLiveTake(eng, 'mp4');
   };
 
   /* ═══ the Gemini LabHandle (src/ai/contract.ts) on top of SynLab ═══════
@@ -2406,11 +2585,34 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
   }, []);
 
   /** open / close a block of the right column (several may be open: the column scrolls as one) */
-  const toggleBlock = (b: BlockId) => setOpenBlocks((prev) => {
-    const next = new Set(prev);
-    if (next.has(b)) next.delete(b); else next.add(b);
-    return next;
-  });
+  /** the EXPORT panel's last row scrolled into view (the column only); no-op when it already is */
+  const revealExport = () => {
+    const col = columnRef.current;
+    const xp = col?.querySelector<HTMLElement>('#lab-xp');
+    if (!col || !xp) return;
+    const over = xp.getBoundingClientRect().bottom + 12 - col.getBoundingClientRect().bottom;
+    if (over > 0) col.scrollTo({ top: col.scrollTop + over, behavior: 'smooth' });
+  };
+  /* a source loaded / nodes added while LABORATORY is open: the panel stays reachable without hunting for it */
+  useEffect(() => {
+    if (!openBlocksRef.current.has('laboratory')) return;
+    const id = window.setTimeout(revealExport, 500);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, chain.length]);
+  const toggleBlock = (b: BlockId) => {
+    if (b === 'laboratory' && !openBlocksRef.current.has('laboratory')) {
+      /* opening LABORATORY: the column (only it) scrolls so the EXPORT panel's last row (VIDEO) is in view */
+      const reveal = revealExport;
+      window.setTimeout(reveal, 80);
+      window.setTimeout(reveal, 450); // after the block's height has settled
+    }
+    setOpenBlocks((prev) => {
+      const next = new Set(prev);
+      if (next.has(b)) next.delete(b); else next.add(b);
+      return next;
+    });
+  };
   /** a node's block, opened and scrolled into view (the column is the only scroller that moves) */
   const focusNode = (id: ModuleId) => {
     setOpenBlocks((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
@@ -2498,14 +2700,6 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
       </button>
     );
   };
-  const exportTitle = exportKind === 'still' ? 'A PNG / JPEG / PDF is being written'
-    : exporting ? 'Stop the export (nothing is saved)'
-    : kind === 'video' ? 'Render the chain frame by frame (offline): every frame of the video, its exact frame rate and size, its sound — MP4'
-    : kind === 'none' ? 'The export needs a source'
-    : kind === 'webcam' ? 'Record the chain output as MP4 (realtime, the camera\'s native size) until you stop it, with the Lab audio'
-    : `Record ${STILL_TAKE_SEC} s of the chain output as MP4 (realtime), with the Lab audio`;
-  const stillTitle = (f: string) => kind === 'image' ? `Save the chain's result on the photo as ${f}, at the photo's native size, uncompressed / maximum quality` : `${f} needs a photo as the INPUT`;
-
   return (
     <div className="syn-fxlab" data-testid="chain-lab" data-theme={theme}>
       {/* ── the effects' top bar: the chain's names · INPUT · ENGINE · timer · FPS ── */}
@@ -2789,51 +2983,77 @@ const ChainLab = forwardRef<LabHandle, ChainLabProps>(function ChainLab(
                 <button type="button" className="fxl-seg fxl-lab-btn" data-testid="lab-reset" onClick={resetChain} disabled={chain.length === 0 || exporting} title="Every effect of the chain back to its initial values">
                   RESET VFX CHAIN
                 </button>
-                <button
-                  type="button"
-                  data-testid="chain-master"
-                  onClick={runMaster}
-                  disabled={(kind === 'none' && !exporting) || exportKind === 'still'}
-                  title={exportTitle}
-                  className={`fxl-seg fxl-lab-btn fxl-export${exporting ? ' on rec' : ''}`}
-                >
-                  {exporting ? (exportKind === 'still' ? 'WRITING…' : '■ STOP EXPORT') : 'EXPORT VFX CHAIN'}
-                </button>
-                <div className="fxl-seg-row" data-testid="chain-quality" role="group" aria-label="Export quality">
-                  {(['master', 'high'] as const).map((q) => (
-                    <button
-                      key={q}
-                      type="button"
-                      className={`fxl-seg${quality === q ? ' on' : ''}`}
-                      data-testid={`chain-quality-${q}`}
-                      disabled={exporting}
-                      onClick={() => setQuality(q)}
-                      title={q === 'master' ? 'MASTER: about 1 bit per pixel (H.264 High) — near lossless' : 'HIGH: smaller files'}
-                    >
-                      {q.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-                <div className="fxl-seg-row" data-testid="chain-stills" role="group" aria-label="Save a photo">
-                  {([['png', 'PNG'], ['jpeg', 'JPEG'], ['pdf', 'PDF']] as const).map(([f, label]) => (
-                    <button
-                      key={f}
-                      type="button"
-                      className="fxl-seg"
-                      data-testid={`chain-still-${f}`}
-                      disabled={exporting}
-                      onClick={() => runStill(f)}
-                      title={stillTitle(label)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {exportMsg && (
-                  <p data-testid="chain-export-msg" className={`fxl-lab-msg${exportMsg.startsWith('✗') ? ' err' : ''}`} title={exportMsg}>
-                    {exportMsg}
-                  </p>
-                )}
+                {/* EXPORT — the effects' panel (syn-panel.js): QUALITY · FOTO · VIDEO. No captions; the running job's
+                                  button lights up and carries the progress; results and errors go to the note. */}
+                              <div className="fxl-xp" data-testid="lab-export-panel" id="lab-xp">
+                                <div className="fxl-xp-row">
+                                  <span className="fxl-xp-lbl">QUALITY</span>
+                                  <input
+                                    type="range"
+                                    id="lab-q"
+                                    data-testid="lab-q"
+                                    className="fxl-tl-track"
+                                    min={0}
+                                    max={100}
+                                    step={1}
+                                    value={quality}
+                                    style={{ '--p': `${quality}%` } as React.CSSProperties}
+                                    disabled={exporting}
+                                    aria-label="Export quality"
+                                    onChange={(e) => setQuality(Number(e.target.value))}
+                                  />
+                                  <span className="fxl-xp-val" id="lab-q-val" data-testid="lab-q-val">{quality}</span>
+                                </div>
+                                <div className="fxl-xp-row">
+                                  <span className="fxl-xp-lbl">FOTO</span>
+                                  <div className="fxl-xp-btns">
+                                    {(['png', 'jpeg', 'pdf'] as const).map((f) => (
+                                      <button
+                                        key={f}
+                                        type="button"
+                                        id={`lab-still-${f}`}
+                                        data-testid={`lab-still-${f}`}
+                                        className={`fxl-seg fxl-xp-btn${xp.owner === f ? ' on' : ''}`}
+                                        disabled={xp.owner !== '' && xp.owner !== f}
+                                        onClick={() => xpClick(f)}
+                                        title={kind === 'image' ? `Save the chain's result on the photo as ${f.toUpperCase()}, at the photo's native size${f === 'jpeg' ? ' (quality = QUALITY)' : ' (lossless, true transparency)'}` : `Save the current frame as ${f.toUpperCase()}, at the source's native size`}
+                                      >
+                                        {xp.owner === f ? xp.text : f.toUpperCase()}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="fxl-xp-row">
+                                  <span className="fxl-xp-lbl">VIDEO</span>
+                                  <div className="fxl-xp-btns">
+                                    <button
+                                      type="button"
+                                      id="lab-rec-screen"
+                                      data-testid="lab-rec-screen"
+                                      className={`fxl-seg fxl-xp-btn${xp.owner === 'rec' ? ' on' : ''}`}
+                                      disabled={xp.owner !== '' && xp.owner !== 'rec'}
+                                      onClick={() => xpClick('rec')}
+                                      title="Record what the Lab shows, in real time, with its sound — move the parameters while it runs; click again to stop and save"
+                                    >
+                                      {xp.owner === 'rec' ? xp.text : 'REC SCREEN'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      id="lab-export-mp4"
+                                      data-testid="lab-export-mp4"
+                                      className={`fxl-seg fxl-xp-btn${xp.owner === 'mp4' ? ' on' : ''}`}
+                                      disabled={xp.owner !== '' && xp.owner !== 'mp4'}
+                                      onClick={() => xpClick('mp4')}
+                                      title={kind === 'video' ? 'Render the chain frame by frame (offline): every frame of the video, its exact frame rate and size, its sound'
+                                        : kind === 'image' ? 'Animated photo, offline, 30 fps, native size: click to start, click again to end (with a TRACK: as long as the track, audio-reactive)'
+                                        : kind === 'webcam' ? 'Record the chain output (realtime) until you stop it'
+                                        : 'The export needs a source'}
+                                    >
+                                      {xp.owner === 'mp4' ? xp.text : 'EXPORT MP4'}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
               </div>
             </div>
           </section>

@@ -348,6 +348,8 @@ const vertexShader = /* glsl */`
   uniform float uMinPt;   /* SYNTECH-EXPORT (render): smallest point in px; 0 = off (preview: the GPU's own 1 px floor) */
   uniform float uAspect;
   uniform bool  uMirrorX;
+  uniform sampler2D uMatte;   /* SYNTECH-EXPORT (matte): the photo's alpha, same size as the picture */
+  uniform float uMatteOn;     /* SYNTECH-EXPORT (matte): 1 = SynFx.matte pass (a point's value = the alpha at its sample), 0 = normal */
 
   varying vec3  vColor;
   varying float vAlpha;
@@ -456,6 +458,7 @@ const vertexShader = /* glsl */`
     vec3 idle_c = vec3(0.40+0.20*sin(aRnd*6.28), 0.65+0.15*cos(aRnd*3.14), 1.0);
     vColor  = mix(idle_c, col.rgb * uBrightness, t);
     vAlpha  = mix(0.80, clamp(luma*2.2, 0.0, 1.0), t);
+    if (uMatteOn > 0.5) vColor = vec3(texture2D(uMatte, vec2(tx, ty)).r); /* SYNTECH-EXPORT (matte): position / depth / size / alpha above are the COLOUR's; the value is the photo's alpha there */
 
     // ── Size ──────────────────────────────────────────────────────────────
     float ls = mix(1.0, 0.5 + luma*0.9, t);
@@ -473,6 +476,7 @@ const vertexShader = /* glsl */`
 const fragmentShader = /* glsl */`
   varying vec3  vColor;
   varying float vAlpha;
+  uniform float uMatteOn;   /* SYNTECH-EXPORT (matte) */
   void main() {
     if (vAlpha < 0.008) discard;
     vec2  uv   = gl_PointCoord - 0.5;
@@ -481,7 +485,7 @@ const fragmentShader = /* glsl */`
     float halo = 1.0 - smoothstep(0.25, 1.0,  d);
     float a    = core * 0.95 + halo * 0.18;
     if (a < 0.004) discard;
-    gl_FragColor = vec4(vColor * (1.0 + core * 0.8), a * vAlpha);
+    gl_FragColor = vec4(vColor * (uMatteOn > 0.5 ? 1.0 : 1.0 + core * 0.8), a * vAlpha); /* SYNTECH-EXPORT (matte): no added core light in the matte pass (was vColor * (1.0 + core * 0.8)) */
   }
 `;
 
@@ -518,6 +522,8 @@ const uniforms = {
   uMinPt:      { value: 0 },   /* SYNTECH-EXPORT (render) */
   uAspect:     { value: 16 / 9 },
   uMirrorX:    { value: false },
+  uMatte:      { value: new THREE.Texture() },   /* SYNTECH-EXPORT (matte) */
+  uMatteOn:    { value: 0 },                     /* SYNTECH-EXPORT (matte) */
 };
 
 const mat = new THREE.ShaderMaterial({
@@ -1080,6 +1086,20 @@ window.__synPointExp = {
     }
   },
   touchSrc() { if (_fxTex) _fxTex.needsUpdate = true; },
+  /* SynFx.matte: the same cloud (positions, depth, noise, size, point alpha all from the COLOUR picture still bound as uVideo)
+     but each point's value = the photo's alpha at its sample (cv: RGB = alpha) → R = M. No bloom, no core light; the
+     texture / flags / bloom strength are put back. Points on transparent pixels paint 0. Deterministic: same attributes. */
+  matte(cv) {
+    if (!cv || !_fxSave) return false;
+    const mt = new THREE.Texture(cv);
+    mt.minFilter = THREE.LinearFilter; mt.magFilter = THREE.LinearFilter; mt.format = THREE.RGBAFormat;
+    mt.flipY = false; mt.generateMipmaps = false; mt.needsUpdate = true;
+    const prevTex = uniforms.uMatte.value, bs = bloom.strength;
+    uniforms.uMatte.value = mt; uniforms.uMatteOn.value = 1; bloom.strength = 0;
+    try { composer.render(); }
+    finally { uniforms.uMatteOn.value = 0; uniforms.uMatte.value = prevTex; bloom.strength = bs; mt.dispose(); }
+    return true;
+  },
   limits() { const gl = renderer.getContext(), vp = gl.getParameter(gl.MAX_VIEWPORT_DIMS) || [0, 0];
     return { tex: gl.getParameter(gl.MAX_TEXTURE_SIZE), rb: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), vpw: vp[0], vph: vp[1], dbw: gl.drawingBufferWidth, dbh: gl.drawingBufferHeight }; },
 };
@@ -1343,6 +1363,15 @@ animate(0);
     try{ e.draw(0); }finally{ ctl.inside=false; }
     return Promise.resolve({canvas:cEl});                           /* read in this task: the canvas has no preserveDrawingBuffer */
   }
+  /* SynFx.matte(alphaSrc, i, t): M of the LAST frame() — the points exactly where frame() put them (the colour picture is
+     still the source texture, the clock is untouched), each worth the photo's alpha at its sample; R = M. Null → the
+     photo's own alpha. Read in this task like frame(). */
+  function fxMatte(alphaSrc){
+    var e=E(), ctl=window.__synExpCtl;
+    if(!fx||!e||!ctl) throw new Error('SynFx.matte called without begin');
+    if(cEl.width!==fx.w||cEl.height!==fx.h) throw new Error('the canvas was resized during the render');
+    return Promise.resolve(e.matte(alphaSrc)?{canvas:cEl}:null);
+  }
   function fxEnd(){
     var e=E(), f=fx; fx=null;
     if(!f) return;                                                  /* nothing begun (or begin refused): leave any real render alone */
@@ -1354,7 +1383,7 @@ animate(0);
   window.SynFx={
     version:1,
     outSize:function(w,h){ return {w:w,h:h}; },
-    begin:fxBegin, frame:fxFrame, end:fxEnd
+    begin:fxBegin, frame:fxFrame, matte:fxMatte, end:fxEnd
   };
 
   /* ───── photo export: PNG · JPEG · PDF (../shared/syn-still.js) at the photo's NATIVE size ─────

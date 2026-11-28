@@ -118,13 +118,19 @@
   75%  { border-color: color-mix(in srgb, var(--syn-fx-iri-4) 50%, transparent); }
   100% { border-color: color-mix(in srgb, var(--syn-fx-iri-1) 50%, transparent); }
 }
-/* the block headers' LED outline: violet → cyan → pink → amber, forever (operator, 2026-11-19) */
-@keyframes fxl-led {
-  0%   { border-color: var(--syn-fx-led-1); box-shadow: 0 0 6px var(--syn-fx-led-1), inset 0 0 4px color-mix(in srgb, var(--syn-fx-led-1) 40%, transparent); }
-  25%  { border-color: var(--syn-fx-led-2); box-shadow: 0 0 6px var(--syn-fx-led-2), inset 0 0 4px color-mix(in srgb, var(--syn-fx-led-2) 40%, transparent); }
-  50%  { border-color: var(--syn-fx-led-3); box-shadow: 0 0 6px var(--syn-fx-led-3), inset 0 0 4px color-mix(in srgb, var(--syn-fx-led-3) 40%, transparent); }
-  75%  { border-color: var(--syn-fx-led-4); box-shadow: 0 0 6px var(--syn-fx-led-4), inset 0 0 4px color-mix(in srgb, var(--syn-fx-led-4) 40%, transparent); }
-  100% { border-color: var(--syn-fx-led-1); box-shadow: 0 0 6px var(--syn-fx-led-1), inset 0 0 4px color-mix(in srgb, var(--syn-fx-led-1) 40%, transparent); }
+/* ONE LED colour for the whole Lab (operator 2026-11-28): the shell palette
+   violet -> cyan -> pink -> amber, equally spaced, linear, 6 s, interpolated
+   smoothly. Every LED-like element (block heads, video outline, brackets, the
+   line under the title) reads --fxl-c; the wall-clock phase is aligned by
+   src/lib/ledSync.ts, so all of them (and the effect iframes) show the same
+   colour at the same instant. */
+@property --fxl-c { syntax: '<color>'; inherits: true; initial-value: #8b5cf6; }
+@keyframes fxl-led-c {
+  0%   { --fxl-c: var(--syn-fx-led-1); }
+  25%  { --fxl-c: var(--syn-fx-led-2); }
+  50%  { --fxl-c: var(--syn-fx-led-3); }
+  75%  { --fxl-c: var(--syn-fx-led-4); }
+  100% { --fxl-c: var(--syn-fx-led-1); }
 }
 .syn-fxlab {
   /* the shell's LED palette (src/index.css --syn-led-1..4), with its values as fallbacks */
@@ -156,9 +162,9 @@
 }
 .syn-fxlab .fxl-topbar::after {
   content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px; pointer-events: none;
-  background: linear-gradient(90deg, var(--syn-fx-iri-1), var(--syn-fx-iri-2), var(--syn-fx-iri-3), var(--syn-fx-iri-4), var(--syn-fx-iri-5), var(--syn-fx-iri-1));
-  background-size: 300% 100%;
-  animation: fxl-topline 6s linear infinite;
+  background: var(--fxl-c);
+  box-shadow: 0 0 6px var(--fxl-c), 0 -1px 8px color-mix(in srgb, var(--fxl-c) 55%, transparent);
+  animation: fxl-led-c 6s linear infinite;
 }
 .syn-fxlab .fxl-topbar > * { position: relative; z-index: 1; }
 .syn-fxlab .fxl-logo {
@@ -221,21 +227,24 @@
 .syn-fxlab .fxl-wrap::before {
   content: ''; position: absolute; inset: -6px; pointer-events: none; z-index: 4;
   background:
-    linear-gradient(var(--syn-fx-frame), var(--syn-fx-frame)) top left / 20px 1px no-repeat,
-    linear-gradient(var(--syn-fx-frame), var(--syn-fx-frame)) top left / 1px 20px no-repeat,
-    linear-gradient(var(--syn-fx-frame), var(--syn-fx-frame)) top right / 20px 1px no-repeat,
-    linear-gradient(var(--syn-fx-frame), var(--syn-fx-frame)) top right / 1px 20px no-repeat,
-    linear-gradient(var(--syn-fx-frame), var(--syn-fx-frame)) bottom left / 20px 1px no-repeat,
-    linear-gradient(var(--syn-fx-frame), var(--syn-fx-frame)) bottom left / 1px 20px no-repeat,
-    linear-gradient(var(--syn-fx-frame), var(--syn-fx-frame)) bottom right / 20px 1px no-repeat,
-    linear-gradient(var(--syn-fx-frame), var(--syn-fx-frame)) bottom right / 1px 20px no-repeat;
-  animation: fxl-bracket 6s linear infinite;
+    linear-gradient(var(--fxl-br, var(--fxl-c)), var(--fxl-br, var(--fxl-c))) top left / 20px 1px no-repeat,
+    linear-gradient(var(--fxl-br, var(--fxl-c)), var(--fxl-br, var(--fxl-c))) top left / 1px 20px no-repeat,
+    linear-gradient(var(--fxl-br, var(--fxl-c)), var(--fxl-br, var(--fxl-c))) top right / 20px 1px no-repeat,
+    linear-gradient(var(--fxl-br, var(--fxl-c)), var(--fxl-br, var(--fxl-c))) top right / 1px 20px no-repeat,
+    linear-gradient(var(--fxl-br, var(--fxl-c)), var(--fxl-br, var(--fxl-c))) bottom left / 20px 1px no-repeat,
+    linear-gradient(var(--fxl-br, var(--fxl-c)), var(--fxl-br, var(--fxl-c))) bottom left / 1px 20px no-repeat,
+    linear-gradient(var(--fxl-br, var(--fxl-c)), var(--fxl-br, var(--fxl-c))) bottom right / 20px 1px no-repeat,
+    linear-gradient(var(--fxl-br, var(--fxl-c)), var(--fxl-br, var(--fxl-c))) bottom right / 1px 20px no-repeat;
+  animation: fxl-led-c 6s linear infinite;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--fxl-c) 60%, transparent));
+  opacity: .8;
 }
 /* #frame-outline: the iridescent border that breathes */
 .syn-fxlab .fxl-frame-outline {
   position: absolute; inset: -9px; pointer-events: none; z-index: 29;
-  border: 1px solid var(--syn-fx-frame);
-  animation: fxl-iri-border 6s linear infinite, fxl-glow 6s linear infinite;
+  border: 1px solid var(--fxl-c);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--fxl-c) 40%, transparent), 0 0 30px color-mix(in srgb, var(--fxl-c) 15%, transparent);
+  animation: fxl-led-c 6s linear infinite;
 }
 /* INPUT under OUTPUT, both filling the frame (the INPUT is laid out, never display:none: it feeds node 1) */
 .syn-fxlab .fxl-layer { position: absolute; inset: 0; z-index: 1; background: var(--syn-fx-stage); }
@@ -388,10 +397,11 @@
   display: flex; align-items: center; gap: 8px;
   width: calc(100% - 12px); margin: 6px 6px 0; padding: 12px 14px;
   background: var(--syn-fx-blk-bg); color: var(--syn-fx-blk-ink);
-  border: 1px solid var(--syn-fx-led-1); border-radius: 3px;
+  border: 1px solid var(--fxl-c); border-radius: 3px;
+  box-shadow: 0 0 6px var(--fxl-c), inset 0 0 4px color-mix(in srgb, var(--fxl-c) 40%, transparent);
   font-family: var(--syn-fx-mono); font-size: 11px; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; text-align: left;
   cursor: pointer;
-  animation: fxl-led 6s linear infinite;
+  animation: fxl-led-c 6s linear infinite;
 }
 .syn-fxlab .fxl-blk-head:focus-visible { outline: 1px solid var(--syn-fx-blk-ink); outline-offset: 2px; }
 .syn-fxlab .fxl-blk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -446,7 +456,7 @@
 .syn-fxlab .fxl-seg svg { flex-shrink: 0; }
 .syn-fxlab .fxl-export { color: var(--syn-fx-amber); border-color: color-mix(in srgb, var(--syn-fx-amber) 35%, transparent); }
 .syn-fxlab .fxl-export.rec { color: var(--syn-fx-red); border-color: color-mix(in srgb, var(--syn-fx-red) 45%, transparent); animation: none; }
-.syn-fxlab .fxl-lab-btn { flex: 0 0 auto; width: 100%; height: 30px; letter-spacing: 1.5px; }
+.syn-fxlab .fxl-lab-btn { flex: 0 0 auto; width: 100%; height: 27px; letter-spacing: 1.5px; }
 .syn-fxlab .fxl-input {
   flex: 1; min-width: 0; height: 27px; padding: 0 8px;
   background: color-mix(in srgb, var(--syn-fx-shade) 45%, transparent);
@@ -517,9 +527,9 @@
 .syn-fxlab[data-theme="day"] .fxl-fps { color: var(--syn-fx-day-t2); }
 .syn-fxlab[data-theme="day"] .fxl-fps b { color: var(--syn-fx-day-teal); text-shadow: none; }
 /* stage, day (the effects' day canvas area; the picture itself is never recoloured) */
-.syn-fxlab[data-theme="day"] { --syn-fx-frame: var(--syn-fx-day-accent-hi); }
+.syn-fxlab[data-theme="day"] { --syn-fx-frame: var(--syn-fx-day-accent-hi); --fxl-br: var(--syn-fx-day-accent-hi); }
 .syn-fxlab[data-theme="day"] .fxl-stage { background: var(--syn-fx-day-cream); }
-.syn-fxlab[data-theme="day"] .fxl-frame-outline { animation: none; box-shadow: 0 0 10px color-mix(in srgb, var(--syn-fx-day-accent-hi) 25%, transparent); }
+.syn-fxlab[data-theme="day"] .fxl-frame-outline { animation: none; border-color: var(--syn-fx-day-accent-hi); box-shadow: 0 0 10px color-mix(in srgb, var(--syn-fx-day-accent-hi) 25%, transparent); }
 .syn-fxlab[data-theme="day"] .fxl-wrap::after { border-color: color-mix(in srgb, var(--syn-fx-day-t4) 10%, transparent); }
 .syn-fxlab[data-theme="day"] .fxl-drop {
   background: radial-gradient(ellipse at 50% 40%, var(--syn-fx-day-bar-hi) 0%, var(--syn-fx-day-bar-lo) 100%);
@@ -705,5 +715,23 @@
 }
 .syn-fxlab[data-theme="day"] .fxl-cue-chip.on .fxl-cue-chip-dot { background: var(--syn-fx-day-accent-hi); box-shadow: 0 0 5px color-mix(in srgb, var(--syn-fx-day-accent-hi) 60%, transparent); }
 
+/* ═══ EXPORT panel (LABORATORY): QUALITY · FOTO · VIDEO — the same panel as the effects (syn-panel.js).
+   The five buttons are the app's segment button (.fxl-seg, off) and light up (.on) while their job runs;
+   disabled (another job runs) keeps the same look: all buttons have the same opacity. */
+.syn-fxlab .fxl-xp { display: flex; flex-direction: column; gap: 6px; }
+.syn-fxlab .fxl-xp-row { display: flex; align-items: center; gap: 8px; min-height: 27px; }
+.syn-fxlab .fxl-xp-lbl {
+  width: 52px; flex: 0 0 52px; font-size: 8px; letter-spacing: 1px; line-height: 1; color: var(--syn-fx-t2); text-transform: uppercase; white-space: nowrap;
+}
+.syn-fxlab .fxl-xp-btns { display: flex; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.syn-fxlab .fxl-xp-btn { letter-spacing: 1.5px; padding: 0 4px; font-size: 8.5px; }
+.syn-fxlab .fxl-xp-btn:disabled { opacity: 1; cursor: default; }
+.syn-fxlab .fxl-xp-val {
+  width: 28px; flex: 0 0 28px; text-align: right; font-size: 9px; letter-spacing: .5px; color: var(--syn-fx-t4); font-variant-numeric: tabular-nums;
+}
+.syn-fxlab .fxl-xp .fxl-tl-track:disabled { opacity: 1; cursor: default; }
+.syn-fxlab[data-theme="day"] .fxl-xp-lbl { color: var(--syn-fx-day-t2); }
+.syn-fxlab[data-theme="day"] .fxl-xp-val { color: var(--syn-fx-day-t4); }
+
 /* reduced motion: the LED outlines stand still (review 2026-11-20) */
-@media (prefers-reduced-motion: reduce) { .syn-fxlab .fxl-blk-head { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .syn-fxlab .fxl-blk-head, .syn-fxlab .fxl-topbar::after, .syn-fxlab .fxl-frame-outline, .syn-fxlab .fxl-wrap::before { animation: none; } }

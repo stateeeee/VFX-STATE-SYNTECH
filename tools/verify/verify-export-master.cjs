@@ -199,6 +199,14 @@ async function openEffect(fixName) {
   return { page, ctx, errs, src: p };
 }
 async function setQuality(page, q) {
+  /* the EXPORT panel (syn-panel.js) owns QUALITY now: the #syn-q slider 0-100 (master = 100, high = 60) */
+  const n = q === 'master' ? 100 : q === 'high' ? 60 : Number(q);
+  const viaPanel = await page.evaluate((n) => {
+    const r = document.getElementById('syn-q'); if (!r) return false;
+    r.value = String(n); r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }, n);
+  if (viaPanel) { info(`QUALITY slider set to ${n}`); return; }
   const r = await page.evaluate((q) => {
     const el = document.getElementById('sel-render-q'); if (!el) return 'missing';
     if (el.tagName === 'SELECT') { el.value = q; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); return 'select'; }
@@ -211,7 +219,7 @@ const flat = (page) => page.evaluate(() => { P.letterbox = 0; P.barrel = 0; P.ca
 async function renderToFile(page, outName, { timeout = TIMEOUT } = {}) {
   await page.evaluate(() => { window.__synExportLast = null; });
   const dl = page.waitForEvent('download', { timeout }).catch(() => null);
-  await page.click('#btn-render');
+  await page.evaluate(() => document.getElementById('btn-render').click()); /* the EXPORT panel hides #btn-render: JS click */
   const t0 = Date.now(); let lastLog = 0;
   for (;;) {
     const st = await page.evaluate(() => ({ busy: !!window.__synExportBusy, last: window.__synExportLast || null, msg: (document.getElementById('render-msg') || document.getElementById('export-msg') || {}).textContent || '' }));
@@ -259,7 +267,7 @@ async function checkOutput(tag, r, srcInfo, opts) {
     const an = analyseSeq(seq, srcInfo.frames);
     check(an.ok, `${tag}: barcode sequence 0..${srcInfo.frames - 1} (${an.n} decoded, dups=${an.dups}, gaps=${an.gaps}${an.firstBad >= 0 ? ', first mismatch at output frame ' + an.firstBad + ' = ' + seq[an.firstBad] : ''})`);
   }
-  return { bpp };
+  return { bpp, quality: last && last.quality, cfgBitrate: last && last.bitrate };
 }
 
 const results = {};
@@ -284,11 +292,11 @@ async function runStop() {
     await page.evaluate(() => { const v = document.querySelector('video'); try { v.loop = true; v.play(); } catch (_) {} });
     let downloads = 0; page.on('download', () => downloads++);
     await page.evaluate(() => { window.__synExportLast = null; });
-    await page.click('#btn-render');
+    await page.evaluate(() => document.getElementById('btn-render').click()); /* the EXPORT panel hides #btn-render: JS click */
     await page.waitForFunction(() => window.__synExportBusy === true, null, { timeout: 30000 }).catch(() => {});
     check(await page.evaluate(() => window.__synExportBusy === true), `${tag}: __synExportBusy true while rendering`);
     await sleep(2000);
-    await page.click('#btn-render');
+    await page.evaluate(() => document.getElementById('btn-render').click()); /* the EXPORT panel hides #btn-render: JS click */
     await page.waitForFunction(() => !window.__synExportBusy && window.__synExportLast, null, { timeout: 120000 });
     const last = await page.evaluate(() => window.__synExportLast);
     check(last && last.stopped === true, `${tag}: __synExportLast.stopped === true (${JSON.stringify(last)})`);
@@ -327,7 +335,13 @@ async function main() {
       if (r) {
         check(r.bpp > 0, `high: bpp ${r.bpp.toFixed(3)}`);
         const m = results.f25 || results.master;
-        if (m) check(r.bpp < m.bpp, `high: bpp ${r.bpp.toFixed(3)} < master bpp ${m.bpp.toFixed(3)}`); else info('no master bpp in this run to compare (run f25 too)');
+        if (m) {
+          /* the CONFIGURED encoder target must be lower for high (60) than master (100); the ACTUAL bpp of this near-static
+             barcode fixture saturates OpenH264's minimum QP at both (same 0.012 bpp), so it can only be <= */
+          check(m.quality === 100 && r.quality === 60, `high: quality master=${m.quality} high=${r.quality} (expect 100 / 60)`);
+          check(r.cfgBitrate < m.cfgBitrate, `high: configured bitrate ${r.cfgBitrate} < master ${m.cfgBitrate}`);
+          check(r.bpp <= m.bpp, `high: actual bpp ${r.bpp.toFixed(3)} <= master bpp ${m.bpp.toFixed(3)} (static fixture saturates both)`);
+        } else info('no master bpp in this run to compare (run f25 too)');
       }
     });
   } finally { await browser.close(); srv.close(); }

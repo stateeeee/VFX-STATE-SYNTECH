@@ -8115,7 +8115,9 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
         for(var w=0;w<STILL_WARM;w++){ fxFill(); pass(t-(STILL_WARM-1-w)/60); }
       }
       compose(expCtx,c.W,c.H,false);                                           /* same task as the draw: #glC is still readable */
-      return {canvas:expCv};
+      /* SYNTECH-EXPORT: THERMAL recolours the black the photo sits on (a transparent logo gets a blue field): U must not turn it back
+         into alpha → unmult:false, the photo's own alpha is the matte (13-EXPORT-PANEL §3). Every other mode keeps U (HUD / glow survive). */
+      return {canvas:expCv, unmult:!FX.thermal};
     },
     end:function(){
       var c=fx; fx=null;
@@ -8133,6 +8135,8 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
     }
   };
 
+  /* SYNTECH-EXPORT: no SynFx.matte on purpose (13-EXPORT-PANEL §3) — the photo is drawn UNdisplaced on black and only HUD overlays
+     are added (measured on a 1920×1080 logo PNG: 0 % black inside, 0.76 % of the outside carries HUD alpha via U, as wanted). */
   /* ── PNG · JPEG · PDF of a loaded photo (SynStill) ── */
   var stillFile=null;
   $('fi-i').addEventListener('change',function(e){ var f=e.target.files&&e.target.files[0]; if(f) stillFile=f; },true);

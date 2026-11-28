@@ -46,7 +46,7 @@ export interface SynExportApi {
     audioFile?: Blob | Promise<Blob | null> | null;
     audioLoop?: boolean;
     audio?: boolean;
-    quality?: 'master' | 'high';
+    quality?: number;
     signal?: AbortSignal;
     useFilePicker?: boolean;
     filename?: string;
@@ -56,11 +56,33 @@ export interface SynExportApi {
     finish?: (result: SynExportResult | null) => void | Promise<void>;
     onProgress?: (i: number, total: number, phase: string, info: { speed: number; eta: number; width: number; height: number }) => void;
   }): Promise<SynExportResult>;
+  /** offline frame SEQUENCE without a source video (13-EXPORT-PANEL §2.3): frames N = exact length (audioFile muxed),
+   *  null = open-ended (stop() fixes the length at the wall time, paced ≤ realtime) */
+  renderSequence(opts: {
+    getFrame: (i: number, t: number) => Promise<SynRegion> | SynRegion;
+    fps?: number;
+    width?: number;
+    height?: number;
+    frames?: number | null;
+    audioFile?: Blob | Promise<Blob | null> | null;
+    audioLoop?: boolean;
+    quality?: number;
+    signal?: AbortSignal;
+    useFilePicker?: boolean;
+    filename?: string;
+    prepare?: () => void | Promise<void>;
+    finish?: (result: SynExportResult | null) => void | Promise<void>;
+    onProgress?: (done: number, total: number | null, phase: string, info: { speed: number; elapsed: number; target: number | null; width: number; height: number }) => void;
+  }): { stop(): Promise<SynExportResult>; abort(): Promise<SynExportResult>; done: Promise<SynExportResult> };
+  decodeFileAudio(blob: Blob, rate?: number): Promise<{ duration: number } | null>;
+  normQuality(q: unknown): number;
+  storedQuality(): number;
   recordLive(opts: {
     getCanvas: () => SynRegion | HTMLCanvasElement;
     fps?: number;
     audioStream?: MediaStream | null;
-    quality?: 'master' | 'high';
+    quality?: number;
+    fileHandle?: unknown;
     useFilePicker?: boolean;
     filename?: string;
     onProgress?: (sec: number, info: { frames: number; dropped: number; width: number; height: number }) => void;
@@ -79,7 +101,18 @@ export interface SynStillResult {
   error?: string;
 }
 
+export interface SynRgba { data: Uint8ClampedArray; width: number; height: number }
+
 export interface SynStillApi {
+  encodePNG(rgba: Uint8ClampedArray, w: number, h: number, o: { alpha: boolean; signal?: AbortSignal; onProgress?: (f: number) => void }): Promise<Blob>;
+  encodeJPEG(canvas: HTMLCanvasElement, quality: number): Promise<Blob>;
+  encodePDF(rgba: Uint8ClampedArray, w: number, h: number, o: { alpha: boolean; signal?: AbortSignal; onProgress?: (f: number) => void }): Promise<Blob>;
+  readAlpha(source: ImageBitmap | HTMLImageElement, w: number, h: number, rect?: { x: number; y: number; w: number; h: number }): Promise<Uint8Array | null>;
+  combineAlpha(c: SynRgba, m: SynRgba | Uint8Array | null, o?: { floor?: number; unmult?: boolean; gate?: boolean; inPlace?: boolean }): { data: Uint8ClampedArray; width: number; height: number; hasAlpha: boolean };
+  makeAlphaSource(src: HTMLCanvasElement | ImageBitmap | Uint8Array, w?: number, h?: number): HTMLCanvasElement;
+  jpegQuality(q: number): number;
+  pickFile(filename: string, format: 'png' | 'jpeg' | 'pdf'): Promise<unknown>;
+  save(blob: Blob, filename: string, handle?: unknown): Promise<void>;
   exportStill(opts: {
     format: 'png' | 'jpeg' | 'pdf';
     render: () => Promise<SynFxRegion & { alphaRect?: { x: number; y: number; w: number; h: number } }>;
@@ -253,6 +286,109 @@ export class OfflineChain {
       cur = { canvas: r.canvas, sx: r.sx, sy: r.sy, sw: r.sw, sh: r.sh, alphaRect: r.alphaRect };
     }
     return cur;
+  }
+
+  /** ALPHA v2 (13-EXPORT-PANEL §3), still mode: like frame(), but the transparency travels along the chain.
+   *  `alpha` = the source's alpha plane (width × height bytes) or null for an opaque source (then no alpha work at
+   *  all). Each node: C = its frame() (premultiplied: the picture over black); M = its SynFx.matte() fed with the
+   *  previous A (makeAlphaSource), else the previous A placed through the node's alphaRect; A = max(M, U) with
+   *  combineAlpha. The next node gets C as its picture and A as its alpha. Returns the LAST node's C (opaque, over
+   *  black: JPEG) and its straight-alpha RGBA (PNG / PDF; null = opaque). */
+  async frameAlpha(still: SynStillApi, src: HTMLCanvasElement, alpha: Uint8Array | null, i: number, t: number): Promise<{ colour: HTMLCanvasElement; rgba: { data: Uint8ClampedArray; width: number; height: number; hasAlpha: boolean } | null }> {
+    let colour = src;
+    let plane = alpha;
+    let planeW = src.width, planeH = src.height;   /* the plane's own size travels with it */
+    /* the previous alpha as a need.w × need.h alpha source, whatever size the plane has */
+    const alphaFor = (pl: Uint8Array, w: number, h: number): HTMLCanvasElement => {
+      if (planeW === w && planeH === h) return still.makeAlphaSource(pl, w, h);
+      const own = still.makeAlphaSource(pl, planeW, planeH);
+      /* plain 2D scale: own is opaque with RGB = alpha (makeAlphaSource would read its A = 255) */
+      const sc = document.createElement('canvas'); sc.width = w; sc.height = h;
+      const g = sc.getContext('2d')!; g.imageSmoothingQuality = 'high';
+      g.drawImage(own, 0, 0, w, h);
+      own.width = 0;
+      return sc;
+    };
+    let rgba: { data: Uint8ClampedArray; width: number; height: number; hasAlpha: boolean } | null = null;
+    for (let k = 0; k < this.began.length; k++) {
+      const node = this.began[k];
+      const need = this.sizes[k];
+      let input = colour;
+      if (colour.width !== need.w || colour.height !== need.h) {
+        let hop = this.hops[k];
+        if (!hop) { hop = document.createElement('canvas'); this.hops[k] = hop; }
+        if (hop.width !== need.w || hop.height !== need.h) { hop.width = need.w; hop.height = need.h; }
+        const hg = hop.getContext('2d');
+        if (!hg) throw new Error('could not allocate a hop canvas');
+        hg.drawImage(colour, 0, 0, need.w, need.h);
+        input = hop;
+      }
+      const r = await node.fx.frame(input, i, t);
+      if (!r || !r.canvas) throw new Error(`${node.name} returned no frame`);
+      const sw = r.sw ?? r.canvas.width;
+      const sh = r.sh ?? r.canvas.height;
+      /* copy C NOW (same task: a WebGL canvas may lose its buffer), over black */
+      const cc = document.createElement('canvas');
+      cc.width = sw; cc.height = sh;
+      const cg = cc.getContext('2d', { willReadFrequently: true });
+      if (!cg || cc.width !== sw || cc.height !== sh) throw new Error(`could not allocate a ${sw}×${sh} canvas`);
+      cg.fillStyle = '#000';
+      cg.fillRect(0, 0, sw, sh);
+      cg.drawImage(r.canvas, r.sx ?? 0, r.sy ?? 0, sw, sh, 0, 0, sw, sh);
+      if (!plane) { colour = cc; rgba = null; continue; }
+      /* M: the geometric alpha of this node */
+      let m: Uint8Array | null = null;
+      const fxm = node.fx as SynFxApi & { matte?: (a: HTMLCanvasElement, i: number, t: number) => Promise<SynFxRegion> | SynFxRegion };
+      if (typeof fxm.matte === 'function') {
+        const a = alphaFor(plane, need.w, need.h);
+        const mr = await fxm.matte(a, i, t);
+        if (mr && mr.canvas) {
+          const mc = document.createElement('canvas');
+          mc.width = sw; mc.height = sh;
+          const mg = mc.getContext('2d', { willReadFrequently: true });
+          if (!mg) throw new Error('could not allocate a matte canvas');
+          mg.fillStyle = '#000';
+          mg.fillRect(0, 0, sw, sh);
+          mg.drawImage(mr.canvas, mr.sx ?? 0, mr.sy ?? 0, mr.sw ?? mr.canvas.width, mr.sh ?? mr.canvas.height, 0, 0, sw, sh);
+          const md = mg.getImageData(0, 0, sw, sh).data;
+          m = new Uint8Array(sw * sh);
+          for (let p = 0, o = 0; p < m.length; p++, o += 4) m[p] = md[o];
+          mc.width = 0;
+        }
+      }
+      if (!m) {
+        /* no matte: the previous A placed where the picture sits in this node's region (outside it = opaque, the
+           letterbox bars stay opaque); a same-size node simply keeps it */
+        const ar = r.alphaRect ?? null;
+        if (!ar && sw === need.w && sh === need.h && planeW === sw && planeH === sh) m = plane;
+        else {
+          const a = alphaFor(plane, need.w, need.h);
+          const mc = document.createElement('canvas');
+          mc.width = sw; mc.height = sh;
+          const mg = mc.getContext('2d', { willReadFrequently: true });
+          if (!mg) throw new Error('could not allocate a matte canvas');
+          mg.fillStyle = '#fff';
+          mg.fillRect(0, 0, sw, sh);
+          mg.imageSmoothingQuality = 'high';
+          if (ar) mg.drawImage(a, 0, 0, need.w, need.h, ar.x, ar.y, ar.w, ar.h);
+          else mg.drawImage(a, 0, 0, need.w, need.h, 0, 0, sw, sh);
+          const md = mg.getImageData(0, 0, sw, sh).data;
+          m = new Uint8Array(sw * sh);
+          for (let p = 0, o = 0; p < m.length; p++, o += 4) m[p] = md[o];
+          mc.width = 0;
+          a.width = 0;
+        }
+      }
+      const img = cg.getImageData(0, 0, sw, sh);
+      const res = still.combineAlpha(img, m, { unmult: (r as { unmult?: boolean }).unmult !== false });
+      const np = new Uint8Array(sw * sh);
+      for (let p = 0, o = 3; p < np.length; p++, o += 4) np[p] = res.data[o];
+      plane = np;
+      planeW = sw; planeH = sh;
+      rgba = res;
+      colour = cc;
+    }
+    return { colour, rgba: rgba && rgba.hasAlpha ? rgba : null };
   }
 
   /** ALWAYS: end() on every node that began; every error is swallowed so all of them get their turn */

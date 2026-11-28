@@ -87,7 +87,7 @@ function validateMp4(bytes) {
   await en.click('[data-testid="nodal-add-analog"]');
   await en.setInputFiles('[data-testid="chain-file"]', path.join(SCRATCH, 'short360.webm'));
   await en.waitForTimeout(2500);
-  const exportBtn = '[data-testid="chain-master"]';
+  const exportBtn = '[data-testid="lab-export-mp4"]';
   const hasBtn = await en.$(exportBtn);
   if (hasBtn) {
     await en.click(exportBtn);
@@ -95,7 +95,7 @@ function validateMp4(bytes) {
     let msg = '';
     for (let i = 0; i < 120; i++) {
       await en.waitForTimeout(1000);
-      msg = await en.evaluate(() => { const el = document.querySelector('[data-testid="chain-export-msg"]'); return el ? el.textContent : ''; });
+      msg = await en.evaluate(() => { const l = window.__synExportLast; return l && !document.querySelector('#lab-export-mp4.on') ? (l.error || l.cancelled ? '✗ ' + JSON.stringify(l) : '✓ ' + (l.filename || '')) : ''; });
       if (/^✓|^✗/.test(msg)) break;
     }
     const ok = msg.startsWith('✓');

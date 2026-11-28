@@ -946,6 +946,9 @@ allocPlate();
     end:function(){ fxRestore(); }
   };
 
+  /* SYNTECH-EXPORT: no SynFx.matte on purpose (13-EXPORT-PANEL §3) — in still mode the camera layer samples the photo at u
+     (INVISIBLE state settled: tS=-1e9 → no shockwave; mirror is false for images), wobble / refraction only move the plate / chrome
+     colours, so the photo's own alpha IS the geometric matte; chrome ribbons beyond it return through U. */
   /* PNG · JPEG · PDF of a loaded photo (SynStill, ../shared/syn-still.js): native resolution, photo alpha kept. */
   var imgName='photo';
   document.addEventListener('change',function(e){ if(e.target&&e.target.id==='fi1'&&e.target.files&&e.target.files[0]) imgName=e.target.files[0].name; },true);

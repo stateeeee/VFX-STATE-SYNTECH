@@ -48,6 +48,16 @@
   66%  { box-shadow:0 0 12px rgba(200,100,255,.8),0 0 28px rgba(200,100,255,.3); }
   100% { box-shadow:0 0 12px rgba(200,160,0,.8),0 0 28px rgba(200,160,0,.3); }
 }
+/* LED colour shared with the Lab (operator 2026-11-28): violet -> cyan -> pink -> amber,
+   equally spaced, linear, 6 s; phase aligned to the wall clock by syn-chrome.js */
+@property --syn-c { syntax:'<color>'; inherits:true; initial-value:#8b5cf6; }
+@keyframes syn-led-c {
+  0%   { --syn-c:#8b5cf6; }
+  25%  { --syn-c:#22d3ee; }
+  50%  { --syn-c:#ec4899; }
+  75%  { --syn-c:#e8c000; }
+  100% { --syn-c:#8b5cf6; }
+}
 @keyframes bracket-pulse {
   0%,100% { opacity:.55; filter:drop-shadow(0 0 5px rgba(200,160,0,.5)); }
   33%      { opacity:.7;  filter:drop-shadow(0 0 8px rgba(100,180,255,.6)); }
@@ -136,8 +146,8 @@ body {
 }
 #topbar::after {
   content:''; position:absolute; bottom:0; left:0; right:0; height:1px;
-  background:linear-gradient(90deg,#e8c000,#80c8ff,#c080ff,#ff90c0,#80ffcc,#e8c000);
-  background-size:300% 100%; animation:topline-shift 6s linear infinite; pointer-events:none;
+  background:var(--syn-c); box-shadow:0 0 6px var(--syn-c),0 -1px 8px color-mix(in srgb,var(--syn-c) 55%,transparent);
+  animation:syn-led-c 6s linear infinite; pointer-events:none;
 }
 #topbar > * { position:relative; z-index:1; }
 
@@ -191,22 +201,24 @@ body {
 #canvas-wrap::before {
   content:''; position:absolute; inset:-6px;
   background:
-    linear-gradient(var(--amber),var(--amber)) top left    / 20px 1px no-repeat,
-    linear-gradient(var(--amber),var(--amber)) top left    / 1px 20px no-repeat,
-    linear-gradient(var(--amber),var(--amber)) top right   / 20px 1px no-repeat,
-    linear-gradient(var(--amber),var(--amber)) top right   / 1px 20px no-repeat,
-    linear-gradient(var(--amber),var(--amber)) bottom left / 20px 1px no-repeat,
-    linear-gradient(var(--amber),var(--amber)) bottom left / 1px 20px no-repeat,
-    linear-gradient(var(--amber),var(--amber)) bottom right/ 20px 1px no-repeat,
-    linear-gradient(var(--amber),var(--amber)) bottom right/ 1px 20px no-repeat;
+    linear-gradient(var(--syn-c),var(--syn-c)) top left    / 20px 1px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) top left    / 1px 20px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) top right   / 20px 1px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) top right   / 1px 20px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) bottom left / 20px 1px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) bottom left / 1px 20px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) bottom right/ 20px 1px no-repeat,
+    linear-gradient(var(--syn-c),var(--syn-c)) bottom right/ 1px 20px no-repeat;
   pointer-events:none; z-index:3;
-  animation:bracket-pulse 6s linear infinite;
+  animation:syn-led-c 6s linear infinite;
+  filter:drop-shadow(0 0 6px color-mix(in srgb,var(--syn-c) 60%,transparent)); opacity:.8;
 }
 #res-tag { position:absolute; top:8px; left:8px; font-size:8px; letter-spacing:1px; color:var(--t2); pointer-events:none; z-index:4; opacity:.6; }
 #frame-outline {
   position:absolute; inset:-9px; pointer-events:none; z-index:29;
-  border:1px solid var(--amber);
-  animation:iri-border 6s linear infinite, iri-glow 6s linear infinite;
+  border:1px solid var(--syn-c);
+  box-shadow:0 0 12px color-mix(in srgb,var(--syn-c) 40%,transparent),0 0 30px color-mix(in srgb,var(--syn-c) 15%,transparent);
+  animation:syn-led-c 6s linear infinite;
 }
 
 /* Drop overlay — identica a blob */

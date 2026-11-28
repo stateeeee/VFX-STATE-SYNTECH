@@ -3586,6 +3586,22 @@ document.querySelector('.chip').classList.add('on');
       var c=_expComputeCrop();
       return c?{canvas:cv, sx:0, sy:c.sy, sw:c.ew, sh:c.eh}:{canvas:cv};
     },
+    /* ALPHA v2 matte (docs/workflow/13-EXPORT-PANEL.md §3): the photo's alpha drawn through THE SAME geometry as the last
+       frame() — letterbox crop, squeeze, breathing, barrel, CA offsets, Bokeh-MM blur (mask kept from frame()) — with every
+       colour / light parameter at its identity value (grade, exposure, halation, bloom, grain, vignette, flare, LUT), so the
+       R channel of the canvas is M. P is restored in finally; nothing is fed into any history buffer. */
+    matte:function(alphaSrc,i,t){
+      var ctl=window.__synExpCtl;
+      if(!fx||!ctl) throw new Error('SynFx.matte without begin');
+      fxSrc(alphaSrc,fx.w,fx.h);
+      var NEUTRAL={temp:0,lift:0,contrast:0,sat:1,rolloff:0,halation:0,grain:0,bokeh:0,vignette:0,flare:0,flareMaster:0,flareAmt:0,exposure:0,lutMix:0};
+      var keep={}, k;
+      for(k in NEUTRAL){ keep[k]=P[k]; P[k]=NEUTRAL[k]; }
+      ctl.inside=true;
+      try{ render(); }finally{ ctl.inside=false; for(k in keep) P[k]=keep[k]; }
+      var c=_expComputeCrop();
+      return c?{canvas:cv, sx:0, sy:c.sy, sw:c.ew, sh:c.eh}:{canvas:cv};
+    },
     end:function(){
       if(!fx) return;
       var s=fx; fx=null;

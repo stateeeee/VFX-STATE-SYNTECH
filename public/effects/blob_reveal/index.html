@@ -948,7 +948,7 @@ body{background:var(--bg);color:var(--text-hi);font-family:var(--mono);font-size
 
     <!-- EXPORT -->
     <div class="section">
-      <div class="sec-head closed" data-sec="export"><div class="sec-mark"></div><div class="sec-title">Export / REC</div><div class="sec-chevron">▼</div></div>
+      <div class="sec-head closed" data-sec="export"><div class="sec-mark"></div><div class="sec-title">Export</div><!-- SYNTECH-UNIFORM: the Export panel reads "Export" everywhere (was "Export / REC") --><div class="sec-chevron">▼</div></div>
       <div class="sec-body hidden" id="sec-export">
         <button class="fs-btn" id="btn-fs">⛶&nbsp;&nbsp;FULLSCREEN</button>
         <button class="rec-btn" id="rec-btn"><div class="rec-dot"></div><span>REC</span></button>
@@ -2504,9 +2504,32 @@ syncSourceUI(); // SYNTECH-SOURCE: LEDs reflect the real initial state (loop on,
       var wasPaused=paused, was=srcImg; paused=false; srcImg=f.src;   /* the renderer reads activeSrc() = srcImg||vid */
       ctl.inside=true;
       try{ frame(); }finally{ ctl.inside=false; paused=wasPaused; srcImg=was; }
+      f.subj=!!(segEnabled&&lastMaskBitmap);                   /* SYNTECH-EXPORT: drawSubject() ran for this frame (matte() mirrors it) */
       return {canvas:dc};
     },
-    end:function(){ fxRestore(); }
+    /* SYNTECH-EXPORT: geometric alpha M of the last frame() (docs/workflow/13-EXPORT-PANEL.md §3). The effect hides the photo
+       on black outside the blob rects / subject mask: those areas are NOT part of the picture, so M = the photo's alpha
+       through the SAME geometry — the blob layer (#c-blob: the photo clipped to the audio-expanded blob rects) over the
+       subject cut (#c-sub: the photo through the eroded / feathered mask, × Opacity). Both canvases still hold the last
+       frame()'s pixels (the live loop idles), so nothing is recomputed and no live state is touched. R = M. */
+    matte:function(alphaSrc,i,t){
+      var f=fx; if(!f) return null;
+      var w=f.w, h=f.h, m=f.mcv||(f.mcv=document.createElement('canvas'));
+      m.width=w; m.height=h;
+      var mx=m.getContext('2d'); mx.fillStyle='#000'; mx.fillRect(0,0,w,h);
+      var tc=document.createElement('canvas'); tc.width=w; tc.height=h;
+      var tx=tc.getContext('2d');
+      function white(layer,a){
+        tx.globalCompositeOperation='source-over'; tx.clearRect(0,0,w,h); tx.drawImage(layer,0,0,w,h);
+        tx.globalCompositeOperation='source-in'; tx.fillStyle='#fff'; tx.fillRect(0,0,w,h);   /* alpha → white × alpha */
+        mx.globalAlpha=a; mx.drawImage(tc,0,0); mx.globalAlpha=1;
+      }
+      white(cBlob,1);
+      if(f.subj) white(cSub,P.opacity);
+      tc.width=0;
+      return {canvas:m};
+    },
+    end:function(){ if(fx&&fx.mcv){ fx.mcv.width=0; fx.mcv=null; } fxRestore(); }
   };
 
   /* PNG · JPEG · PDF of a loaded photo (SynStill, ../shared/syn-still.js): native resolution, photo alpha kept. */

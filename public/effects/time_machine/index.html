@@ -3037,6 +3037,77 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
     fitCanvas();
     if(fxLocal){ fxLocal.width=fxLocal.height=0; }
   }
+  /* ── SYNTECH-MATTE (docs/workflow/13-EXPORT-PANEL.md §3) — SynFx.matte: the alpha M through the SAME time displacement ──
+     The colour reads each pixel from a delayed layer of its frame cache, the delay coming from the time map. The alpha
+     keeps its OWN frame cache (an R8 texture array, same layout: size, layer count, write index) that matte() fills with
+     alphaSrc at exactly the layers frame() wrote, and is read by the effect's OWN displacement program (PD) with the SAME
+     map (mapFBO of the last frame()), offsets, interpolation and MIX — only the bound textures differ (R = M).
+     Lab: matte() must be called after EVERY frame() (like the colour cache, the alpha ring advances once per call).
+     Output: a 2D canvas, R = M, opaque, the full frame {canvas}. The effect's cache / FBOs / state are never touched. */
+  var MT=null;
+  function fxMatteFree(){
+    if(!MT) return;
+    try{
+      gl.deleteTexture(MT.ring); gl.deleteFramebuffer(MT.fb); gl.deleteTexture(MT.src);
+      gl.deleteFramebuffer(MT.out.fb); gl.deleteTexture(MT.out.tex);
+    }catch(e){}
+    MT=null;
+  }
+  function fxMatte(alphaSrc){
+    if(!SF||!SF.mt||!alphaSrc||!cacheTex) return null;
+    var w=SF.w, h=SF.h, key=CW+'x'+CH+'x'+CN+'/'+w+'x'+h, k, rec=SF.mt;
+    if(MT&&MT.key!==key) fxMatteFree();
+    if(!MT){
+      var ring=gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY,ring);
+      gl.texStorage3D(gl.TEXTURE_2D_ARRAY,1,gl.R8,CW,CH,CN);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      if(gl.getError()!==gl.NO_ERROR){ gl.deleteTexture(ring); return null; }
+      MT={key:key,ring:ring,fb:gl.createFramebuffer(),src:gl.createTexture(),out:mkFBO(w,h),cv:null};
+      initTex(MT.src);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,MT.fb); gl.viewport(0,0,CW,CH); gl.clearColor(0,0,0,1);
+      for(k=0;k<CN;k++){ gl.framebufferTextureLayer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,ring,0,k); gl.clear(gl.COLOR_BUFFER_BIT); }
+    }
+    /* the alpha picture (R = M), same upload as videoTex */
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,MT.src);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,alphaSrc);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+    /* the alpha ring gets the layers the colour ring got */
+    gl.bindFramebuffer(gl.FRAMEBUFFER,MT.fb); gl.viewport(0,0,CW,CH);
+    gl.useProgram(PP); gl.uniform1i(UP.u_tex,0); bindQ();
+    rec.writes.forEach(function(idx){
+      gl.framebufferTextureLayer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,MT.ring,0,idx);
+      gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    });
+    /* the displacement: PD with the alpha ring / alpha picture instead of the colour ring / picture */
+    var M=modulated();
+    gl.bindFramebuffer(gl.FRAMEBUFFER,MT.out.fb); gl.viewport(0,0,w,h);
+    gl.useProgram(PD);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D_ARRAY,MT.ring); gl.uniform1i(UD.u_cache,0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,mapFBO.tex);    gl.uniform1i(UD.u_map,1);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,MT.src);        gl.uniform1i(UD.u_src,2);
+    var lps=window.__synExpCtl?window.__synExpCtl.lps:1;
+    gl.uniform1f(UD.u_black,M.black*lps); gl.uniform1f(UD.u_white,P.tWhite*lps);
+    gl.uniform1f(UD.u_count,CN); gl.uniform1f(UD.u_write,writeIdx); gl.uniform1f(UD.u_filled,Math.max(1,filled));
+    gl.uniform1f(UD.u_mix,filled===0?0:P.tMix); gl.uniform1i(UD.u_interp,P.tInterp); gl.uniform1i(UD.u_showMap,0);
+    bindQ(); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    gl.activeTexture(gl.TEXTURE0);
+    var px=new Uint8ClampedArray(w*h*4);
+    gl.readPixels(0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    var row=w*4, tmp=new Uint8ClampedArray(row);
+    for(var y=0;y<(h>>1);y++){ var a0=y*row, b0=(h-1-y)*row; tmp.set(px.subarray(a0,a0+row)); px.copyWithin(a0,b0,b0+row); px.set(tmp,b0); }
+    for(k=0;k<w*h*4;k+=4){ px[k+1]=px[k]; px[k+2]=px[k]; px[k+3]=255; }
+    if(!MT.cv) MT.cv=document.createElement('canvas');
+    MT.cv.width=w; MT.cv.height=h;
+    MT.cv.getContext('2d').putImageData(new ImageData(px,w,h),0,0);
+    return {canvas:MT.cv};
+  }
+  /* /SYNTECH-MATTE */
   window.SynFx={
     version:1,
     outSize:function(w,h){ return {w:Math.round(w),h:Math.round(h)}; },
@@ -3093,6 +3164,7 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
       var ctl=window.__synExpCtl;
       if(!ctl||!cacheTex||canvas.width!==SF.w||canvas.height!==SF.h||CW!==SF.w||CH!==SF.h) throw new Error('the frame cache was re-sized during the export');
       window.__synFxSrc=fxCopy(src,SF.w,SF.h);
+      SF.mt={mode:SF.mode,writes:[]}; var wi0=writeIdx; /* SYNTECH-MATTE: the cache layers this frame wrote */
       if(SF.mode==='lab'){
         if(SF.an) SF.an.setTime(t);
         var tick=Math.floor(t*RATE+1e-6);
@@ -3103,16 +3175,20 @@ if(presetHead)presetHead.addEventListener('click',()=>setTimeout(render,50));
         }
         ctl.inside=true;
         try{ render(performance.now()); }finally{ ctl.inside=false; }
+        if(writeIdx!==wi0) SF.mt.writes.push(wi0); /* SYNTECH-MATTE */
       }else{
-        writeIdx=0; filled=0; clearFBO(prevFBO); prevMotionFrame=null;
+        writeIdx=0; filled=0; clearFBO(prevFBO); prevMotionFrame=null; wi0=0; /* SYNTECH-MATTE */
         for(var j=0;j<2;j++){
           ctl.inside=true;
           try{ render(performance.now()); }finally{ ctl.inside=false; }
+          if(writeIdx!==wi0) SF.mt.writes.push(wi0); /* SYNTECH-MATTE */
+          wi0=writeIdx;
         }
       }
       return {canvas:canvas};
     },
-    end:fxEnd
+    matte:function(alphaSrc,i,t){ return fxMatte(alphaSrc); }, /* SYNTECH-MATTE */
+    end:function(){ fxMatteFree(); return fxEnd(); }
   };
 
   /* ───────── photo export: PNG · JPEG · PDF under RENDER MP4 ───────── */

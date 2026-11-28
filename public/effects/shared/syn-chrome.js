@@ -98,3 +98,25 @@
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',run);
   else run();
 })();
+
+/* LED phase sync — same logic as the shell's src/lib/ledSync.ts: every syn-led-c
+   animation (frame outline, brackets, line under the title) is pinned to the wall
+   clock (6 s period), so all effect pages and the shell show the same colour at
+   the same instant. */
+(function(){
+  'use strict';
+  if(window.__synLedSync) return; window.__synLedSync=true;
+  var PERIOD=6000;
+  function align(a){
+    if(a.animationName!=='syn-led-c') return;
+    var now=Date.now(); /* not timeline.currentTime: that trails the wall clock by the frame lag */
+    var want=now-performance.timeOrigin-(now%PERIOD), cur=a.startTime;
+    if(cur!=null && Math.abs(((cur-want)%PERIOD+PERIOD*1.5)%PERIOD-PERIOD/2)<5) return;
+    a.startTime=want;
+  }
+  function sweep(){ try{ document.getAnimations().forEach(align); }catch(e){} }
+  sweep();
+  document.addEventListener('animationstart',function(e){ if(e.animationName==='syn-led-c') sweep(); },true);
+  window.addEventListener('load',sweep);
+  setInterval(sweep,5000);
+})();
