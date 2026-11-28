@@ -30,6 +30,7 @@ done, what is next, and every decision made so far. Then follow
 | `10-EXPORT-MASTER.md` | Offline frame-by-frame MP4 render (RENDER MP4): why realtime REC loses quality/fps, the SynExport design |
 | `11-EXPORT-STILLS-LAB.md` | Photo export PNG · JPEG · PDF (SynStill, real alpha, native size) + the Lab's offline frame-by-frame render (SynFx) |
 | `12-PREVIEW-QUALITY.md` | Live preview like Premiere "Auto": screen-resolution canvas (never above the source), video uploaded only on new frames, 120/144 Hz cap, Lab at the source fps (SynView) |
+| `13-EXPORT-PANEL.md` | One EXPORT panel everywhere (QUALITY 0–100 · FOTO · VIDEO), true-alpha PNG (SynFx.matte, A = max(M,U)), MP4 from a photo, REC SCREEN, synced LEDs |
 | `DESKTOP.md` | The double-click desktop app (Electron): how it is built, tested, delivered |
 
 ## Commands
